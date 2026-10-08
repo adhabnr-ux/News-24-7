@@ -1,0 +1,1067 @@
+# Historical market-moving events, used by `news247 backtest` to measure the importance
+# criteria. Compiled from research on 2026-10-08 (sources in docs/research/).
+#
+# Each event has:
+#   first_reports: what the originating source itself published — what this system sees
+#                  first, BEFORE anyone writes "stocks plunge after…". Catching these is the goal.
+#                  approx: true marks titles reconstructed from coverage (the original wording
+#                  could not be verified).
+#   coverage:      later wire/news headlines describing the move (verbatim from coverage).
+# noise: headlines that sound important but moved nothing — they must NOT be texted.
+#
+# Headline fields: text, tier (primary|wire|media|social), entities (who the source speaks for).
+
+events:
+  # ======================================================================= AI labs → sectors
+  - id: deepseek-r1
+    date: 2025-01-27
+    category: cheap_frontier_model
+    move: "NVDA -17% ($589B, record), AVGO -17%, TSM -13%, SOX -9.2%, Nasdaq -3.1%"
+    tickers: [NVDA, AVGO, TSM, ASML, VST, CEG]
+    first_reports:
+      - {text: "@deepseek_ai: DeepSeek-R1 is here! Performance on par with OpenAI-o1. Fully open-source model & technical report. MIT licensed", tier: primary, entities: [DeepSeek]}
+      - {text: "China's DeepSeek AI app tops Apple App Store, rivals OpenAI at a fraction of the cost", tier: media, approx: true}
+    coverage:
+      - "Nvidia's $589 Billion DeepSeek Rout Is Largest in Market History"
+      - "Investors dump tech stocks after record $593 billion Nvidia loss"
+
+  - id: anthropic-cowork-plugins
+    date: 2026-02-03
+    category: ai_disrupts_software
+    move: "TRI -15.8% (record), RELX -14%, Wolters Kluwer -13%, LSEG -8.5%, LegalZoom -20%; ~$285B in 48h"
+    tickers: [TRI, RELX, LSEG, LZ, IGV]
+    first_reports:
+      - {text: "Plugins for Claude Cowork: legal, sales, marketing, finance and data", tier: primary, entities: [Anthropic], approx: true}
+      - {text: "Anthropic brings agentic plug-ins to Cowork", tier: media}
+    coverage:
+      - "Anthropic's new AI tools deepen selloff in data analytics and software stocks, investors say"
+      - "Anthropic's new AI tool sends shudders through software stocks"
+      - "RELX, Pearson and Informa slide as Anthropic launches AI legal tool"
+
+  - id: claude-code-security
+    date: 2026-02-20
+    category: ai_disrupts_software
+    move: "CRWD -8%, NET -8.1%, OKTA -9.2%, ZS -5.5%; next session CRWD/DDOG/ZS ~-11%"
+    tickers: [CRWD, NET, OKTA, ZS, PANW]
+    first_reports:
+      - {text: "Introducing Claude Code Security", tier: primary, entities: [Anthropic], approx: true}
+    coverage:
+      - "Cyber Stocks Slide as Anthropic Unveils Claude Code Security"
+
+  - id: anthropic-cobol
+    date: 2026-02-23
+    category: ai_disrupts_software
+    move: "IBM -13.2% (worst since Oct 2000)"
+    tickers: [IBM, ACN, CTSH, INFY]
+    first_reports:
+      - {text: "How Claude Code helps enterprises modernize their COBOL codebase in quarters instead of years", tier: primary, entities: [Anthropic], approx: true}
+    coverage:
+      - "IBM Sinks Most Since 2000 as Anthropic Touts COBOL Modernization"
+      - "IBM shares hit 25-year low as AI promises to update ageing mainframe code"
+
+  - id: claude-sonnet-4-6
+    date: 2026-02-17
+    category: ai_model_launch
+    move: "INTU -5.2%, ORCL -3.4%, CRM -2.7%, TRI -3%"
+    tickers: [INTU, ORCL, CRM, TRI]
+    first_reports:
+      - {text: "Introducing Claude Sonnet 4.6", tier: primary, entities: [Anthropic]}
+    coverage:
+      - "Software Stocks—Oracle, Intuit, More—Fall As Anthropic's Latest Claude Model Fuels AI Concerns"
+
+  - id: claude-mythos-leak
+    date: 2026-03-27
+    category: ai_disrupts_software
+    move: "CRWD -7.5%, PANW -6%, OKTA -7%, cyber ETF -4%, S&P -1%"
+    tickers: [CRWD, PANW, OKTA]
+    first_reports:
+      - {text: "Anthropic accidentally leaks details of new AI model Claude Mythos, 'far ahead of any other AI model in cyber capabilities'", tier: media, approx: true}
+    coverage:
+      - "US cybersecurity stocks slide as Anthropic accidentally leaks details of new AI model"
+
+  - id: claude-mythos-launch
+    date: 2026-04-09
+    category: ai_model_launch
+    move: "S&P 500 Software & Services -2.6%"
+    tickers: [IGV]
+    first_reports:
+      - {text: "Introducing Claude Mythos", tier: primary, entities: [Anthropic], approx: true}
+    coverage:
+      - "U.S. software stocks fall as Anthropic's new AI model revives disruption fears"
+
+  - id: google-project-genie
+    date: 2026-01-30
+    category: ai_disrupts_software
+    move: "U -24%, RBLX -13%, TTWO -8%"
+    tickers: [U, RBLX, TTWO, EA]
+    first_reports:
+      - {text: "Introducing Project Genie: create playable interactive worlds with our Genie 3 world model", tier: primary, entities: [Google DeepMind], approx: true}
+    coverage:
+      - "Gaming stocks plunge following release of Google's AI tool that can create interactive worlds"
+      - "Google's new AI tool causes gaming stocks to plummet"
+
+  - id: openai-presence
+    date: 2026-07-22
+    category: ai_disrupts_software
+    move: "HUBS -12.7%, TEAM -11.8%, WDAY -9.9%, CRM -7.7%, IGV -3%"
+    tickers: [HUBS, TEAM, WDAY, CRM, NOW, IGV]
+    first_reports:
+      - {text: "Introducing Presence: AI agents for enterprise customer support, sales and IT", tier: primary, entities: [OpenAI], approx: true}
+    coverage:
+      - "OpenAI's new release turns a bad week ugly for software stocks"
+      - "OpenAI Presence lands and software stocks take another hit in a brutal year for SaaS"
+
+  - id: openai-docugpt
+    date: 2025-09-30
+    category: ai_disrupts_software
+    move: "DOCU -12%, HUBS -7 to -10%"
+    tickers: [DOCU, HUBS, CRM]
+    first_reports:
+      - {text: "How OpenAI uses its own AI: DocuGPT for contracts, a sales agent and a support agent", tier: primary, entities: [OpenAI], approx: true}
+    coverage:
+      - "DocuSign (DOCU) Falls 12% as OpenAI Launches DocuGPT"
+
+  - id: insurify-chatgpt-app
+    date: 2026-02-09
+    category: ai_disrupts_software
+    move: "WTW -12% (worst since 2008), AJG -9.9%, AON -9.3%"
+    tickers: [WTW, AJG, AON]
+    first_reports:
+      - {text: "Insurify launches ChatGPT app to compare and buy insurance with AI", tier: wire, approx: true}
+    coverage:
+      - "Insurance Broker Stocks Sink as AI App Sparks Disruption Fears"
+
+  - id: altruist-hazel
+    date: 2026-02-10
+    category: ai_disrupts_software
+    move: "SCHW ~-7%, LPLA ~-8%, RJF, SF down"
+    tickers: [SCHW, LPLA, RJF]
+    first_reports:
+      - {text: "Altruist unveils Hazel, an AI tax-planning agent for financial advisors", tier: wire, approx: true}
+    coverage:
+      - "Wealth managers slump after Altruist unveils new AI tax planning tool"
+
+  - id: chatgpt-atlas
+    date: 2025-10-21
+    category: ai_disrupts_search
+    move: "GOOGL -4.8% intraday, -2.2% close"
+    tickers: [GOOGL]
+    first_reports:
+      - {text: "Introducing ChatGPT Atlas, the browser with ChatGPT built in", tier: primary, entities: [OpenAI]}
+    coverage:
+      - "GOOGL shares dip as OpenAI launches ChatGPT Atlas browser"
+
+  - id: openai-instant-checkout
+    date: 2025-09-29
+    category: ai_partnership_commerce
+    move: "ETSY +16%, SHOP +6%"
+    tickers: [ETSY, SHOP]
+    first_reports:
+      - {text: "Buy it in ChatGPT: Instant Checkout and the Agentic Commerce Protocol", tier: primary, entities: [OpenAI]}
+    coverage:
+      - "Etsy, Shopify gain on ChatGPT instant checkout partnership"
+
+  - id: bard-demo-error
+    date: 2023-02-08
+    category: ai_demo_error
+    move: "GOOGL -7.7% (~$100B)"
+    tickers: [GOOGL]
+    first_reports:
+      - {text: "Google's AI chatbot Bard gives wrong answer in promotional video", tier: media, approx: true}
+    coverage:
+      - "Alphabet shares dive after Google AI chatbot Bard flubs answer in ad"
+      - "Google shares drop $100 billion after its new AI chatbot makes a mistake"
+
+  - id: chegg-chatgpt
+    date: 2023-05-02
+    category: ai_disruption_admission
+    move: "CHGG -48%"
+    tickers: [CHGG, PSON]
+    first_reports:
+      - {text: "Chegg cuts revenue outlook, says ChatGPT is having an impact on new customer growth", tier: wire, approx: true}
+    coverage:
+      - "Chegg's stock plunges on fears of competition from ChatGPT"
+
+  - id: amodei-slowdown-essay
+    date: 2026-09-14
+    category: ai_lab_policy
+    move: "SOX -5.1%, NVDA -3.6%, AMD -5.6%, MU -6%, SoftBank -13%"
+    tickers: [NVDA, AMD, MU, LRCX, AMAT]
+    first_reports:
+      - {text: "@DarioAmodei: Why frontier AI development should slow down", tier: primary, entities: [Anthropic], approx: true}
+      - {text: "Altman says OpenAI will not IPO this year, backs call to slow AI development", tier: media, approx: true}
+    coverage:
+      - "Global AI stocks fall as industry chiefs call for slowing development"
+      - "Chipmaker stocks drop after Altman and Amodei call to slow AI development"
+
+  # ======================================================================= AI-lab money (scoops)
+  - id: ft-openai-revenue
+    date: 2026-10-08
+    category: ai_lab_financials
+    move: "NVDA -3%, ORCL -6%, CRWV -8%, AMD -5%, AVGO -5%, INTC -6%, SMCI -6%; NDX -1.4%"
+    tickers: [NVDA, ORCL, CRWV, AMD, AVGO, SMCI]
+    first_reports:
+      - {text: "OpenAI annualized revenue at $50bn, far below reports - FT", tier: media}
+      - {text: "@wallstengine: OPENAI'S ANNUALIZED REVENUE NEARS $50B, BELOW EARLIER $70B REPORTS: FT", tier: media}
+      - {text: "OpenAI's Annualized Revenue Nears $50 Billion, FT Says", tier: media}
+    coverage:
+      - "Tech stocks drop after report that OpenAI's revenue is lower than expected"
+      - "OpenAI's annualized revenue $20 billion lower than prior investor estimates"
+
+  - id: wsj-openai-missed-targets
+    date: 2026-04-28
+    category: ai_lab_financials
+    move: "ORCL -4 to -7.7%, CRWV -5 to -7.4%, SoftBank -10%, AMD -5%"
+    tickers: [ORCL, CRWV, AMD, NVDA]
+    first_reports:
+      - {text: "OpenAI misses key targets for revenue and users as CFO worries about paying for computing power", tier: media, approx: true}
+    coverage:
+      - "OpenAI Investors—Nvidia, Oracle, More—Fall After AI Giant Reportedly Misses Revenue Target"
+      - "Oracle, CoreWeave lead AI selloff on OpenAI growth concerns"
+
+  - id: wsj-nvidia-openai-stalled
+    date: 2026-01-30
+    category: ai_lab_financials
+    move: "unconfirmed (Huang denied it the next day)"
+    tickers: [NVDA, ORCL]
+    first_reports:
+      - {text: "Nvidia's plan to invest up to $100 billion in OpenAI has stalled, WSJ reports", tier: media}
+    coverage:
+      - "Nvidia Halts Plan to Invest $100 Billion in OpenAI, WSJ Says"
+
+  - id: ft-blue-owl-oracle
+    date: 2025-12-17
+    category: ai_financing
+    move: "ORCL -5 to -6%"
+    tickers: [ORCL, OWL]
+    first_reports:
+      - {text: "Blue Owl pulls out of funding for Oracle's $10bn Michigan data centre", tier: media, approx: true}
+    coverage:
+      - "Funding stalls for Oracle's Michigan datacenter as Blue Owl bows out"
+
+  - id: info-meta-google-tpu
+    date: 2025-11-25
+    category: competitive_scoop
+    move: "NVDA -3%, AMD -4%, GOOGL +4%"
+    tickers: [NVDA, AMD, GOOGL, AVGO]
+    first_reports:
+      - {text: "Meta in talks to spend billions on Google's TPU chips, The Information reports", tier: media, approx: true}
+    coverage:
+      - "Nvidia scoffs at threat from Google TPUs after rumored Meta tie-up"
+
+  # ======================================================================= AI compute deals
+  - id: oracle-openai-300b
+    date: 2025-09-10
+    category: ai_compute_deal
+    move: "ORCL +36% (best day since 1992); RPO $455B"
+    tickers: [ORCL, NVDA, AMD]
+    first_reports:
+      - {text: "Oracle, OpenAI Sign $300 Billion Cloud Deal", tier: media}
+      - {text: "Oracle remaining performance obligations jump 359% to $455 billion", tier: wire, approx: true}
+    coverage: []
+
+  - id: nvidia-openai-100b
+    date: 2025-09-22
+    category: ai_compute_deal
+    move: "NVDA +3.9% (record high), ORCL +5-6%"
+    tickers: [NVDA, ORCL]
+    first_reports:
+      - {text: "OpenAI and NVIDIA announce strategic partnership to deploy 10 gigawatts of NVIDIA systems", tier: primary, entities: [OpenAI]}
+    coverage:
+      - "Nvidia to invest up to $100 billion in OpenAI, linking two artificial intelligence titans"
+
+  - id: amd-openai
+    date: 2025-10-06
+    category: ai_compute_deal
+    move: "AMD +23.7% (+30-37% intraday)"
+    tickers: [AMD]
+    first_reports:
+      - {text: "AMD and OpenAI announce strategic partnership to deploy 6 gigawatts of AMD GPUs", tier: wire}
+    coverage:
+      - "AMD shares surge 30% after multibillion-dollar deal with OpenAI"
+
+  - id: broadcom-openai
+    date: 2025-10-13
+    category: ai_compute_deal
+    move: "AVGO ~+10%"
+    tickers: [AVGO]
+    first_reports:
+      - {text: "OpenAI and Broadcom announce strategic collaboration to deploy 10 gigawatts of OpenAI-designed AI accelerators", tier: primary, entities: [OpenAI]}
+    coverage:
+      - "OpenAI and Broadcom sign deal to build up to 10 gigawatts of custom chips, Broadcom stock surges"
+
+  - id: getty-openai
+    date: 2026-06-22
+    category: ai_licensing_deal
+    move: "GETY +90% close (+145% intraday)"
+    tickers: [GETY]
+    first_reports:
+      - {text: "Getty Images and OpenAI announce content licensing partnership", tier: wire, approx: true}
+    coverage:
+      - "Getty Images Surges 145% After Announcing OpenAI Deal"
+
+  # ======================================================================= chips / regulation
+  - id: nvidia-h20-export
+    date: 2025-04-16
+    category: chip_export_controls
+    move: "NVDA ~-7% ($5.5B charge), AMD ~-7%"
+    tickers: [NVDA, AMD, ASML]
+    first_reports:
+      - {text: "Nvidia says US export license requirement for H20 chips to China will result in $5.5 billion charge", tier: wire, approx: true}
+    coverage:
+      - "Nvidia shares fall after it says US controls on exports of AI chip will cost it $5.5 billion"
+
+  - id: google-search-remedy
+    date: 2025-09-03
+    category: antitrust_ruling
+    move: "GOOGL +9.1% (~$230B), AAPL +3.8%"
+    tickers: [GOOGL, AAPL]
+    first_reports:
+      - {text: "Judge rules Google will not have to divest Chrome in search antitrust case", tier: media, approx: true}
+    coverage:
+      - "Alphabet shares jump as US court ruling eases antitrust concerns"
+
+  - id: cue-safari-testimony
+    date: 2025-05-07
+    category: ai_disrupts_search
+    move: "GOOGL -7.3% (~$150B)"
+    tickers: [GOOGL, AAPL]
+    first_reports:
+      - {text: "Apple's Eddy Cue says Safari searches declined for the first time as users turn to AI", tier: media, approx: true}
+    coverage:
+      - "Google Stock Sinks on Apple Comments That AI Is Proving Threat to Search"
+
+  # ======================================================================= company shocks
+  - id: crowdstrike-outage
+    date: 2024-07-19
+    category: product_outage
+    move: "CRWD -11% day, -32% over 12 days"
+    tickers: [CRWD, MSFT]
+    first_reports:
+      - {text: "Global IT outage grounds flights, hits banks as CrowdStrike update crashes Windows computers", tier: media, approx: true}
+      - {text: "@George_Kurtz: CrowdStrike is actively working with customers impacted by a defect found in a single content update for Windows hosts. This is not a security incident or cyberattack.", tier: primary}
+    coverage: []
+
+  - id: smci-auditor
+    date: 2024-10-30
+    category: auditor_resigns
+    move: "SMCI -33%"
+    tickers: [SMCI]
+    first_reports:
+      - {text: "Super Micro Computer (SMCI) files 8-K: 4.01 Auditor Change", tier: primary, boost: 15, approx: true}
+      - {text: "Super Micro says auditor Ernst & Young resigned, citing information that recently came to its attention", tier: wire, approx: true}
+    coverage:
+      - "Super Micro Computer's shares plunge after accounting firm resigns"
+
+  - id: intel-dividend
+    date: 2024-08-02
+    category: guidance_cut
+    move: "INTC -26%"
+    tickers: [INTC]
+    first_reports:
+      - {text: "Intel reports second-quarter results, suspends dividend and announces $10 billion cost reduction plan with 15% job cuts", tier: wire, approx: true}
+    coverage:
+      - "Intel Says Revenue Will Fall Short of Expectations, Cuts Jobs"
+
+  - id: unh-ceo-guidance
+    date: 2025-05-13
+    category: guidance_cut
+    move: "UNH -16 to -18%"
+    tickers: [UNH, HUM]
+    first_reports:
+      - {text: "UnitedHealth CEO Andrew Witty steps down; company suspends 2025 outlook", tier: wire, approx: true}
+    coverage:
+      - "UnitedHealth drops as CEO steps down; suspends guidance"
+
+  - id: unh-criminal-probe
+    date: 2025-05-15
+    category: regulatory_probe
+    move: "UNH -8% after hours, up to -18% next day"
+    tickers: [UNH]
+    first_reports:
+      - {text: "UnitedHealth Under Criminal Probe For Possible Medicare Fraud, WSJ Reports", tier: media}
+    coverage:
+      - "UnitedHealth Sinks as Report of Criminal Probe Adds to Woes"
+
+  - id: tesla-trump-feud
+    date: 2025-06-05
+    category: executive_social_post
+    move: "TSLA -14.3% (~$150B)"
+    tickers: [TSLA]
+    first_reports:
+      - {text: "@realDonaldTrump: The easiest way to save money in our Budget is to terminate Elon's Governmental Subsidies and Contracts", tier: primary, entities: [White House]}
+    coverage:
+      - "Tesla slides 14% after the Elon Musk-Donald Trump tiff goes off the rails"
+
+  - id: novo-cagrisema
+    date: 2024-12-20
+    category: trial_readout_miss
+    move: "NVO -20% (record)"
+    tickers: [NVO, LLY]
+    first_reports:
+      - {text: "Novo Nordisk's CagriSema delivers 22.7% weight loss in phase 3, below the 25% the company had expected", tier: wire, approx: true}
+    coverage:
+      - "Novo Nordisk Falls Most on Record After New Weight Drug Disappoints"
+
+  - id: lilly-orforglipron
+    date: 2025-08-07
+    category: trial_readout_miss
+    move: "LLY -14%, NVO +7-9%"
+    tickers: [LLY, NVO]
+    first_reports:
+      - {text: "Lilly's oral GLP-1 orforglipron shows 12.4% weight loss in phase 3, below expectations", tier: wire, approx: true}
+    coverage:
+      - "Danish drugmakers jump as Eli Lilly's weight-loss pill data disappoints"
+
+  # ======================================================================= mega-cap earnings
+  - id: nvda-guidance-2023
+    date: 2023-05-25
+    category: megacap_earnings
+    move: "NVDA +24% (~$184B); guide ~$11B vs $7.15B consensus"
+    tickers: [NVDA, AMD, AVGO, TSM]
+    first_reports:
+      - {text: "NVIDIA Announces Financial Results for First Quarter Fiscal 2024", tier: wire, entities: [NVIDIA]}
+      - {text: "Nvidia forecasts second-quarter revenue of $11 billion, far above estimates", tier: media, approx: true}
+    coverage:
+      - "Nvidia surges as Q1 results, guidance smash expectations"
+
+  - id: meta-efficiency-2023
+    date: 2023-02-02
+    category: megacap_earnings
+    move: "META +23%, $40B buyback"
+    tickers: [META]
+    first_reports:
+      - {text: "Meta Reports Fourth Quarter and Full Year 2022 Results", tier: wire, entities: [Meta Platforms]}
+    coverage:
+      - "Meta Evokes Big Tech's Glory Days With Biggest Surge Since 2013"
+
+  - id: meta-capex-2025
+    date: 2025-10-30
+    category: megacap_earnings
+    move: "META -11 to -12.6%"
+    tickers: [META]
+    first_reports:
+      - {text: "Meta Reports Third Quarter 2025 Results", tier: wire, entities: [Meta Platforms]}
+    coverage:
+      - "Meta Shares Fall 12.6%, Set for Biggest Single-Day Pct Drop in Three Years"
+
+  - id: msft-azure-2026
+    date: 2026-01-29
+    category: megacap_earnings
+    move: "MSFT -10% (-$357B)"
+    tickers: [MSFT]
+    first_reports:
+      - {text: "Microsoft Cloud and AI strength fuels second quarter results", tier: wire, entities: [Microsoft], approx: true}
+    coverage:
+      - "Microsoft lost $357 billion in market cap as stock plunged most since 2020"
+
+  - id: coreweave-guide-cut
+    date: 2025-11-11
+    category: guidance_cut
+    move: "CRWV -16%"
+    tickers: [CRWV]
+    first_reports:
+      - {text: "CoreWeave cuts annual revenue forecast on data center delay", tier: wire, approx: true}
+    coverage:
+      - "CoreWeave cuts revenue forecast on data centre delay"
+
+  # ======================================================================= macro / policy / systemic
+  # (first reports for scheduled data are wire-style flashes; Truth Social/Fed texts are near-verbatim)
+  - id: brexit
+    date: 2016-06-24
+    category: election
+    move: "S&P -3.6%, Nasdaq -4.1%; GBP -8%"
+    tickers: [SPY, QQQ]
+    first_reports:
+      - {text: "UK VOTES TO LEAVE EU", tier: media, approx: true}
+      - {text: "BBC PROJECTS LEAVE WIN IN EU REFERENDUM", tier: media, approx: true}
+    coverage: ["POUND PLUNGES MOST ON RECORD"]
+
+  - id: tariff-man
+    date: 2018-12-04
+    category: president_social_post
+    move: "Dow -799 (-3.1%)"
+    tickers: [SPY, FXI]
+    first_reports:
+      - {text: "@realDonaldTrump: I am a Tariff Man. When people or countries come in to raid the great wealth of our Nation, I want them to pay for the privilege of doing so.", tier: primary, entities: [White House]}
+    coverage: []
+
+  - id: china-tariff-tweet-2019
+    date: 2019-08-01
+    category: president_social_post
+    move: "S&P from +1% to -0.9% within minutes"
+    tickers: [SPY, FXI, AAPL]
+    first_reports:
+      - {text: "@realDonaldTrump: the U.S. will start, on September 1st, putting a small additional Tariff of 10% on the remaining 300 Billion Dollars of goods and products coming from China into our Country.", tier: primary, entities: [White House]}
+    coverage: []
+
+  - id: hereby-ordered-2019
+    date: 2019-08-23
+    category: president_social_post
+    move: "Dow -623 (-2.4%), S&P -2.6%, Nasdaq -3.0%"
+    tickers: [SPY, QQQ, FXI]
+    first_reports:
+      - {text: "@realDonaldTrump: Our great American companies are hereby ordered to immediately start looking for an alternative to China", tier: primary, entities: [White House]}
+      - {text: "@realDonaldTrump: My only question is, who is our bigger enemy, Jay Powell or Chairman Xi?", tier: primary, entities: [White House]}
+    coverage: []
+
+  - id: yuan-through-7
+    date: 2019-08-05
+    category: currency_shock
+    move: "Dow -767 (-2.9%), S&P -3.0%"
+    tickers: [SPY, FXI]
+    first_reports:
+      - {text: "YUAN WEAKENS PAST 7 PER DOLLAR FOR FIRST TIME SINCE 2008", tier: media, approx: true}
+      - {text: "US TREASURY DESIGNATES CHINA A CURRENCY MANIPULATOR", tier: media, approx: true}
+    coverage: []
+
+  - id: yield-curve-2019
+    date: 2019-08-14
+    category: recession_signal
+    move: "Dow -800 (-3.05%), S&P -2.9%"
+    tickers: [SPY, TLT]
+    first_reports:
+      - {text: "2-YEAR/10-YEAR TREASURY YIELD CURVE INVERTS FOR FIRST TIME SINCE 2007", tier: media, approx: true}
+    coverage: []
+
+  - id: fed-emergency-cut-2020
+    date: 2020-03-03
+    category: fed_emergency
+    move: "S&P -2.8% despite the cut"
+    tickers: [SPY, TLT]
+    first_reports:
+      - {text: "Federal Reserve issues FOMC statement: the Committee decided today to lower the target range for the federal funds rate by 1/2 percentage point, to 1 to 1-1/4 percent", tier: primary, entities: [Federal Reserve]}
+      - {text: "FED CUTS RATES BY HALF POINT IN EMERGENCY MOVE", tier: media, approx: true}
+    coverage: []
+
+  - id: oil-price-war-2020
+    date: 2020-03-09
+    category: oil_shock
+    move: "S&P -7.6%, WTI -25%, Level-1 circuit breaker"
+    tickers: [SPY, USO, XLE]
+    first_reports:
+      - {text: "SAUDI ARABIA SLASHES OIL PRICES, LAUNCHES PRICE WAR", tier: media, approx: true}
+      - {text: "TRADING HALT — MARKET-WIDE CIRCUIT BREAKER Level 1 — US equity trading halted market-wide", tier: primary, boost: 90}
+    coverage: ["OIL PLUNGES MOST SINCE 1991"]
+
+  - id: who-pandemic
+    date: 2020-03-11
+    category: pandemic
+    move: "Dow -1,465 (-5.9%), bear market"
+    tickers: [SPY]
+    first_reports:
+      - {text: "WHO DECLARES CORONAVIRUS OUTBREAK A PANDEMIC", tier: media, approx: true}
+    coverage: []
+
+  - id: europe-travel-ban
+    date: 2020-03-12
+    category: pandemic
+    move: "S&P -9.5%, Dow -10% (worst since 1987)"
+    tickers: [SPY, JETS]
+    first_reports:
+      - {text: "TRUMP SUSPENDS TRAVEL FROM EUROPE FOR 30 DAYS", tier: media, approx: true}
+    coverage: []
+
+  - id: fed-zero-qe
+    date: 2020-03-16
+    category: fed_emergency
+    move: "S&P -12.0%, VIX record 82.69"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "FED CUTS RATES TO ZERO, LAUNCHES $700 BILLION QE PROGRAM", tier: media, approx: true}
+      - {text: "Federal Reserve issues FOMC statement: the Committee decided to lower the target range for the federal funds rate to 0 to 1/4 percent", tier: primary, entities: [Federal Reserve]}
+    coverage: []
+
+  - id: fed-unlimited-qe
+    date: 2020-03-24
+    category: fed_emergency
+    move: "Dow +11.4% (best since 1933), S&P +9.4%"
+    tickers: [SPY, LQD]
+    first_reports:
+      - {text: "FED ANNOUNCES UNLIMITED BOND BUYING 'IN THE AMOUNTS NEEDED'", tier: media}
+      - {text: "FED TO BUY CORPORATE BONDS FOR FIRST TIME", tier: media, approx: true}
+    coverage: []
+
+  - id: negative-oil
+    date: 2020-04-20
+    category: oil_shock
+    move: "WTI -$37.63; S&P -1.8%"
+    tickers: [USO, XLE]
+    first_reports:
+      - {text: "US OIL PRICES TURN NEGATIVE FOR FIRST TIME IN HISTORY", tier: media, approx: true}
+    coverage: []
+
+  - id: pfizer-vaccine
+    date: 2020-11-09
+    category: pandemic
+    move: "Dow +2.95% (intraday +1,600), CCL +39%, ZM -17%"
+    tickers: [PFE, SPY, IWM, CCL]
+    first_reports:
+      - {text: "Pfizer and BioNTech Announce Vaccine Candidate Against COVID-19 Achieved Success in First Interim Analysis from Phase 3 Study", tier: wire}
+      - {text: "PFIZER: COVID VACCINE MORE THAN 90% EFFECTIVE", tier: media}
+    coverage: []
+
+  - id: omicron
+    date: 2021-11-26
+    category: pandemic
+    move: "Dow -905 (-2.5%), WTI -13%"
+    tickers: [SPY, USO]
+    first_reports:
+      - {text: "WHO NAMES NEW COVID VARIANT OMICRON, CALLS IT 'VARIANT OF CONCERN'", tier: media, approx: true}
+    coverage: []
+
+  - id: cpi-jun-2022
+    date: 2022-06-10
+    category: macro_data_surprise
+    move: "S&P -2.9%"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "US MAY CPI RISES 8.6% Y/Y; EST. 8.3%", tier: media, approx: true}
+    coverage: ["INFLATION HITS NEW 40-YEAR HIGH"]
+
+  - id: fed-75-leak
+    date: 2022-06-13
+    category: fed_leak
+    move: "S&P -3.9% (bear market), Nasdaq -4.7%"
+    tickers: [SPY, QQQ]
+    first_reports:
+      - {text: "Fed Likely to Consider 75-Basis-Point Rate Rise This Week", tier: media}
+    coverage: ["S&P 500 CLOSES IN BEAR MARKET"]
+
+  - id: jackson-hole-2022
+    date: 2022-08-26
+    category: fed_speech
+    move: "S&P -3.4%, Nasdaq -3.9%"
+    tickers: [SPY, QQQ]
+    first_reports:
+      - {text: "POWELL: REDUCING INFLATION LIKELY TO REQUIRE A SUSTAINED PERIOD OF BELOW-TREND GROWTH", tier: media}
+    coverage: []
+
+  - id: cpi-sep-2022
+    date: 2022-09-13
+    category: macro_data_surprise
+    move: "S&P -4.3%, Nasdaq -5.2%"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "US AUG CORE CPI RISES 0.6% M/M; EST. 0.3%", tier: media, approx: true}
+      - {text: "US AUG CPI RISES 8.3% Y/Y; EST. 8.1%", tier: media, approx: true}
+    coverage: []
+
+  - id: cpi-nov-2022
+    date: 2022-11-10
+    category: macro_data_surprise
+    move: "S&P +5.54%, Nasdaq +7.35%"
+    tickers: [SPY, QQQ, TLT, IWM]
+    first_reports:
+      - {text: "US OCT CPI RISES 7.7% Y/Y; EST. 7.9%", tier: media, approx: true}
+      - {text: "US OCT CORE CPI RISES 0.3% M/M; EST. 0.5%", tier: media, approx: true}
+    coverage: []
+
+  - id: svb
+    date: 2023-03-10
+    category: bank_failure
+    move: "SIVB -60%; KRE -8%; S&P -1.8% / -1.4%"
+    tickers: [KRE, XLF, SPY]
+    first_reports:
+      - {text: "SVB FINANCIAL SEEKS TO RAISE $2.25 BILLION AFTER $1.8 BILLION LOSS ON SECURITIES SALE", tier: media, approx: true}
+      - {text: "SILICON VALLEY BANK CLOSED BY REGULATORS; FDIC NAMED RECEIVER", tier: media, approx: true}
+    coverage: []
+
+  - id: signature-backstop
+    date: 2023-03-13
+    category: bank_failure
+    move: "FRC -62%, KRE -12%; 2y yield -61bp"
+    tickers: [KRE, FRC, TLT]
+    first_reports:
+      - {text: "Joint Statement by Treasury, Federal Reserve, and FDIC", tier: primary, entities: [Federal Reserve]}
+      - {text: "REGULATORS CLOSE SIGNATURE BANK, INVOKE SYSTEMIC RISK EXCEPTION", tier: media, approx: true}
+    coverage: []
+
+  - id: credit-suisse
+    date: 2023-03-15
+    category: bank_failure
+    move: "CS -24%; European banks -7%"
+    tickers: [UBS, XLF]
+    first_reports:
+      - {text: "SAUDI NATIONAL BANK SAYS 'ABSOLUTELY NOT' TO MORE CREDIT SUISSE FUNDING", tier: media}
+    coverage: ["CREDIT SUISSE SHARES HALTED AFTER RECORD PLUNGE"]
+
+  - id: fitch-downgrade
+    date: 2023-08-02
+    category: sovereign_downgrade
+    move: "S&P -1.4%, Nasdaq -2.2%"
+    tickers: [SPY, TLT]
+    first_reports:
+      - {text: "FITCH DOWNGRADES US TO 'AA+' FROM 'AAA'", tier: media, approx: true}
+    coverage: []
+
+  - id: jobs-aug-2024
+    date: 2024-08-02
+    category: macro_data_surprise
+    move: "S&P -1.8%, Nasdaq -2.4% (correction)"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "US JULY NONFARM PAYROLLS +114K; EST. +175K", tier: media, approx: true}
+      - {text: "US UNEMPLOYMENT RATE RISES TO 4.3%, TRIGGERING SAHM RULE", tier: media, approx: true}
+    coverage: []
+
+  - id: yen-carry
+    date: 2024-08-05
+    category: currency_shock
+    move: "Nikkei -12.4%; S&P -3.0%; VIX 65 intraday"
+    tickers: [SPY, QQQ, EWJ]
+    first_reports:
+      - {text: "NIKKEI PLUNGES 12% IN WORST DAY SINCE 1987", tier: media, approx: true}
+      - {text: "YEN CARRY TRADE UNWIND ROILS GLOBAL MARKETS", tier: media, approx: true}
+    coverage: []
+
+  - id: election-2024
+    date: 2024-11-06
+    category: election
+    move: "Dow +3.6%, Russell 2000 +5.8%, TSLA +15%"
+    tickers: [SPY, IWM, TSLA]
+    first_reports:
+      - {text: "AP: TRUMP WINS PRESIDENCY", tier: media, approx: true}
+    coverage: []
+
+  - id: fomc-dec-2024
+    date: 2024-12-18
+    category: fed_decision
+    move: "S&P -2.95%, Dow -2.6%, VIX +74%"
+    tickers: [SPY, QQQ, IWM, TLT]
+    first_reports:
+      - {text: "FED CUTS RATES BY QUARTER POINT, SIGNALS ONLY TWO CUTS IN 2025", tier: media, approx: true}
+      - {text: "Federal Reserve issues FOMC statement", tier: primary, entities: [Federal Reserve]}
+    coverage: []
+
+  - id: period-of-transition
+    date: 2025-03-10
+    category: president_remarks
+    move: "Nasdaq -4.0%, S&P -2.7%, TSLA -15%"
+    tickers: [QQQ, SPY, TSLA]
+    first_reports:
+      - {text: "TRUMP DOESN'T RULE OUT RECESSION: 'THERE IS A PERIOD OF TRANSITION'", tier: media, approx: true}
+    coverage: []
+
+  - id: liberation-day
+    date: 2025-04-03
+    category: tariff_announcement
+    move: "S&P -4.84%, Nasdaq ~-6%, AAPL -9%"
+    tickers: [SPY, QQQ, AAPL]
+    first_reports:
+      - {text: "TRUMP IMPOSES 10% BASELINE TARIFF ON ALL IMPORTS, HIGHER 'RECIPROCAL' RATES", tier: media, approx: true}
+      - {text: "TRUMP: 34% TARIFF ON CHINA, 20% ON EU", tier: media, approx: true}
+    coverage: []
+
+  - id: china-retaliation-2025
+    date: 2025-04-04
+    category: tariff_retaliation
+    move: "S&P -5.97%, Dow -5.5%, Nasdaq bear market"
+    tickers: [SPY, QQQ, AAPL, FXI]
+    first_reports:
+      - {text: "CHINA TO IMPOSE 34% TARIFF ON ALL US GOODS FROM APRIL 10", tier: media, approx: true}
+    coverage: ["POWELL: TARIFFS SIGNIFICANTLY LARGER THAN EXPECTED"]
+
+  - id: great-time-to-buy
+    date: 2025-04-09
+    category: president_social_post
+    move: "Precursor to the +9.5% day"
+    tickers: [SPY, QQQ]
+    first_reports:
+      - {text: "@realDonaldTrump: THIS IS A GREAT TIME TO BUY!!! DJT", tier: primary, entities: [White House]}
+    coverage: []
+
+  - id: tariff-pause
+    date: 2025-04-09
+    category: tariff_pause
+    move: "S&P +9.52% (best since 2008), Nasdaq +12.2%"
+    tickers: [SPY, QQQ, AAPL, NVDA]
+    first_reports:
+      - {text: "@realDonaldTrump: I have authorized a 90 day PAUSE, and a substantially lowered Reciprocal Tariff during this period, of 10%, also effective immediately.", tier: primary, entities: [White House]}
+      - {text: "TRUMP PAUSES RECIPROCAL TARIFFS FOR 90 DAYS, RAISES CHINA TO 125%", tier: media}
+    coverage: []
+
+  - id: china-145
+    date: 2025-04-10
+    category: tariff_escalation
+    move: "S&P -3.5%, Nasdaq -4.3%"
+    tickers: [SPY, QQQ, FXI]
+    first_reports:
+      - {text: "WHITE HOUSE SAYS TOTAL TARIFF RATE ON CHINA IS 145%", tier: media, approx: true}
+    coverage: []
+
+  - id: mr-too-late
+    date: 2025-04-21
+    category: fed_independence
+    move: "Dow -2.4%, S&P -2.4%; dollar at 2022 low; gold > $3,400"
+    tickers: [SPY, GLD, TLT]
+    first_reports:
+      - {text: "@realDonaldTrump: Preemptive Cuts in Interest Rates are being called for by many. There can be a SLOWING of the economy unless Mr. Too Late, a major loser, lowers interest rates, NOW.", tier: primary, entities: [White House], approx: true}
+    coverage: ["TRUMP RAMPS UP ATTACKS ON POWELL, CALLS HIM 'MAJOR LOSER'"]
+
+  - id: geneva-truce
+    date: 2025-05-12
+    category: trade_deal
+    move: "S&P +3.3%, Nasdaq +4.4%"
+    tickers: [SPY, QQQ, FXI, AAPL]
+    first_reports:
+      - {text: "US, CHINA AGREE TO SLASH TARIFFS FOR 90 DAYS", tier: media, approx: true}
+      - {text: "US TO CUT CHINA TARIFFS TO 30% FROM 145%; CHINA TO 10% FROM 125%", tier: media, approx: true}
+    coverage: []
+
+  - id: eu-50pct-threat
+    date: 2025-05-23
+    category: president_social_post
+    move: "S&P -0.7% (intraday -1.5%); AAPL -3%"
+    tickers: [SPY, AAPL]
+    first_reports:
+      - {text: "@realDonaldTrump: I am recommending a straight 50% Tariff on the European Union, starting on June 1, 2025.", tier: primary, entities: [White House]}
+    coverage: []
+
+  - id: israel-strikes-iran
+    date: 2025-06-13
+    category: geopolitical_shock
+    move: "S&P -1.1%, WTI +7% (intraday +13%)"
+    tickers: [USO, XLE, SPY]
+    first_reports:
+      - {text: "ISRAEL LAUNCHES STRIKES ON IRAN NUCLEAR AND MILITARY SITES", tier: media, approx: true}
+    coverage: ["OIL SURGES MOST SINCE 2022"]
+
+  - id: iran-ceasefire-2025
+    date: 2025-06-24
+    category: geopolitical_reversal
+    move: "WTI -6.8%; stocks higher"
+    tickers: [USO, SPY]
+    first_reports:
+      - {text: "@realDonaldTrump: It has been fully agreed by and between Israel and Iran that there will be a Complete and Total CEASEFIRE", tier: primary, entities: [White House]}
+    coverage: []
+
+  - id: bls-chief-fired
+    date: 2025-08-01
+    category: macro_data_surprise
+    move: "S&P ~-1.6%, Nasdaq ~-2.2%; -258K revisions"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "US JULY PAYROLLS +73K; PRIOR TWO MONTHS REVISED DOWN 258K", tier: media, approx: true}
+      - {text: "TRUMP ORDERS FIRING OF BLS COMMISSIONER MCENTARFER", tier: media, approx: true}
+    coverage: []
+
+  - id: jackson-hole-2025
+    date: 2025-08-22
+    category: fed_speech
+    move: "S&P +1.5%, Dow record, Russell +3.9%"
+    tickers: [SPY, IWM]
+    first_reports:
+      - {text: "POWELL: SHIFTING BALANCE OF RISKS MAY WARRANT ADJUSTING OUR POLICY STANCE", tier: media}
+    coverage: []
+
+  - id: china-100pct-2025
+    date: 2025-10-10
+    category: tariff_escalation
+    move: "S&P -2.71%, Nasdaq -3.56%"
+    tickers: [SPY, QQQ, SMH]
+    first_reports:
+      - {text: "@realDonaldTrump: One of the Policies that we are calculating at this moment is a massive increase of Tariffs on Chinese products coming into the United States of America.", tier: primary, entities: [White House]}
+      - {text: "@realDonaldTrump: the United States of America will impose a Tariff of 100% on China, over and above any Tariff that they are currently paying, starting November 1st", tier: primary, entities: [White House]}
+    coverage: []
+
+  - id: powell-doj-probe
+    date: 2026-01-12
+    category: fed_independence
+    move: "'Sell America': dollar down, gold record > $4,600"
+    tickers: [GLD, TLT, SPY]
+    first_reports:
+      - {text: "POWELL SAYS DOJ SERVED FED WITH GRAND JURY SUBPOENAS, THREATENING CRIMINAL INDICTMENT", tier: media}
+    coverage: []
+
+  - id: greenland-tariffs
+    date: 2026-01-20
+    category: tariff_threat
+    move: "S&P -2.06%, Nasdaq -2.39%, VIX +27%"
+    tickers: [SPY, QQQ, VGK]
+    first_reports:
+      - {text: "TRUMP TO IMPOSE 10% TARIFF ON 8 EUROPEAN NATIONS FROM FEB 1, RISING TO 25% JUNE 1 OVER GREENLAND", tier: media}
+    coverage: []
+
+  - id: warsh-nomination
+    date: 2026-01-30
+    category: fed_chair
+    move: "silver -26% to -31% (record), gold -9%; S&P -0.4%"
+    tickers: [SLV, GLD]
+    first_reports:
+      - {text: "TRUMP NOMINATES KEVIN WARSH AS FED CHAIR", tier: media, approx: true}
+    coverage: []
+
+  - id: iran-strikes-2026
+    date: 2026-03-02
+    category: geopolitical_shock
+    move: "Oil up to +13%; XOM/CVX +4%"
+    tickers: [USO, XLE, LMT]
+    first_reports:
+      - {text: "US AND ISRAEL LAUNCH STRIKES ON IRAN", tier: media, approx: true}
+      - {text: "IRAN CLOSES STRAIT OF HORMUZ", tier: media, approx: true}
+    coverage: []
+
+  - id: gulf-ship-attacks
+    date: 2026-03-12
+    category: oil_shock
+    move: "WTI +10% to ~$96; S&P -1.52%"
+    tickers: [USO, XLE, SPY]
+    first_reports:
+      - {text: "IRAN ATTACKS SHIPS IN PERSIAN GULF", tier: media, approx: true}
+      - {text: "IEA: LARGEST OIL SUPPLY DISRUPTION EVER", tier: media, approx: true}
+    coverage: []
+
+  - id: iran-rejects-ceasefire
+    date: 2026-03-26
+    category: geopolitical_shock
+    move: "S&P -1.74%, Nasdaq -2.38% (correction); Brent > $100"
+    tickers: [QQQ, SPY, BNO]
+    first_reports:
+      - {text: "IRAN DISMISSES US CEASEFIRE PROPOSAL", tier: media, approx: true}
+    coverage: []
+
+  - id: iran-ceasefire-2026
+    date: 2026-04-08
+    category: geopolitical_reversal
+    move: "Dow +2.85%, S&P +2.51%; Brent -13.3%"
+    tickers: [SPY, USO]
+    first_reports:
+      - {text: "TRUMP ANNOUNCES TWO-WEEK CEASEFIRE WITH IRAN", tier: media, approx: true}
+    coverage: ["OIL POSTS BIGGEST DROP SINCE APRIL 2020"]
+
+  - id: jobs-jun-2026
+    date: 2026-06-05
+    category: macro_data_surprise
+    move: "S&P -2.64% (worst of 2026), Nasdaq -4.18%"
+    tickers: [QQQ, SMH, SPY]
+    first_reports:
+      - {text: "US MAY NONFARM PAYROLLS +172K; EST. +80K", tier: media}
+    coverage: ["Nasdaq, S&P 500 suffer worst day of year as AI stocks tumble and Fed rate-hike odds rise"]
+
+  - id: fomc-jun-2026
+    date: 2026-06-17
+    category: fed_decision
+    move: "S&P -1.21%, Nasdaq -1.34%"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "FED HOLDS RATES, SIGNALS RATE HIKES INCREASINGLY LIKELY", tier: media, approx: true}
+    coverage: []
+
+  - id: fomc-jul-2026
+    date: 2026-07-29
+    category: fed_decision
+    move: "Dow ~-1,000 (-1.9%); 30y highest since 2007"
+    tickers: [SPY, DIA, TLT]
+    first_reports:
+      - {text: "FED HOLDS AT 3.5%-3.75%; HAMMACK, KASHKARI, LOGAN DISSENT IN FAVOR OF HIKE", tier: media, approx: true}
+    coverage: []
+
+  - id: treasury-buybacks
+    date: 2026-08-19
+    category: treasury_intervention
+    move: "30y -10bp; Dow +230 on the headline"
+    tickers: [TLT, SPY]
+    first_reports:
+      - {text: "TREASURY DOUBLES LONG-END BUYBACK OPERATIONS TO $4 BILLION", tier: media}
+    coverage: []
+
+  - id: fake-pause-rumor
+    date: 2025-04-07
+    category: false_headline
+    move: "S&P swung from -4.7% to +3.4% in 10 min, then reversed: the headline was FALSE"
+    tickers: [SPY, QQQ]
+    note: "Should alert, but marked UNCONFIRMED (single social source) until a primary source confirms"
+    first_reports:
+      - {text: "@DeItaone: HASSETT: TRUMP IS CONSIDERING A 90-DAY PAUSE IN TARIFFS FOR ALL COUNTRIES EXCEPT CHINA", tier: media}
+    coverage: []
+
+noise:
+  # Things that sound big or mention big names but moved nothing — must not be texted.
+  - "OpenAI DevDay 2026: live updates"
+  - "Sam Altman says he uses ChatGPT to plan his week, in new podcast interview"
+  - "OpenAI hires former Instagram executive as head of people"
+  - "NVIDIA to Present at Upcoming Investor Conferences"
+  - "Oracle to host fiscal second quarter earnings call on December 10"
+  - "Microsoft announces date for fiscal year 2026 second quarter earnings release"
+  - "3 AI stocks to buy before they soar, according to Wall Street"
+  - "Is Nvidia stock a buy right now?"
+  - "Here's why Palantir stock jumped today"
+  - "SHAREHOLDER ALERT: Pomerantz Law Firm investigates claims on behalf of investors of Super Micro Computer"
+  - "ROSEN, A TOP RANKED LAW FIRM, Encourages Intel Investors to Secure Counsel"
+  - "Apple releases iOS 26.1 with bug fixes and new wallpapers"
+  - "Google rolls out new Gemini features in Gmail for Workspace users"
+  - "Tesla Model Y now available in new Ultra Red paint"
+  - "Amazon expands same-day delivery to 12 more US cities"
+  - "Meta and Ray-Ban unveil new frame styles for smart glasses"
+  - "Analyst raises Apple price target to $260, keeps Buy rating"
+  - "Weekly market recap: stocks end mixed ahead of Fed week"
+  - "Morning briefing: what to watch in markets today"
+  - "Anthropic opens new office in Tokyo"
+  - "xAI's Grok gets new voice mode"
+  - "Microsoft and partner announce collaboration on cloud skills training in Kenya"
+  - "Nvidia GeForce driver update improves performance in new games"
+  - "OpenAI publishes new research paper on interpretability"
+  - "Fed's Bostic says the economy is in a good place, policy is well positioned"
+  - "Treasury Secretary to visit Japan next week"
+  - "White House hosts Diwali celebration"
+  - "Opinion: Why the AI bubble debate misses the point"
+  - "Podcast: The future of AI agents with industry leaders"
+  - "Webinar: Navigating tariffs in 2026"
+  - "Fed's Barkin: still watching the data closely"
+  - "Treasury announces regular weekly bill auction sizes"
+  - "BLS to release September CPI on October 15"
+  - "President Trump to speak at a rally in Ohio tonight"
+  - "@realDonaldTrump: Congratulations to the great people of Ohio on a fantastic Election Night!"
+  - "Oil edges higher in quiet trading ahead of inventory data"
+  - "Gold steady as investors await Fed minutes"
+  - "European shares open flat"
+  - "Asian markets mixed in thin holiday trading"
+  - "Fed's Beige Book: economic activity little changed"
+  # --- routine wire/press-release and media traffic (generalization check)
+  - {text: "Acme Industrial Corp announces $50 million share repurchase program", tier: wire}
+  - {text: "Beta Pharma to present at the Jefferies Healthcare Conference", tier: wire}
+  - {text: "Gamma Software announces partnership with regional bank to modernize payments", tier: wire}
+  - {text: "Delta Foods declares quarterly dividend of $0.25 per share", tier: wire}
+  - {text: "Epsilon Energy reports third quarter 2026 results", tier: wire}
+  - {text: "Zeta Bio announces pricing of $75 million public offering", tier: wire}
+  - {text: "Eta Mining completes acquisition of exploration assets in Nevada", tier: wire}
+  - {text: "Theta Retail opens 25 new stores across the Midwest", tier: wire}
+  - {text: "Iota Health appoints new chief financial officer", tier: wire}
+  - {text: "Kappa Robotics unveils new warehouse robot at trade show", tier: wire}
+  - {text: "Lambda Cloud launches AI assistant for small business accounting", tier: wire}
+  - {text: "Microsoft announces new Copilot features for Teams users", tier: media}
+  - {text: "Google expands Gemini to 40 new languages", tier: media}
+  - {text: "Amazon Web Services opens new region in Mexico", tier: media}
+  - {text: "Apple Watch gets new health feature in latest update", tier: media}
+  - {text: "Nvidia CEO Jensen Huang to deliver keynote at Computex", tier: media}
+  - {text: "Tesla opens new Supercharger station in Texas", tier: media}
+  - {text: "Meta's Threads reaches 400 million monthly users", tier: media}
+  - {text: "Oracle names new head of cloud sales for Europe", tier: media}
+  - {text: "Salesforce hosts Dreamforce conference in San Francisco", tier: media}
+  - {text: "Stocks edge higher as investors await earnings", tier: media}
+  - {text: "Dow rises 50 points in quiet session", tier: media}
+  - {text: "Oil little changed as traders weigh demand outlook", tier: media}
+  - {text: "Treasury yields steady ahead of auction", tier: media}
+  - {text: "Fed's Waller says he will be watching inflation data", tier: media}
+  - {text: "Powell to speak at economic conference next week", tier: media}
+  - {text: "ECB policymakers see no rush to change rates", tier: media}
+  - {text: "China's factory activity edges up in September", tier: media}
+  - {text: "Japan's Nikkei closes slightly lower", tier: media}
+  - {text: "Bitcoin trades near $100,000 as volatility fades", tier: media}
+  - {text: "Analysts expect strong holiday sales season", tier: media}
+  - {text: "Five things to know before the stock market opens", tier: media}
+  - {text: "Why investors are watching Nvidia this week", tier: media}
+  - {text: "The best dividend stocks for retirees", tier: media}
+  - {text: "Goldman raises S&P 500 year-end target", tier: media}
+  - {text: "Morgan Stanley upgrades Intuit to overweight", tier: media}
+  - {text: "OpenAI adds new voices to ChatGPT voice mode", tier: media}
+  - {text: "Anthropic hires former Google executive to lead partnerships", tier: media}
+  - {text: "xAI raises new funding round", tier: media}
+  - {text: "@elonmusk: Starship launch window opens next week", tier: media}
+  - {text: "@realDonaldTrump: Happy Thanksgiving to all, including the Radical Left Lunatics!", tier: primary, entities: [White House]}
+  - {text: "White House releases statement on national park week", tier: primary, entities: [White House]}
+  - {text: "Federal Reserve Board announces approval of application by a small bank holding company", tier: primary, entities: [Federal Reserve]}
+  - {text: "Treasury announces sanctions on two individuals linked to cybercrime", tier: primary, entities: [US Treasury]}
+  - {text: "SEC charges investment adviser with misleading clients", tier: primary}
+

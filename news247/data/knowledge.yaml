@@ -1,0 +1,809 @@
+# Built-in market knowledge used by the scorer and the price monitor.
+#
+# Extend it from config.yaml (scoring.companies / scoring.keywords / scoring.themes,
+# market.groups) rather than editing this file, so upgrades don't clobber your changes.
+#
+# Matching rules
+#   aliases : case-insensitive, whole-word ("nvidia" matches "Nvidia's", not "nvidiaX")
+#   cased   : case-sensitive, whole-word (for names that are also common words: "Meta", "Apple")
+#   exposure: tickers that usually move when a *private* company makes news
+#   '*'     : in keywords/theme terms, matches any word ending ("acqui*" -> acquire, acquisition)
+
+default_watchlist: [AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, AVGO, AMD, ORCL, CRM, NOW, ADBE, PLTR, QQQ, SPY]
+
+companies:
+  # ---- AI labs (private) — their announcements move public stocks
+  - {name: OpenAI, aliases: [openai, chatgpt, sam altman, gpt-5, gpt-6, gpt-5.5, sora, codex, stargate, o3, o4], exposure: [MSFT, NVDA, ORCL, AMD, AVGO, CRWV]}
+  - {name: Anthropic, aliases: [anthropic, claude, dario amodei, claude code, claude cowork], exposure: [AMZN, GOOGL]}
+  - {name: xAI, aliases: [xai, grok, x.ai], exposure: [TSLA, NVDA]}
+  - {name: Google DeepMind, aliases: [deepmind, gemini, google deepmind], exposure: [GOOGL]}
+  - {name: Mistral, aliases: [mistral ai], exposure: [ASML]}
+  - {name: DeepSeek, aliases: [deepseek], exposure: [NVDA, AVGO, TSM, MU]}
+  - {name: Perplexity, aliases: [perplexity ai, perplexity], exposure: [GOOGL]}
+  - {name: SpaceX, aliases: [spacex, starlink, starship], exposure: [TSLA, RKLB, ASTS]}
+  - {name: Databricks, aliases: [databricks], exposure: [SNOW, MDB]}
+  - {name: Moonshot AI, aliases: [moonshot ai, kimi k2, kimi], exposure: [NVDA]}
+  - {name: Alibaba Qwen, aliases: [qwen], exposure: [BABA, NVDA]}
+
+  # ---- Mega caps
+  - {name: Apple, ticker: AAPL, aliases: [iphone, tim cook, apple inc, app store, vision pro, apple intelligence], cased: [Apple]}
+  - {name: Microsoft, ticker: MSFT, aliases: [microsoft, azure, satya nadella, copilot, windows, github, linkedin, xbox]}
+  - {name: NVIDIA, ticker: NVDA, aliases: [nvidia, jensen huang, cuda, blackwell, rubin gpu, geforce, h20, h200, b200, gb200]}
+  - {name: Alphabet, ticker: GOOGL, aliases: [alphabet, google, youtube, sundar pichai, waymo, android, chrome, tpu]}
+  - {name: Amazon, ticker: AMZN, aliases: [amazon, aws, andy jassy, prime video, alexa, kuiper, trainium]}
+  - {name: Meta Platforms, ticker: META, aliases: [meta platforms, facebook, instagram, whatsapp, zuckerberg, threads, llama, oculus], cased: [Meta]}
+  - {name: Tesla, ticker: TSLA, aliases: [tesla, elon musk, cybertruck, robotaxi, optimus, full self-driving, fsd]}
+  - {name: Broadcom, ticker: AVGO, aliases: [broadcom, hock tan, vmware]}
+  - {name: Berkshire Hathaway, ticker: BRK-B, aliases: [berkshire hathaway, warren buffett, greg abel]}
+  - {name: Netflix, ticker: NFLX, aliases: [netflix]}
+
+  # ---- Semis / AI infrastructure
+  - {name: AMD, ticker: AMD, aliases: [advanced micro devices, lisa su, instinct mi], cased: [AMD]}
+  - {name: TSMC, ticker: TSM, aliases: [tsmc, taiwan semiconductor]}
+  - {name: Micron, ticker: MU, aliases: [micron, hbm]}
+  - {name: Intel, ticker: INTC, aliases: [intel, lip-bu tan]}
+  - {name: Qualcomm, ticker: QCOM, aliases: [qualcomm, snapdragon]}
+  - {name: Arm Holdings, ticker: ARM, aliases: [arm holdings], cased: [ARM, Arm]}
+  - {name: ASML, ticker: ASML, aliases: [asml]}
+  - {name: Marvell, ticker: MRVL, aliases: [marvell]}
+  - {name: Super Micro, ticker: SMCI, aliases: [super micro, supermicro]}
+  - {name: Oracle, ticker: ORCL, aliases: [oracle, larry ellison, oci]}
+  - {name: CoreWeave, ticker: CRWV, aliases: [coreweave]}
+  - {name: Nebius, ticker: NBIS, aliases: [nebius]}
+  - {name: Vertiv, ticker: VRT, aliases: [vertiv]}
+  - {name: Arista Networks, ticker: ANET, aliases: [arista networks, arista]}
+  - {name: Dell, ticker: DELL, aliases: [dell technologies, michael dell], cased: [Dell]}
+  - {name: Constellation Energy, ticker: CEG, aliases: [constellation energy]}
+  - {name: Vistra, ticker: VST, aliases: [vistra]}
+  - {name: Palantir, ticker: PLTR, aliases: [palantir, alex karp]}
+
+  # ---- Software (the basket most exposed to "AI eats software" announcements)
+  - {name: Salesforce, ticker: CRM, aliases: [salesforce, marc benioff, slack, agentforce, tableau]}
+  - {name: ServiceNow, ticker: NOW, aliases: [servicenow]}
+  - {name: Adobe, ticker: ADBE, aliases: [adobe, photoshop, firefly, figma]}
+  - {name: Intuit, ticker: INTU, aliases: [intuit, turbotax, quickbooks]}
+  - {name: Workday, ticker: WDAY, aliases: [workday]}
+  - {name: Atlassian, ticker: TEAM, aliases: [atlassian, jira, confluence]}
+  - {name: HubSpot, ticker: HUBS, aliases: [hubspot]}
+  - {name: Datadog, ticker: DDOG, aliases: [datadog]}
+  - {name: Snowflake, ticker: SNOW, aliases: [snowflake]}
+  - {name: MongoDB, ticker: MDB, aliases: [mongodb]}
+  - {name: SAP, ticker: SAP, aliases: [sap se], cased: [SAP]}
+  - {name: Palo Alto Networks, ticker: PANW, aliases: [palo alto networks]}
+  - {name: CrowdStrike, ticker: CRWD, aliases: [crowdstrike]}
+  - {name: Zscaler, ticker: ZS, aliases: [zscaler]}
+  - {name: Thomson Reuters, ticker: TRI, aliases: [thomson reuters, westlaw]}
+  - {name: RELX, ticker: RELX, aliases: [relx, lexisnexis]}
+  - {name: Duolingo, ticker: DUOL, aliases: [duolingo]}
+  - {name: Shopify, ticker: SHOP, aliases: [shopify]}
+  - {name: Uber, ticker: UBER, aliases: [uber]}
+  - {name: Gartner, ticker: IT, aliases: [gartner]}
+  - {name: Monday.com, ticker: MNDY, aliases: [monday.com]}
+  - {name: DocuSign, ticker: DOCU, aliases: [docusign]}
+  - {name: Unity, ticker: U, aliases: [unity software]}
+  - {name: Chegg, ticker: CHGG, aliases: [chegg]}
+
+  # ---- Financials / crypto / other frequently market-moving names
+  - {name: JPMorgan, ticker: JPM, aliases: [jpmorgan, jp morgan, jamie dimon]}
+  - {name: Goldman Sachs, ticker: GS, aliases: [goldman sachs]}
+  - {name: Bank of America, ticker: BAC, aliases: [bank of america]}
+  - {name: Coinbase, ticker: COIN, aliases: [coinbase]}
+  - {name: Strategy, ticker: MSTR, aliases: [microstrategy, michael saylor]}
+  - {name: Robinhood, ticker: HOOD, aliases: [robinhood]}
+  - {name: UnitedHealth, ticker: UNH, aliases: [unitedhealth, optum]}
+  - {name: Eli Lilly, ticker: LLY, aliases: [eli lilly, mounjaro, zepbound, orforglipron]}
+  - {name: Novo Nordisk, ticker: NVO, aliases: [novo nordisk, ozempic, wegovy]}
+  - {name: Boeing, ticker: BA, aliases: [boeing]}
+  - {name: Walmart, ticker: WMT, aliases: [walmart]}
+  - {name: Disney, ticker: DIS, aliases: [disney]}
+  - {name: Alibaba, ticker: BABA, aliases: [alibaba]}
+  - {name: Rocket Lab, ticker: RKLB, aliases: [rocket lab]}
+
+  # ---- Macro actors (no ticker: they move the whole market)
+  - {name: Federal Reserve, aliases: [federal reserve, fomc, powell, fed chair, fed governor, warsh], cased: [Fed], exposure: [SPY, QQQ, TLT], authority: true}
+  - {name: White House, aliases: [white house, president trump, trump, executive order, truth social, realdonaldtrump], exposure: [SPY, QQQ], authority: true}
+  - {name: US Treasury, aliases: [treasury secretary, bessent, us treasury, u.s. treasury, treasury department], exposure: [TLT, SPY], authority: true}
+  - {name: SEC, aliases: [securities and exchange commission, sec chair], cased: [SEC], exposure: []}
+  - {name: Bureau of Labor Statistics, aliases: [bls, bureau of labor statistics, nonfarm payrolls, payrolls], exposure: [SPY, QQQ, TLT]}
+  - {name: FDIC, aliases: [fdic, federal deposit insurance], exposure: [KRE, XLF], authority: true}
+  - {name: OPEC, aliases: [opec, opec+, saudi aramco, aramco], exposure: [USO, XOM, CVX], authority: true}
+  - {name: Credit Suisse, aliases: [credit suisse], exposure: [UBS, XLF]}
+  - {name: IEA, aliases: [iea, international energy agency], exposure: [USO, XLE]}
+  - {name: Iran, aliases: [iran, tehran, khamenei, irgc], exposure: [USO, XLE, LMT]}
+  - {name: Israel, aliases: [israel, idf, netanyahu], exposure: [USO, XLE, LMT]}
+  - {name: Russia, aliases: [russia, kremlin, putin, moscow], exposure: [USO, XLE, LMT]}
+  - {name: Ukraine, aliases: [ukraine, kyiv, zelensky], exposure: [LMT, RTX]}
+  - {name: SVB, aliases: [silicon valley bank, svb financial, svb], exposure: [KRE, XLF]}
+  - {name: Signature Bank, aliases: [signature bank], exposure: [KRE]}
+  - {name: First Republic, aliases: [first republic], exposure: [KRE]}
+  - {name: China, aliases: [beijing, xi jinping, china's commerce ministry, mofcom, pboc, chinese government], exposure: [FXI, NVDA, AAPL], authority: true}
+  - {name: European Central Bank, aliases: [european central bank, lagarde], cased: [ECB], exposure: [FXE, SPY], authority: true}
+  - {name: Bank of Japan, aliases: [bank of japan, boj, ueda], exposure: [FXY, SPY], authority: true}
+  - {name: Bank of England, aliases: [bank of england, boe], exposure: [FXB]}
+
+# Event keywords and how much they add to the impact score (0-100 scale).
+keywords:
+  # corporate catastrophes / extremes
+  bankrupt*: 45
+  chapter 11: 45
+  going concern: 35
+  trading halt*: 35
+  halted: 25
+  delist*: 30
+  fraud: 30
+  accounting irregularit*: 35
+  restat*: 20
+  sec charges: 20
+  misleading investors: 15
+  indicted: 30
+  data breach: 20
+  cyberattack: 22
+  outage: 15
+  recall*: 15
+  explosion: 15
+  # deals
+  to acquire: 32
+  acqui*: 22
+  merger: 25
+  merge with: 25
+  buyout: 25
+  takeover: 25
+  tender offer: 28
+  definitive agreement: 25
+  take private: 25
+  spin off: 15
+  spinoff: 15
+  strategic alternatives: 25
+  # results / guidance
+  raises guidance: 30
+  raises outlook: 28
+  cuts guidance: 35
+  lowers guidance: 35
+  withdraws guidance: 35
+  profit warning: 35
+  preliminary results: 20
+  guidance: 12
+  beats estimates: 15
+  misses estimates: 18
+  record revenue: 12
+  earnings: 6
+  quarterly results: 8
+  # leadership
+  ceo resign*: 30
+  steps down: 22
+  ceo to step down: 30
+  fired: 15
+  ousted: 25
+  appoints ceo: 18
+  # pharma
+  fda approv*: 30
+  fda reject*: 35
+  complete response letter: 32
+  clinical hold: 32
+  topline: 15
+  phase 3: 12
+  # capital actions
+  stock split: 18
+  buyback: 12
+  share repurchase: 12
+  secondary offering: 18
+  dilution: 12
+  special dividend: 15
+  # analyst
+  downgrade*: 12
+  upgrade*: 10
+  price target: 5
+  # regulation / legal
+  antitrust: 22
+  breakup: 22
+  break up: 18
+  ban: 12
+  bans: 12
+  banned: 14
+  banning: 12
+  probe: 15
+  investigation: 12
+  subpoena: 20
+  lawsuit: 8
+  settlement: 10
+  fined: 8
+  fines: 6
+  export control*: 30
+  export ban: 30
+  entity list: 25
+  sanction*: 18
+  tariff*: 25
+  executive order: 22
+  # macro
+  rate cut: 30
+  rate hike: 30
+  cuts rates: 30
+  raises rates: 30
+  holds rates: 22
+  emergency: 15
+  fomc: 15
+  nonfarm payrolls: 22
+  jobs report: 20
+  unemployment rate: 15
+  cpi: 18
+  consumer price index: 18
+  pce: 12
+  gdp: 12
+  inflation: 6
+  recession: 12
+  debt default: 25
+  defaults on: 20
+  delay*: 12
+  postpone*: 10
+  government shutdown: 15
+  # geopolitics
+  invasion: 25
+  invades: 25
+  missile*: 15
+  airstrike*: 15
+  ceasefire: 15
+  war: 10
+  # product / announcements (light — themes add the real weight)
+  launch*: 8
+  introduc*: 8
+  unveil*: 10
+  announc*: 4
+  releas*: 4
+  available today: 8
+  general availability: 8
+  partnership: 10
+  partners with: 10
+  strategic partnership: 15
+  agreement: 6
+  billion: 8
+  trillion: 10
+  gigawatt*: 10
+  open-source*: 6
+  open source: 6
+  open-weight*: 8
+  # frontier model generations (big launches move AI-exposed stocks)
+  gpt-5*: 15
+  gpt-6*: 18
+  claude opus*: 15
+  claude 5*: 15
+  gemini 3*: 15
+  gemini ultra: 15
+  grok 5*: 12
+  llama 5*: 12
+  deepseek r2: 15
+  deepseek v4: 15
+  agi: 10
+  superintelligence: 8
+  # market-move language used by bulletin feeds
+  plunge*: 10
+  tumble*: 10
+  crash*: 12
+  sell-off: 10
+  selloff: 10
+  soar*: 8
+  surge*: 6
+  circuit breaker: 40
+  # scoops: a newspaper reporting non-public information moves stocks before any press release
+  exclusive: 10
+  scoop: 8
+  people familiar: 10
+  according to people: 8
+  sources say: 8
+  reportedly: 6
+  told investors: 12
+  investor presentation: 10
+  ft says: 10
+  ft reports: 10
+  wsj says: 10
+  wsj reports: 10
+  bloomberg reports: 10
+  reuters reports: 8
+  the information reports: 10
+  # money numbers that reset expectations
+  annualized revenue: 10
+  run-rate: 8
+  run rate: 8
+  valuation: 6
+  lower than: 8
+  below expectations: 14
+  falls short: 12
+  missed targets: 18
+  misses targets: 18
+
+  # ---- research-derived (docs/research/): actionability — an authority DOING something now
+  effective immediately: 20
+  hereby: 12
+  authorized: 8
+  "ordered to": 10
+  signs order: 15
+  signs executive order: 22
+  # ---- reversals produced the biggest up-days (Apr 9 2025 pause, Geneva truce, ceasefires)
+  pause: 12
+  90-day: 15
+  90 day: 15
+  truce: 20
+  slash tariffs: 25
+  cut tariffs: 20
+  roll back: 12
+  rolls back: 12
+  framework: 6
+  deal reached: 15
+  trade deal: 18
+  "won't impose": 15
+  will not impose: 15
+  great time to buy: 30
+  # ---- tariffs / trade specifics
+  reciprocal: 15
+  baseline tariff: 20
+  all imports: 15
+  all us goods: 20
+  over and above: 12
+  retaliat*: 18
+  countermeasures: 18
+  "section 301": 15
+  "section 232": 15
+  "section 122": 15
+  ieepa: 15
+  # ---- central bank
+  intermeeting: 30
+  emergency rate cut: 40
+  emergency move: 25
+  basis point*: 12
+  basis-point: 12
+  half point: 15
+  quarter point: 8
+  to zero: 15
+  unlimited: 12
+  quantitative easing: 20
+  " qe ": 15
+  bond buying: 15
+  dot plot: 12
+  dissent*: 10
+  signals * cuts: 15
+  signals * hikes: 18
+  hikes increasingly likely: 20
+  "first hike since": 15
+  "first cut since": 15
+  sustained period: 10
+  fire powell: 35
+  firing powell: 35
+  fire * fed chair: 35
+  grand jury: 25
+  criminal indictment: 25
+  fed independence: 20
+  nominates * fed chair: 20
+  fed chair: 8
+  # ---- data releases
+  "y/y": 4
+  "m/m": 4
+  core cpi: 15
+  hotter than expected: 20
+  cooler than expected: 20
+  "above estimates": 15
+  "below estimates": 15
+  far above: 10
+  far below: 10
+  revised down: 15
+  sahm rule: 20
+  40-year high: 15
+  # ---- systemic / liquidity
+  receivership: 35
+  receiver: 20
+  closed by regulators: 35
+  bank run: 30
+  deposit outflows: 25
+  systemic risk: 30
+  backstop: 15
+  loss on securities: 20
+  capital raise: 12
+  liquidity: 8
+  repo: 8
+  margin call*: 20
+  carry trade: 20
+  unwind: 10
+  limit down: 40
+  limit up: 30
+  flash crash: 30
+  halts trading: 30
+  shares halted: 20
+  downgrades us: 30
+  downgrades u.s: 30
+  "'aaa'": 15
+  yield curve inverts: 22
+  yield curve: 8
+  bear market: 15
+  worst day since: 15
+  best day since: 15
+  # ---- geopolitics / energy
+  strait of hormuz: 30
+  hormuz: 20
+  launches strikes: 25
+  strikes on: 12
+  tankers: 10
+  supply disruption: 20
+  price war: 22
+  oil surges: 15
+  oil plunges: 15
+  oil prices turn negative: 30
+  declares war: 30
+  nuclear: 6
+  ceasefire proposal: 15
+  # ---- pandemic / health emergencies
+  pandemic: 25
+  national emergency: 25
+  suspends travel: 25
+  travel ban: 20
+  lockdown*: 18
+  variant of concern: 25
+  effective against: 8
+  "90% effective": 25
+  interim analysis: 15
+  # ---- elections / politics
+  wins presidency: 30
+  wins election: 20
+  votes to leave: 30
+  recession: 12
+  period of transition: 15
+  doesn't rule out: 8
+  # ---- currency
+  currency manipulator: 30
+  weakens past: 15
+  yen: 6
+  # ---- companies: distress & results
+  suspends * outlook: 35
+  suspends guidance: 35
+  suspends dividend: 30
+  cuts * outlook: 30
+  cuts * forecast: 30
+  lowers * forecast: 28
+  raises * forecast: 22
+  revenue outlook: 10
+  financial results: 10
+  quarter results: 8
+  results for * quarter: 8
+  cost reduction: 10
+  job cuts: 10
+  auditor resign*: 35
+  accounting firm resign*: 35
+  auditor * resigned: 35
+  steps down: 22
+  "short seller": 20
+  "short report": 20
+  misses * targets: 18
+  remaining performance obligations: 15
+  # ---- tech shocks
+  global outage: 30
+  global it outage: 30
+  grounds flights: 20
+  wrong answer: 15
+  flub*: 12
+  searches declined: 22
+  stall*: 10
+  pulls out: 15
+  in talks: 8
+  "will not ipo": 20
+  slow down: 8
+  leak*: 8
+  payrolls: 15
+  adjusting * policy: 15
+  policy stance: 8
+  billions: 8
+  hike*: 8
+
+# Phrases that make an item LESS likely to be market-moving (subtracted from score).
+penalties:
+  stocks to buy: 35
+  should you buy: 35
+  should you: 20
+  here's why: 25
+  what to know: 15
+  things to know: 15
+  is it time to: 25
+  price prediction: 35
+  motley fool: 35
+  top 10: 15
+  top 5: 15
+  best stocks: 30
+  podcast: 25
+  webinar: 30
+  to host: 20
+  to present at: 30
+  to participate in: 30
+  will report: 25
+  to report: 15
+  conference call: 25
+  to announce: 10
+  announces date: 40
+  date for: 15
+  release date: 20
+  earnings release date: 40
+  to release * results: 30
+  investor day: 10
+  annual meeting: 25
+  class action: 40
+  shareholder alert: 45
+  investors who lost: 45
+  lead plaintiff: 45
+  law firm: 30
+  rosen law: 45
+  pomerantz: 45
+  levi & korsinsky: 45
+  bragar eagel: 45
+  securities fraud lawsuit: 40
+  reminds investors: 45
+  sponsored: 30
+  opinion: 20
+  analysis: 5
+  recap: 15
+  weekly: 15
+  roundup: 15
+  morning briefing: 15
+
+# Whole-text urgency markers (wires and bulletin feeds use them for real breaking news).
+urgency: ['^breaking\b', '^just in\b', '^flash\b', '^alert\b', '^\*', '^urgent\b', '\bbreaking:']
+
+# Themes: a theme fires when EVERY group in `all` has at least one hit. Matching runs over
+# the item text plus the names of entities found in it (so an OpenAI blog post titled
+# "Introducing X" still counts as an OpenAI announcement).
+themes:
+  ai_lab_launch:
+    description: A frontier AI lab launched something
+    all:
+      - [openai, anthropic, google deepmind, deepmind, gemini, xai, grok, meta ai, mistral, deepseek, perplexity, qwen, moonshot ai, kimi]
+      - [launch*, introduc*, unveil*, releas*, available today, now available, announc*, rolling out, debut*, preview]
+    weight: 15
+    direction: mixed
+  ai_disrupts_software:
+    description: AI product aimed at a software / services category ("SaaSpocalypse" risk)
+    all:
+      - [openai, anthropic, claude, chatgpt, google deepmind, gemini, xai, grok, meta ai, perplexity, mistral, deepseek]
+      - [launch*, introduc*, unveil*, releas*, available today, now available, rolling out, announc*, debut*, leak*, touts, reveals, how *, plugins for, preview]
+      - [agent*, plugin*, plug-ins, cowork, enterprise, coding, legal, law, financ*, accounting, tax, crm, sales, marketing, customer service, customer support, design, spreadsheet*, excel, presentation*, security, cybersecurity, cyber*, vulnerabilit*, browser, workspace, office, hr, recruiting, analytics, data, education, tutoring, translation, search, shopping, ads, advertising, video, healthcare, cobol, mainframe, modernize, contract*, compliance, insurance, wealth, game*, gaming, world model, interactive worlds, it services, consulting]
+    weight: 20
+    direction: down
+    tickers: [CRM, NOW, ADBE, INTU, WDAY, TEAM, HUBS, MNDY, DOCU, TRI, RELX, IT, DUOL, CHGG, IGV]
+  ai_disrupts_search:
+    description: AI search / browser / shopping launch that threatens Google's core business
+    all:
+      - [openai, chatgpt, anthropic, perplexity, xai, grok, meta ai, apple, safari, ai]
+      - [search, searches, browser, ads, advertising, shopping, checkout]
+      - [launch*, introduc*, unveil*, releas*, rolling out, announc*, available, declin*, drop*, fall*, first time, turn to, shift*]
+    weight: 15
+    direction: down
+    tickers: [GOOGL]
+  ai_lab_financials:
+    description: AI-lab money news (revenue, valuation, funding, spending) — re-prices the whole AI trade
+    all:
+      - [openai, anthropic, xai, mistral, perplexity, chatgpt, sam altman, stargate, safe superintelligence, thinking machines]
+      - [revenue, run-rate, run rate, annualized, valuation, funding, raises, raising, ipo, losses, loss, burn, cash burn, investors, investor presentation, profit, profitable, targets, forecast*, projections, spending, compute commitment*, scale back, scales back, cuts, delays, bankrupt*, debt, bond*, financing, cost*, invest*, stall*, halts, pulls back]
+    weight: 28
+    direction: mixed
+    tickers: [NVDA, ORCL, CRWV, AMD, AVGO, MSFT, SMCI, NBIS, SMH]
+  ai_compute_deal:
+    description: Giant AI compute / data-center deal (usually bullish for infra names)
+    all:
+      - [data center*, data centre*, datacenter*, gigawatt*, compute, gpus, accelerators, chips, capex, capital expenditure*, stargate, supercomputer, ai infrastructure, cloud contract, cloud deal, remaining performance obligations]
+      - [deal, agreement, partnership, partners with, collaboration, invest*, billion, trillion, contract, commit*, build*, order*, sign*, deploy*]
+    weight: 15
+    direction: up
+    tickers: [NVDA, AMD, AVGO, ORCL, MU, TSM, VRT, ANET, CRWV, CEG, SMH]
+  frontier_model_release:
+    description: New frontier AI model (in 2026 even "routine" Claude/GPT releases hit software stocks)
+    all:
+      - [claude, gpt-*, gpt, gemini, grok, llama, deepseek, qwen, mythos, sonnet, opus, o3, o4, o5]
+      - [introduc*, launch*, releas*, unveil*, announc*, debut*, available, leak*, preview]
+    weight: 12
+    direction: down
+    tickers: [IGV, CRM, NOW, ADBE, INTU]
+  fed_independence:
+    description: The President attacks or moves against the Fed chair (dollar, gold, long yields react first)
+    all:
+      - [trump, president, white house, realdonaldtrump, doj, justice department]
+      - [powell, fed chair, federal reserve, the fed, mr. too late, interest rates, fed governor]
+      - [fire, firing, fired, remove*, loser, too late, subpoena*, grand jury, investigation, indict*, lower, cut rates, now]
+    weight: 20
+    direction: down
+    tickers: [SPY, TLT, GLD]
+  ai_tool_disrupts_industry:
+    description: Any AI app/agent aimed at a fee- or seat-based industry (insurance brokers, wealth managers, legal...)
+    all:
+      - [ai agent, ai agents, ai tool, ai app, chatgpt app, agentic, ai-powered, ai tax, ai planning, ai assistant]
+      - [launch*, unveil*, introduc*, releas*, debut*, roll*]
+      - [insurance, insurer*, broker*, tax, wealth, advisor*, legal, lawyer*, accounting, real estate, travel, recruiting, staffing, education, consulting, customer service, marketing, design]
+    weight: 14
+    direction: down
+  ai_capex_retreat:
+    description: AI build-out pulled back (financing withdrawn, projects cancelled/delayed) — hits AI infrastructure
+    all:
+      - [data center*, data centre*, datacenter*, ai infrastructure, capex, compute, gpu*, stargate, cloud]
+      - [pulls out, pull out, cancel*, scrap*, delay*, halt*, pause*, stall*, scale back, scales back, cuts back, walks away, abandon*, bows out, funding stalls]
+    weight: 25
+    direction: down
+    tickers: [ORCL, CRWV, NVDA, VRT, NBIS, CEG]
+  chip_competition:
+    description: Custom AI chips winning deals from Nvidia (TPU, Trainium, in-house ASICs)
+    all:
+      - [tpu*, trainium, custom chip*, asic*, in-house chip*, ai accelerator*]
+      - [deal, talks, spend*, billion*, order*, switch*, adopt*, agreement]
+    weight: 22
+    direction: mixed
+    tickers: [NVDA, AMD, GOOGL, AVGO]
+  ai_lab_deal:
+    description: Commercial deal with an AI lab (small partners can double; suppliers re-rate)
+    all:
+      - [openai, anthropic, xai, google deepmind, mistral]
+      - [partnership, deal, agreement, licensing, license, collaboration, contract, partner*]
+    weight: 15
+    direction: up
+  ai_slowdown:
+    description: AI leaders calling to slow development / delaying IPOs — hits AI hardware
+    all:
+      - [anthropic, openai, altman, amodei, ai labs, frontier ai, ai development, ai leaders, industry chiefs]
+      - [slow down, slowing, slowdown, should slow, pause, moratorium, no ipo, not ipo, will not ipo]
+    weight: 25
+    direction: down
+    tickers: [NVDA, AMD, MU, LRCX, AMAT, SMH]
+  ai_product_failure:
+    description: Embarrassing AI failure / outage at a major platform
+    all:
+      - [chatbot, bard, gemini, chatgpt, ai model, ai assistant, copilot, grok, crowdstrike, windows]
+      - [wrong answer, error, flub*, mistake, outage, crash*, pulled, defect, bug]
+    weight: 20
+    direction: down
+  megacap_earnings:
+    description: Quarterly results from a mega-cap (each can move the whole index)
+    all:
+      - [financial results, quarterly results, quarter results, results for, reports first, reports second, reports third, reports fourth, fiscal 20*, q1, q2, q3, q4, earnings]
+      - [nvidia, microsoft, apple, alphabet, google, amazon, meta, tesla, broadcom, oracle, netflix, amd, palantir, salesforce, coreweave, berkshire]
+    weight: 35
+    direction: mixed
+  guidance_shock:
+    description: Company cuts/suspends guidance or dividend, CEO exits suddenly, auditor quits
+    all:
+      - [cuts * outlook, cuts * forecast, lowers * forecast, lowers guidance, cuts guidance, suspends * outlook, suspends guidance, suspends dividend, withdraws guidance, profit warning, auditor resign*, auditor * resigned, accounting firm resign*, steps down, ceo exit*, ousted, delays 10-k, below the, short of]
+    weight: 12
+    direction: down
+  trial_readout:
+    description: Pivotal drug-trial readout (beats or misses can move 15-25%)
+    all:
+      - [phase 3, phase iii, topline, pivotal, trial, study, interim analysis, weight loss]
+      - [miss*, below, fail*, disappoint*, short of, beat*, exceed*, positive, met, achieved, success, effective]
+    weight: 18
+    direction: mixed
+  president_targets_company:
+    description: The president threatens a specific company (contracts, subsidies, tariffs, probes)
+    all:
+      - [trump, president, realdonaldtrump, white house]
+      - [terminate, cancel*, revoke*, investigate, subsidies, contracts, tariff on, ban*, punish*, retaliat*]
+      - [elon, musk, tesla, spacex, apple, iphone, amazon, google, meta, nvidia, microsoft, intel, boeing, harley, mattel, walmart]
+    weight: 25
+    direction: down
+  systemic_stress:
+    description: Banking/liquidity/market-structure stress (SVB, Credit Suisse, circuit breakers, carry unwinds)
+    all:
+      - [bank*, deposits, fdic, receivership, receiver, liquidity, funding, repo, carry trade, margin, circuit breaker, limit down, nikkei, vix, credit suisse, svb, yield curve, sovereign, aaa, aa+]
+      - [close*, collapse*, run, fail*, seiz*, halt*, plunge*, crash*, unwind*, inverts, downgrade*, absolutely not, loss, losses, refuses, rescue, backstop, record, systemic]
+    weight: 28
+    direction: down
+    tickers: [KRE, XLF, SPY, TLT]
+  pandemic_shock:
+    description: Pandemic / public-health shock or breakthrough
+    all:
+      - [coronavirus, covid, pandemic, outbreak, virus, variant, vaccine, who]
+      - [declares, lockdown*, travel, emergency, variant of concern, effective, cases jump, spreads, interim analysis]
+    weight: 20
+    direction: mixed
+    tickers: [SPY, JETS, PFE]
+  election_shock:
+    description: Election or referendum outcome
+    all:
+      - [wins presidency, wins election, election, referendum, votes to leave, projects, race call*, "ap:"]
+      - [trump, harris, biden, leave, president, senate, house]
+    weight: 15
+    direction: mixed
+    tickers: [SPY, IWM]
+  oil_supply_shock:
+    description: Oil supply shock / price war / chokepoint (moves oil 7-25% within hours)
+    all:
+      - [oil, crude, opec, hormuz, tankers, brent, wti, saudi, aramco, shipping]
+      - [price war, slashes, surge*, plunge*, negative, closes, blockade, attack*, strike*, disruption, supply, cut*]
+    weight: 15
+    direction: mixed
+    tickers: [USO, XLE, XOM, CVX]
+  chip_export_controls:
+    description: Chip export restrictions / China retaliation
+    all:
+      - [export control*, export ban, export restriction*, export licen*, entity list, chip ban, rare earth*, antitrust probe, investigation, ban, bans, banned, banning, restrict*]
+      - [china, chinese, beijing, nvidia, amd, chips, semiconductor*, h20, h200, gpu*]
+    weight: 18
+    direction: down
+    tickers: [NVDA, AMD, AVGO, TSM, ASML, MU, SMH]
+  cheap_frontier_model:
+    description: Cheap / open-weight frontier model (DeepSeek-style capex scare)
+    all:
+      - [deepseek, qwen, kimi, moonshot ai, minimax, zhipu, open-weight*, open-source model, open weights]
+      - [releas*, launch*, introduc*, unveil*, beats, outperforms, rivals, matches, cheaper, fraction of the cost]
+    weight: 15
+    direction: down
+    tickers: [NVDA, AVGO, TSM, MU, VRT, CEG, SMH]
+  fed_policy:
+    description: Federal Reserve policy decision / commentary
+    all:
+      - [federal reserve, fomc, powell, fed chair, fed governor, the fed, fed's, fed, warsh, mr. too late]
+      - [rate*, cut*, hike*, hold*, decision, statement, minutes, balance sheet, emergency, independence, fire, fired, remove*, basis point*, half point, quarter point, qe, bond buying, dot plot, dissent*, subpoena*, grand jury, patient, policy stance, sustained period, nominat*]
+    weight: 15
+    direction: mixed
+    tickers: [SPY, QQQ, TLT, IWM]
+  trade_war:
+    description: Tariffs / trade escalation or de-escalation
+    all:
+      - [tariff*, trade war, trade deal, trade agreement, trade talks, duties, retaliat*, import tax*, alternative to china]
+    weight: 15
+    direction: mixed
+    tickers: [SPY, QQQ, AAPL, NVDA, TSLA, FXI]
+  macro_print:
+    description: Major US economic data release
+    all:
+      - [cpi, consumer price index, nonfarm payrolls, payrolls, jobs report, unemployment rate, gdp, pce, retail sales, ppi, producer price index, jolts, inflation]
+    weight: 12
+    direction: mixed
+    tickers: [SPY, QQQ, TLT]
+  bigtech_antitrust:
+    description: Antitrust / regulatory action against big tech
+    all:
+      - [doj, justice department, ftc, european commission, eu commission, antitrust, competition authority, cma]
+      - [google, alphabet, apple, meta, amazon, microsoft, nvidia]
+      - [lawsuit, sues, sued, ruling, fined, fines, breakup, break up, divest*, probe, investigation, charges, verdict, judge]
+    weight: 15
+    direction: down
+  crypto_policy:
+    description: Crypto regulation / ETF / reserve news
+    all:
+      - [bitcoin, crypto*, ethereum, stablecoin*, btc]
+      - [sec, etf, approv*, ban, bans, banned, reserve, executive order, regulat*, bill, law, hack*, exploit*]
+    weight: 12
+    direction: mixed
+    tickers: [COIN, MSTR, HOOD, IBIT]
+  geopolitical_shock:
+    description: War / military escalation / energy supply shock
+    all:
+      - [invasion, invades, missile*, airstrike*, attack*, war, blockade, ceasefire, nuclear, troops, strait of hormuz, strikes, special military operation, killed, closes]
+      - [iran, israel, china, taiwan, russia, ukraine, north korea, oil, opec, middle east, hormuz, persian gulf, khamenei, putin]
+    weight: 15
+    direction: mixed
+    tickers: [SPY, USO, XLE, LMT, RTX, GLD]
+
+# Price-move baskets ("groups"): a group alert fires when the group's average move
+# over `window` seconds reaches `pct` and at least `min_members` members moved >= pct/2
+# in the same direction. This is the "all the stocks are crashing" detector.
+baskets:
+  software:
+    symbols: [CRM, NOW, ADBE, INTU, WDAY, TEAM, HUBS, DDOG, SNOW, MDB, PANW, CRWD, DOCU, MNDY, IGV]
+    pct: 2.0
+    window: 600
+    min_members: 5
+  semis:
+    symbols: [NVDA, AMD, AVGO, TSM, MU, INTC, QCOM, ARM, ASML, MRVL, SMH]
+    pct: 2.0
+    window: 600
+    min_members: 4
+  megacap:
+    symbols: [AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA, AVGO]
+    pct: 1.5
+    window: 600
+    min_members: 4
+  ai_infra:
+    symbols: [ORCL, CRWV, NBIS, VRT, ANET, SMCI, DELL, CEG, VST]
+    pct: 3.0
+    window: 600
+    min_members: 4
+  crypto:
+    symbols: [COIN, MSTR, HOOD, IBIT]
+    pct: 3.0
+    window: 600
+    min_members: 3
+  index:
+    symbols: [SPY, QQQ, IWM, DIA]
+    pct: 0.8
+    window: 600
+    min_members: 3

@@ -1,0 +1,116 @@
+# Built-in sources. Override any field (or set enabled: false) from config.yaml by
+# repeating the same `name` under `sources:`; add new ones with a new name.
+#
+# tier: primary (company/regulator/exchange — moves markets first), wire (press-release
+#       wires), media (newsrooms), social (aggregators/forums).
+# interval: seconds between polls. Conditional GET makes unchanged polls nearly free.
+# entities: who the source speaks for — an OpenAI blog post titled "Introducing X" is
+#           still scored as an OpenAI announcement.
+#
+# Run `news247 check` to test every source from your machine.
+
+# ------------------------------------------------------------------ AI labs & big tech
+- {name: openai-news, type: rss, url: "https://openai.com/news/rss.xml", tier: primary, interval: 10, entities: [OpenAI], browser_headers: true, alert_floor: high}
+- {name: anthropic-news, type: pagewatch, url: "https://www.anthropic.com/news", link_pattern: 'anthropic\.com/news/[a-z0-9-]+$', tier: primary, interval: 10, entities: [Anthropic], alert_floor: high}
+- {name: openai-youtube, type: rss, url: "https://www.youtube.com/feeds/videos.xml?channel_id=UCXZCJLdBC09xxGZ6gcdrc6A", tier: primary, interval: 30, entities: [OpenAI], alert_floor: high}
+- {name: openai-status, type: rss, url: "https://status.openai.com/history.rss", tier: primary, interval: 120, entities: [OpenAI], boost: -10}
+- {name: anthropic-news-mirror, type: rss, url: "https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_news.xml", tier: primary, interval: 300, entities: [Anthropic], date_only: true}
+- {name: xai-news-mirror, type: rss, url: "https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_xainews.xml", tier: primary, interval: 300, entities: [xAI], date_only: true}
+- {name: deepmind-blog, type: rss, url: "https://deepmind.google/blog/rss.xml", tier: primary, interval: 60, entities: [Google DeepMind]}
+- {name: google-blog, type: rss, url: "https://blog.google/rss/", tier: primary, interval: 60, entities: [Alphabet]}
+- {name: nvidia-newsroom, type: rss, url: "https://nvidianews.nvidia.com/releases.xml", tier: primary, interval: 60, entities: [NVIDIA]}
+- {name: apple-newsroom, type: rss, url: "https://www.apple.com/newsroom/rss-feed.rss", tier: primary, interval: 60, entities: [Apple]}
+- {name: microsoft-blog, type: rss, url: "https://blogs.microsoft.com/feed/", tier: primary, interval: 60, entities: [Microsoft]}
+- {name: meta-newsroom, type: rss, url: "https://about.fb.com/feed/", tier: primary, interval: 60, entities: [Meta Platforms]}
+
+# ------------------------------------------------------------------ Regulators, exchanges, government
+- {name: sec-8k, type: sec_edgar, forms: ["8-K"], interval: 10}
+- {name: nasdaq-halts, type: halts, interval: 15}
+- {name: fed-press, type: rss, url: "https://www.federalreserve.gov/feeds/press_all.xml", tier: primary, interval: 15, entities: [Federal Reserve], boost: 10, burst_times: ["14:00"]}
+- {name: fed-monetary, type: rss, url: "https://www.federalreserve.gov/feeds/press_monetary.xml", tier: primary, interval: 15, entities: [Federal Reserve], boost: 15, burst_times: ["14:00"]}
+- {name: bls-releases, type: rss, url: "https://www.bls.gov/feed/bls_latest.rss", tier: primary, interval: 30, browser_headers: true, entities: [Bureau of Labor Statistics], burst_times: ["08:30", "10:00"]}
+- {name: treasury-press, type: pagewatch, url: "https://home.treasury.gov/news/press-releases", link_pattern: '/news/press-releases/[a-z]{2}\d+', tier: primary, interval: 60, entities: [US Treasury]}
+- {name: whitehouse-news, type: rss, url: "https://www.whitehouse.gov/news/feed/", tier: primary, interval: 30, entities: [White House]}
+- {name: whitehouse-actions, type: rss, url: "https://www.whitehouse.gov/presidential-actions/feed/", tier: primary, interval: 30, entities: [White House]}
+- {name: trump-truth-mirror, type: rss, url: "https://www.trumpstruth.org/feed", tier: primary, interval: 30, entities: [White House]}
+- {name: truth-social, type: mastodon, enabled: false, instance: "https://truthsocial.com", accounts: ["107780257626128497"], tier: primary, interval: 20, entities: [White House]}
+- {name: fda-press, type: rss, url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml", tier: primary, interval: 60}
+- {name: ftc-press, type: rss, url: "https://www.ftc.gov/feeds/press-release.xml", tier: primary, interval: 120}
+- {name: doj-press, type: rss, url: "https://www.justice.gov/news/rss?type=press_release", tier: primary, interval: 120}
+- {name: ecb-press, type: rss, url: "https://www.ecb.europa.eu/rss/press.html", tier: primary, interval: 60}
+
+# ------------------------------------------------------------------ Press-release wires (companies' own words)
+- {name: prnewswire, type: rss, url: "https://www.prnewswire.com/rss/news-releases-list.rss", tier: wire, interval: 20}
+- {name: globenewswire, type: rss, url: "https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies", tier: wire, interval: 20}
+- {name: businesswire, type: rss, url: "https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEFtRWA==", tier: wire, interval: 20, browser_headers: true}
+
+# ------------------------------------------------------------------ Scoop publishers
+# Market-moving AI news is often a newspaper scoop, not a company post: on 2026-10-08 an FT
+# story on OpenAI's revenue knocked 300+ points off the Nasdaq-100 within ~30 minutes, while
+# aggregators (Google News, Yahoo) only had it 30+ minutes later. Watch the scoopers directly.
+- {name: ft-technology, type: rss, url: "https://www.ft.com/technology?format=rss", tier: media, interval: 20, boost: 5, browser_headers: true}
+- {name: ft-companies, type: rss, url: "https://www.ft.com/companies?format=rss", tier: media, interval: 20, boost: 5, browser_headers: true}
+- {name: bloomberg-technology, type: rss, url: "https://www.bloomberg.com/feeds/technology/news.rss", tier: media, interval: 20, boost: 5, browser_headers: true}
+- {name: the-information, type: rss, url: "https://www.theinformation.com/feed", tier: media, interval: 30, boost: 5, browser_headers: true}
+- {name: axios, type: rss, url: "https://api.axios.com/feed/", tier: media, interval: 30}
+- {name: ft-markets, type: rss, url: "https://www.ft.com/markets?format=rss", tier: media, interval: 20, boost: 5, browser_headers: true}
+- {name: gnews-reuters, type: rss, url: "https://news.google.com/rss/search?q=site:reuters.com+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 90}
+
+# Headline squawks relayed to public Telegram channels (no account needed, polled every 5 s)
+- {name: telegram-squawks, type: telegram, channels: [FinancialJuice, DeItaone], tier: media, interval: 5, boost: 5}
+
+# ------------------------------------------------------------------ Financial media
+- {name: mw-bulletins, type: rss, url: "https://feeds.content.dowjones.io/public/rss/mw_bulletins", tier: media, interval: 20, boost: 8, burst_times: ["08:30", "10:00", "14:00"], burst_interval: 2}
+- {name: mw-topstories, type: rss, url: "https://feeds.content.dowjones.io/public/rss/mw_topstories", tier: media, interval: 45}
+- {name: wsj-markets, type: rss, url: "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain", tier: media, interval: 45}
+- {name: cnbc-top, type: rss, url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", tier: media, interval: 30}
+- {name: cnbc-markets, type: rss, url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258", tier: media, interval: 30}
+- {name: cnbc-tech, type: rss, url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910", tier: media, interval: 45}
+- {name: bloomberg-markets, type: rss, url: "https://www.bloomberg.com/feeds/markets/news.rss", tier: media, interval: 45, browser_headers: true}
+- {name: yahoo-watchlist, type: rss, url: "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA,MSFT,AAPL,GOOGL,AMZN,META,TSLA,ORCL,CRM,NOW&region=US&lang=en-US", tier: media, interval: 60, browser_headers: true}
+- {name: gnews-ai-labs, type: rss, url: "https://news.google.com/rss/search?q=OpenAI+OR+Anthropic+OR+%22Google+Gemini%22+OR+xAI+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 90}
+- {name: gnews-market-movers, type: rss, url: "https://news.google.com/rss/search?q=%22stocks+fall%22+OR+%22shares+plunge%22+OR+%22stocks+tumble%22+OR+%22shares+soar%22+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 90}
+
+# ------------------------------------------------------------------ Social / real-time
+- {name: hackernews, type: hackernews, tags: front_page, interval: 30}
+- name: bluesky
+  type: bluesky
+  tier: media
+  # Official and newsroom accounts that exist on Bluesky; unresolvable handles are skipped.
+  accounts: [apnews.com, reuters.com, nytimes.com, wsj.com, bloomberg.com, cnbc.com, washingtonpost.com, theverge.com, techcrunch.com, axios.com, politico.com, ft.com]
+- name: x-stream
+  # Real-time X feed (official filtered stream, pay-per-use ~$0.005/post). Set X_BEARER_TOKEN
+  # and X_STREAM_ENABLED=true in .env. VIP accounts are texted instantly whatever they say;
+  # squawk accounts relay newspaper scoops within seconds and are scored normally.
+  type: x_stream
+  enabled: ${X_STREAM_ENABLED:-false}
+  bearer_token: "${X_BEARER_TOKEN:-}"
+  vip_accounts: [OpenAI, OpenAINewsroom, sama, OpenAIDevs, ChatGPTapp, AnthropicAI, claudeai, GoogleDeepMind, sundarpichai, xai, AIatMeta, nvidia, satyanadella]
+  accounts: [DeItaone, FirstSquawk, financialjuice, LiveSquawk, unusual_whales, zerohedge, WSJmarkets, business, Reuters, CNBCnow, FT, theinformation, elonmusk, WhiteHouse]
+  vip_floor: high
+- name: alpaca-news
+  # Benzinga newsdesk pushed over a websocket; free Alpaca paper-trading keys work.
+  type: alpaca_news
+  enabled: ${ALPACA_ENABLED:-false}
+  key: "${ALPACA_KEY:-}"
+  secret: "${ALPACA_SECRET:-}"
+  boost: 5
+- name: x
+  type: x
+  enabled: false        # older polling alternative to x-stream (recent-search endpoint)
+  bearer_token: "${X_BEARER_TOKEN:-}"
+  tier: primary
+  interval: 20
+  accounts: [OpenAI, sama, AnthropicAI, GoogleDeepMind, xai, elonmusk, nvidia, Microsoft, satyanadella, tim_cook, WhiteHouse, federalreserve, DeItaone, FirstSquawk, unusual_whales, Reuters, business, WSJmarkets, CNBCnow]
+- name: reddit
+  type: reddit
+  enabled: false        # needs a free Reddit "script" app
+  client_id: "${REDDIT_CLIENT_ID:-}"
+  client_secret: "${REDDIT_CLIENT_SECRET:-}"
+  subreddits: [wallstreetbets, stocks, investing, StockMarket]
+  min_score: 0
+- name: finnhub-news
+  type: finnhub_news
+  enabled: false        # free key at finnhub.io
+  token: "${FINNHUB_TOKEN:-}"
+  category: general

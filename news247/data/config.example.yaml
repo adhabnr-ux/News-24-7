@@ -1,0 +1,232 @@
+# News247 configuration.
+#
+# This exact file is also the built-in default: with no config.yaml at all (e.g. on a cloud
+# host), News247 runs with these settings and everything personal comes from environment
+# variables — set them in your host's "Variables" page or in a .env file:
+#
+#   WHATSAPP_ENABLED      true: alerts go to your WhatsApp from a self-hosted linked device
+#   WHATSAPP_TO           your WhatsApp number, e.g. +15551234567   (pair the sender on the Setup page)
+#   IMESSAGE_TO           number for iMessage (RELAY_ENABLED=true: your own Mac relay, docs/IMESSAGE-RELAY.md)
+#   CONTACT_EMAIL         your e-mail (the SEC requires a contact in requests)
+#   ... and any of the optional ones referenced below as ${NAME}.
+#
+# Copy it to config.yaml (`news247 init`) only if you want to change more than that.
+# ${NAME:-default} means "environment variable NAME, or default if unset".
+
+general:
+  user_agent: "News247Monitor/1.0 (${CONTACT_EMAIL:-set CONTACT_EMAIL})"
+  data_dir: ${DATA_DIR:-./data}    # SQLite DB, logs, caches
+  max_item_age_minutes: 30          # ignore anything published longer ago than this
+  log_level: ${LOG_LEVEL:-INFO}
+  db_retention_days: 30
+
+scoring:
+  # Score thresholds (0-100). Each channel picks which severities it receives (see notify:).
+  critical: 75
+  high: 55
+  medium: 35
+  # Your tickers: news about them gets +10 and they're price-watched. (Empty = built-in list.)
+  watchlist: []
+  # Extra/override keyword weights ('*' = any ending). Negative values penalize.
+  keywords: {}
+  # Extra companies, e.g. - {name: Figma, ticker: FIG, aliases: [figma]}
+  companies: []
+  # Extra themes (fire when EVERY group has a hit), e.g.
+  #   robotaxi: {all: [[robotaxi, self-driving], [launch*, approv*, recall*]], weight: 12, tickers: [TSLA, UBER]}
+  themes: {}
+  # Regexes for things you never want alerted, e.g. "(?i)\\bpodcast\\b"
+  mute: []
+
+llm:
+  # Optional local-AI second opinion: install Ollama (https://ollama.com), `ollama pull qwen2.5:7b-instruct`
+  enabled: ${LLM_ENABLED:-false}
+  provider: ${LLM_PROVIDER:-ollama}  # "ollama", or "openai" for any OpenAI-compatible server
+  base_url: ${LLM_BASE_URL:-http://localhost:11434}
+  model: ${LLM_MODEL:-qwen2.5:7b-instruct}
+  api_key: ${LLM_API_KEY:-}
+  min_score: 25                 # only items the rules already find somewhat interesting
+  budget_ms: 2500               # HIGH alerts wait at most this long for the model; CRITICAL/VIP never wait
+  adjust: true                  # let the model move the score (bounded: -20 / +25)
+  timeout_s: 10
+
+market:
+  enabled: ${MARKET_ENABLED:-true}
+  provider: ${MARKET_PROVIDER:-yahoo}  # yahoo (free, polled ~15 s) | finnhub (free key, real-time websocket)
+  finnhub_token: ${FINNHUB_TOKEN:-}
+  poll_seconds: 15
+  benchmark: SPY
+  # symbols: [...]              # default: watchlist + every basket
+  rules:                        # single-stock alarms: |change| >= pct within window seconds
+    - {window: 60, pct: 1.5}
+    - {window: 300, pct: 3.0}
+    - {window: 900, pct: 5.0}
+  # overrides: {TSLA: [{window: 300, pct: 4.0}]}   # per-symbol rules (index ETFs have built-ins)
+  day_move_pct: 7               # one alert per day when a stock is this far from yesterday's close
+  cooldown_minutes: 20          # per symbol; a move 1.5x bigger still re-alerts
+  correlate_minutes: 45         # how far back to look for a headline explaining a move
+  # groups: replaces the built-in baskets (software, semis, megacap, ai_infra, crypto, index)
+
+# Sources: ~50 built-ins are on by default (`news247 check` lists them). Override one by
+# repeating its name here (e.g. {name: hackernews, enabled: false}) or add your own:
+#   - {name: my-feed, type: rss, url: "https://example.com/feed.xml", tier: media, interval: 60}
+#   - {name: xai-newsroom, type: pagewatch, url: "https://x.ai/news", link_pattern: 'x\.ai/news/[a-z0-9-]+$', entities: [xAI]}
+# Push sources switched on by environment: X_STREAM_ENABLED + X_BEARER_TOKEN,
+# ALPACA_ENABLED + ALPACA_KEY + ALPACA_SECRET.
+sources: []
+
+notify:
+  rate_limit_per_minute: 20     # phone channels; CRITICAL always goes through
+  quiet_hours:                  # set QUIET_START/QUIET_END (e.g. 23:30 / 06:30) to mute all but CRITICAL
+    start: ${QUIET_START:-}
+    end: ${QUIET_END:-}
+    timezone: ${TIMEZONE:-America/New_York}
+    min_severity: critical
+
+  console: {enabled: true, min_severity: medium, bell: true}
+  desktop: {enabled: "${DESKTOP_ENABLED:-false}", min_severity: high}
+
+  # ---------------------------------------------------------------- texts to your phone
+  # Which severities reach your phone: high (default) = important + critical; critical = only the biggest.
+
+  # WhatsApp sent by this server itself: News247 becomes a linked device (like WhatsApp Web) of a
+  # WhatsApp account and messages you from it. Pair once on the dashboard's Setup page. Best with
+  # a second number as the sender (see docs/WHATSAPP.md). Needs: pip install 'news247[whatsapp]'
+  # (the Docker image has it).
+  whatsapp:
+    enabled: ${WHATSAPP_ENABLED:-false}
+    backup: ${WHATSAPP_BACKUP:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    to: ${WHATSAPP_TO:-}                # your own WhatsApp number, e.g. +15551234567
+    min_interval_s: 2                   # spacing between messages
+    max_per_hour: 60                    # hard cap: protects the sending account
+
+  # WhatsApp via Meta's official Cloud API (developers.facebook.com > WhatsApp). No ban risk;
+  # outside 24 h after your last message to the business number only approved templates go out.
+  whatsapp_cloud:
+    enabled: ${WHATSAPP_CLOUD_ENABLED:-false}
+    backup: ${WHATSAPP_CLOUD_BACKUP:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    token: ${WHATSAPP_CLOUD_TOKEN:-}            # permanent System User access token
+    phone_number_id: ${WHATSAPP_CLOUD_PHONE_ID:-}
+    to: ${WHATSAPP_TO:-}
+    template: ${WHATSAPP_CLOUD_TEMPLATE:-}      # e.g. news247_alert: body "News247: {{1}}"
+    template_lang: ${WHATSAPP_CLOUD_TEMPLATE_LANG:-en_US}
+
+
+  # Your own iMessage gateway: the monitor runs anywhere (cloud), any Mac signed in to Messages
+  # runs `news247 relay` and does the sending. One-line Mac install on the dashboard's Setup page.
+  # Messages that can't go out while the Mac sleeps go to backup channels right away and/or are
+  # delivered when it reconnects (as a digest if several piled up). Text it "pause 2h", "status"…
+  relay:
+    enabled: ${RELAY_ENABLED:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    to: ${IMESSAGE_TO:-}
+    secret: ${RELAY_SECRET:-}          # empty = generated once and shown on the Setup page
+    accept_timeout: 5                   # s; a Mac that doesn't answer this fast counts as asleep
+    late_delivery: ${RELAY_LATE_DELIVERY:-true}
+    max_late_minutes: 60                # older queued alerts are dropped, not sent late
+    digest_min: 3                       # this many queued alerts arrive as one combined text
+
+  # Paid iMessage services that run the Macs for you (no Mac of your own needed).
+  # Sendblue: free sandbox; text your Sendblue number once from your iPhone to verify it.
+  sendblue:
+    enabled: ${SENDBLUE_ENABLED:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    api_key_id: ${SENDBLUE_API_KEY_ID:-}
+    api_secret: ${SENDBLUE_API_SECRET:-}
+    from_number: ${SENDBLUE_FROM:-}
+    api_base: ${SENDBLUE_API_BASE:-}  # leave empty (testing/proxies only)
+    to: ${IMESSAGE_TO:-}
+  blooio:
+    enabled: ${BLOOIO_ENABLED:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    api_key: ${BLOOIO_API_KEY:-}
+    to: ${IMESSAGE_TO:-}
+
+  # iMessage from a Mac that stays on (free). deploy/install-macos.sh sets these for you.
+  imessage:
+    enabled: ${IMESSAGE_ENABLED:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    to: ${IMESSAGE_TO:-}              # "+15551234567" (comma-separate for several)
+    service: imessage                 # imessage | sms | auto (iMessage, falling back to SMS)
+
+  # Monitor in the cloud, a Mac at home runs the third-party BlueBubbles server (https://bluebubbles.app)
+  bluebubbles:
+    enabled: ${BLUEBUBBLES_ENABLED:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    server: ${BLUEBUBBLES_URL:-}
+    password: ${BLUEBUBBLES_PASSWORD:-}
+    to: ${IMESSAGE_TO:-}
+
+  # Plain SMS (green bubble)
+  textbelt:                           # prepaid key, no registration; links stripped by default
+    enabled: ${TEXTBELT_ENABLED:-false}
+    backup: ${TEXTBELT_BACKUP:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    key: ${TEXTBELT_KEY:-}
+    to: ${SMS_TO:-${IMESSAGE_TO:-}}
+  twilio:                             # needs A2P 10DLC or toll-free verification in the US
+    enabled: ${TWILIO_ENABLED:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    account_sid: ${TWILIO_ACCOUNT_SID:-}
+    auth_token: ${TWILIO_AUTH_TOKEN:-}
+    from: ${TWILIO_FROM:-}
+    to: ${SMS_TO:-${IMESSAGE_TO:-}}
+
+  # Free phone push, no account: install the "ntfy" app, subscribe to a hard-to-guess topic.
+  # The ideal backup for the relay: with backup: true it only pings when iMessage couldn't be
+  # sent (e.g. your Mac is asleep). Any channel accepts backup: true.
+  ntfy:
+    enabled: ${NTFY_ENABLED:-false}
+    backup: ${NTFY_BACKUP:-false}
+    min_severity: ${PHONE_MIN_SEVERITY:-high}
+    topic: ${NTFY_TOPIC:-}
+    server: ${NTFY_SERVER:-https://ntfy.sh}
+    token: ${NTFY_TOKEN:-}
+
+  telegram:                     # @BotFather -> bot token; message your bot; chat id via api.telegram.org/bot<TOKEN>/getUpdates
+    enabled: ${TELEGRAM_ENABLED:-false}
+    backup: ${TELEGRAM_BACKUP:-false}
+    min_severity: high
+    bot_token: ${TELEGRAM_BOT_TOKEN:-}
+    chat_id: ${TELEGRAM_CHAT_ID:-}
+
+  discord:
+    enabled: ${DISCORD_ENABLED:-false}
+    min_severity: high
+    webhook_url: ${DISCORD_WEBHOOK_URL:-}
+    mention: "@here"            # pinged on CRITICAL only
+
+  slack:
+    enabled: ${SLACK_ENABLED:-false}
+    min_severity: high
+    webhook_url: ${SLACK_WEBHOOK_URL:-}
+
+  pushover:
+    enabled: ${PUSHOVER_ENABLED:-false}
+    backup: ${PUSHOVER_BACKUP:-false}
+    min_severity: high
+    token: ${PUSHOVER_TOKEN:-}
+    user: ${PUSHOVER_USER:-}
+
+  email:
+    enabled: ${EMAIL_ENABLED:-false}
+    min_severity: critical
+    smtp_host: ${SMTP_HOST:-smtp.gmail.com}
+    smtp_port: 587
+    username: ${SMTP_USER:-}
+    password: ${SMTP_PASSWORD:-}      # Gmail: use an app password
+    from: ${SMTP_USER:-}
+    to: ${EMAIL_TO:-}
+
+  webhook:
+    enabled: ${WEBHOOK_ENABLED:-false}
+    min_severity: medium
+    url: ${WEBHOOK_URL:-}
+
+web:
+  enabled: true
+  host: ${WEB_HOST:-127.0.0.1}      # cloud hosts: 0.0.0.0 (the Docker image sets this)
+  port: ${PORT:-8247}               # most hosts inject PORT
+  token: ${DASHBOARD_TOKEN:-}       # set this when the dashboard is reachable from the internet
+  public_url: ${PUBLIC_URL:-}       # how a Mac reaches this server (auto-detected on Render/Railway/Fly)
