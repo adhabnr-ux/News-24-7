@@ -2,7 +2,7 @@
 
 News247 runs around the clock and pings your phone within seconds when something breaks that is likely to move stocks. Examples: OpenAI launching an enterprise agent that hits software stocks, an 8-K bankruptcy filing, a "news pending" trading halt, a Fed statement, a tariff post, or a whole sector suddenly dropping 3%.
 
-It watches about 40 free sources at once: company newsrooms, SEC filings, exchange halts, the Fed and White House, press-release wires, financial media, Bluesky in real time, and optionally X, Reddit and Truth Social. It also watches **prices**, so if software stocks fall together it tells you that, and names the headline that most likely caused it.
+It watches about 50 sources at once: AI-lab and big-tech newsrooms, newspaper scoop feeds (FT, Bloomberg, The Information), headline squawks, SEC filings, exchange halts, the Fed and White House, press-release wires, financial media, and Bluesky in real time, plus optional push feeds (X, Alpaca/Benzinga). It also watches **prices**, so if software stocks fall together it tells you that, and names the headline that most likely caused it. Alerts arrive as **iMessages to your phone number**, or through ntfy, Telegram, Discord, Slack, Pushover, email or SMS.
 
 ![dashboard](docs/dashboard.png)
 
@@ -21,66 +21,92 @@ It watches about 40 free sources at once: company newsrooms, SEC filings, exchan
 
 ---
 
-## Quick start (5 minutes)
-
-Requires Python 3.10+.
+## Quick start: iMessage alerts, running 24/7 on a Mac (5 minutes)
 
 ```bash
 git clone https://github.com/adhabnr-ux/News-24-7.git && cd News-24-7
+./deploy/install-macos.sh
+```
+
+The installer:
+1. installs everything (needs Python 3.10+; `brew install python@3.12` if you don't have it);
+2. asks for **your phone number** (alerts go there as iMessages) and an e-mail (the SEC requires a contact in requests);
+3. optionally asks for an X API token and free Alpaca keys (the fastest sources — see [How fast is it?](#how-fast-is-it));
+4. installs a background service that starts at login, restarts itself if it crashes, and keeps the Mac awake;
+5. sends you a **test iMessage**. macOS asks once whether Terminal may control Messages: click **OK**.
+
+That's it. The dashboard is at http://localhost:8247. Logs are in `data/news247.log`.
+
+**Requirements for iMessage:** the Mac stays on, plugged in, and signed in to Messages (Messages ▸ Settings ▸ iMessage). A laptop with its lid closed sleeps unless it's connected to an external display.
+
+**Tip:** sign Messages on that Mac into a **separate Apple ID** (a free "bot" account) rather than your own. Alerts then arrive on your iPhone as normal incoming iMessages with a notification sound, and you can give that contact a custom tone. Messages you send to yourself may not notify.
+
+To see it working before setting anything up, run `.venv/bin/news247 demo`. It plays a simulated "OpenAI launch → software selloff" through the real pipeline.
+
+### No Mac, or want it running in the cloud?
+
+| Option | Bubble | Cost | Setup |
+|---|---|---|---|
+| **BlueBubbles** relay | blue (iMessage) | free | Monitor runs anywhere (VPS, Linux, Docker); a Mac at home runs the free [BlueBubbles](https://bluebubbles.app) server. Set `BLUEBUBBLES_ENABLED`, `BLUEBUBBLES_URL`, `BLUEBUBBLES_PASSWORD`, `IMESSAGE_TO`. |
+| **Sendblue** | blue (iMessage) | free sandbox (10 contacts); paid from ~$29/mo | No Mac at all. Text your Sendblue number once from your phone, then set `SENDBLUE_ENABLED`, `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET`, `SENDBLUE_FROM`, `IMESSAGE_TO`. |
+| **Blooio** | blue (iMessage) | from ~$39/mo | No Mac. `BLOOIO_ENABLED`, `BLOOIO_API_KEY`, `IMESSAGE_TO`. |
+| **Textbelt** | green (SMS) | prepaid, ~a few cents/text | No registration paperwork. Links are stripped (Textbelt holds link texts until your account is verified). `TEXTBELT_ENABLED`, `TEXTBELT_KEY`, `SMS_TO`. |
+| **Twilio** | green (SMS) | ~$1/mo + ~1¢/text | US carriers require A2P 10DLC or toll-free verification first (≈$45 and 1–3 weeks for a sole proprietor). |
+| **ntfy** app | push notification | free | Install **ntfy**, subscribe to a secret topic, set `NTFY_TOPIC` and `notify.ntfy.enabled: true`. Most reliable fallback; consider enabling it alongside iMessage. |
+| Telegram / Discord / Slack / Pushover / e-mail / webhook | | free | See `config.example.yaml`. |
+
+All of these are switched on from `.env` (see `news247 init`). Check any channel with `news247 test-notify --only imessage` (or `sendblue`, `ntfy`, …).
+
+Each channel has a `min_severity`. By default your phone gets **HIGH + CRITICAL**, the console also shows **MEDIUM**, and quiet hours (e.g. 23:30–06:30) let only **CRITICAL** through.
+
+### Manual install (Linux, Windows, Docker)
+
+```bash
 python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e .
-
-news247 demo        # see the whole thing work on a simulated "OpenAI launch → software selloff"
-                    # → open http://localhost:8247
-
-news247 init        # writes config.yaml + .env
-#   1. set general.user_agent to "YourName you@email.com" (the SEC requires a contact)
-#   2. set up phone alerts (below)
+news247 init        # writes config.yaml + .env; fill in .env
 news247 check       # tests every source from YOUR network and shows what works
 news247 run         # start monitoring; dashboard at http://localhost:8247
 ```
-
-With no config file at all, `news247 run` still works. It uses the built-in sources, prints alerts to the console and serves the dashboard.
-
-### Get alerts on your phone (pick one)
-
-| Channel | Setup | Notes |
-|---|---|---|
-| **ntfy** (recommended) | Install the free **ntfy** app (iOS/Android) → subscribe to a hard-to-guess topic such as `adhab-markets-x7k2` → put `NTFY_TOPIC=adhab-markets-x7k2` in `.env` and set `notify.ntfy.enabled: true` | No account needed. CRITICAL alerts use max priority, so they break through Do Not Disturb if you allow it. |
-| **Telegram** | Message **@BotFather** → `/newbot` → copy the token; message your bot once; open `https://api.telegram.org/bot<TOKEN>/getUpdates` to find your `chat.id` | Set `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` |
-| **Discord / Slack** | Channel settings → Integrations → Webhook → copy URL | `@here` ping on CRITICAL |
-| **Pushover** | App token + user key | Siren sound on CRITICAL |
-| **Email** | SMTP (for Gmail, use an app password) | Default: CRITICAL only |
-| **Desktop pop-ups** | `notify.desktop.enabled: true` | macOS, Linux (`notify-send`), Windows |
-| **Webhook** | Any URL | Full alert JSON, for n8n, Zapier, Home Assistant or your own trading bot |
-
-Then run `news247 test-notify`. It sends a test alert through every enabled channel.
-
-Each channel has a `min_severity`. The defaults: phone gets **HIGH + CRITICAL**, the console also shows **MEDIUM**, and quiet hours (e.g. 23:30–06:30) let only **CRITICAL** through.
 
 ---
 
 ## How fast is it?
 
-Detection time = how often a source is polled + how long the publisher takes to put the post in its own feed. Polling uses conditional GET (ETag/Last-Modified), so checking every 10–20 s costs almost nothing.
+### Lesson from 2026-10-08: the OpenAI news that moved stocks wasn't an OpenAI post
 
-| Source | How | Typical time to your phone |
-|---|---|---|
-| Bluesky accounts (Reuters, AP, WSJ, Bloomberg, CNBC, … — handles that don't exist are skipped) | **push** (Jetstream websocket) | ~1–2 s |
-| Price moves (Finnhub, free key) | **push** (trade websocket) | ~1–3 s |
-| X/Twitter accounts (OpenAI, sama, DeItaone, FirstSquawk, …) *(paid API)* | 1 query covers all accounts, every 20 s | ~5–20 s |
-| SEC EDGAR 8-K filings | poll every 10 s | ~10–30 s after EDGAR posts it |
-| Nasdaq trading halts (all US exchanges) | poll every 15 s | ~15–30 s |
-| Fed, White House, Treasury, BLS, FDA, ECB… | poll every 15–60 s | ~15–60 s |
-| OpenAI newsroom (RSS), Anthropic newsroom (page watcher) | poll every 20 s | ~20 s + feed lag |
-| PR Newswire / GlobeNewswire / Business Wire | poll every 20 s | ~20–60 s |
-| MarketWatch bulletins, CNBC, WSJ, Bloomberg | poll every 20–45 s | ~30–90 s |
-| Price moves (Yahoo, free, no key) | poll every 15 s | ~15–30 s |
-| Hacker News front page, Google News | poll 30–90 s | minutes (used as confirmation) |
+Around 1 pm ET on 2026-10-08, the **Financial Times** reported that OpenAI had told investors its annualized revenue was about **$50B**, against the ~$70B investors had assumed. Bloomberg relayed it at 1:04 pm, and squawk accounts posted it within seconds. The Nasdaq-100 fell more than 300 points in about 30 minutes: NVDA −3%, ORCL −6%, CRWV −8%, AMD and AVGO −5%. Yahoo and Google News had the story **30+ minutes later**, after the move.
 
-`news247 stats` shows the measured publish→detect lag for each source on your machine.
+So News247 watches two lanes:
 
-**About "the moment it posts":** no free source delivers Bloomberg-terminal speed. The fastest free paths are built in: Bluesky push, SEC/halts polling, primary newsrooms, and the price-move detector, which often fires *before* any headline exists. The paid upgrades in "Making it even faster" below close most of the remaining gap.
+1. **First-party posts.** The labs' own sites, YouTube, and X accounts. These are **VIP sources**: anything OpenAI or Anthropic publishes is texted to you instantly, whatever it says. It never waits for confirmation or for the AI model.
+2. **Scoops.** Newspapers break most market-moving AI news (revenue, funding, chip deals). The fastest ways to catch them are squawk accounts (@DeItaone "Walter Bloomberg", @FirstSquawk, FinancialJuice), the scoop publishers' own feeds (FT, Bloomberg, The Information), and newsdesk wires (Benzinga via Alpaca). The scorer knows that AI-lab money news re-prices the whole AI trade (`ai_lab_financials` → NVDA, ORCL, CRWV, AMD, AVGO, MSFT, SMCI) and that "FT says", "told investors" and "people familiar" mark a scoop.
+
+That exact event is replayed in the test suite (`tests/test_fast_sources.py::test_replay_openai_revenue_scoop`): the squawk is texted on arrival, the Bloomberg version a minute later merges into the same story instead of sending a second text, and the selloff alert names the scoop as the cause.
+
+### Sources by speed
+
+| Source | How | Typical time to your phone | Cost |
+|---|---|---|---|
+| **X stream**: @OpenAI, @sama, @AnthropicAI… (VIP) + @DeItaone, @FirstSquawk, @financialjuice… | **push** (official filtered stream) | ~2–5 s | pay-per-use, ~$0.005/post (~$10–60/mo depending on accounts) |
+| **Alpaca news** (Benzinga newsdesk, tickers attached) | **push** (websocket) | seconds–2 min | free (paper-trading keys) |
+| Bluesky newsrooms (Reuters, AP, WSJ, Bloomberg, NYT…) | **push** (Jetstream) | ~1–2 s after they post | free |
+| Telegram squawks (FinancialJuice…) | poll every 5 s | ~5–10 s | free |
+| OpenAI news RSS, Anthropic newsroom (VIP) | poll every 10 s | ~10 s + the site's own feed lag | free |
+| OpenAI YouTube (livestream announcements, VIP) | poll every 30 s | ~30 s + YouTube feed lag | free |
+| FT, Bloomberg Tech, The Information, Axios feeds | poll every 20–30 s | ~20 s + feed lag (usually 1–5 min after the article) | free |
+| SEC EDGAR 8-K filings | poll every 10 s | ~10–30 s after EDGAR posts it | free |
+| Nasdaq trading halts (all US exchanges) | poll every 15 s | ~15–30 s | free |
+| Fed, White House, Treasury, BLS, FDA, ECB… | poll every 15–60 s | ~15–60 s | free |
+| Press-release wires, MarketWatch bulletins, CNBC, WSJ | poll every 20–45 s | ~30–90 s | free |
+| Prices: Yahoo (free) / Finnhub (free key, push) | poll 15 s / push | ~15–30 s / ~1–3 s | free |
+| Hacker News, Google News | poll 30–90 s | minutes (used as confirmation only) | free |
+
+**What "instantly" honestly takes:** the free lanes already beat the aggregators by a wide margin. To be told within seconds of a scoop or an executive's post, enable the **X stream** (the single biggest upgrade) and the free **Alpaca** news stream. The installer asks for both, or you can set them in `.env` later. True sub-second institutional feeds (Bloomberg Terminal, Dow Jones/LSEG direct, Truth Social's official API) cost $25k–$100k+ a year and are out of scope.
+
+Built-in safeguards: polling uses conditional GETs, so checking every 5–10 s costs almost nothing. Squawk relays and publisher copies of the same story are merged into one text. Posts from a VIP account that look like a crypto/airdrop scam (OpenAI's newsroom account was hijacked in 2024) do not get the instant treatment.
+
+`news247 stats` shows, for your own machine, each source's publish→detect lag and **which source had each story first**, so you can see which feeds are worth keeping.
 
 ---
 
@@ -94,6 +120,7 @@ Every item is scored from 0 to 100 by a deterministic rule engine. It takes abou
   - `ai_disrupts_software`: an AI lab *launches* an *agent/plugin for legal/finance/sales/coding/…* → CRM, NOW, ADBE, INTU, WDAY… **down**
   - `ai_compute_deal`: a giant data-center or GPU deal → NVDA, AMD, AVGO, ORCL, VRT… **up**
   - `cheap_frontier_model`: a DeepSeek-style cheap model → NVDA, AVGO, TSM… **down**
+  - `ai_lab_financials`: OpenAI/Anthropic/xAI revenue, valuation, funding or spending news → NVDA, ORCL, CRWV, AMD, AVGO, MSFT… (the 2026-10-08 selloff)
   - also `chip_export_controls`, `fed_policy`, `trade_war`, `macro_print`, `bigtech_antitrust`, `crypto_policy`, `geopolitical_shock`, `ai_disrupts_search`, `ai_lab_launch`
 - **Companies**: 80+ companies and macro actors with aliases. Private AI labs map to the public stocks *exposed* to them (OpenAI → MSFT, NVDA, ORCL, AMD, AVGO, CRWV). A post on OpenAI's own blog counts as an OpenAI announcement even if the headline is just "Introducing X".
 - **Penalties**: law-firm class-action spam, "stocks to buy", "here's why", event schedules, podcasts, question headlines
@@ -167,7 +194,7 @@ docker compose --profile ai up -d && docker compose exec ollama ollama pull qwen
 #   and set llm.base_url: http://ollama:11434
 ```
 
-**Linux (systemd)**: `deploy/news247.service`. **macOS (launchd)**: `deploy/com.news247.monitor.plist`. **Windows**: `deploy/windows-task.ps1`. Each file has install instructions at the top.
+**macOS**: `./deploy/install-macos.sh` (see Quick start; `--uninstall` removes it). **Linux (systemd)**: `deploy/news247.service`. **Windows**: `deploy/windows-task.ps1`. Each file has install instructions at the top.
 
 Built in to keep it running:
 - Every source runs independently. A failing source backs off exponentially, honours `Retry-After`, and never affects the others.
@@ -179,15 +206,16 @@ Built in to keep it running:
 
 ---
 
-## Making it even faster (optional paid upgrades)
+## Optional upgrades
 
 | Upgrade | What you gain | How |
 |---|---|---|
-| **X API** (Basic tier) | Executives' and headline accounts' posts (sama, OpenAI, DeItaone, FirstSquawk…) within seconds | `sources: - {name: x, enabled: true}` + `X_BEARER_TOKEN` |
-| **Finnhub** (free key) | Real-time trades instead of 15-s polling, plus a market-news feed | `market.provider: finnhub`, `FINNHUB_TOKEN`; enable `finnhub-news` |
-| **Truth Social** | Presidential posts that move tariffs or markets | Cloudflare blocks datacenter IPs. Run from home and enable `truth-social`, or rely on the built-in `trump-truth-mirror` feed (a third-party mirror; confirm it with `news247 check`) |
-| **Reddit** | WSB/stocks chatter (needs a free OAuth "script" app since 2026) | `reddit` source + `REDDIT_CLIENT_ID/SECRET` |
-| Paid newswires (Benzinga Pro, etc.) | Squawk-level speed | Add as `rss`/`webhook` sources, or ask for a dedicated adapter |
+| **X stream** | First-party posts (OpenAI, sama, Anthropic, Google DeepMind, xAI, Nvidia…) and squawk relays of FT/WSJ/Bloomberg scoops within seconds | Token at developer.x.com (pay-per-use). In `.env`: `X_BEARER_TOKEN=…`, `X_STREAM_ENABLED=true`. Edit the accounts under `x-stream` in config. |
+| **Alpaca news** (free) | Benzinga newsdesk headlines pushed in real time, with tickers | Free account at app.alpaca.markets → API keys. `ALPACA_KEY`, `ALPACA_SECRET`, `ALPACA_ENABLED=true`. |
+| **Finnhub** (free key) | Real-time trades instead of 15-s price polling | `market.provider: finnhub`, `FINNHUB_TOKEN` |
+| **Truth Social** | Presidential posts that move tariffs/markets | Cloudflare blocks datacenter IPs: run from home and enable `truth-social`, or rely on the `trump-truth-mirror` feed (third-party; confirm with `news247 check`) |
+| **Reddit** | WSB/stocks chatter (free OAuth "script" app) | `reddit` source + `REDDIT_CLIENT_ID/SECRET` |
+| **Local AI** (Ollama) | A one-line "why it matters" in each text, and a second opinion on borderline items | See [Optional: local AI second opinion](#optional-local-ai-second-opinion-ollama) |
 
 Add any other site in two lines:
 
@@ -220,9 +248,9 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 | `news247 run` | Start monitoring (`--no-web`, `--no-market`, `--port`, `--host`) |
 | `news247 check [names…]` | Fetch every source once from this machine; shows status, newest item and errors |
 | `news247 score "headline"` | Explain a score (`--tier primary --entity OpenAI --summary …`) |
-| `news247 test-notify` | Send a test alert through every enabled channel |
+| `news247 test-notify [--only imessage]` | Send a test alert through every enabled channel (or just one) |
 | `news247 demo` | Simulated "AI launch → software selloff" through the real pipeline, dashboard and notifications |
-| `news247 stats` | Measured detection latency per source |
+| `news247 stats` | Measured detection latency per source, and which source had each story first |
 | `news247 init` | Write a starter `config.yaml` + `.env` |
 
 ### API
@@ -236,12 +264,13 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 ```
  sources (async, independent)                        pipeline                              outputs
  ───────────────────────────                         ────────                              ───────
- RSS/Atom · SEC EDGAR · Nasdaq halts ─┐
- page watcher · HN · Reddit · X ──────┼─► dedupe ─► score (rules) ─► cluster stories ─┬─► SQLite (history, seen ids)
- Mastodon/Truth · Bluesky (websocket)─┘   (uid)     tickers/themes   +confirmation    ├─► dashboard (SSE) + JSON API
-                                                          │                           └─► alert ─► ntfy/Telegram/Discord/
-                                          optional local LLM (bounded, time-boxed)              Slack/Pushover/email/
-                                                                                                desktop/webhook
+ push: X stream · Alpaca · Bluesky ───┐
+ RSS/Atom · SEC EDGAR · Nasdaq halts ─┤                     VIP floor (labs: instant)
+ page watcher · Telegram · HN · Reddit┼─► dedupe ─► score (rules) ─► cluster stories ─┬─► SQLite (history, seen ids)
+ Mastodon/Truth Social ───────────────┘   (uid)     tickers/themes   +confirmation    ├─► dashboard (SSE) + JSON API
+                                                          │                           └─► alert ─► iMessage/BlueBubbles/
+                                          optional local LLM (bounded, time-boxed)              Sendblue/SMS/ntfy/Telegram/
+                                                                                                Discord/Slack/email/webhook
  Yahoo / Finnhub prices ─► move detector ─► coalesce ─► correlate with recent news ─► price alert
                            (rules, baskets,   (one alert per
                             cooldowns)          sector move)
@@ -249,10 +278,11 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 
 ```
 news247/
-  sources/      rss, sec_edgar, halts, pagewatch, bluesky, social (x, mastodon), apis (hn, reddit, finnhub)
+  sources/      rss, sec_edgar, halts, pagewatch, bluesky, x_stream, alpaca_news, telegram, social (x, mastodon),
+                apis (hn, reddit, finnhub)
   analysis/     scorer, entities, dedup (story clustering), llm
   market/       detector (move rules, baskets), prices (yahoo, finnhub)
-  notify/       channels + dispatcher (severity routing, quiet hours, rate limit)
+  notify/       channels (iMessage, BlueBubbles, Sendblue, Blooio, SMS, ntfy, Telegram, …) + dispatcher
   web/          dashboard + API
   data/         knowledge.yaml (companies, keywords, themes, baskets), default_sources.yaml, config.example.yaml
   engine.py     the pipeline · storage.py SQLite · cli.py
@@ -262,7 +292,7 @@ news247/
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 130+ tests: parsers on real feed formats, scoring calibration, move detection,
+pytest -q          # 150+ tests: parsers on real feed formats, scoring calibration, move detection,
                    # every notification channel's wire format, LLM client, engine end-to-end, web API
 ruff check . && ruff format --check .
 ```

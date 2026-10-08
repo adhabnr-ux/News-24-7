@@ -74,6 +74,26 @@ if [[ -z "$EMAIL" ]]; then
   read -r -p "Your e-mail (the SEC requires a contact in requests; never shared elsewhere): " EMAIL
 fi
 setenv CONTACT_EMAIL "$EMAIL"
+
+# Optional speed upgrades (press Enter to skip; add later by editing .env and re-running)
+if [[ -z "$(getenv X_BEARER_TOKEN)" ]]; then
+  echo
+  echo "Optional — X/Twitter real-time stream: OpenAI/@sama posts and squawk accounts (@DeItaone,"
+  echo "@FirstSquawk) that relay FT/WSJ/Bloomberg scoops within seconds. Pay-per-use, roughly \$0.005"
+  echo "per post. Get a bearer token at https://developer.x.com (Projects & Apps > Keys and tokens)."
+  read -r -p "X bearer token (Enter to skip): " XTOK
+  if [[ -n "$XTOK" ]]; then setenv X_BEARER_TOKEN "$XTOK"; setenv X_STREAM_ENABLED true; fi
+fi
+if [[ -z "$(getenv ALPACA_KEY)" ]]; then
+  echo
+  echo "Optional — Alpaca news stream (free): Benzinga headlines pushed in real time. Sign up at"
+  echo "https://app.alpaca.markets (paper trading, no money needed) and create API keys."
+  read -r -p "Alpaca API key ID (Enter to skip): " AKEY
+  if [[ -n "$AKEY" ]]; then
+    read -r -p "Alpaca secret key: " ASEC
+    setenv ALPACA_KEY "$AKEY"; setenv ALPACA_SECRET "$ASEC"; setenv ALPACA_ENABLED true
+  fi
+fi
 chmod 600 .env
 
 if [[ ! -f config.yaml ]]; then

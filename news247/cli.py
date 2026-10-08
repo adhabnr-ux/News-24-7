@@ -419,6 +419,12 @@ def cmd_stats(cfg: Config, args: argparse.Namespace) -> int:
     print(
         "\nNote: lag includes the publisher's own feed delay (many blogs update RSS minutes after posting)."
     )
+    wins = st.first_seen_stats(time.time() - args.days * 86400)
+    if wins:
+        print("\nWho had the story first (stories seen by 2+ sources):\n")
+        print(f"{'SOURCE':<26} {'FIRST':>6} {'MEDIAN LEAD':>12}")
+        for w in wins[:20]:
+            print(f"{w['source']:<26} {w['first']:>6} {w['median_lead_s']:>11.0f}s")
     return 0
 
 

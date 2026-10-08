@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from .alpaca_news import AlpacaNewsSource
 from .apis import FinnhubNewsSource, HackerNewsSource, RedditSource
 from .base import PollingSource, Source, SourceContext
 from .bluesky import BlueskySource
@@ -14,6 +15,7 @@ from .rss import RSSSource
 from .sec_edgar import SECEdgarSource
 from .social import MastodonSource, XSource
 from .telegram import TelegramChannelSource
+from .x_stream import XStreamSource
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +33,8 @@ SOURCE_TYPES: dict[str, type[Source]] = {
         MastodonSource,
         BlueskySource,
         TelegramChannelSource,
+        XStreamSource,
+        AlpacaNewsSource,
     )
 }
 

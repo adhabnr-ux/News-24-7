@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import time
 from collections import deque
 from typing import Any
@@ -29,7 +30,12 @@ log = logging.getLogger(__name__)
 BACKFILL_PUSH_MAX_AGE = 300.0  # at start-up, only push items published in the last 5 minutes
 CONFIRM_BONUS, CONFIRM_CAP = 6.0, 18.0
 CATALYST_MIN_SCORE = 25.0
-MULTI_MOVE_MIN = 3  # this many stocks moving the same way in one batch -> one combined alert
+MULTI_MOVE_MIN = 3
+HIJACK_RE = re.compile(
+    r"\b(airdrop|presale|pre-sale|token (launch|sale)|claim (your|now)|connect (your )?wallet|giveaway|"
+    r"\$[A-Z]{2,10} token|memecoin|meme coin|mint now)\b",
+    re.I,
+)  # this many stocks moving the same way in one batch -> one combined alert
 
 
 class Engine:
@@ -166,6 +172,11 @@ class Engine:
         """Raise items from VIP sources/authors to their guaranteed severity. Returns True if VIP."""
         floor_name = item.extra.get("floor")
         if not floor_name or any(r.startswith("muted") for r in analysis.reasons):
+            return False
+        if HIJACK_RE.search(item.text):
+            # official accounts get hijacked to shill crypto (e.g. @OpenAINewsroom, Sep 2024):
+            # never fast-track those, let the normal score decide
+            analysis.reasons.append("VIP floor skipped: looks like a crypto/airdrop scam post")
             return False
         floor = Severity.parse(floor_name)
         if analysis.severity < floor:

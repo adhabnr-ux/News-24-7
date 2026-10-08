@@ -181,8 +181,26 @@ SYNONYMS = {
 }
 
 
+_MONEY_RE = re.compile(r"\$?(\d+(?:\.\d+)?)\s*(billion|bln|bn|b|million|mln|mn|m|trillion|tn|t)\b")
+_UNIT = {
+    "billion": "b",
+    "bln": "b",
+    "bn": "b",
+    "b": "b",
+    "million": "m",
+    "mln": "m",
+    "mn": "m",
+    "m": "m",
+    "trillion": "t",
+    "tn": "t",
+    "t": "t",
+}
+
+
 def tokens(title: str) -> frozenset[str]:
     title = re.sub(r"^@[\w.\-]+:\s*", "", title.lower())
+    # "$50B", "$50 billion" and "50bn" are the same number in different outlets' styles
+    title = _MONEY_RE.sub(lambda m: f" {m.group(1)}{_UNIT[m.group(2)]} ", title)
     out = set()
     for tok in _TOKEN_RE.findall(title):
         tok = tok.strip("'")
@@ -223,7 +241,8 @@ class StoryClusterer:
         self.min_shared = min_shared
         self._stories: dict[int, Story] = {}
         self._index: dict[str, set[int]] = {}
-        self._ids = itertools.count(1)
+        # ids unique across restarts (they're stored with items to compare sources later)
+        self._ids = itertools.count(int(time.time() * 1000))
 
     def __len__(self) -> int:
         return len(self._stories)

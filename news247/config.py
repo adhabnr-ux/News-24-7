@@ -356,7 +356,11 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
     notify = NotifyConfig(channels=channels, rate_limit_per_minute=rate, quiet_hours=quiet)
     web = _dataclass_from(WebConfig, raw.get("web"), "web")
 
-    defaults = load_package_yaml("default_sources.yaml") if raw.get("include_default_sources", True) else []
+    defaults = (
+        expand_env(load_package_yaml("default_sources.yaml"))
+        if as_bool(raw.get("include_default_sources", True))
+        else []
+    )
     sources = _merge_sources(defaults, raw.get("sources") or [])
     for s in sources:
         if "type" not in s:

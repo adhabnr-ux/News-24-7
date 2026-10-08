@@ -17,6 +17,7 @@ from urllib.parse import urlencode
 
 import aiohttp
 
+from ..http import ws_receive_timeout
 from ..models import NewsItem, SourceTier
 from ..util import parse_datetime
 from .base import Emit, Source, _sleep_or_stop
@@ -114,7 +115,10 @@ class BlueskySource(Source):
             host = self.hosts[attempt % len(self.hosts)]
             try:
                 async with self.ctx.http.session.ws_connect(
-                    self.stream_url(host), heartbeat=30, receive_timeout=120, max_msg_size=4 * 1024 * 1024
+                    self.stream_url(host),
+                    heartbeat=30,
+                    **ws_receive_timeout(120),
+                    max_msg_size=4 * 1024 * 1024,
                 ) as ws:
                     self.health.connected = True
                     self._note_ok()

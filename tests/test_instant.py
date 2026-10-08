@@ -362,3 +362,32 @@ async def test_textbelt_strips_links_and_reports_errors(server, http):
     server.on("/text", {"success": False, "error": "Out of quota"})
     with pytest.raises(RuntimeError, match="Out of quota"):
         await n.send(alert())
+
+
+async def test_imessage_tries_older_syntax_and_remembers(monkeypatch):
+    import news247.notify.channels as ch
+
+    used = []
+
+    async def fake_exec(*args, **kw):
+        idx = ch.IMESSAGE_SCRIPTS.index(args[2])
+        used.append(idx)
+        return (
+            FakeProc(0)
+            if idx == 1
+            else FakeProc(1, b"syntax error: Expected class name but found identifier. (-2741)")
+        )
+
+    monkeypatch.setattr(ch.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(ch.asyncio, "create_subprocess_exec", fake_exec)
+    n = IMessageNotifier({"to": "+15551234567"}, None, Severity.HIGH)  # type: ignore[arg-type]
+    await n.send(alert())
+    await n.send(alert())
+    assert used == [0, 1, 1]  # second send goes straight to the syntax that worked
+
+    async def always_fail(*args, **kw):
+        return FakeProc(1, b"Can't get participant")
+
+    monkeypatch.setattr(ch.asyncio, "create_subprocess_exec", always_fail)
+    with pytest.raises(RuntimeError, match="could not send"):
+        await IMessageNotifier({"to": "+1"}, None, Severity.HIGH).send(alert())  # type: ignore[arg-type]

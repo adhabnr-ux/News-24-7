@@ -290,41 +290,54 @@ class EmailNotifier(Notifier):
 # --------------------------------------------------------------------------- texts to your phone
 
 # Sends through the Messages app of a Mac signed in to iMessage. Arguments are passed via argv,
-# never interpolated into the script, so headlines can't inject AppleScript. Three forms are
-# tried: participant-of-account (macOS 11+, works on macOS 26), the legacy buddy-of-service,
-# and finally an existing 1:1 chat id.
-IMESSAGE_SCRIPT = """
+# never interpolated into the script, so headlines can't inject AppleScript. AppleScript compiles
+# a whole script up front and Apple renamed the dictionary terms over the years, so each syntax
+# is a separate script, tried in order:
+#   1. participant-of-account  (macOS 11 Big Sur and later, including macOS 26)
+#   2. buddy-of-service        (macOS 10.x)
+#   3. an existing 1:1 chat id (last resort)
+_IMESSAGE_HEAD = """
 on run argv
     set targetHandle to item 1 of argv
     set messageText to item 2 of argv
     set wantSMS to (item 3 of argv is "sms")
     tell application "Messages"
-        try
-            if wantSMS then
-                set targetAccount to 1st account whose service type = SMS
-            else
-                set targetAccount to 1st account whose service type = iMessage
-            end if
-            send messageText to participant targetHandle of targetAccount
-        on error errA
-            try
-                if wantSMS then
-                    set targetService to 1st service whose service type = SMS
-                else
-                    set targetService to 1st service whose service type = iMessage
-                end if
-                send messageText to buddy targetHandle of targetService
-            on error errB
-                try
-                    send messageText to chat id ("iMessage;-;" & targetHandle)
-                on error errC
-                    error "Messages could not send: " & errA & " / " & errB & " / " & errC
-                end try
-            end try
-        end try
+"""
+_IMESSAGE_TAIL = """
     end tell
 end run
 """
+IMESSAGE_SCRIPTS = [
+    _IMESSAGE_HEAD
+    + """
+        if wantSMS then
+            set targetAccount to 1st account whose service type = SMS
+        else
+            set targetAccount to 1st account whose service type = iMessage
+        end if
+        send messageText to participant targetHandle of targetAccount
+"""
+    + _IMESSAGE_TAIL,
+    _IMESSAGE_HEAD
+    + """
+        if wantSMS then
+            set targetService to 1st service whose service type = SMS
+        else
+            set targetService to 1st service whose service type = iMessage
+        end if
+        send messageText to buddy targetHandle of targetService
+"""
+    + _IMESSAGE_TAIL,
+    _IMESSAGE_HEAD
+    + """
+        if wantSMS then
+            send messageText to chat id ("SMS;-;" & targetHandle)
+        else
+            send messageText to chat id ("iMessage;-;" & targetHandle)
+        end if
+"""
+    + _IMESSAGE_TAIL,
+]
 
 
 class IMessageNotifier(Notifier):
@@ -348,11 +361,11 @@ class IMessageNotifier(Notifier):
         if self.service not in ("imessage", "sms", "auto"):
             raise ValueError("notify.imessage: service must be imessage, sms or auto")
 
-    async def _osascript(self, handle: str, text: str, service: str) -> None:
+    async def _run_script(self, script: str, handle: str, text: str, service: str) -> None:
         proc = await asyncio.create_subprocess_exec(
             "osascript",
             "-e",
-            IMESSAGE_SCRIPT,
+            script,
             handle,
             text,
             service,
@@ -365,10 +378,27 @@ class IMessageNotifier(Notifier):
             proc.kill()
             raise RuntimeError("Messages did not respond within 30s (is it running and signed in?)") from None
         if proc.returncode != 0:
-            msg = err.decode(errors="replace").strip()
-            if "-1743" in msg or "Not authorized" in msg:
-                msg += " — allow Automation access: System Settings > Privacy & Security > Automation"
-            raise RuntimeError(msg or f"osascript exited {proc.returncode}")
+            raise RuntimeError(err.decode(errors="replace").strip() or f"osascript exited {proc.returncode}")
+
+    async def _osascript(self, handle: str, text: str, service: str) -> None:
+        errors = []
+        for i in self._script_order():
+            try:
+                await self._run_script(IMESSAGE_SCRIPTS[i], handle, text, service)
+                self._working_script = i  # remember what works on this Mac
+                return
+            except RuntimeError as exc:
+                msg = str(exc)
+                if "-1743" in msg or "Not authorized" in msg:
+                    raise RuntimeError(
+                        msg + " — allow Automation access: System Settings > Privacy & Security > Automation"
+                    ) from None
+                errors.append(msg)
+        raise RuntimeError("Messages could not send: " + " | ".join(errors))
+
+    def _script_order(self) -> list[int]:
+        first = getattr(self, "_working_script", 0)
+        return [first] + [i for i in range(len(IMESSAGE_SCRIPTS)) if i != first]
 
     async def send(self, alert: Alert) -> None:
         if platform.system() != "Darwin":

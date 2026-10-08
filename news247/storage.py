@@ -196,6 +196,32 @@ class Storage:
             )
         return out
 
+    def first_seen_stats(self, since: float | None = None) -> list[dict[str, Any]]:
+        """For stories reported by 2+ sources: which source had it first, and by how much."""
+        since = since or time.time() - 7 * 86400
+        rows = self.db.execute(
+            "SELECT story_id, source, MIN(detected) AS t FROM items WHERE story_id IS NOT NULL AND detected >= ?"
+            " GROUP BY story_id, source ORDER BY story_id, t",
+            (since,),
+        ).fetchall()
+        stories: dict[int, list[tuple[str, float]]] = {}
+        for r in rows:
+            stories.setdefault(r["story_id"], []).append((r["source"], r["t"]))
+        wins: dict[str, dict[str, Any]] = {}
+        for seen in stories.values():
+            if len(seen) < 2:
+                continue
+            (winner, t0), (_, t1) = seen[0], seen[1]
+            w = wins.setdefault(winner, {"source": winner, "first": 0, "lead_s": []})
+            w["first"] += 1
+            w["lead_s"].append(t1 - t0)
+        out = []
+        for w in wins.values():
+            leads = sorted(w.pop("lead_s"))
+            w["median_lead_s"] = leads[len(leads) // 2]
+            out.append(w)
+        return sorted(out, key=lambda w: w["first"], reverse=True)
+
     def counts(self) -> dict[str, Any]:
         day = time.time() - 86400
         c = self.db.execute

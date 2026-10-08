@@ -32,7 +32,8 @@ _HANDLE_PREFIX = re.compile(r"^@[\w.\-]+:\s*")
 _DOWN_WORDS = re.compile(
     r"\b(plunge\w*|crash\w*|tumble\w*|sink\w*|slump\w*|plummet\w*|fall\w*|drop\w*|sell-?off|bankrupt\w*|halt\w*|"
     r"cuts? guidance|lowers? guidance|withdraws?|miss(es|ed)?|probe|bans?|banned|downgrade\w*|recall\w*|fraud|"
-    r"restat\w*|delist\w*|lawsuit|investigation|warning|layoffs?|resign\w*|ousted|reject\w*|clinical hold)\b",
+    r"restat\w*|delist\w*|lawsuit|investigation|warning|layoffs?|resign\w*|ousted|reject\w*|clinical hold|"
+    r"lower than|below|short of|scales? back|slash\w*)\b",
     re.I,
 )
 _UP_WORDS = re.compile(

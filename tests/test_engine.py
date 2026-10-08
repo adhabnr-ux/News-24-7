@@ -302,3 +302,18 @@ def test_storage_roundtrip_and_stats(tmp_path):
     assert st.prune(0) == 1
     st.close()
     assert Storage(tmp_path / "x.db").seen(it.uid) is False  # pruned rows are forgotten
+
+
+def test_first_seen_stats(tmp_path):
+    from news247.models import Analysis
+
+    st = Storage(tmp_path / "x.db")
+    now = time.time()
+    an = Analysis(score=50, severity=Severity.MEDIUM)
+    for i, (src, dt) in enumerate([("x-stream", 0), ("bloomberg", 60), ("google", 1800)]):
+        st.add_item(
+            NewsItem(source=src, title=f"t{i}", url=f"https://a/{i}", detected=now + dt), an, story_id=1
+        )
+    st.add_item(NewsItem(source="ft", title="solo", url="https://a/solo", detected=now), an, story_id=2)
+    (w,) = st.first_seen_stats()
+    assert w == {"source": "x-stream", "first": 1, "median_lead_s": pytest.approx(60, abs=1)}

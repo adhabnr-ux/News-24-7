@@ -76,26 +76,33 @@ class XSource(PollingSource):
         return out
 
     def parse(self, data: dict[str, Any]) -> list[NewsItem]:
-        users = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
-        out = []
-        for tw in data.get("data", []) or []:
-            user = users.get(tw.get("author_id"), {})
-            handle = user.get("username", "unknown")
-            text = tw.get("text", "")
-            cashtags = [
-                c["tag"].upper() for c in (tw.get("entities") or {}).get("cashtags", []) if c.get("tag")
-            ]
-            out.append(
-                self.make_item(
-                    title=f"@{handle}: {text}",
-                    url=f"https://x.com/{handle}/status/{tw['id']}",
-                    published=parse_datetime(tw.get("created_at")),
-                    author=user.get("name", handle),
-                    uid=f"x:{tw['id']}",
-                    tickers=cashtags,
-                )
-            )
-        return out
+        return parse_tweets(self, data)
+
+
+def parse_tweets(src: Any, data: dict[str, Any]) -> list[NewsItem]:
+    """X API v2 tweet payload (search or stream) -> NewsItems. ``author`` is the @handle so
+    ``vip_authors`` can match it."""
+    tweets = data.get("data") or []
+    if isinstance(tweets, dict):  # the filtered stream sends one tweet per message
+        tweets = [tweets]
+    users = {u["id"]: u for u in (data.get("includes") or {}).get("users", [])}
+    out = []
+    for tw in tweets:
+        user = users.get(tw.get("author_id"), {})
+        handle = user.get("username", "unknown")
+        text = tw.get("text", "")
+        cashtags = [c["tag"].upper() for c in (tw.get("entities") or {}).get("cashtags", []) if c.get("tag")]
+        item = src.make_item(
+            title=f"@{handle}: {text}",
+            url=f"https://x.com/{handle}/status/{tw['id']}",
+            published=parse_datetime(tw.get("created_at")),
+            author=handle,
+            uid=f"x:{tw['id']}",
+            tickers=cashtags,
+        )
+        item.extra["display_name"] = user.get("name", handle)
+        out.append(item)
+    return out
 
 
 class MastodonSource(PollingSource):

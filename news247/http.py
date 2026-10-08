@@ -181,3 +181,10 @@ class HttpClient:
 
     def forget_validators(self, url: str) -> None:
         self._validators.pop(url, None)
+
+
+def ws_receive_timeout(seconds: float) -> dict[str, object]:
+    """``ws_connect`` kwargs for a receive timeout across aiohttp versions."""
+    if hasattr(aiohttp, "ClientWSTimeout"):
+        return {"timeout": aiohttp.ClientWSTimeout(ws_receive=seconds)}
+    return {"receive_timeout": seconds}

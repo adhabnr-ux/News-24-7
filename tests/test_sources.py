@@ -445,6 +445,8 @@ def test_registry_and_build_sources(caplog):
         "mastodon",
         "bluesky",
         "telegram",
+        "x_stream",
+        "alpaca_news",
     }
     srcs = build_sources(
         [
@@ -464,7 +466,7 @@ def test_default_sources_all_construct(cfg):
     defs: list[dict[str, Any]] = []
     for s in cfg.sources:
         s = dict(s, enabled=True)
-        for key in ("bearer_token", "client_id", "client_secret", "token"):
+        for key in ("bearer_token", "client_id", "client_secret", "token", "key", "secret"):
             if key in s:
                 s[key] = "dummy"
         defs.append(s)

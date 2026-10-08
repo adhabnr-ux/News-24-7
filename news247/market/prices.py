@@ -19,7 +19,7 @@ from typing import Any
 import aiohttp
 
 from ..config import MarketConfig
-from ..http import BROWSER_HEADERS, HttpClient
+from ..http import BROWSER_HEADERS, HttpClient, ws_receive_timeout
 from ..models import PriceMove
 from ..sources.base import SourceHealth, _sleep_or_stop
 from .detector import MoveDetector
@@ -257,7 +257,9 @@ class PriceMonitor:
             while not stop.is_set():
                 try:
                     url = f"wss://ws.finnhub.io?token={self.cfg.finnhub_token}"
-                    async with self.http.session.ws_connect(url, heartbeat=30, receive_timeout=90) as ws:
+                    async with self.http.session.ws_connect(
+                        url, heartbeat=30, **ws_receive_timeout(90)
+                    ) as ws:
                         for sym in self.cfg.symbols:
                             await ws.send_str(json.dumps({"type": "subscribe", "symbol": sym}))
                         self.health.connected = True
