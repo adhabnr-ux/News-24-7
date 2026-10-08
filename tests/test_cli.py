@@ -17,7 +17,7 @@ def test_score_command(capsys):
 def test_init_writes_valid_config(tmp_path: Path, capsys):
     dest = tmp_path / "config.yaml"
     assert main(["init", "--path", str(dest)]) == 0
-    assert yaml.safe_load(dest.read_text())["general"]["data_dir"] == "./data"
+    assert yaml.safe_load(dest.read_text())["general"]["data_dir"] == "${DATA_DIR:-./data}"
     assert (tmp_path / ".env").read_text().startswith("# Secrets")
     assert main(["init", "--path", str(dest)]) == 1  # refuses to overwrite
     assert main(["-c", str(dest), "score", "hello"]) == 0

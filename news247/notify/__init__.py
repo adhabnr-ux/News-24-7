@@ -9,6 +9,7 @@ from collections import deque
 from datetime import datetime
 from datetime import time as dtime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..config import NotifyConfig
 from ..http import HttpClient
@@ -27,9 +28,11 @@ def _parse_hhmm(value: str) -> dtime:
 
 
 def in_quiet_hours(quiet: dict[str, Any] | None, now: datetime | None = None) -> bool:
-    if not quiet:
+    if not quiet or not quiet.get("start") or not quiet.get("end"):
         return False
-    now = now or datetime.now()
+    if now is None:
+        tz = quiet.get("timezone")
+        now = datetime.now(ZoneInfo(tz)) if tz else datetime.now()
     start, end = _parse_hhmm(quiet["start"]), _parse_hhmm(quiet["end"])
     t = now.time()
     if start <= end:

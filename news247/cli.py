@@ -428,6 +428,14 @@ def cmd_stats(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backtest(cfg: Config, args: argparse.Namespace) -> int:
+    from .backtest import format_report, run_backtest
+
+    rep = run_backtest(cfg, threshold=Severity.parse(args.threshold))
+    print(format_report(rep, verbose=args.verbose))
+    return 0
+
+
 def cmd_init(cfg: Config | None, args: argparse.Namespace) -> int:
     dest = Path(args.path)
     if dest.exists() and not args.force:
@@ -485,6 +493,10 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("demo", help="simulated AI-launch → software selloff scenario (no network needed)")
     d.add_argument("--speed", type=float, default=1.0, help="playback speed multiplier")
 
+    bt = sub.add_parser("backtest", help="score historical market-moving headlines and noise")
+    bt.add_argument("--threshold", default="high", choices=["medium", "high", "critical"])
+    bt.add_argument("-v", "--verbose", action="store_true", help="show scoring reasons")
+
     st = sub.add_parser("stats", help="latency per source")
     st.add_argument("--days", type=float, default=7)
 
@@ -501,6 +513,7 @@ COMMANDS = {
     "test-notify": cmd_test_notify,
     "demo": cmd_demo,
     "stats": cmd_stats,
+    "backtest": cmd_backtest,
 }
 
 

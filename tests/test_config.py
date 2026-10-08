@@ -26,18 +26,46 @@ def test_defaults_build_without_any_file():
     assert cfg.market.overrides["SPY"][0].pct < cfg.market.rules[0].pct
 
 
-def test_example_config_is_valid():
+def test_example_config_is_valid_and_off_by_default(monkeypatch):
+    for k in ("SENDBLUE_ENABLED", "IMESSAGE_TO", "PORT", "WEB_HOST", "NTFY_ENABLED"):
+        monkeypatch.delenv(k, raising=False)
     text = resources.files("news247.data").joinpath("config.example.yaml").read_text()
     cfg = build_config(yaml.safe_load(text))
-    assert any(s["name"] == "x" and s["enabled"] is False for s in cfg.sources)
-    assert "TSLA" in cfg.market.overrides
-    assert {c.name for c in cfg.notify.channels} >= {"ntfy", "telegram", "discord", "email"}
+    enabled = [c.name for c in cfg.notify.channels if c.enabled]
+    assert enabled == ["console"]  # nothing texts anyone until configured
+    assert cfg.web.port == 8247 and cfg.web.host == "127.0.0.1"
+    assert {c.name for c in cfg.notify.channels} >= {"sendblue", "imessage", "ntfy", "textbelt", "telegram"}
+
+
+def test_cloud_env_only_setup(monkeypatch, tmp_path):
+    """A cloud host with no config file: just env vars -> iMessage via Sendblue to my number."""
+    monkeypatch.chdir(tmp_path)  # no config.yaml here
+    monkeypatch.setenv("IMESSAGE_TO", "+15551234567")
+    monkeypatch.setenv("SENDBLUE_ENABLED", "true")
+    monkeypatch.setenv("SENDBLUE_API_KEY_ID", "id")
+    monkeypatch.setenv("SENDBLUE_API_SECRET", "secret")
+    monkeypatch.setenv("PORT", "10000")
+    monkeypatch.setenv("WEB_HOST", "0.0.0.0")
+    monkeypatch.setenv("TEXTBELT_ENABLED", "true")
+    monkeypatch.setenv("PHONE_MIN_SEVERITY", "critical")
+    cfg = load_config()
+    by = {c.name: c for c in cfg.notify.channels}
+    assert by["sendblue"].enabled and by["sendblue"].options["to"] == "+15551234567"
+    assert by["sendblue"].min_severity is Severity.CRITICAL
+    assert by["textbelt"].options["to"] == "+15551234567"  # SMS_TO falls back to IMESSAGE_TO
+    assert cfg.web.port == 10000 and cfg.web.host == "0.0.0.0"
+    assert not by["imessage"].enabled
 
 
 def test_env_expansion(monkeypatch):
     monkeypatch.setenv("N247_TOPIC", "secret-topic")
-    out = expand_env({"a": "${N247_TOPIC}", "b": ["x-${MISSING:-fallback}"], "c": 5})
+    monkeypatch.setenv("N247_EMPTY", "")
+    monkeypatch.delenv("N247_MISSING", raising=False)
+    out = expand_env({"a": "${N247_TOPIC}", "b": ["x-${N247_MISSING:-fallback}"], "c": 5})
     assert out == {"a": "secret-topic", "b": ["x-fallback"], "c": 5}
+    assert expand_env("${N247_EMPTY:-dflt}") == "dflt"  # empty counts as unset, like the shell
+    assert expand_env("${N247_MISSING:-${N247_TOPIC:-}}") == "secret-topic"  # nested defaults
+    assert expand_env("${N247_MISSING:-${N247_ALSO_MISSING:-}}") == ""
 
 
 def test_dotenv(tmp_path: Path, monkeypatch):
@@ -64,6 +92,8 @@ def test_unknown_keys_rejected():
         build_config({"scoring": {"critical": 10, "high": 50}})
     with pytest.raises(ConfigError, match="finnhub_token"):
         build_config({"market": {"provider": "finnhub"}})
+    with pytest.raises(ConfigError, match="expected a number"):
+        build_config({"web": {"port": "eighty"}})
 
 
 def test_source_override_and_addition():

@@ -23,7 +23,9 @@ import yaml
 
 from .models import Severity
 
-_ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+# innermost ${NAME} / ${NAME:-default} (default may not contain "$", "{" or "}"), so nested
+# defaults like ${SMS_TO:-${IMESSAGE_TO:-}} resolve from the inside out
+_ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^${}]*))?\}")
 
 
 class ConfigError(ValueError):
@@ -50,7 +52,13 @@ def load_dotenv(path: Path) -> None:
 def expand_env(value: Any) -> Any:
     """Recursively substitute ${VAR} / ${VAR:-default} in strings."""
     if isinstance(value, str):
-        return _ENV_RE.sub(lambda m: os.environ.get(m.group(1), m.group(2) or ""), value)
+        for _ in range(10):  # nesting depth guard
+            # shell semantics: the default applies when the variable is unset *or empty*
+            new = _ENV_RE.sub(lambda m: os.environ.get(m.group(1)) or (m.group(2) or ""), value)
+            if new == value:
+                break
+            value = new
+        return value
     if isinstance(value, list):
         return [expand_env(v) for v in value]
     if isinstance(value, dict):
@@ -261,8 +269,17 @@ def _dataclass_from(cls: type, data: dict[str, Any] | None, section: str) -> Any
     if unknown:
         raise ConfigError(f"[{section}] unknown key(s): {', '.join(sorted(unknown))}")
     for name, f in cls.__dataclass_fields__.items():  # type: ignore[attr-defined]
-        if f.type in ("bool", bool) and name in data:
-            data[name] = as_bool(data[name])
+        if name not in data:
+            continue
+        try:
+            if f.type in ("bool", bool):
+                data[name] = as_bool(data[name])
+            elif f.type in ("int", int) and isinstance(data[name], str):
+                data[name] = int(data[name])
+            elif f.type in ("float", float) and isinstance(data[name], str):
+                data[name] = float(data[name])
+        except ValueError:
+            raise ConfigError(f"[{section}] {name}: expected a number, got {data[name]!r}") from None
     return cls(**data)
 
 
@@ -382,4 +399,6 @@ def load_config(path: str | Path | None = None) -> Config:
         return build_config(raw, candidate.resolve())
     if path:
         raise ConfigError(f"config file not found: {candidate}")
-    return build_config({}, None)
+    # No config file (typical on a cloud host): use the documented example, which takes
+    # everything personal from environment variables.
+    return build_config(load_package_yaml("config.example.yaml"), None)

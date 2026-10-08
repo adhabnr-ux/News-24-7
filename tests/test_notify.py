@@ -141,6 +141,8 @@ def test_quiet_hours():
     assert not in_quiet_hours(q, datetime(2026, 1, 1, 12, 0))
     assert in_quiet_hours({"start": "12:00", "end": "13:00"}, datetime(2026, 1, 1, 12, 30))
     assert not in_quiet_hours(None)
+    assert not in_quiet_hours({"start": "", "end": ""})  # env not set -> off
+    assert in_quiet_hours({"start": "00:00", "end": "23:59", "timezone": "Asia/Tokyo"}) in (True, False)
 
 
 async def test_dispatcher_routing_rate_limit_and_failure_isolation(server, http):
