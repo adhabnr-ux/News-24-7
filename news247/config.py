@@ -247,6 +247,10 @@ CHANNEL_NAMES = (
     "webhook",
     "imessage",
     "twilio",
+    "bluebubbles",
+    "sendblue",
+    "blooio",
+    "textbelt",
 )
 
 

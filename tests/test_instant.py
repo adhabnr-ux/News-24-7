@@ -284,3 +284,81 @@ def test_env_driven_enable_flags(monkeypatch):
     assert as_bool("yes") and not as_bool("off") and as_bool("", default=False) is False
     with pytest.raises(ConfigError):
         as_bool("maybe")
+
+
+async def test_bluebubbles_send_and_new_chat_fallback(server, http):
+    from news247.notify.channels import BlueBubblesNotifier
+
+    calls = {"n": 0}
+
+    def text_handler(request):
+        from aiohttp import web
+
+        calls["n"] += 1
+        return web.json_response({"status": 500, "error": "chat not found"}, status=500)
+
+    server.on("/api/v1/message/text", text_handler)
+    server.on("/api/v1/chat/new", {"status": 200})
+    n = BlueBubblesNotifier(
+        {"server": server.url(""), "password": "pw", "to": "+15551234567"}, http, Severity.HIGH
+    )
+    await n.send(alert())
+    first, second = server.requests[-2], server.requests[-1]
+    assert first["path"] == "/api/v1/message/text" and first["query"] == {"password": "pw"}
+    assert (
+        first["json"]["chatGuid"] == "iMessage;-;+15551234567" and first["json"]["method"] == "apple-script"
+    )
+    assert first["json"]["tempGuid"] and first["json"]["message"].startswith("🔴")
+    assert second["path"] == "/api/v1/chat/new" and second["json"]["addresses"] == ["+15551234567"]
+    assert second["json"]["tempGuid"] != first["json"]["tempGuid"]
+
+
+async def test_sendblue_payload_and_error(server, http):
+    from news247.notify.channels import SendblueNotifier
+
+    server.on("/api/send-message", {"status": "QUEUED"})
+    n = SendblueNotifier(
+        {
+            "api_key_id": "k",
+            "api_secret": "s",
+            "to": "+15551234567",
+            "from_number": "+15550001111",
+            "api_base": server.url(""),
+        },
+        http,
+        Severity.HIGH,
+    )
+    await n.send(alert())
+    req = server.requests[-1]
+    assert req["headers"]["sb-api-key-id"] == "k" and req["headers"]["sb-api-secret-key"] == "s"
+    assert req["json"]["number"] == "+15551234567" and req["json"]["from_number"] == "+15550001111"
+    assert "Introducing ChatGPT agents" in req["json"]["content"]
+    server.on("/api/send-message", {"status": "ERROR", "error_message": "contact not verified"})
+    with pytest.raises(RuntimeError, match="not verified"):
+        await n.send(alert())
+
+
+async def test_blooio_payload(server, http):
+    from news247.notify.channels import BlooioNotifier
+
+    server.on("/v2/api/chats/+15551234567/messages", {"ok": True})
+    n = BlooioNotifier(
+        {"api_key": "key", "to": "+15551234567", "api_base": server.url("")}, http, Severity.HIGH
+    )
+    await n.send(alert())
+    req = server.requests[-1]
+    assert req["headers"]["Authorization"] == "Bearer key" and req["headers"]["Idempotency-Key"]
+    assert req["json"]["text"].startswith("🔴")
+
+
+async def test_textbelt_strips_links_and_reports_errors(server, http):
+    from news247.notify.channels import TextbeltNotifier
+
+    server.on("/text", {"success": True, "quotaRemaining": 9, "textId": "1"})
+    n = TextbeltNotifier({"key": "k", "to": "5551234567", "api_base": server.url("")}, http, Severity.HIGH)
+    await n.send(alert())
+    body = server.requests[-1]["body"].decode()
+    assert "phone=5551234567" in body and "key=k" in body and "openai.com" not in body
+    server.on("/text", {"success": False, "error": "Out of quota"})
+    with pytest.raises(RuntimeError, match="Out of quota"):
+        await n.send(alert())

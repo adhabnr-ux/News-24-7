@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import html
 import logging
 import os
@@ -289,8 +290,9 @@ class EmailNotifier(Notifier):
 # --------------------------------------------------------------------------- texts to your phone
 
 # Sends through the Messages app of a Mac signed in to iMessage. Arguments are passed via argv,
-# never interpolated into the script, so headlines can't inject AppleScript. Two syntaxes are
-# tried because Apple renamed the dictionary terms (service/buddy -> account/participant).
+# never interpolated into the script, so headlines can't inject AppleScript. Three forms are
+# tried: participant-of-account (macOS 11+, works on macOS 26), the legacy buddy-of-service,
+# and finally an existing 1:1 chat id.
 IMESSAGE_SCRIPT = """
 on run argv
     set targetHandle to item 1 of argv
@@ -313,7 +315,11 @@ on run argv
                 end if
                 send messageText to buddy targetHandle of targetService
             on error errB
-                error "Messages could not send: " & errA & " / " & errB
+                try
+                    send messageText to chat id ("iMessage;-;" & targetHandle)
+                on error errC
+                    error "Messages could not send: " & errA & " / " & errB & " / " & errC
+                end try
             end try
         end try
     end tell
@@ -411,6 +417,143 @@ class TwilioSMSNotifier(Notifier):
             )
 
 
+def _numbers(value: Any) -> list[str]:
+    raw = value if isinstance(value, list) else str(value).split(",")
+    return [str(v).strip() for v in raw if str(v).strip()]
+
+
+class BlueBubblesNotifier(Notifier):
+    """iMessage through a BlueBubbles server (a free app on an always-on Mac). Lets the monitor
+    itself run anywhere (cloud, Linux box) while the Mac only relays messages.
+    Options: ``server`` (e.g. https://my-mac.example.com), ``password``, ``to``, ``method``
+    ("apple-script" default, or "private-api")."""
+
+    name = "bluebubbles"
+
+    def validate(self) -> None:
+        self.require("server", "password", "to")
+        self.recipients = _numbers(self.options["to"])
+
+    async def send(self, alert: Alert) -> None:
+        import uuid
+
+        from ..http import HTTPError
+
+        server = str(self.options["server"]).rstrip("/")
+        params = {"password": self.options["password"]}  # kept out of the URL string we log
+        method = self.options.get("method", "apple-script")
+        text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
+        for handle in self.recipients:
+            body = {
+                "chatGuid": f"iMessage;-;{handle}",
+                "tempGuid": str(uuid.uuid4()),
+                "message": text,
+                "method": method,
+            }
+            try:
+                await self.http.post(f"{server}/api/v1/message/text", params=params, json=body)
+            except HTTPError as exc:
+                if exc.status not in (400, 404, 500):
+                    raise
+                # no existing conversation with this number yet: start one
+                await self.http.post(
+                    f"{server}/api/v1/chat/new",
+                    params=params,
+                    json={
+                        "addresses": [handle],
+                        "message": text,
+                        "service": "iMessage",
+                        "method": method,
+                        "tempGuid": str(uuid.uuid4()),
+                    },
+                )
+
+
+class SendblueNotifier(Notifier):
+    """Hosted iMessage API (no Mac needed). Options: ``api_key_id``, ``api_secret``, ``to``,
+    ``from_number`` (your Sendblue line). On the free sandbox, text your Sendblue number once
+    from your phone first so it is a verified contact."""
+
+    name = "sendblue"
+
+    def validate(self) -> None:
+        self.require("api_key_id", "api_secret", "to")
+        self.recipients = _numbers(self.options["to"])
+
+    async def send(self, alert: Alert) -> None:
+        base = str(self.options.get("api_base", "https://api.sendblue.com")).rstrip("/")
+        headers = {
+            "sb-api-key-id": self.options["api_key_id"],
+            "sb-api-secret-key": self.options["api_secret"],
+        }
+        text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
+        for number in self.recipients:
+            body: dict[str, Any] = {"number": number, "content": text}
+            if self.options.get("from_number"):
+                body["from_number"] = self.options["from_number"]
+            resp = await self.http.post(f"{base}/api/send-message", json=body, headers=headers)
+            with contextlib.suppress(ValueError):
+                data = resp.json()
+                if isinstance(data, dict) and str(data.get("status", "")).upper() == "ERROR":
+                    raise RuntimeError(f"Sendblue: {data.get('error_message') or data}")
+
+
+class BlooioNotifier(Notifier):
+    """Hosted iMessage API (no Mac needed). Options: ``api_key``, ``to``."""
+
+    name = "blooio"
+
+    def validate(self) -> None:
+        self.require("api_key", "to")
+        self.recipients = _numbers(self.options["to"])
+
+    async def send(self, alert: Alert) -> None:
+        import uuid
+        from urllib.parse import quote
+
+        base = str(self.options.get("api_base", "https://backend.blooio.com")).rstrip("/")
+        text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
+        for number in self.recipients:
+            await self.http.post(
+                f"{base}/v2/api/chats/{quote(number, safe='')}/messages",
+                json={"text": text},
+                headers={
+                    "Authorization": f"Bearer {self.options['api_key']}",
+                    "Idempotency-Key": str(uuid.uuid4()),
+                },
+            )
+
+
+class TextbeltNotifier(Notifier):
+    """Plain SMS via Textbelt: prepaid key, no carrier registration paperwork.
+    Options: ``key``, ``to``. Note: Textbelt may hold messages containing links until your
+    account is verified, so ``include_url`` defaults to false."""
+
+    name = "textbelt"
+
+    def validate(self) -> None:
+        self.require("key", "to")
+        self.recipients = _numbers(self.options["to"])
+
+    async def send(self, alert: Alert) -> None:
+        base = str(self.options.get("api_base", "https://textbelt.com")).rstrip("/")
+        shown = alert if self.options.get("include_url", False) else _without_url(alert)
+        text = sms_text(shown, limit=int(self.options.get("max_chars", 320)))
+        for number in self.recipients:
+            resp = await self.http.post(
+                f"{base}/text", data={"phone": number, "message": text, "key": self.options["key"]}
+            )
+            data = resp.json()
+            if not data.get("success"):
+                raise RuntimeError(f"Textbelt: {data.get('error') or data}")
+
+
+def _without_url(alert: Alert) -> Alert:
+    import dataclasses
+
+    return dataclasses.replace(alert, url="")
+
+
 CHANNEL_CLASSES: dict[str, type[Notifier]] = {
     cls.name: cls
     for cls in (
@@ -425,5 +568,9 @@ CHANNEL_CLASSES: dict[str, type[Notifier]] = {
         EmailNotifier,
         IMessageNotifier,
         TwilioSMSNotifier,
+        BlueBubblesNotifier,
+        SendblueNotifier,
+        BlooioNotifier,
+        TextbeltNotifier,
     )
 }

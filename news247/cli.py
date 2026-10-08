@@ -433,8 +433,11 @@ def cmd_init(cfg: Config | None, args: argparse.Namespace) -> int:
     env = dest.parent / ".env"
     if not env.exists():
         env.write_text(
-            "# Secrets referenced from config.yaml as ${NAME}\nNTFY_TOPIC=\nTELEGRAM_BOT_TOKEN=\nTELEGRAM_CHAT_ID=\n"
-            "DISCORD_WEBHOOK_URL=\nFINNHUB_TOKEN=\nX_BEARER_TOKEN=\nREDDIT_CLIENT_ID=\nREDDIT_CLIENT_SECRET=\n"
+            "# Secrets referenced from config.yaml as ${NAME}\n"
+            "CONTACT_EMAIL=\n"
+            "# iMessage from this Mac (deploy/install-macos.sh fills these in)\nIMESSAGE_ENABLED=false\nIMESSAGE_TO=\n"
+            "NTFY_TOPIC=\nTELEGRAM_BOT_TOKEN=\nTELEGRAM_CHAT_ID=\nDISCORD_WEBHOOK_URL=\n"
+            "FINNHUB_TOKEN=\nX_BEARER_TOKEN=\nREDDIT_CLIENT_ID=\nREDDIT_CLIENT_SECRET=\n"
         )
     print(f"Wrote {dest} and {env}. Edit them, then run `news247 check` and `news247 run`.")
     return 0
