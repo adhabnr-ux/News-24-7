@@ -317,3 +317,65 @@ def test_first_seen_stats(tmp_path):
     st.add_item(NewsItem(source="ft", title="solo", url="https://a/solo", detected=now), an, story_id=2)
     (w,) = st.first_seen_stats()
     assert w == {"source": "x-stream", "first": 1, "median_lead_s": pytest.approx(60, abs=1)}
+
+
+async def test_setup_page_phone_and_test_message(cfg, monkeypatch):
+    from news247.notify.channels import SendblueNotifier
+
+    eng, cap = make_engine(cfg)
+    sb = SendblueNotifier(
+        {"api_key_id": "k", "api_secret": "s", "from_number": "+15550001111"}, None, Severity.HIGH
+    )  # type: ignore[arg-type]
+    sent = []
+
+    async def fake_send(alert):
+        sent.append((list(sb.targets()), alert.title))
+
+    sb.send = fake_send  # type: ignore[method-assign]
+    eng.dispatcher.channels = [sb]
+    web_srv = WebServer(eng, cfg.web)
+    async with TestClient(TestServer(web_srv.app)) as client:
+        assert (await client.get("/setup")).status == 200
+        st = await (await client.get("/api/setup")).json()
+        assert st["writable"] is True and st["phone"] == [] and st["channels"][0]["name"] == "sendblue"
+        bad = await client.post("/api/setup", json={"phone": "12"})
+        assert bad.status == 400
+        ok = await client.post("/api/setup", json={"phone": "(555) 123-4567"})
+        assert (await ok.json())["phone"] == ["+15551234567"]
+        res = await (await client.post("/api/setup/test")).json()
+        assert res == {"sendblue": "ok"} and sent[0][0] == ["+15551234567"]
+        # reached through a proxy/the internet without a token: read-only
+        st = await (await client.get("/api/setup", headers={"X-Forwarded-For": "8.8.8.8"})).json()
+        assert st["writable"] is False
+        denied = await client.post(
+            "/api/setup", json={"phone": "+15551234567"}, headers={"X-Forwarded-For": "8.8.8.8"}
+        )
+        assert denied.status == 403 and "DASHBOARD_TOKEN" in await denied.text()
+    # the saved number survives a restart
+    assert eng.storage.get_setting("phone") == "+15551234567"
+
+
+async def test_setup_with_token_allows_remote_writes(cfg):
+    cfg.web.token = "tok"
+    eng, cap = make_engine(cfg)
+    from news247.notify.channels import TextbeltNotifier
+
+    eng.dispatcher.channels = [TextbeltNotifier({"key": "k"}, None, Severity.HIGH)]  # type: ignore[arg-type]
+    async with TestClient(TestServer(WebServer(eng, cfg.web).app)) as client:
+        r = await client.post(
+            "/api/setup?token=tok", json={"phone": "+447911123456"}, headers={"X-Forwarded-For": "1.2.3.4"}
+        )
+        assert r.status == 200 and (await r.json())["phone"] == ["+447911123456"]
+        assert (await client.post("/api/setup", json={"phone": "+447911123456"})).status == 401
+
+
+async def test_saved_phone_applied_on_startup(cfg, tmp_path):
+    from news247.notify.channels import TextbeltNotifier
+
+    st = Storage(tmp_path / "s.db")
+    st.set_setting("phone", "+15557654321")
+    disp = Dispatcher(cfg.notify, None)  # type: ignore[arg-type]
+    disp.channels = [TextbeltNotifier({"key": "k", "to": "+15550000000"}, None, Severity.HIGH)]  # type: ignore[arg-type]
+    cfg.market.enabled = False
+    Engine(cfg, storage=st, dispatcher=disp, sources=[])
+    assert disp.channels[0].recipients == ["+15557654321"]

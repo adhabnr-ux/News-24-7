@@ -228,3 +228,36 @@ def test_entity_matcher():
         "XYZ",
     ]
     assert "NOW" not in m.find_tickers("", "Act NOW")  # stoplisted bare word
+
+
+def test_backtest_against_market_history():
+    """Regression guard for the importance criteria: replay ~100 historical market-moving
+    events (first reports) and ~85 noise headlines (news247/data/history.yaml)."""
+    from news247.backtest import run_backtest
+
+    rep = run_backtest(build_config({}))
+    assert len(rep.events) >= 90 and len(rep.noise) >= 80
+    assert rep.recall >= 0.90, f"recall fell to {rep.recall:.0%}"
+    assert rep.false_alarm_rate <= 0.02, f"false alarms rose to {rep.false_alarm_rate:.0%}"
+
+
+def test_surprise_and_magnitude_features():
+    from news247.analysis.scorer import magnitude_boost, surprise_boost
+
+    assert surprise_boost("US MAY NONFARM PAYROLLS +172K; EST. +80K")[0] == 30
+    assert surprise_boost("US AUG CORE CPI RISES 0.6% M/M; EST. 0.3%")[0] == 30
+    assert surprise_boost("CPI 3.1% vs 3.1% expected") is None
+    assert surprise_boost("Apple sells 10 iPhones vs 12 last year") is None
+    assert max(p for p, _ in magnitude_boost("will impose a Tariff of 100% on China")) == 20
+    assert any("bp" in why for _, why in magnitude_boost("Fed Likely to Consider 75-Basis-Point Rate Rise"))
+    assert any("$300B" in why for _, why in magnitude_boost("Oracle, OpenAI Sign $300 Billion Cloud Deal"))
+
+
+def test_wildcard_terms_and_shouting_aliases():
+    assert re.search(term_regex("cuts * outlook"), "Chegg cuts its 2025 revenue outlook", re.I)
+    assert not re.search(term_regex("cuts * outlook"), "cuts jobs and then more things in the outlook", re.I)
+    m = EntityMatcher([{"name": "Federal Reserve", "cased": ["Fed"], "authority": True}])
+    assert [c.name for c in m.find_companies("FED CUTS RATES BY HALF POINT IN EMERGENCY MOVE")] == [
+        "Federal Reserve"
+    ]
+    assert m.find_companies("I fed the cat") == []

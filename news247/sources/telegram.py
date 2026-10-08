@@ -80,4 +80,5 @@ class TelegramChannelSource(PollingSource):
                     uid=f"tg:{p['channel'].lower()}:{p['id']}",
                 )
             )
+            items[-1].extra.setdefault("relay", True)
         return items

@@ -228,6 +228,7 @@ class Story:
     max_score: float = 0.0
     alerted: Severity | None = None  # highest severity already pushed for this story
     alert_id: str = ""
+    unconfirmed: bool = False  # alerted on a single social/squawk relay, awaiting a real source
 
     @property
     def confirmations(self) -> int:

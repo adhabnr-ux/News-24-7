@@ -29,6 +29,29 @@ from .models import Alert, NewsItem, PriceMove, Severity, SourceTier
 log = logging.getLogger("news247")
 
 
+def ensure_data_dir(cfg: Config) -> None:
+    """Make sure the data folder is writable; otherwise fall back to a temp folder (with a
+    loud warning) so the monitor still runs instead of crash-looping."""
+    path = cfg.data_path
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write-test"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        import tempfile
+
+        fallback = Path(tempfile.gettempdir()) / "news247-data"
+        fallback.mkdir(parents=True, exist_ok=True)
+        cfg.general.data_dir = str(fallback)
+        cfg.path = None
+        print(
+            f"WARNING: data folder {path} is not writable ({exc}); using {fallback} instead. "
+            "History and settings will not survive a restart until the folder is writable.",
+            file=sys.stderr,
+        )
+
+
 def setup_logging(cfg: Config, verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else getattr(logging, cfg.general.log_level.upper(), logging.INFO)
     root = logging.getLogger()
@@ -531,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
     if args.cmd in ("run", "demo"):
+        ensure_data_dir(cfg)
         setup_logging(cfg, args.verbose)
     else:
         logging.basicConfig(

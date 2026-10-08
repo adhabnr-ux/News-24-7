@@ -218,7 +218,10 @@ async def test_replay_openai_revenue_scoop(cfg):
     assert text.startswith("🟠 @DeItaone: OPENAI TOLD INVESTORS") or text.startswith("🔴 @DeItaone")
     assert "NVDA" in text
 
-    # the same story from a publisher feed a minute later: confirmation, not a duplicate text
+    # a squawk alone is fast but unverified: the first text says so
+    assert "UNCONFIRMED" in cap.alerts[0].body
+    # the same story from a real publisher a minute later -> one short "CONFIRMED" follow-up,
+    # not a second copy of the news
     await eng.on_item(
         NewsItem(
             source="bloomberg-technology",
@@ -229,7 +232,9 @@ async def test_replay_openai_revenue_scoop(cfg):
         )
     )
     await eng.drain()
-    assert all(al.item is None or al.severity > cap.alerts[0].severity for al in cap.alerts[1:])
+    follow = [a for a in cap.alerts[1:] if a.kind == "news"]
+    assert follow and follow[0].title.startswith("✅ CONFIRMED:") and "bloomberg-technology" in follow[0].body
+    assert not any("UNCONFIRMED" in a.body for a in follow)
 
     # then the stocks fall: one combined alert that names the scoop as the likely cause
     cap.alerts.clear()
@@ -244,3 +249,22 @@ async def test_replay_openai_revenue_scoop(cfg):
     assert len(cap.alerts) == 1
     causes = [r["title"] for r in cap.alerts[0].related]
     assert causes and all("50" in t and "REVENUE" in t.upper() for t in causes[:2])
+
+
+async def test_fake_squawk_stays_unconfirmed(cfg):
+    """Apr 7 2025: a misread '90-day pause' squawk. It should alert (it moved the S&P 8%) but be
+    clearly labelled, and nothing should 'confirm' it when only more relays repeat it."""
+    eng, cap = make_engine(cfg)
+    x = XStreamSource({"name": "x-stream", "bearer_token": "t", "accounts": ["DeItaone", "FirstSquawk"]}, CTX)
+    msg = json.loads(json.dumps(TWEET))
+    msg["data"]["text"] = (
+        "HASSETT: TRUMP IS CONSIDERING A 90-DAY PAUSE IN TARIFFS FOR ALL COUNTRIES EXCEPT CHINA"
+    )
+    await eng.on_item(x.handle_line(json.dumps(msg).encode())[0])
+    msg2 = json.loads(json.dumps(msg))
+    msg2["data"]["id"] = "1901"
+    msg2["includes"]["users"][0]["username"] = "FirstSquawk"
+    await eng.on_item(x.handle_line(json.dumps(msg2).encode())[0])
+    await eng.drain()
+    assert cap.alerts and "UNCONFIRMED" in cap.alerts[0].body
+    assert not any(a.title.startswith("✅ CONFIRMED") for a in cap.alerts)

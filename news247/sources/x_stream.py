@@ -104,7 +104,9 @@ class XStreamSource(Source):
         items = parse_tweets(self, msg)
         for it in items:
             if it.author.lower() in self._vip_lower:
-                it.tier = SourceTier.PRIMARY
+                it.tier = SourceTier.PRIMARY  # the company/person itself
+            else:
+                it.extra["relay"] = True  # a squawk re-posting news: fast but unverified
         return items
 
     async def run(self, emit: Emit, stop: asyncio.Event) -> None:

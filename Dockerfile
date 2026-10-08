@@ -6,9 +6,10 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY news247 ./news247
-RUN pip install . && useradd --create-home --uid 1000 news247 && mkdir -p /data/data && chown -R news247 /data
+RUN pip install . && mkdir -p /data/data
 
-USER news247
+# Runs as root on purpose: Render/Railway/Fly mount persistent disks owned by root, and a
+# non-root user could not save the database (and your phone number) there.
 WORKDIR /data
 EXPOSE 8247
 HEALTHCHECK --interval=60s --timeout=5s --start-period=30s \

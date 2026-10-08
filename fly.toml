@@ -1,0 +1,35 @@
+# Fly.io deploy (cheapest always-on option, ~$3-4/month; needs the flyctl CLI):
+#   fly launch --no-deploy --copy-config
+#   fly volumes create news247_data --size 1
+#   fly secrets set IMESSAGE_TO=+15551234567 SENDBLUE_ENABLED=true \
+#       SENDBLUE_API_KEY_ID=... SENDBLUE_API_SECRET=... CONTACT_EMAIL=you@example.com \
+#       DASHBOARD_TOKEN=$(openssl rand -hex 16)
+#   fly deploy
+app = "news247"
+primary_region = "iad"
+
+[env]
+  PORT = "8247"
+  TIMEZONE = "America/New_York"
+
+[[mounts]]
+  source = "news247_data"
+  destination = "/data/data"
+
+[http_service]
+  internal_port = 8247
+  force_https = true
+  auto_stop_machines = "off"   # must stay running to catch news
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "60s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

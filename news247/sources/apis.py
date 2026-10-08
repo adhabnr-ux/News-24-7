@@ -131,7 +131,7 @@ class RedditSource(PollingSource):
                 published=float(d["created_utc"]) if d.get("created_utc") else None,
                 author=f"r/{d.get('subreddit', '')} u/{d.get('author', '')}",
             )
-            item.extra.update({"score": d.get("score"), "link": d.get("url")})
+            item.extra.update({"score": d.get("score"), "link": d.get("url"), "relay": True})
             out.append(item)
         return out
 

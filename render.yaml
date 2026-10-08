@@ -1,0 +1,33 @@
+# One-click cloud deploy on Render (https://render.com): runs News247 24/7 and texts your phone.
+#   1. Click the "Deploy to Render" button in the README (or New > Blueprint > this repo).
+#   2. Render asks for the values marked "sync: false" below — your phone number and your
+#      Sendblue keys (free at sendblue.com). That's all you type.
+#   3. After it's live, open the dashboard URL + ?token=<DASHBOARD_TOKEN> (shown under
+#      Environment), go to Setup, and press "Send test message".
+services:
+  - type: web
+    name: news247
+    runtime: docker
+    plan: starter            # always on (~$7/month); the free plan sleeps and would miss news
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: IMESSAGE_TO
+        sync: false          # your phone number, e.g. +15551234567
+      - key: SENDBLUE_ENABLED
+        value: "true"
+      - key: SENDBLUE_API_KEY_ID
+        sync: false
+      - key: SENDBLUE_API_SECRET
+        sync: false
+      - key: CONTACT_EMAIL
+        sync: false          # the SEC requires a contact e-mail in requests
+      - key: DASHBOARD_TOKEN
+        generateValue: true  # protects the dashboard/setup page on the public URL
+      - key: TIMEZONE
+        value: America/New_York
+    disk:
+      name: news247-data
+      mountPath: /data/data
+      sizeGB: 1

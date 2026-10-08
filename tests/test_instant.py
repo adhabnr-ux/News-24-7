@@ -334,7 +334,7 @@ async def test_sendblue_payload_and_error(server, http):
     assert req["json"]["number"] == "+15551234567" and req["json"]["from_number"] == "+15550001111"
     assert "Introducing ChatGPT agents" in req["json"]["content"]
     server.on("/api/send-message", {"status": "ERROR", "error_message": "contact not verified"})
-    with pytest.raises(RuntimeError, match="not verified"):
+    with pytest.raises(RuntimeError, match="text your Sendblue number"):
         await n.send(alert())
 
 
@@ -358,7 +358,7 @@ async def test_textbelt_strips_links_and_reports_errors(server, http):
     n = TextbeltNotifier({"key": "k", "to": "5551234567", "api_base": server.url("")}, http, Severity.HIGH)
     await n.send(alert())
     body = server.requests[-1]["body"].decode()
-    assert "phone=5551234567" in body and "key=k" in body and "openai.com" not in body
+    assert "phone=%2B15551234567" in body and "key=k" in body and "openai.com" not in body
     server.on("/text", {"success": False, "error": "Out of quota"})
     with pytest.raises(RuntimeError, match="Out of quota"):
         await n.send(alert())
@@ -391,3 +391,48 @@ async def test_imessage_tries_older_syntax_and_remembers(monkeypatch):
     monkeypatch.setattr(ch.asyncio, "create_subprocess_exec", always_fail)
     with pytest.raises(RuntimeError, match="could not send"):
         await IMessageNotifier({"to": "+1"}, None, Severity.HIGH).send(alert())  # type: ignore[arg-type]
+
+
+def test_normalize_phone():
+    from news247.notify.channels import normalize_phone
+
+    assert normalize_phone("(555) 123-4567") == "+15551234567"
+    assert normalize_phone("1 555 123 4567") == "+15551234567"
+    assert normalize_phone("+44 20 7946 0958") == "+442079460958"
+    assert normalize_phone("0044 20 7946 0958") == "+442079460958"
+    assert normalize_phone("me@icloud.com") == "me@icloud.com"
+
+
+async def test_sendblue_host_fallback_and_line_lookup(server, http):
+    from news247.notify.channels import SendblueNotifier
+
+    server.on("/good/api/lines", {"lines": [{"number": "+1 (555) 000-1111"}]})
+    server.on("/good/api/send-message", {"status": "QUEUED"})
+    n = SendblueNotifier({"api_key_id": "k", "api_secret": "s", "to": "555-123-4567"}, http, Severity.HIGH)
+    n.hosts = [server.url("/bad"), server.url("/good")]  # first host 404s, second works
+    await n.send(alert())
+    sent = server.requests[-1]
+    assert sent["path"] == "/good/api/send-message"
+    assert sent["json"]["from_number"] == "+15550001111" and sent["json"]["number"] == "+15551234567"
+    assert n.hosts[0].endswith("/good")  # remembered
+
+
+async def test_sendblue_bad_keys_and_missing_number(server, http):
+    from news247.notify.channels import SendblueNotifier
+
+    server.on("/api/send-message", (401, "unauthorized"))
+    server.on("/api/lines", (401, "unauthorized"))
+    n = SendblueNotifier(
+        {"api_key_id": "k", "api_secret": "s", "to": "+15551234567", "api_base": server.url("")},
+        http,
+        Severity.HIGH,
+    )
+    with pytest.raises(RuntimeError, match="rejected the API keys"):
+        await n.send(alert())
+    empty = SendblueNotifier(
+        {"api_key_id": "k", "api_secret": "s", "api_base": server.url("")}, http, Severity.HIGH
+    )
+    with pytest.raises(RuntimeError, match="no phone number set"):
+        await empty.send(alert())
+    empty.set_recipients(["5551234567"])
+    assert empty.recipients == ["+15551234567"]

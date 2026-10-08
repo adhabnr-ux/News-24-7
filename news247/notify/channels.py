@@ -287,6 +287,46 @@ class EmailNotifier(Notifier):
         await asyncio.to_thread(self._send_sync, alert)
 
 
+def normalize_phone(value: str, default_country: str = "1") -> str:
+    """'(555) 123-4567' -> '+15551234567'. E-mail handles (Apple IDs) pass through unchanged."""
+    v = str(value).strip()
+    if "@" in v:
+        return v
+    digits = "".join(c for c in v if c.isdigit())
+    if v.startswith("+"):
+        return "+" + digits
+    if v.startswith("00"):
+        return "+" + digits[2:]
+    if len(digits) == 10 and default_country == "1":
+        return "+1" + digits
+    if len(digits) == 11 and digits.startswith("1"):
+        return "+" + digits
+    return "+" + digits if digits else v
+
+
+def _numbers(value: Any) -> list[str]:
+    raw = value if isinstance(value, list) else str(value or "").split(",")
+    return [normalize_phone(v) for v in raw if str(v).strip()]
+
+
+class PhoneChannel:
+    """Mixin for channels that text a phone number. The number can come from config (``to``)
+    or be set at runtime from the dashboard's Setup page (``set_recipients``)."""
+
+    recipients: list[str]
+
+    def _init_recipients(self) -> None:
+        self.recipients = _numbers(self.options.get("to"))  # type: ignore[attr-defined]
+
+    def set_recipients(self, numbers: list[str]) -> None:
+        self.recipients = _numbers(numbers)
+
+    def targets(self) -> list[str]:
+        if not self.recipients:
+            raise RuntimeError("no phone number set: add IMESSAGE_TO or open the dashboard's Setup page")
+        return self.recipients
+
+
 # --------------------------------------------------------------------------- texts to your phone
 
 # Sends through the Messages app of a Mac signed in to iMessage. Arguments are passed via argv,
@@ -340,7 +380,7 @@ IMESSAGE_SCRIPTS = [
 ]
 
 
-class IMessageNotifier(Notifier):
+class IMessageNotifier(PhoneChannel, Notifier):
     """iMessage via the Messages app on a Mac (free; the Mac must stay on and signed in).
 
     Options: ``to`` (phone number(s) like "+15551234567" or Apple ID e-mails),
@@ -351,12 +391,7 @@ class IMessageNotifier(Notifier):
     name = "imessage"
 
     def validate(self) -> None:
-        self.require("to")
-        to = self.options["to"]
-        raw = to if isinstance(to, list) else str(to).split(",")  # "+1555...,me@icloud.com" works too
-        self.recipients = [str(t).strip() for t in raw if str(t).strip()]
-        if not self.recipients:
-            raise ValueError("notify.imessage: missing to")
+        self._init_recipients()  # "+1555...,me@icloud.com" works too
         self.service = str(self.options.get("service", "imessage")).lower()
         if self.service not in ("imessage", "sms", "auto"):
             raise ValueError("notify.imessage: service must be imessage, sms or auto")
@@ -406,7 +441,7 @@ class IMessageNotifier(Notifier):
                 "imessage needs macOS with Messages signed in (use sendblue/bluebubbles/twilio elsewhere)"
             )
         text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
-        for handle in self.recipients:
+        for handle in self.targets():
             if self.service == "auto":
                 try:
                     await self._osascript(handle, text, "imessage")
@@ -416,16 +451,17 @@ class IMessageNotifier(Notifier):
                 await self._osascript(handle, text, self.service)
 
 
-class TwilioSMSNotifier(Notifier):
+class TwilioSMSNotifier(PhoneChannel, Notifier):
     """Plain SMS via Twilio (green bubble). Options: ``account_sid``, ``auth_token``,
     ``from`` (your Twilio number or messaging_service_sid), ``to`` (number or list)."""
 
     name = "twilio"
 
     def validate(self) -> None:
-        self.require("account_sid", "auth_token", "to")
+        self.require("account_sid", "auth_token")
         if not (self.options.get("from") or self.options.get("messaging_service_sid")):
             raise ValueError("notify.twilio: missing from (or messaging_service_sid)")
+        self._init_recipients()
 
     async def send(self, alert: Alert) -> None:
         import base64
@@ -433,9 +469,8 @@ class TwilioSMSNotifier(Notifier):
         sid = self.options["account_sid"]
         auth = base64.b64encode(f"{sid}:{self.options['auth_token']}".encode()).decode()
         base = self.options.get("api_base", "https://api.twilio.com")
-        to = self.options["to"]
-        for number in to if isinstance(to, list) else [to]:
-            data = {"To": str(number), "Body": sms_text(alert, limit=int(self.options.get("max_chars", 320)))}
+        for number in self.targets():
+            data = {"To": number, "Body": sms_text(alert, limit=int(self.options.get("max_chars", 320)))}
             if self.options.get("messaging_service_sid"):
                 data["MessagingServiceSid"] = self.options["messaging_service_sid"]
             else:
@@ -447,12 +482,7 @@ class TwilioSMSNotifier(Notifier):
             )
 
 
-def _numbers(value: Any) -> list[str]:
-    raw = value if isinstance(value, list) else str(value).split(",")
-    return [str(v).strip() for v in raw if str(v).strip()]
-
-
-class BlueBubblesNotifier(Notifier):
+class BlueBubblesNotifier(PhoneChannel, Notifier):
     """iMessage through a BlueBubbles server (a free app on an always-on Mac). Lets the monitor
     itself run anywhere (cloud, Linux box) while the Mac only relays messages.
     Options: ``server`` (e.g. https://my-mac.example.com), ``password``, ``to``, ``method``
@@ -461,8 +491,8 @@ class BlueBubblesNotifier(Notifier):
     name = "bluebubbles"
 
     def validate(self) -> None:
-        self.require("server", "password", "to")
-        self.recipients = _numbers(self.options["to"])
+        self.require("server", "password")
+        self._init_recipients()
 
     async def send(self, alert: Alert) -> None:
         import uuid
@@ -473,7 +503,7 @@ class BlueBubblesNotifier(Notifier):
         params = {"password": self.options["password"]}  # kept out of the URL string we log
         method = self.options.get("method", "apple-script")
         text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
-        for handle in self.recipients:
+        for handle in self.targets():
             body = {
                 "chatGuid": f"iMessage;-;{handle}",
                 "tempGuid": str(uuid.uuid4()),
@@ -499,43 +529,105 @@ class BlueBubblesNotifier(Notifier):
                 )
 
 
-class SendblueNotifier(Notifier):
-    """Hosted iMessage API (no Mac needed). Options: ``api_key_id``, ``api_secret``, ``to``,
-    ``from_number`` (your Sendblue line). On the free sandbox, text your Sendblue number once
-    from your phone first so it is a verified contact."""
+class SendblueNotifier(PhoneChannel, Notifier):
+    """Hosted iMessage API (no Mac needed).
+
+    Options: ``api_key_id``, ``api_secret``, ``to``, ``from_number`` (your Sendblue line; looked
+    up automatically via /api/lines when omitted). On the free plan your number must first be a
+    verified contact: text your Sendblue number once from your iPhone.
+    Sendblue's docs use both api.sendblue.co and api.sendblue.com; both are tried.
+    """
 
     name = "sendblue"
+    HOSTS = ("https://api.sendblue.co", "https://api.sendblue.com")
 
     def validate(self) -> None:
-        self.require("api_key_id", "api_secret", "to")
-        self.recipients = _numbers(self.options["to"])
+        self.require("api_key_id", "api_secret")
+        self._init_recipients()
+        self.from_number: str = (
+            normalize_phone(self.options["from_number"]) if self.options.get("from_number") else ""
+        )
+        base = self.options.get("api_base")
+        self.hosts = [str(base).rstrip("/")] if base else list(self.HOSTS)
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"sb-api-key-id": self.options["api_key_id"], "sb-api-secret-key": self.options["api_secret"]}
+
+    async def _call(self, method: str, path: str, **kw: Any) -> Any:
+        """Try each API host; remember the first one that answers."""
+        from ..http import HTTPError
+
+        last: Exception | None = None
+        for host in list(self.hosts):
+            try:
+                resp = await self.http.request(method, f"{host}{path}", headers=self.headers, **kw)
+            except HTTPError as exc:
+                if exc.status in (401, 403):
+                    raise RuntimeError(
+                        f"Sendblue rejected the API keys ({exc.status}): {exc.body[:200]}"
+                    ) from None
+                if exc.status not in (404, 405, 502, 503):
+                    raise RuntimeError(f"Sendblue error {exc.status}: {exc.body[:300]}") from None
+                last = exc
+                continue
+            except OSError as exc:  # DNS/connection failure: try the other host
+                last = exc
+                continue
+            self.hosts = [host] + [h for h in self.hosts if h != host]
+            try:
+                return resp.json()
+            except ValueError:
+                return {}
+        raise RuntimeError(f"Sendblue unreachable: {last}")
+
+    async def lines(self) -> list[str]:
+        data = await self._call("GET", "/api/lines")
+        rows = data.get("lines") or data.get("data") or data if isinstance(data, (dict, list)) else []
+        out = []
+        for row in rows if isinstance(rows, list) else []:
+            num = (
+                row
+                if isinstance(row, str)
+                else (row.get("number") or row.get("phone_number") or row.get("line"))
+            )
+            if num:
+                out.append(normalize_phone(num))
+        return out
+
+    async def ensure_from_number(self) -> str:
+        if not self.from_number:
+            with contextlib.suppress(RuntimeError):
+                found = await self.lines()
+                if found:
+                    self.from_number = found[0]
+        return self.from_number
 
     async def send(self, alert: Alert) -> None:
-        base = str(self.options.get("api_base", "https://api.sendblue.com")).rstrip("/")
-        headers = {
-            "sb-api-key-id": self.options["api_key_id"],
-            "sb-api-secret-key": self.options["api_secret"],
-        }
         text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
-        for number in self.recipients:
+        sender = await self.ensure_from_number()
+        for number in self.targets():
             body: dict[str, Any] = {"number": number, "content": text}
-            if self.options.get("from_number"):
-                body["from_number"] = self.options["from_number"]
-            resp = await self.http.post(f"{base}/api/send-message", json=body, headers=headers)
-            with contextlib.suppress(ValueError):
-                data = resp.json()
-                if isinstance(data, dict) and str(data.get("status", "")).upper() == "ERROR":
-                    raise RuntimeError(f"Sendblue: {data.get('error_message') or data}")
+            if sender:
+                body["from_number"] = sender
+            data = await self._call("POST", "/api/send-message", json=body)
+            status = str((data or {}).get("status", "")).upper() if isinstance(data, dict) else ""
+            if status in ("ERROR", "DECLINED", "FAILED"):
+                hint = ""
+                msg = str(data.get("error_message") or data.get("error") or data)
+                if "verif" in msg.lower() or "contact" in msg.lower():
+                    hint = " — text your Sendblue number once from your iPhone to verify it"
+                raise RuntimeError(f"Sendblue {status.lower()}: {msg}{hint}")
 
 
-class BlooioNotifier(Notifier):
+class BlooioNotifier(PhoneChannel, Notifier):
     """Hosted iMessage API (no Mac needed). Options: ``api_key``, ``to``."""
 
     name = "blooio"
 
     def validate(self) -> None:
-        self.require("api_key", "to")
-        self.recipients = _numbers(self.options["to"])
+        self.require("api_key")
+        self._init_recipients()
 
     async def send(self, alert: Alert) -> None:
         import uuid
@@ -543,7 +635,7 @@ class BlooioNotifier(Notifier):
 
         base = str(self.options.get("api_base", "https://backend.blooio.com")).rstrip("/")
         text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
-        for number in self.recipients:
+        for number in self.targets():
             await self.http.post(
                 f"{base}/v2/api/chats/{quote(number, safe='')}/messages",
                 json={"text": text},
@@ -554,7 +646,7 @@ class BlooioNotifier(Notifier):
             )
 
 
-class TextbeltNotifier(Notifier):
+class TextbeltNotifier(PhoneChannel, Notifier):
     """Plain SMS via Textbelt: prepaid key, no carrier registration paperwork.
     Options: ``key``, ``to``. Note: Textbelt may hold messages containing links until your
     account is verified, so ``include_url`` defaults to false."""
@@ -562,14 +654,14 @@ class TextbeltNotifier(Notifier):
     name = "textbelt"
 
     def validate(self) -> None:
-        self.require("key", "to")
-        self.recipients = _numbers(self.options["to"])
+        self.require("key")
+        self._init_recipients()
 
     async def send(self, alert: Alert) -> None:
         base = str(self.options.get("api_base", "https://textbelt.com")).rstrip("/")
         shown = alert if self.options.get("include_url", False) else _without_url(alert)
         text = sms_text(shown, limit=int(self.options.get("max_chars", 320)))
-        for number in self.recipients:
+        for number in self.targets():
             resp = await self.http.post(
                 f"{base}/text", data={"phone": number, "message": text, "key": self.options["key"]}
             )

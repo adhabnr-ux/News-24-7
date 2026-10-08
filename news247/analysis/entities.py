@@ -102,6 +102,7 @@ class Company:
     aliases: list[str] = field(default_factory=list)
     cased: list[str] = field(default_factory=list)
     exposure: list[str] = field(default_factory=list)
+    authority: bool = False  # can move the whole market by itself (Fed, President, Treasury, ...)
 
     @property
     def tickers(self) -> list[str]:
@@ -126,6 +127,7 @@ class EntityMatcher:
                 aliases=[a.lower() for a in c.get("aliases", [])],
                 cased=list(c.get("cased", [])),
                 exposure=[t.upper() for t in c.get("exposure", [])],
+                authority=bool(c.get("authority", False)),
             )
             if comp.ticker:
                 comp.ticker = comp.ticker.upper()
@@ -162,8 +164,13 @@ class EntityMatcher:
                 if comp:
                     found.setdefault(comp.name, comp)
         if self._cs_re:
-            for m in self._cs_re.finditer(text):
-                comp = self._cs_map.get(m.group(1))
+            letters = [c for c in text if c.isalpha()]
+            shouting = len(letters) > 15 and sum(c.isupper() for c in letters) / len(letters) > 0.7
+            # wire flashes are ALL CAPS ("FED CUTS RATES"): match case-sensitive aliases loosely there
+            pattern = re.compile(self._cs_re.pattern, re.I) if shouting else self._cs_re
+            lookup = {k.lower(): v for k, v in self._cs_map.items()} if shouting else self._cs_map
+            for m in pattern.finditer(text):
+                comp = lookup.get(m.group(1).lower() if shouting else m.group(1))
                 if comp:
                     found.setdefault(comp.name, comp)
         return list(found.values())

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from ..config import NotifyConfig
 from ..http import HttpClient
 from ..models import Alert, Severity
-from .channels import CHANNEL_CLASSES, Notifier
+from .channels import CHANNEL_CLASSES, Notifier, PhoneChannel, normalize_phone
 
 log = logging.getLogger(__name__)
 
@@ -106,5 +106,15 @@ class Dispatcher:
     def describe(self) -> list[dict[str, Any]]:
         return [c.describe() for c in self.channels]
 
+    @property
+    def phone_channels(self) -> list[Notifier]:
+        return [c for c in self.channels if isinstance(c, PhoneChannel)]
 
-__all__ = ["CHANNEL_CLASSES", "Dispatcher", "Notifier", "in_quiet_hours"]
+    def set_phone(self, numbers: list[str]) -> list[str]:
+        """Point every phone channel (iMessage, Sendblue, SMS, ...) at these numbers."""
+        for ch in self.phone_channels:
+            ch.set_recipients(numbers)  # type: ignore[attr-defined]
+        return self.phone_channels[0].recipients if self.phone_channels else []  # type: ignore[attr-defined]
+
+
+__all__ = ["CHANNEL_CLASSES", "Dispatcher", "Notifier", "PhoneChannel", "in_quiet_hours", "normalize_phone"]

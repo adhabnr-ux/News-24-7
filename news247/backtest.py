@@ -21,6 +21,8 @@ from .config import Config, load_package_yaml
 from .models import Analysis, NewsItem, Severity, SourceTier
 
 _TIERS = {t.name.lower(): t for t in SourceTier}
+# Mirrors the default config: posts on these labs' own channels are always texted (VIP rule)
+VIP_ENTITIES = {"OpenAI", "Anthropic", "Google DeepMind", "xAI"}
 
 
 @dataclass
@@ -28,8 +30,10 @@ class EventResult:
     event: dict[str, Any]
     best: Analysis
     best_headline: str
-    caught: bool
+    caught: bool  # caught from its FIRST report (before coverage of the move existed)
     per_headline: list[tuple[str, Analysis]] = field(default_factory=list)
+    caught_any: bool = False  # caught from first reports or later coverage
+    caught_deployed: bool = False  # caught as deployed: scorer OR the VIP rule for AI-lab posts
 
 
 @dataclass
@@ -41,6 +45,14 @@ class BacktestReport:
     @property
     def recall(self) -> float:
         return sum(e.caught for e in self.events) / len(self.events) if self.events else 0.0
+
+    @property
+    def recall_deployed(self) -> float:
+        return sum(e.caught_deployed for e in self.events) / len(self.events) if self.events else 0.0
+
+    @property
+    def recall_any(self) -> float:
+        return sum(e.caught_any for e in self.events) / len(self.events) if self.events else 0.0
 
     @property
     def false_alarm_rate(self) -> float:
@@ -82,14 +94,26 @@ def run_backtest(
     scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
     events: list[EventResult] = []
     for ev in history.get("events", []):
-        scored = []
-        for h in ev.get("headlines", []):
-            item = headline_item(h, ev.get("tier", "media"))
-            scored.append((item.title, scorer.score(item)))
-        if not scored:
+        firsts = [
+            headline_item(h, ev.get("tier", "media"))
+            for h in ev.get("first_reports", ev.get("headlines", []))
+        ]
+        later = [headline_item(h, "media") for h in ev.get("coverage", [])]
+        scored_first = [(i.title, scorer.score(i)) for i in firsts]
+        scored_later = [(i.title, scorer.score(i)) for i in later]
+        if not scored_first and not scored_later:
             continue
-        title, best = max(scored, key=lambda s: s[1].score)
-        events.append(EventResult(ev, best, title, best.severity >= threshold, scored))
+        pool = scored_first or scored_later
+        title, best = max(pool, key=lambda s: s[1].score)
+        caught_first = bool(scored_first) and best.severity >= threshold
+        caught_any = any(a.severity >= threshold for _, a in scored_first + scored_later)
+        vip = any(
+            i.tier is SourceTier.PRIMARY and VIP_ENTITIES & set(i.extra.get("entities", [])) for i in firsts
+        )
+        deployed = caught_first or (vip and threshold <= Severity.HIGH)
+        events.append(
+            EventResult(ev, best, title, caught_first, scored_first + scored_later, caught_any, deployed)
+        )
     noise = []
     for h in history.get("noise", []):
         item = headline_item(h)
@@ -102,8 +126,12 @@ def format_report(rep: BacktestReport, verbose: bool = False) -> str:
         f"Backtest: {len(rep.events)} historical market-moving events, {len(rep.noise)} noise headlines"
         f" (alert threshold: {rep.threshold.name})",
         "",
-        f"  Caught (would have texted you):  {sum(e.caught for e in rep.events)}/{len(rep.events)}"
-        f"  = {rep.recall:.0%}",
+        f"  Caught from the FIRST report:    {sum(e.caught for e in rep.events)}/{len(rep.events)}"
+        f"  = {rep.recall:.0%}   (texted before the move was news)",
+        f"  As deployed (+ VIP rule):        {sum(e.caught_deployed for e in rep.events)}/{len(rep.events)}"
+        f"  = {rep.recall_deployed:.0%}   (AI-lab posts are always texted)",
+        f"  Caught at all (incl. coverage):  {sum(e.caught_any for e in rep.events)}/{len(rep.events)}"
+        f"  = {rep.recall_any:.0%}",
         f"  False alarms on noise:           {sum(a.severity >= rep.threshold for _, a in rep.noise)}/{len(rep.noise)}"
         f"  = {rep.false_alarm_rate:.0%}",
         "",
@@ -112,7 +140,7 @@ def format_report(rep: BacktestReport, verbose: bool = False) -> str:
     for cat, (c, t) in sorted(rep.by_category().items()):
         mark = "✓" if c == t else "✗"
         lines.append(f"    {mark} {cat:<34} {c}/{t}")
-    missed = [e for e in rep.events if not e.caught]
+    missed = [e for e in rep.events if not e.caught_deployed]
     if missed:
         lines += ["", "  MISSED events (best headline and its score):"]
         for e in missed:

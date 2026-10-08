@@ -76,6 +76,7 @@
   <span class="stat">sources ok <b id="s-src">–</b></span>
   <span class="stat">AI <b id="s-llm">off</b></span>
   <span class="spacer"></span>
+  <a id="setup-link" href="/setup"><button title="Phone number and test message">📱 Setup</button></a>
   <button id="btn-notify" title="Browser notifications for HIGH and CRITICAL alerts">🔔 Notify</button>
   <button id="btn-sound" title="Sound on CRITICAL alerts">🔊 Sound</button>
 </header>
@@ -112,6 +113,7 @@
 const TOKEN = new URLSearchParams(location.search).get("token");
 const withToken = (u) => TOKEN ? u + (u.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN) : u;
 const $ = (id) => document.getElementById(id);
+if (TOKEN) document.getElementById("setup-link").href = withToken("/setup");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const safeUrl = (u) => /^https?:\/\//i.test(u || "") ? u : "";
 const ago = (ts) => { if (!ts) return "?"; const s = Math.max(0, Date.now()/1000 - ts); return s < 90 ? Math.round(s)+"s" : s < 5400 ? Math.round(s/60)+"m" : s < 172800 ? (s/3600).toFixed(1)+"h" : Math.round(s/86400)+"d"; };

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>News 24/7 Setup</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23121722%27/%3E%3Cpath d=%27M5 22l6-7 5 4 10-11%27 stroke=%27%23ff5c5c%27 stroke-width=%273%27 fill=%27none%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
+<style>
+  :root { --bg: #0b0e13; --panel: #121722; --line: #232b3b; --text: #dce3ee; --muted: #8592a6; --ok: #2ecc71; --bad: #ff5c5c; --accent: #4ea1ff; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) { --bg: #f4f6fa; --panel: #fff; --line: #dfe4ec; --text: #18202c; --muted: #5d6a7e; --ok: #13914b; --bad: #d63031; --accent: #1f6fd1; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 6px 0 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  input { width: 100%; font: inherit; font-size: 18px; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  button { font: inherit; font-weight: 600; padding: 11px 16px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; cursor: pointer; margin-top: 12px; width: 100%; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  .msg { margin-top: 12px; min-height: 1.5em; font-size: 14px; white-space: pre-line; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .row:last-child { border-bottom: 0; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  ol { padding-left: 20px; margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Send alerts to my phone</h1>
+  <p>Type your number, save it, then send yourself a test message. <a id="back" href="/">← Back to the dashboard</a></p>
+
+  <section>
+    <label for="phone">Your phone number</label>
+    <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+1 555 123 4567">
+    <button id="save">Save number</button>
+    <div class="msg" id="save-msg"></div>
+  </section>
+
+  <section>
+    <label>Test it</label>
+    <p style="margin:0">Sends one message through every texting service that's switched on.</p>
+    <button id="test" class="secondary">Send test message</button>
+    <div class="msg" id="test-msg"></div>
+    <div id="sendblue-tip" hidden>
+      <ol>
+        <li>Using Sendblue's free plan? From your iPhone, text <b>hi</b> once to your Sendblue number<span id="sb-from"></span>. That verifies your number.</li>
+        <li>Then press <b>Send test message</b> again.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section>
+    <label>Texting services</label>
+    <div id="channels" class="muted">Loading…</div>
+  </section>
+</main>
+<script>
+const TOKEN = new URLSearchParams(location.search).get("token");
+const q = (u) => TOKEN ? u + (u.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN) : u;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+if (TOKEN) $("back").href = q("/");
+
+function show(el, text, ok) { el.textContent = text; el.className = "msg " + (ok ? "ok" : "bad"); }
+
+async function load() {
+  try {
+    const r = await fetch(q("/api/setup"));
+    if (!r.ok) throw new Error(await r.text());
+    const s = await r.json();
+    if (s.phone && s.phone.length) $("phone").value = s.phone.join(", ");
+    if (!s.writable) {
+      ["save", "test"].forEach((id) => $(id).disabled = true);
+      show($("save-msg"), "This page is read-only from the internet. Set DASHBOARD_TOKEN on the server, then open this page with ?token=YOUR_TOKEN at the end of the address.", false);
+    }
+    const sb = s.channels.find((c) => c.name === "sendblue");
+    $("sendblue-tip").hidden = !sb;
+    $("sb-from").innerHTML = s.from_number ? ` (<b>${esc(s.from_number)}</b>)` : "";
+    $("channels").innerHTML = s.channels.length
+      ? s.channels.map((c) => `<div class="row"><span>${esc(c.name)} <span class="muted">· ${esc(c.min_severity.toLowerCase())}+</span></span>
+          <span>${c.sent} sent${c.failed ? ` · <span class="bad">${c.failed} failed</span>` : ""}</span></div>
+          ${c.last_error ? `<div class="row bad" style="font-size:12px">${esc(c.last_error)}</div>` : ""}`).join("")
+      : `<span class="bad">No texting service is switched on yet.</span> On your server set <b>SENDBLUE_ENABLED=true</b> plus its keys (see the README), then reload this page.`;
+  } catch (e) {
+    $("channels").innerHTML = `<span class="bad">${esc(e.message || e)}</span>`;
+  }
+}
+
+$("save").onclick = async () => {
+  $("save").disabled = true;
+  try {
+    const r = await fetch(q("/api/setup"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: $("phone").value }) });
+    if (!r.ok) throw new Error(await r.text());
+    const s = await r.json();
+    show($("save-msg"), `Saved. Alerts will go to ${s.phone.join(", ")}.`, true);
+    load();
+  } catch (e) { show($("save-msg"), e.message || String(e), false); }
+  $("save").disabled = false;
+};
+
+$("test").onclick = async () => {
+  $("test").disabled = true;
+  show($("test-msg"), "Sending…", true);
+  try {
+    const r = await fetch(q("/api/setup/test"), { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    const lines = Object.entries(res).map(([k, v]) => `${k}: ${v === "ok" ? "sent ✓" : v}`);
+    const allOk = Object.values(res).length && Object.values(res).every((v) => v === "ok");
+    show($("test-msg"), lines.join("\n") || "No texting service is switched on.", allOk);
+    load();
+  } catch (e) { show($("test-msg"), e.message || String(e), false); }
+  $("test").disabled = false;
+};
+
+load();
+</script>
+</body>
+</html>

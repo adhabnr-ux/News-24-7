@@ -17,7 +17,7 @@ from .config import Config
 from .http import HttpClient
 from .market.detector import MoveDetector
 from .market.prices import PriceMonitor
-from .models import Alert, Analysis, NewsItem, PriceMove, Severity
+from .models import Alert, Analysis, NewsItem, PriceMove, Severity, SourceTier
 from .notify import Dispatcher
 from .notify.format import move_headline, window_label
 from .sources import Source, SourceContext, build_sources
@@ -67,6 +67,9 @@ class Engine:
             data_dir=cfg.data_path,
         )
         self.sources = sources if sources is not None else build_sources(cfg.sources, ctx)
+        saved_phone = self.storage.get_setting("phone")
+        if saved_phone:  # a number saved on the dashboard's Setup page wins over IMESSAGE_TO
+            self.dispatcher.set_phone(saved_phone.split(","))
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         self.subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._tasks: set[asyncio.Task[Any]] = set()
@@ -145,6 +148,8 @@ class Engine:
         self.stats["items"] += 1
         analysis = self.scorer.score(item)
         story, is_new = self.clusterer.assign(item, analysis.entities)
+        if not is_new and story.unconfirmed and story.alerted is not None and not item.extra.get("relay"):
+            await self._confirm(item, story)
         if not is_new and story.confirmations >= 2:
             bonus = min(CONFIRM_CAP, CONFIRM_BONUS * (story.confirmations - 1))
             self.scorer.rescore(analysis, bonus, f"confirmed by {story.confirmations} sources")
@@ -232,6 +237,10 @@ class Engine:
         notes = []
         if story.confirmations >= 2:
             notes.append(f"Confirmed by {story.confirmations} sources")
+        elif item.extra.get("relay") and not escalation:
+            # Apr 7 2025: a squawk's misread "90-day pause" swung the S&P by 8% before it was denied
+            story.unconfirmed = True
+            notes.insert(0, "⚠️ UNCONFIRMED — single social/squawk post, no official source yet")
         if escalation:
             notes.append("⬆ escalated" + (" after AI review" if late else ""))
         push = True
@@ -253,6 +262,19 @@ class Engine:
         story.alert_id = alert.id
         self.storage.mark_alerted(item.uid)
         await self.publish(alert, push=push)
+
+    async def _confirm(self, item: NewsItem, story: Story) -> None:
+        """A real outlet or the primary source now reports a story we flagged as unconfirmed."""
+        story.unconfirmed = False
+        alert = Alert(
+            kind="news",
+            severity=story.alerted or Severity.HIGH,
+            title=f"✅ CONFIRMED: {item.title}",
+            body=f"Now reported by {item.source} ({item.tier.name.lower()}) — {story.confirmations} sources in total",
+            url=item.url,
+            item=item,
+        )
+        await self.publish(alert)
 
     def _remember(self, item: NewsItem, analysis: Analysis) -> None:
         self.recent.append((item, analysis))
@@ -419,6 +441,57 @@ class Engine:
 
     def unsubscribe(self, q: asyncio.Queue[dict[str, Any]]) -> None:
         self.subscribers.discard(q)
+
+    # ------------------------------------------------------------------ setup
+
+    def set_phone(self, number: str) -> list[str]:
+        numbers = [n for n in (x.strip() for x in number.split(",")) if n]
+        applied = self.dispatcher.set_phone(numbers)
+        self.storage.set_setting("phone", ",".join(applied))
+        return applied
+
+    def phone_status(self) -> dict[str, Any]:
+        chans = self.dispatcher.phone_channels
+        return {
+            "channels": [
+                {
+                    "name": c.name,
+                    "min_severity": c.min_severity.name,
+                    "sent": c.sent,
+                    "failed": c.failed,
+                    "last_error": c.last_error,
+                }
+                for c in chans
+            ],
+            "phone": (chans[0].recipients if chans else []),  # type: ignore[attr-defined]
+            "from_number": next(
+                (getattr(c, "from_number", "") for c in chans if getattr(c, "from_number", "")), ""
+            ),
+        }
+
+    async def send_test(self) -> dict[str, str]:
+        item = NewsItem(
+            source="news247-test",
+            title="News247 test: alerts will arrive here",
+            url="",
+            tier=SourceTier.PRIMARY,
+            published=time.time(),
+        )
+        analysis = Analysis(
+            score=99, severity=Severity.CRITICAL, summary="If you can read this, setup worked."
+        )
+        alert = Alert(
+            kind="system",
+            severity=Severity.CRITICAL,
+            title=item.title,
+            body="Test message",
+            item=item,
+            analysis=analysis,
+        )
+        results = await asyncio.gather(
+            *(self.dispatcher._send(c, alert) for c in self.dispatcher.phone_channels)
+        )
+        return dict(zip((c.name for c in self.dispatcher.phone_channels), results))
 
     # ------------------------------------------------------------------ status
 

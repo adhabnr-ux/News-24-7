@@ -259,11 +259,49 @@ class PollingSource(Source):
         self._note_ok()
         return emitted
 
+    def burst_state(self, now: float | None = None) -> tuple[bool, float | None]:
+        """(inside a burst window?, seconds until the next window opens) for scheduled releases.
+
+        ``burst_times: ["08:30", "14:00"]`` (weekdays, ``burst_tz``, default US/Eastern): from
+        ``burst_before`` s before to ``burst_after`` s after each time, poll every
+        ``burst_interval`` s — CPI/jobs data and FOMC statements land at exact times."""
+        times = self.cfg.get("burst_times") or []
+        if not times:
+            return False, None
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo(str(self.cfg.get("burst_tz", "America/New_York")))
+        before = float(self.cfg.get("burst_before", 10))
+        after = float(self.cfg.get("burst_after", 120))
+        now_dt = datetime.fromtimestamp(now if now is not None else time.time(), tz)
+        soonest: float | None = None
+        for day_offset in (0, 1, 2, 3):
+            day = (now_dt + timedelta(days=day_offset)).date()
+            if day.weekday() >= 5:  # releases are on weekdays
+                continue
+            for hhmm in times:
+                h, m = (int(x) for x in str(hhmm).split(":"))
+                t = datetime(day.year, day.month, day.day, h, m, tzinfo=tz)
+                delta = (t - now_dt).total_seconds()
+                if -after <= delta <= before:
+                    return True, 0.0
+                start = delta - before
+                if start > 0 and (soonest is None or start < soonest):
+                    soonest = start
+        return False, soonest
+
     def next_delay(self) -> float:
         errs = self.health.consecutive_errors
         if errs:
             return min(self.max_backoff, self.interval * (2 ** min(errs, 8))) * random.uniform(0.9, 1.1)
-        return self.interval * random.uniform(0.9, 1.1)
+        delay = self.interval * random.uniform(0.9, 1.1)
+        inside, until = self.burst_state()
+        if inside:
+            return float(self.cfg.get("burst_interval", 1.0))
+        if until is not None and until < delay:
+            return max(0.0, until)  # wake up exactly when the burst window opens
+        return delay
 
     async def run(self, emit: Emit, stop: asyncio.Event) -> None:
         baseline = True

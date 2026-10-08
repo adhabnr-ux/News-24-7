@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS alerts (
     payload TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated REAL NOT NULL
+);
 """
 
 
@@ -169,6 +174,19 @@ class Storage:
         q += " ORDER BY created DESC LIMIT ?"
         args.append(limit)
         return [json.loads(r[0]) for r in self.db.execute(q, args)]
+
+    # ------------------------------------------------------------------ settings
+
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        row = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        self.db.execute(
+            "INSERT INTO settings (key, value, updated) VALUES (?,?,?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated=excluded.updated",
+            (key, value, time.time()),
+        )
 
     # ------------------------------------------------------------------ stats
 

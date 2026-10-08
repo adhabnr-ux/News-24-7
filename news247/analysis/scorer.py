@@ -44,16 +44,119 @@ _UP_WORDS = re.compile(
 
 
 def term_regex(term: str) -> str:
-    """'acqui*' -> \\bacqui\\w*  ;  'chapter 11' -> \\bchapter\\s+11\\b"""
+    """Keyword/theme term -> regex.
+
+    'acqui*'         -> acqui + any word ending (acquire, acquisition)
+    'chapter 11'     -> chapter 11 (any whitespace between words)
+    'cuts * outlook' -> a lone '*' bridges up to three words ("cuts its 2025 revenue outlook")
+    """
+    if not isinstance(term, str):
+        raise ValueError(f"keyword/theme term must be text, got {term!r} (quote YAML terms containing ':')")
     parts = []
     for word in term.strip().split():
-        if word.endswith("*"):
+        if word == "*":
+            parts.append(None)
+        elif word.endswith("*"):
             parts.append(re.escape(word[:-1]) + r"[\w-]*")
         else:
             parts.append(re.escape(word))
-    body = r"\s+".join(parts)
+    body = ""
+    for i, part in enumerate(parts):
+        if part is None:
+            body += r"(?:\s+[\w'$.,%&/-]+){0,3}"
+            continue
+        if i > 0:
+            body += r"\s+"
+        body += part
     end = "" if term.endswith("*") else r"(?![\w])"
     return r"(?<![\w])" + body + end
+
+
+# "8.6% Y/Y; EST. 8.3%", "+172K; EST. +80K", "7.7% vs 7.9% expected", "1.2% vs. consensus 0.9%"
+_SURPRISE_RE = re.compile(
+    r"([+-]?\$?\d+(?:\.\d+)?)\s*(%|k|m|bn|b)?\b[^;\d]{0,40}?[;,(]?\s*"
+    r"(?:est\.?|estimate[sd]?|expected|exp\.?|consensus|f'?cast|forecast|vs\.?|versus)\s*:?\s*"
+    r"([+-]?\$?\d+(?:\.\d+)?)\s*(%|k|m|bn|b)?",
+    re.I,
+)
+# "tariff of 100%", "50% Tariff", "34% tariff", "tariffs to 145%"
+_TARIFF_PCT_RE = re.compile(
+    r"(\d{1,3})\s*%\s*(?:\w+\s+){0,3}tariff|tariffs?\s+(?:\w+\s+){0,4}(\d{1,3})\s*%", re.I
+)
+# "$300 billion", "$1.5 trillion", "$50bn", "$50B"
+_MONEY_RE = re.compile(r"\$\s?(\d+(?:\.\d+)?)\s*(trillion|tn|t|billion|bn|b)\b", re.I)
+# "jump 359%", "plunges 12%", "fell 26%"
+_MOVE_PCT_RE = re.compile(
+    r"\b(?:jump|soar|surge|rise|rose|climb|gain|fall|fell|drop|plunge|sink|sank|slump|tumble|crash|"
+    r"decline|lose|lost|cut|slash)\w*\s+(?:by\s+|as much as\s+|more than\s+)?(\d+(?:\.\d+)?)\s*%",
+    re.I,
+)
+
+
+_BP_RE = re.compile(r"(\d{2,3})[\s-]*(?:basis[\s-]*points?|bps?)\b", re.I)
+
+
+def _num(text: str) -> float:
+    return float(text.replace("$", "").replace("+", ""))
+
+
+def surprise_boost(title: str) -> tuple[float, str] | None:
+    """Score how far a released number is from its forecast. Scheduled data only moves markets
+    when it surprises: CPI 8.6% vs 8.3% est. or payrolls 172K vs 80K est. were huge days."""
+    best: tuple[float, str] | None = None
+    for m in _SURPRISE_RE.finditer(title):
+        # a bare "vs" is only a forecast comparison if "expected/est./consensus" follows
+        if re.search(r"\b(?:vs\.?|versus)\s*:?\s*[+-]?\$?\d", m.group(0), re.I) and not re.match(
+            r"\s*(?:%|k|m|bn|b)?\s*(?:\w+\s+){0,2}(?:expected|est|estimate|consensus|forecast|f'?cast|exp)",
+            title[m.end() :],
+            re.I,
+        ):
+            continue
+        try:
+            actual, expected = _num(m.group(1)), _num(m.group(3))
+        except ValueError:
+            continue
+        if actual == expected:
+            continue
+        unit = (m.group(2) or m.group(4) or "").lower()
+        diff = abs(actual - expected)
+        rel = diff / max(abs(expected), 1e-9)
+        if unit == "%" and max(abs(actual), abs(expected)) < 15:
+            # rates/inflation: 0.2pp is a big miss for CPI m/m or y/y
+            pts = 30.0 if diff >= 0.3 else 22.0 if diff >= 0.2 else 12.0 if diff >= 0.1 else 0.0
+        else:
+            pts = 30.0 if rel >= 0.4 else 22.0 if rel >= 0.2 else 12.0 if rel >= 0.08 else 0.0
+        if pts and (best is None or pts > best[0]):
+            best = (pts, f"surprise {m.group(1)}{unit} vs {m.group(3)} expected")
+    return best
+
+
+def magnitude_boost(title: str) -> list[tuple[float, str]]:
+    out: list[tuple[float, str]] = []
+    pcts = [int(a or b) for a, b in _TARIFF_PCT_RE.findall(title)]
+    if pcts:
+        top = max(pcts)
+        if top >= 100:
+            out.append((20.0, f"tariff size {top}%"))
+        elif top >= 25:
+            out.append((12.0, f"tariff size {top}%"))
+        elif top >= 10:
+            out.append((6.0, f"tariff size {top}%"))
+    money = 0.0
+    for amt, unit in _MONEY_RE.findall(title):
+        val = float(amt) * (1000.0 if unit.lower().startswith("t") else 1.0)
+        money = max(money, val)
+    if money >= 100:
+        out.append((12.0, f"${money:,.0f}B at stake"))
+    elif money >= 10:
+        out.append((6.0, f"${money:,.0f}B at stake"))
+    bps = [int(x) for x in _BP_RE.findall(title)]
+    if bps and max(bps) >= 50:
+        out.append((15.0 if max(bps) >= 75 else 10.0, f"{max(bps)}bp move"))
+    moves = [float(x) for x in _MOVE_PCT_RE.findall(title)]
+    if moves and max(moves) >= 10:
+        out.append((10.0 if max(moves) < 50 else 15.0, f"{max(moves):g}% move/change"))
+    return out
 
 
 @dataclass
@@ -159,6 +262,15 @@ class Scorer:
             score += 5
             reasons.append("+5 all-caps bulletin")
 
+        # --- numbers: surprise vs forecast, tariff size, dollars at stake, % moves
+        sur = surprise_boost(title)
+        if sur:
+            score += sur[0]
+            reasons.append(f"+{sur[0]:.0f} {sur[1]}")
+        for pts, why in magnitude_boost(title):
+            score += pts
+            reasons.append(f"+{pts:.0f} {why}")
+
         # --- source-provided boost (8-K items, halt reason codes, configured boosts)
         boost = float(item.extra.get("boost", 0) or 0)
         if boost:
@@ -176,7 +288,13 @@ class Scorer:
         entity_tickers: list[str] = []
         for comp in companies:
             entity_tickers.extend(comp.tickers)
-        if any(t in self.watchlist for t in explicit + [c.ticker for c in companies if c.ticker]):
+        authorities = [c.name for c in companies if c.authority]
+        if authorities:
+            # research: the single best predictor after "surprise" is WHO acts — the Fed, the
+            # President, Treasury, foreign governments can move every stock at once
+            score += 12
+            reasons.append(f"+12 market-wide authority ({', '.join(authorities[:2])})")
+        elif any(t in self.watchlist for t in explicit + [c.ticker for c in companies if c.ticker]):
             score += 10
             reasons.append("+10 watchlist company")
         elif companies:

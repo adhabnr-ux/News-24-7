@@ -491,3 +491,33 @@ def test_rss_date_only_mirror_feeds():
         {"name": "p", "url": "https://www.anthropic.com/news", "link_pattern": "/news/"}, ctx()
     )
     assert pw.make_item(title="x", url="https://www.anthropic.com/news/new-post/").uid == items[0].uid
+
+
+def test_burst_polling_around_scheduled_releases():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    src = FlakySource({"name": "bls", "interval": 30, "burst_times": ["08:30"], "burst_interval": 1}, ctx())
+
+    def ts(*a):
+        return datetime(*a, tzinfo=et).timestamp()
+
+    # Thursday 2026-10-08
+    assert src.burst_state(ts(2026, 10, 8, 8, 29, 55)) == (True, 0.0)  # 5 s before: already bursting
+    assert src.burst_state(ts(2026, 10, 8, 8, 31, 30))[0] is True  # 90 s after: still bursting
+    inside, until = src.burst_state(ts(2026, 10, 8, 8, 29, 0))
+    assert not inside and until == pytest.approx(50)  # window opens 10 s before 08:30
+    assert src.burst_state(ts(2026, 10, 8, 8, 35))[0] is False
+    # Saturday: no releases -> next window is Monday 08:29:50
+    inside, until = src.burst_state(ts(2026, 10, 10, 8, 30))
+    assert not inside and until == pytest.approx(2 * 86400 - 10)
+    assert FlakySource({"name": "x", "interval": 30}, ctx()).burst_state() == (False, None)
+
+
+def test_next_delay_uses_burst(monkeypatch):
+    src = FlakySource({"name": "bls", "interval": 30, "burst_times": ["08:30"], "burst_interval": 1}, ctx())
+    monkeypatch.setattr(src, "burst_state", lambda now=None: (True, 0.0))
+    assert src.next_delay() == 1.0
+    monkeypatch.setattr(src, "burst_state", lambda now=None: (False, 3.0))
+    assert src.next_delay() == 3.0  # wake exactly at the window instead of sleeping ~30 s
