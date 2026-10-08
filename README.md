@@ -21,29 +21,28 @@ It watches about 50 sources at once: AI-lab and big-tech newsrooms, newspaper sc
 
 ---
 
-## Quick start: iMessage alerts, running 24/7 on a Mac (5 minutes)
+## Quick start: iMessages to your phone, running 24/7
+
+### Option A: in the cloud, your computer can be off (recommended, ~$7/month)
+
+**→ Follow [docs/SETUP-CLOUD-IMESSAGE.md](docs/SETUP-CLOUD-IMESSAGE.md) (about 15 minutes, no coding).**
+
+In short:
+1. Sign up at **sendblue.com** (free iMessage sender) and text "hi" to your Sendblue number once from your iPhone.
+2. Click **[Deploy to Render](https://render.com/deploy?repo=https://github.com/adhabnr-ux/News-24-7)**. Render asks for 4 things: **your phone number**, the two Sendblue keys, and your e-mail.
+3. Open the dashboard's **Setup** page and press **Send test message**.
+
+### Option B: on a Mac that stays on (free, real iMessage)
 
 ```bash
 git clone https://github.com/adhabnr-ux/News-24-7.git && cd News-24-7
 ./deploy/install-macos.sh
 ```
+The installer asks for your phone number, keeps the Mac awake, starts at login, and sends a test iMessage. macOS asks once whether Terminal may control Messages: click **OK**. **Tip:** sign Messages on that Mac into a separate "bot" Apple ID so alerts arrive as normal incoming iMessages with notification sounds.
 
-The installer:
-1. installs everything (needs Python 3.10+; `brew install python@3.12` if you don't have it);
-2. asks for **your phone number** (alerts go there as iMessages) and an e-mail (the SEC requires a contact in requests);
-3. optionally asks for an X API token and free Alpaca keys (the fastest sources — see [How fast is it?](#how-fast-is-it));
-4. installs a background service that starts at login, restarts itself if it crashes, and keeps the Mac awake;
-5. sends you a **test iMessage**. macOS asks once whether Terminal may control Messages: click **OK**.
+To see the whole pipeline before setting anything up, run `news247 demo` (simulated "OpenAI launch → software selloff").
 
-That's it. The dashboard is at http://localhost:8247. Logs are in `data/news247.log`.
-
-**Requirements for iMessage:** the Mac stays on, plugged in, and signed in to Messages (Messages ▸ Settings ▸ iMessage). A laptop with its lid closed sleeps unless it's connected to an external display.
-
-**Tip:** sign Messages on that Mac into a **separate Apple ID** (a free "bot" account) rather than your own. Alerts then arrive on your iPhone as normal incoming iMessages with a notification sound, and you can give that contact a custom tone. Messages you send to yourself may not notify.
-
-To see it working before setting anything up, run `.venv/bin/news247 demo`. It plays a simulated "OpenAI launch → software selloff" through the real pipeline.
-
-### No Mac, or want it running in the cloud?
+### All ways to reach your phone
 
 | Option | Bubble | Cost | Setup |
 |---|---|---|---|
@@ -111,6 +110,8 @@ Built-in safeguards: polling uses conditional GETs, so checking every 5–10 s c
 ---
 
 ## How it decides what matters
+
+> **Research-backed.** The criteria come from a study of ~100 real market-moving events (2016–2026) and the headline that first reported each one. `news247 backtest` replays them: **94% are caught from the first report, with 0 false alarms on 85 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
 
 Every item is scored from 0 to 100 by a deterministic rule engine. It takes about 50 µs per item, never goes down, and every score can be explained:
 
@@ -251,6 +252,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 | `news247 test-notify [--only imessage]` | Send a test alert through every enabled channel (or just one) |
 | `news247 demo` | Simulated "AI launch → software selloff" through the real pipeline, dashboard and notifications |
 | `news247 stats` | Measured detection latency per source, and which source had each story first |
+| `news247 backtest [-v]` | Replay ~100 historical market-moving events and ~85 noise headlines through the scoring rules |
 | `news247 init` | Write a starter `config.yaml` + `.env` |
 
 ### API
@@ -292,7 +294,7 @@ news247/
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 150+ tests: parsers on real feed formats, scoring calibration, move detection,
+pytest -q          # 170 tests: parsers on real feed formats, scoring calibration, move detection,
                    # every notification channel's wire format, LLM client, engine end-to-end, web API
 ruff check . && ruff format --check .
 ```
