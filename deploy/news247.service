@@ -1,0 +1,25 @@
+# systemd unit — runs News247 24/7 and restarts it if it ever exits.
+#   sudo cp deploy/news247.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now news247
+#   journalctl -u news247 -f
+# Adjust User and paths to where you cloned the repo.
+[Unit]
+Description=News247 market-moving news monitor
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=news247
+WorkingDirectory=/opt/news247
+ExecStart=/opt/news247/.venv/bin/news247 -c /opt/news247/config.yaml run
+Restart=always
+RestartSec=5
+# hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/news247
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,70 @@
+"""Turning Alerts into human-readable text."""
+
+from __future__ import annotations
+
+import time
+
+from ..models import Alert, PriceMove
+from ..util import fmt_age, fmt_pct
+
+ARROW = {"up": "▲", "down": "▼", "mixed": "◆", "unknown": "•", "none": "•"}
+
+
+def window_label(seconds: int) -> str:
+    if seconds >= 86400:
+        return "today"
+    if seconds >= 3600:
+        return f"{seconds // 3600}h"
+    if seconds >= 60:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def move_headline(move: PriceMove) -> str:
+    arrow = ARROW[move.direction]
+    w = window_label(move.window_s)
+    if move.is_group:
+        name = move.symbol.split(":", 1)[1].upper()
+        movers = sum(1 for c in move.members.values() if (c > 0) == (move.change_pct > 0))
+        return f"{arrow} {name} stocks {fmt_pct(move.change_pct)} in {w} ({movers}/{len(move.members)} moving together)"
+    if move.window_s >= 86400:
+        return f"{arrow} {move.symbol} {fmt_pct(move.change_pct)} vs. previous close"
+    return f"{arrow} {move.symbol} {fmt_pct(move.change_pct)} in {w}"
+
+
+def short_title(alert: Alert) -> str:
+    return f"{alert.severity.emoji} {alert.title}"
+
+
+def plain_body(alert: Alert, include_url: bool = True) -> str:
+    """Multi-line plain-text body shared by most channels."""
+    lines: list[str] = []
+    if alert.kind == "news" and alert.item and alert.analysis:
+        it, an = alert.item, alert.analysis
+        when = f"published {fmt_age(time.time() - it.published)} ago" if it.published else "just detected"
+        lag = f", caught {fmt_age(it.latency)} after publish" if it.latency is not None else ""
+        lines.append(f"{it.source} ({it.tier.name.lower()}) · {when}{lag}")
+        if an.summary:
+            lines.append(f"Why it matters: {an.summary}")
+        if an.tickers:
+            lines.append(f"Watch: {' '.join(an.tickers[:10])}  {ARROW.get(an.direction, '•')} {an.direction}")
+        if an.themes:
+            lines.append("Themes: " + ", ".join(t.replace("_", " ") for t in an.themes))
+        lines.append(f"Impact score {an.score:.0f}/100" + (" (AI-reviewed)" if an.llm_used else ""))
+    if alert.body:
+        lines.append(alert.body)
+    for rel in alert.related[:3]:
+        if rel.get("kind") == "price":
+            lines.append(f"Market now: {rel['text']}")
+        else:
+            lines.append(
+                f"Possible catalyst ({rel.get('age', '?')} earlier): {rel['title']} [{rel['source']}]"
+            )
+    if include_url and alert.url:
+        lines.append(alert.url)
+    return "\n".join(lines)
+
+
+def markdown_body(alert: Alert) -> str:
+    """Markdown-ish body for Discord/Slack (links rendered by the client)."""
+    return plain_body(alert, include_url=False) + (f"\n<{alert.url}>" if alert.url else "")

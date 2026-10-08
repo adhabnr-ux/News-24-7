@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>News 24/7 Monitor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23121722%27/%3E%3Cpath d=%27M5 22l6-7 5 4 10-11%27 stroke=%27%23ff5c5c%27 stroke-width=%273%27 fill=%27none%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0e13; --panel: #121722; --panel2: #171d2a; --line: #232b3b; --text: #dce3ee; --muted: #8592a6;
+    --crit: #ff4d4f; --high: #ff9f43; --med: #f5d04c; --low: #6b7689; --up: #2ecc71; --down: #ff5c5c; --accent: #4ea1ff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f6fa; --panel: #ffffff; --panel2: #f0f3f8; --line: #dfe4ec; --text: #18202c; --muted: #5d6a7e;
+      --low: #8b95a5; --up: #13914b; --down: #d63031; --accent: #1f6fd1; --med: #b8930a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: inherit; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .08em; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--low); margin-right: 6px; vertical-align: middle; }
+  .dot.ok { background: var(--up); box-shadow: 0 0 8px var(--up); }
+  .dot.bad { background: var(--down); }
+  .stat { color: var(--muted); font-size: 12px; }
+  .stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .spacer { flex: 1; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+  button.on { border-color: var(--accent); color: var(--accent); }
+  main { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; padding: 14px 16px; }
+  @media (max-width: 960px) { main { grid-template-columns: minmax(0, 1fr); } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+  section h2 .spacer { flex: 1; }
+  .scroll { max-height: 70vh; overflow: auto; }
+  .alert { padding: 10px 14px 10px 12px; border-bottom: 1px solid var(--line); border-left: 4px solid var(--low); }
+  .alert.CRITICAL { border-left-color: var(--crit); background: color-mix(in srgb, var(--crit) 7%, transparent); }
+  .alert.HIGH { border-left-color: var(--high); }
+  .alert.MEDIUM { border-left-color: var(--med); }
+  .alert.fresh { animation: flash 2.5s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--accent) 25%, transparent); } }
+  .meta { color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; }
+  .title { font-weight: 600; overflow-wrap: anywhere; }
+  .sev { font-size: 11px; font-weight: 700; letter-spacing: .05em; }
+  .sev.CRITICAL { color: var(--crit); } .sev.HIGH { color: var(--high); } .sev.MEDIUM { color: var(--med); } .sev.LOW { color: var(--low); }
+  .chip { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--panel2); border: 1px solid var(--line); margin: 2px 3px 0 0; font-variant-numeric: tabular-nums; }
+  .why { margin-top: 4px; font-size: 13px; }
+  .rel { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 5px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .feed .row { display: grid; grid-template-columns: 54px 38px minmax(0, 1fr); gap: 8px; padding: 5px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .feed .row .t { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .feed .score { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  .feed .src { color: var(--muted); font-size: 11px; margin-left: 6px; }
+  .controls { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+  input[type=search] { background: var(--panel2); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12px; width: 140px; }
+  .empty { padding: 18px 14px; color: var(--muted); }
+  .side { display: grid; gap: 14px; align-content: start; min-width: 0; }
+  .wide { grid-column: 1 / -1; }
+  .err { color: var(--down); font-size: 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: bottom; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot" id="conn"></span>NEWS 24/7</h1>
+  <span class="stat">uptime <b id="uptime">–</b></span>
+  <span class="stat">items <b id="s-items">0</b></span>
+  <span class="stat">alerts <b id="s-alerts">0</b></span>
+  <span class="stat">price moves <b id="s-moves">0</b></span>
+  <span class="stat">sources ok <b id="s-src">–</b></span>
+  <span class="stat">AI <b id="s-llm">off</b></span>
+  <span class="spacer"></span>
+  <button id="btn-notify" title="Browser notifications for HIGH and CRITICAL alerts">🔔 Notify</button>
+  <button id="btn-sound" title="Sound on CRITICAL alerts">🔊 Sound</button>
+</header>
+<main>
+  <section>
+    <h2>Alerts <span class="spacer"></span><span class="controls"><label><input type="checkbox" id="only-high"> high+ only</label></span></h2>
+    <div class="scroll" id="alerts"><div class="empty">Waiting for market-moving news…</div></div>
+  </section>
+  <div class="side">
+    <section>
+      <h2>Market movers <span class="spacer"></span><span class="controls" id="mkt-note"></span></h2>
+      <div class="scroll" style="max-height: 38vh">
+        <table><thead><tr><th>Symbol</th><th>Price</th><th>1m</th><th>5m</th><th>15m</th><th>Day</th></tr></thead><tbody id="market"></tbody></table>
+      </div>
+    </section>
+    <section>
+      <h2>Sources</h2>
+      <div class="scroll" style="max-height: 38vh">
+        <table><thead><tr><th>Source</th><th>Status</th><th>Last OK</th><th>Lag</th><th>Items</th></tr></thead><tbody id="sources"></tbody></table>
+      </div>
+    </section>
+  </div>
+  <section class="wide feed">
+    <h2>Live wire <span class="spacer"></span>
+      <span class="controls">
+        <input type="search" id="q" placeholder="filter…">
+        min score <input type="range" id="minscore" min="0" max="80" value="15"><b id="minscore-v">15</b>
+      </span>
+    </h2>
+    <div class="scroll" id="feed" style="max-height: 50vh"></div>
+  </section>
+</main>
+<script>
+const TOKEN = new URLSearchParams(location.search).get("token");
+const withToken = (u) => TOKEN ? u + (u.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(TOKEN) : u;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const safeUrl = (u) => /^https?:\/\//i.test(u || "") ? u : "";
+const ago = (ts) => { if (!ts) return "?"; const s = Math.max(0, Date.now()/1000 - ts); return s < 90 ? Math.round(s)+"s" : s < 5400 ? Math.round(s/60)+"m" : s < 172800 ? (s/3600).toFixed(1)+"h" : Math.round(s/86400)+"d"; };
+const pct = (v) => v == null ? "–" : `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "+" : ""}${v.toFixed(2)}%</span>`;
+const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+
+let notifyOn = store.get("notify", false), soundOn = store.get("sound", true);
+const sev = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
+function syncButtons() { $("btn-notify").classList.toggle("on", notifyOn); $("btn-sound").classList.toggle("on", soundOn); }
+$("btn-notify").onclick = async () => {
+  if (!notifyOn && "Notification" in window && Notification.permission !== "granted") await Notification.requestPermission();
+  notifyOn = !notifyOn && "Notification" in window && Notification.permission === "granted"; store.set("notify", notifyOn); syncButtons();
+};
+$("btn-sound").onclick = () => { soundOn = !soundOn; store.set("sound", soundOn); syncButtons(); };
+$("only-high").checked = store.get("onlyHigh", false);
+$("only-high").onchange = () => { store.set("onlyHigh", $("only-high").checked); renderAlerts(); };
+syncButtons();
+
+function beep() {
+  try { const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, .18, .36].forEach((t) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(.15, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + t + .15); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + .16); });
+  } catch {}
+}
+
+// ---------------------------------------------------------------- alerts
+let alerts = [];
+function alertHtml(a, fresh) {
+  const url = safeUrl(a.url);
+  const an = a.analysis || {};
+  const item = a.item || {};
+  const tick = (a.tickers || []).slice(0, 10).map((t) => `<span class="chip">${esc(t)}</span>`).join("");
+  const rel = (a.related || []).map((r) => r.kind === "price"
+      ? `<div class="rel">📈 Market now: ${esc(r.text)}</div>`
+      : `<div class="rel">🔗 Possible catalyst (${esc(r.age)} earlier): ${safeUrl(r.url) ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>` : esc(r.title)} <span class="stat">[${esc(r.source)}]</span></div>`).join("");
+  const lag = item.published ? ` · caught ${ago(item.published) === "?" ? "?" : Math.max(0, Math.round(item.detected - item.published)) + "s"} after publish` : "";
+  return `<div class="alert ${esc(a.severity)}${fresh ? " fresh" : ""}">
+    <div><span class="sev ${esc(a.severity)}">${esc(a.severity)}</span> · <span class="stat">${esc(a.kind)}</span>
+      <span class="stat" style="float:right" title="${new Date(a.created*1000).toLocaleString()}">${ago(a.created)} ago</span></div>
+    <div class="title">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(a.title)}</a>` : esc(a.title)}</div>
+    <div class="meta">${item.source ? `<span>${esc(item.source)}</span>` : ""}${an.score != null ? `<span>score ${Math.round(an.score)}${an.llm_used ? " · AI-reviewed" : ""}</span>` : ""}${an.direction && an.direction !== "unknown" ? `<span>${esc(an.direction)}</span>` : ""}<span>${esc(lag.replace(/^ · /, ""))}</span></div>
+    ${an.summary ? `<div class="why">${esc(an.summary)}</div>` : ""}
+    ${a.body ? `<div class="rel" style="white-space:pre-line">${esc(a.body)}</div>` : ""}
+    ${tick ? `<div>${tick}</div>` : ""}${rel}
+  </div>`;
+}
+function renderAlerts(freshId) {
+  const only = $("only-high").checked;
+  const list = alerts.filter((a) => !only || sev[a.severity] >= 2).slice(0, 200);
+  $("alerts").innerHTML = list.length ? list.map((a) => alertHtml(a, a.id === freshId)).join("") : `<div class="empty">Waiting for market-moving news…</div>`;
+}
+function onAlert(a) {
+  alerts = [a, ...alerts.filter((x) => x.id !== a.id)].slice(0, 300);
+  renderAlerts(a.id);
+  if (soundOn && a.severity === "CRITICAL") beep();
+  if (notifyOn && sev[a.severity] >= 2 && "Notification" in window && Notification.permission === "granted") {
+    const n = new Notification(`${a.severity}: ${a.title}`.slice(0, 120), { body: (a.analysis?.summary || a.body || "").slice(0, 200), tag: a.id });
+    const u = safeUrl(a.url); if (u) n.onclick = () => window.open(u, "_blank");
+  }
+}
+
+// ---------------------------------------------------------------- live wire
+let feed = [];
+$("minscore").value = store.get("minScore", 15); $("minscore-v").textContent = $("minscore").value;
+$("minscore").oninput = () => { $("minscore-v").textContent = $("minscore").value; store.set("minScore", +$("minscore").value); renderFeed(); };
+$("q").oninput = () => renderFeed();
+function renderFeed() {
+  const min = +$("minscore").value, q = $("q").value.trim().toLowerCase();
+  const rows = feed.filter((f) => f.score >= min && (!q || (f.title + " " + f.source + " " + (f.tickers || []).join(" ")).toLowerCase().includes(q))).slice(0, 300);
+  $("feed").innerHTML = rows.length ? rows.map((f) => {
+    const color = f.score >= 75 ? "var(--crit)" : f.score >= 55 ? "var(--high)" : f.score >= 35 ? "var(--med)" : "var(--low)";
+    const url = safeUrl(f.url);
+    return `<div class="row"><span class="t">${new Date(f.detected*1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hourCycle: "h23"})}</span>
+      <span class="score" style="color:${color}">${Math.round(f.score)}</span>
+      <span>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(f.title)}</a>` : esc(f.title)}<span class="src">${esc(f.source)}${(f.tickers||[]).length ? " · " + esc(f.tickers.slice(0,5).join(" ")) : ""}</span></span></div>`;
+  }).join("") : `<div class="empty">Nothing above score ${min} yet.</div>`;
+}
+function addFeed(item, analysis) {
+  feed = [{ uid: item.uid, title: item.title, url: item.url, source: item.source, detected: item.detected, score: analysis.score, tickers: analysis.tickers }, ...feed].slice(0, 1500);
+}
+
+// ---------------------------------------------------------------- polling panels
+async function getJSON(u) { const r = await fetch(withToken(u)); if (!r.ok) throw new Error(r.status); return r.json(); }
+async function refreshStatus() {
+  try {
+    const s = await getJSON("/api/status");
+    const up = s.uptime_s; $("uptime").textContent = up < 3600 ? Math.round(up/60) + "m" : (up/3600).toFixed(1) + "h";
+    $("s-items").textContent = s.stats.items; $("s-alerts").textContent = s.stats.alerts; $("s-moves").textContent = s.stats.price_moves;
+    const ok = s.sources.filter((x) => x.status === "ok" || x.status === "starting").length; $("s-src").textContent = `${ok}/${s.sources.length}`;
+    $("s-llm").textContent = s.llm.enabled ? `${s.llm.model} (${s.llm.median_ms ? Math.round(s.llm.median_ms) + "ms" : "–"})` : "off";
+    const color = { ok: "var(--up)", starting: "var(--low)", degraded: "var(--med)", failing: "var(--down)", down: "var(--down)" };
+    $("sources").innerHTML = s.sources.sort((a, b) => a.name.localeCompare(b.name)).map((x) =>
+      `<tr><td>${esc(x.name)} <span class="stat">${esc(x.type)}</span></td>
+       <td><span style="color:${color[x.status] || "inherit"}">${esc(x.status)}</span>${x.last_error && x.status !== "ok" ? ` <span class="err" title="${esc(x.last_error)}">${esc(x.last_error)}</span>` : ""}</td>
+       <td>${x.last_ok ? ago(x.last_ok) : "–"}</td><td>${x.median_latency_s != null ? ago(Date.now()/1000 - x.median_latency_s) : "–"}</td><td>${x.items}</td></tr>`).join("");
+    const m = s.market; $("mkt-note").textContent = m.enabled ? `${m.provider}${m.mode && m.provider === "yahoo" ? " · " + m.mode : ""} · ${m.status || ""}` : "off";
+  } catch (e) { /* server restarting */ }
+}
+async function refreshMarket() {
+  try {
+    const m = await getJSON("/api/market");
+    const rows = Object.entries(m).sort((a, b) => Math.abs(b[1].chg_5m ?? 0) - Math.abs(a[1].chg_5m ?? 0)).slice(0, 60);
+    $("market").innerHTML = rows.length ? rows.map(([sym, r]) => `<tr><td><a href="https://finance.yahoo.com/quote/${esc(sym)}" target="_blank" rel="noopener">${esc(sym)}</a></td>
+      <td>${r.price?.toFixed(2) ?? "–"}</td><td>${pct(r.chg_1m)}</td><td>${pct(r.chg_5m)}</td><td>${pct(r.chg_15m)}</td><td>${pct(r.chg_day)}</td></tr>`).join("")
+      : `<tr><td colspan="6" class="empty">No prices yet</td></tr>`;
+  } catch (e) {}
+}
+
+// ---------------------------------------------------------------- live stream
+function connect() {
+  const es = new EventSource(withToken("/events"));
+  es.addEventListener("hello", () => $("conn").className = "dot ok");
+  es.addEventListener("alert", (e) => onAlert(JSON.parse(e.data)));
+  es.addEventListener("item", (e) => { const d = JSON.parse(e.data); addFeed(d.item, d.analysis); renderFeed(); });
+  es.addEventListener("item_update", (e) => { const d = JSON.parse(e.data); const f = feed.find((x) => x.uid === d.uid); if (f) { f.score = d.analysis.score; f.tickers = d.analysis.tickers; renderFeed(); } });
+  es.onerror = () => { $("conn").className = "dot bad"; };
+}
+
+(async function init() {
+  try { alerts = await getJSON("/api/alerts?limit=200"); renderAlerts(); } catch {}
+  try { (await getJSON("/api/items?limit=800")).reverse().forEach((i) => addFeed(i, i)); renderFeed(); } catch {}
+  refreshStatus(); refreshMarket(); connect();
+  setInterval(refreshStatus, 5000); setInterval(refreshMarket, 5000);
+  setInterval(() => renderAlerts(), 30000);
+})();
+</script>
+</body>
+</html>

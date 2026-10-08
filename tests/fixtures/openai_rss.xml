@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<title>OpenAI News</title>
+<link>https://openai.com/news</link>
+<description>OpenAI News</description>
+<item>
+<title><![CDATA[Introducing ChatGPT agents for finance and legal teams]]></title>
+<link>https://openai.com/index/chatgpt-agents-finance-legal/?utm_source=rss</link>
+<guid isPermaLink="false">chatgpt-agents-finance-legal</guid>
+<description><![CDATA[<p>Today we're launching agents that <b>automate</b> close processes and contract review.</p>]]></description>
+<category>Product</category>
+<pubDate>{RECENT}</pubDate>
+</item>
+<item>
+<title>OpenAI and Example Corp partnership</title>
+<link>https://openai.com/index/example-corp/</link>
+<guid isPermaLink="false">example-corp</guid>
+<description>Example Corp (NYSE: EXM) adopts ChatGPT Enterprise.</description>
+<category>NYSE:EXM</category>
+<pubDate>{OLD}</pubDate>
+</item>
+<item>
+<title>An undated item</title>
+<link>https://openai.com/index/undated/</link>
+</item>
+</channel>
+</rss>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- macOS launchd agent: starts at login, restarts on exit.
+     1. Replace /Users/YOU/News-24-7 with your clone path (3 places).
+     2. cp deploy/com.news247.monitor.plist ~/Library/LaunchAgents/
+     3. launchctl load ~/Library/LaunchAgents/com.news247.monitor.plist
+     Tip: keep the Mac awake (System Settings > Battery/Energy > prevent sleep) for true 24/7. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.news247.monitor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOU/News-24-7/.venv/bin/news247</string>
+    <string>-c</string><string>/Users/YOU/News-24-7/config.yaml</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/YOU/News-24-7</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/news247.out.log</string>
+  <key>StandardErrorPath</key><string>/tmp/news247.err.log</string>
+</dict>
+</plist>

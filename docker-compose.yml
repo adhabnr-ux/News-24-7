@@ -1,0 +1,37 @@
+# docker compose up -d            -> monitor + dashboard on http://localhost:8247
+# docker compose --profile ai up -d -> also runs a local LLM (Ollama); then set llm.enabled
+#                                      and llm.base_url: http://ollama:11434 in config.yaml and run
+#                                      docker compose exec ollama ollama pull qwen2.5:7b-instruct
+services:
+  news247:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env          # secrets (NTFY_TOPIC, TELEGRAM_BOT_TOKEN, ...)
+        required: false
+    volumes:
+      - ./config.yaml:/data/config.yaml:ro
+      - news247-data:/data/data
+    environment:
+      - TZ=America/New_York
+    ports:
+      - "127.0.0.1:8247:8247"
+    # inside the container the dashboard must listen on all interfaces; the port mapping
+    # above still only exposes it on your machine's localhost
+    command: ["-c", "/data/config.yaml", "run", "--host", "0.0.0.0"]
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    # Uncomment for NVIDIA GPUs:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
+
+volumes:
+  news247-data:
+  ollama:

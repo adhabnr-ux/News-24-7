@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:ndaq="http://www.nasdaqtrader.com/">
+<channel>
+<title>NASDAQTrader.com</title>
+<link>http://www.nasdaqtrader.com</link>
+<description>Trade Halts</description>
+<ndaq:numItems>3</ndaq:numItems>
+<item>
+<title>NVDA</title>
+<pubDate>Thu, 08 Oct 2026 18:29:32 GMT</pubDate>
+<description><![CDATA[<table><tr><td>NVDA</td></tr></table>]]></description>
+<ndaq:HaltDate>10/08/2026</ndaq:HaltDate>
+<ndaq:HaltTime>14:29:32.000</ndaq:HaltTime>
+<ndaq:IssueSymbol>NVDA</ndaq:IssueSymbol>
+<ndaq:IssueName>NVIDIA Corporation Common Stock</ndaq:IssueName>
+<ndaq:Market>NASDAQ</ndaq:Market>
+<ndaq:ReasonCode>T1</ndaq:ReasonCode>
+<ndaq:PauseThresholdPrice></ndaq:PauseThresholdPrice>
+<ndaq:ResumptionDate></ndaq:ResumptionDate>
+<ndaq:ResumptionQuoteTime></ndaq:ResumptionQuoteTime>
+<ndaq:ResumptionTradeTime></ndaq:ResumptionTradeTime>
+</item>
+<item>
+<title>ABCD</title>
+<pubDate>Thu, 08 Oct 2026 18:20:00 GMT</pubDate>
+<ndaq:HaltDate>10/08/2026</ndaq:HaltDate>
+<ndaq:HaltTime>14:20:00.000</ndaq:HaltTime>
+<ndaq:IssueSymbol>ABCD</ndaq:IssueSymbol>
+<ndaq:IssueName>Abcd Holdings Inc</ndaq:IssueName>
+<ndaq:Market>NYSE American</ndaq:Market>
+<ndaq:ReasonCode>LUDP</ndaq:ReasonCode>
+<ndaq:ResumptionTradeTime>14:25:00</ndaq:ResumptionTradeTime>
+</item>
+<item>
+<title>NEWCO</title>
+<ndaq:HaltDate>10/08/2026</ndaq:HaltDate>
+<ndaq:HaltTime>09:00:00</ndaq:HaltTime>
+<ndaq:IssueSymbol>NEWCO</ndaq:IssueSymbol>
+<ndaq:ReasonCode>IPO1</ndaq:ReasonCode>
+</item>
+</channel>
+</rss>
