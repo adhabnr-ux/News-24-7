@@ -203,15 +203,18 @@ def cmd_score(cfg: Config, args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- test-notify
 
 
-async def _test_notify(cfg: Config) -> int:
+async def _test_notify(cfg: Config, only: list[str] | None = None) -> int:
     from .analysis.scorer import Scorer
     from .http import HttpClient
     from .notify import Dispatcher
 
     async with HttpClient(cfg.general.user_agent) as http:
         disp = Dispatcher(cfg.notify, http)
+        if only:
+            disp.channels = [c for c in disp.channels if c.name in only]
         if not disp.channels:
-            print("No notification channels enabled. Configure one under `notify:` in config.yaml.")
+            which = f" matching {', '.join(only)}" if only else ""
+            print(f"No notification channels enabled{which}. Configure one under `notify:` in config.yaml.")
             return 1
         item = NewsItem(
             source="news247-test",
@@ -241,7 +244,7 @@ async def _test_notify(cfg: Config) -> int:
 
 
 def cmd_test_notify(cfg: Config, args: argparse.Namespace) -> int:
-    return asyncio.run(_test_notify(cfg))
+    return asyncio.run(_test_notify(cfg, args.only))
 
 
 # --------------------------------------------------------------------------- demo
@@ -465,7 +468,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--entity", action="append", help="entity hint, e.g. --entity OpenAI (as if posted on its blog)"
     )
 
-    sub.add_parser("test-notify", help="send a test alert to every enabled channel")
+    tn = sub.add_parser("test-notify", help="send a test alert to every enabled channel")
+    tn.add_argument(
+        "--only", action="append", help="test just this channel (repeatable), e.g. --only imessage"
+    )
 
     d = sub.add_parser("demo", help="simulated AI-launch → software selloff scenario (no network needed)")
     d.add_argument("--speed", type=float, default=1.0, help="playback speed multiplier")

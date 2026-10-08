@@ -68,3 +68,34 @@ def plain_body(alert: Alert, include_url: bool = True) -> str:
 def markdown_body(alert: Alert) -> str:
     """Markdown-ish body for Discord/Slack (links rendered by the client)."""
     return plain_body(alert, include_url=False) + (f"\n<{alert.url}>" if alert.url else "")
+
+
+def sms_text(alert: Alert, limit: int = 700) -> str:
+    """Compact text for iMessage/SMS: headline first, then just what you need to act."""
+    lines = [short_title(alert)]
+    if alert.kind == "news" and alert.item and alert.analysis:
+        it, an = alert.item, alert.analysis
+        bits = []
+        if an.tickers:
+            bits.append(f"{ARROW.get(an.direction, '•')} {' '.join(an.tickers[:6])}")
+        lag = f"{fmt_age(it.latency)} after post" if it.latency is not None else "just now"
+        bits.append(f"{it.source} · {lag}")
+        lines.append(" · ".join(bits))
+        if an.summary:
+            lines.append(an.summary)
+    elif alert.body:
+        lines.append(alert.body.split("\n")[0])
+    for rel in alert.related[:1]:
+        if rel.get("kind") == "price":
+            lines.append(f"Now: {rel['text']}")
+        else:
+            lines.append(f"Likely cause ({rel.get('age', '?')} ago): {rel['title']}")
+    if alert.body and alert.kind == "news" and "Confirmed" in alert.body:
+        lines.append(alert.body)
+    if alert.url:
+        lines.append(alert.url)
+    text = "\n".join(lines)
+    if len(text) <= limit:
+        return text
+    url = f"\n{alert.url}" if alert.url else ""
+    return text[: max(0, limit - len(url) - 1)].rstrip() + "…" + url

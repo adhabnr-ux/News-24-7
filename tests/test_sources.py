@@ -444,6 +444,7 @@ def test_registry_and_build_sources(caplog):
         "x",
         "mastodon",
         "bluesky",
+        "telegram",
     }
     srcs = build_sources(
         [

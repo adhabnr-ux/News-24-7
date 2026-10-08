@@ -142,13 +142,16 @@ class Engine:
         if not is_new and story.confirmations >= 2:
             bonus = min(CONFIRM_CAP, CONFIRM_BONUS * (story.confirmations - 1))
             self.scorer.rescore(analysis, bonus, f"confirmed by {story.confirmations} sources")
+        vip = self._apply_floor(item, analysis)
         self.storage.add_item(item, analysis, story.id)
         self._remember(item, analysis)
         self._broadcast("item", {"item": item.to_dict(), "analysis": analysis.to_dict(), "story": story.id})
 
         if self.llm and analysis.score >= self.cfg.llm.min_score and not self.llm.busy:
             task = self._spawn(self.llm.assess(item, analysis))
-            wait = 0.0 if analysis.severity >= Severity.CRITICAL else self.cfg.llm.budget_ms / 1000
+            # CRITICAL and VIP-source items go out instantly; the model only annotates afterwards
+            instant = vip or analysis.severity >= Severity.CRITICAL
+            wait = 0.0 if instant else self.cfg.llm.budget_ms / 1000
             if wait:
                 # wait for the model in the background so this source keeps flowing
                 self._spawn(self._finish_with_llm(item, analysis, story, task, wait))
@@ -158,6 +161,21 @@ class Engine:
             return analysis
         await self._finalize(item, analysis, story)
         return analysis
+
+    def _apply_floor(self, item: NewsItem, analysis: Analysis) -> bool:
+        """Raise items from VIP sources/authors to their guaranteed severity. Returns True if VIP."""
+        floor_name = item.extra.get("floor")
+        if not floor_name or any(r.startswith("muted") for r in analysis.reasons):
+            return False
+        floor = Severity.parse(floor_name)
+        if analysis.severity < floor:
+            threshold = {
+                Severity.MEDIUM: self.cfg.scoring.medium,
+                Severity.HIGH: self.cfg.scoring.high,
+                Severity.CRITICAL: self.cfg.scoring.critical,
+            }.get(floor, 0.0)
+            self.scorer.rescore(analysis, threshold - analysis.score, f"VIP source: always {floor.name}")
+        return True
 
     async def _finish_with_llm(
         self, item: NewsItem, analysis: Analysis, story: Story, task: asyncio.Task[Any], wait: float

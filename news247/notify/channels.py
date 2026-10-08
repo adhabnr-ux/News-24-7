@@ -16,7 +16,7 @@ from typing import Any
 
 from ..http import HttpClient
 from ..models import Alert, Severity
-from .format import markdown_body, plain_body, short_title
+from .format import markdown_body, plain_body, short_title, sms_text
 
 log = logging.getLogger(__name__)
 
@@ -286,6 +286,131 @@ class EmailNotifier(Notifier):
         await asyncio.to_thread(self._send_sync, alert)
 
 
+# --------------------------------------------------------------------------- texts to your phone
+
+# Sends through the Messages app of a Mac signed in to iMessage. Arguments are passed via argv,
+# never interpolated into the script, so headlines can't inject AppleScript. Two syntaxes are
+# tried because Apple renamed the dictionary terms (service/buddy -> account/participant).
+IMESSAGE_SCRIPT = """
+on run argv
+    set targetHandle to item 1 of argv
+    set messageText to item 2 of argv
+    set wantSMS to (item 3 of argv is "sms")
+    tell application "Messages"
+        try
+            if wantSMS then
+                set targetAccount to 1st account whose service type = SMS
+            else
+                set targetAccount to 1st account whose service type = iMessage
+            end if
+            send messageText to participant targetHandle of targetAccount
+        on error errA
+            try
+                if wantSMS then
+                    set targetService to 1st service whose service type = SMS
+                else
+                    set targetService to 1st service whose service type = iMessage
+                end if
+                send messageText to buddy targetHandle of targetService
+            on error errB
+                error "Messages could not send: " & errA & " / " & errB
+            end try
+        end try
+    end tell
+end run
+"""
+
+
+class IMessageNotifier(Notifier):
+    """iMessage via the Messages app on a Mac (free; the Mac must stay on and signed in).
+
+    Options: ``to`` (phone number(s) like "+15551234567" or Apple ID e-mails),
+    ``service``: "imessage" (default), "sms" (needs iPhone Text Message Forwarding to this Mac),
+    or "auto" (iMessage, falling back to SMS).
+    """
+
+    name = "imessage"
+
+    def validate(self) -> None:
+        self.require("to")
+        to = self.options["to"]
+        raw = to if isinstance(to, list) else str(to).split(",")  # "+1555...,me@icloud.com" works too
+        self.recipients = [str(t).strip() for t in raw if str(t).strip()]
+        if not self.recipients:
+            raise ValueError("notify.imessage: missing to")
+        self.service = str(self.options.get("service", "imessage")).lower()
+        if self.service not in ("imessage", "sms", "auto"):
+            raise ValueError("notify.imessage: service must be imessage, sms or auto")
+
+    async def _osascript(self, handle: str, text: str, service: str) -> None:
+        proc = await asyncio.create_subprocess_exec(
+            "osascript",
+            "-e",
+            IMESSAGE_SCRIPT,
+            handle,
+            text,
+            service,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, err = await asyncio.wait_for(proc.communicate(), timeout=30)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError("Messages did not respond within 30s (is it running and signed in?)") from None
+        if proc.returncode != 0:
+            msg = err.decode(errors="replace").strip()
+            if "-1743" in msg or "Not authorized" in msg:
+                msg += " — allow Automation access: System Settings > Privacy & Security > Automation"
+            raise RuntimeError(msg or f"osascript exited {proc.returncode}")
+
+    async def send(self, alert: Alert) -> None:
+        if platform.system() != "Darwin":
+            raise RuntimeError(
+                "imessage needs macOS with Messages signed in (use sendblue/bluebubbles/twilio elsewhere)"
+            )
+        text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
+        for handle in self.recipients:
+            if self.service == "auto":
+                try:
+                    await self._osascript(handle, text, "imessage")
+                except RuntimeError:
+                    await self._osascript(handle, text, "sms")
+            else:
+                await self._osascript(handle, text, self.service)
+
+
+class TwilioSMSNotifier(Notifier):
+    """Plain SMS via Twilio (green bubble). Options: ``account_sid``, ``auth_token``,
+    ``from`` (your Twilio number or messaging_service_sid), ``to`` (number or list)."""
+
+    name = "twilio"
+
+    def validate(self) -> None:
+        self.require("account_sid", "auth_token", "to")
+        if not (self.options.get("from") or self.options.get("messaging_service_sid")):
+            raise ValueError("notify.twilio: missing from (or messaging_service_sid)")
+
+    async def send(self, alert: Alert) -> None:
+        import base64
+
+        sid = self.options["account_sid"]
+        auth = base64.b64encode(f"{sid}:{self.options['auth_token']}".encode()).decode()
+        base = self.options.get("api_base", "https://api.twilio.com")
+        to = self.options["to"]
+        for number in to if isinstance(to, list) else [to]:
+            data = {"To": str(number), "Body": sms_text(alert, limit=int(self.options.get("max_chars", 320)))}
+            if self.options.get("messaging_service_sid"):
+                data["MessagingServiceSid"] = self.options["messaging_service_sid"]
+            else:
+                data["From"] = str(self.options["from"])
+            await self.http.post(
+                f"{base}/2010-04-01/Accounts/{sid}/Messages.json",
+                data=data,
+                headers={"Authorization": f"Basic {auth}"},
+            )
+
+
 CHANNEL_CLASSES: dict[str, type[Notifier]] = {
     cls.name: cls
     for cls in (
@@ -298,5 +423,7 @@ CHANNEL_CLASSES: dict[str, type[Notifier]] = {
         SlackNotifier,
         WebhookNotifier,
         EmailNotifier,
+        IMessageNotifier,
+        TwilioSMSNotifier,
     )
 }

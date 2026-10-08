@@ -131,6 +131,12 @@ class Source(ABC):
         self.entities: list[str] = list(cfg.get("entities", []))
         self.tickers: list[str] = [t.upper() for t in cfg.get("tickers", [])]
         self.boost: float = float(cfg.get("boost", 0))
+        # VIP handling: items from this source (or from these authors/handles) are always pushed
+        # at least at this severity, instantly — e.g. anything OpenAI posts on its own channels.
+        floor = cfg.get("alert_floor")
+        self.alert_floor: str | None = str(floor).upper() if floor else None
+        self.vip_authors = {str(a).lower().lstrip("@") for a in cfg.get("vip_authors", [])}
+        self.vip_floor: str = str(cfg.get("vip_floor", "high")).upper()
         self.browser: bool = bool(cfg.get("browser_headers", False))
         self.extra_headers: dict[str, str] = dict(cfg.get("headers", {}))
         inc = cfg.get("include")
@@ -158,6 +164,10 @@ class Source(ABC):
             item.extra.setdefault("entities", list(self.entities))
         if self.boost:
             item.extra["boost"] = self.boost
+        if self.alert_floor:
+            item.extra["floor"] = self.alert_floor
+        elif self.vip_authors and item.author.lower().lstrip("@") in self.vip_authors:
+            item.extra["floor"] = self.vip_floor
         return item
 
     def passes_filters(self, item: NewsItem) -> bool:

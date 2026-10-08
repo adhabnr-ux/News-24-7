@@ -58,6 +58,22 @@ def expand_env(value: Any) -> Any:
     return value
 
 
+def as_bool(value: Any, default: bool = True) -> bool:
+    """YAML booleans, plus strings from ${ENV} substitution ("true", "0", "no", "")."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in ("", "none", "null"):
+        return default
+    if text in ("1", "true", "yes", "on", "y"):
+        return True
+    if text in ("0", "false", "no", "off", "n"):
+        return False
+    raise ConfigError(f"expected true/false, got {value!r}")
+
+
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     out = copy.deepcopy(base)
     for k, v in (override or {}).items():
@@ -219,7 +235,19 @@ DEFAULT_OVERRIDES = {
     "GLD": _ETF_RULES,
     "USO": _ETF_RULES,
 }
-CHANNEL_NAMES = ("console", "desktop", "ntfy", "telegram", "discord", "slack", "pushover", "email", "webhook")
+CHANNEL_NAMES = (
+    "console",
+    "desktop",
+    "ntfy",
+    "telegram",
+    "discord",
+    "slack",
+    "pushover",
+    "email",
+    "webhook",
+    "imessage",
+    "twilio",
+)
 
 
 def _dataclass_from(cls: type, data: dict[str, Any] | None, section: str) -> Any:
@@ -228,6 +256,9 @@ def _dataclass_from(cls: type, data: dict[str, Any] | None, section: str) -> Any
     unknown = set(data) - known
     if unknown:
         raise ConfigError(f"[{section}] unknown key(s): {', '.join(sorted(unknown))}")
+    for name, f in cls.__dataclass_fields__.items():  # type: ignore[attr-defined]
+        if f.type in ("bool", bool) and name in data:
+            data[name] = as_bool(data[name])
     return cls(**data)
 
 
@@ -313,7 +344,7 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         channels.append(
             ChannelConfig(
                 name=cname,
-                enabled=bool(opts.pop("enabled", True)),
+                enabled=as_bool(opts.pop("enabled", True)),
                 min_severity=Severity.parse(opts.pop("min_severity", "high")),
                 options=opts,
             )
@@ -326,6 +357,7 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
     for s in sources:
         if "type" not in s:
             raise ConfigError(f"source '{s['name']}' needs a 'type'")
+        s["enabled"] = as_bool(s.get("enabled", True))
 
     return Config(general, scoring, llm, market, notify, web, sources, knowledge, path)
 

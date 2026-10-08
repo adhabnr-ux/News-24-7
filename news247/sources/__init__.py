@@ -13,6 +13,7 @@ from .pagewatch import PageWatchSource
 from .rss import RSSSource
 from .sec_edgar import SECEdgarSource
 from .social import MastodonSource, XSource
+from .telegram import TelegramChannelSource
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ SOURCE_TYPES: dict[str, type[Source]] = {
         XSource,
         MastodonSource,
         BlueskySource,
+        TelegramChannelSource,
     )
 }
 
