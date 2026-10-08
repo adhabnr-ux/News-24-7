@@ -6,9 +6,9 @@
 <title>News 24/7 Setup</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%276%27 fill=%27%23121722%27/%3E%3Cpath d=%27M5 22l6-7 5 4 10-11%27 stroke=%27%23ff5c5c%27 stroke-width=%273%27 fill=%27none%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
 <style>
-  :root { --bg: #0b0e13; --panel: #121722; --line: #232b3b; --text: #dce3ee; --muted: #8592a6; --ok: #2ecc71; --bad: #ff5c5c; --accent: #4ea1ff; }
+  :root { --bg: #0b0e13; --panel: #121722; --line: #232b3b; --text: #dce3ee; --muted: #8592a6; --ok: #2ecc71; --bad: #ff5c5c; --accent: #4ea1ff; --warn: #f0b429; }
   @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) { --bg: #f4f6fa; --panel: #fff; --line: #dfe4ec; --text: #18202c; --muted: #5d6a7e; --ok: #13914b; --bad: #d63031; --accent: #1f6fd1; }
+    :root:not([data-theme="dark"]) { --bg: #f4f6fa; --panel: #fff; --line: #dfe4ec; --text: #18202c; --muted: #5d6a7e; --ok: #13914b; --bad: #d63031; --accent: #1f6fd1; --warn: #9a6700; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -26,6 +26,13 @@
   .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
   .row:last-child { border-bottom: 0; }
   .muted { color: var(--muted); }
+  .cmd { display: flex; gap: 8px; align-items: stretch; margin-top: 8px; }
+  .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .cmd button { width: auto; margin: 0; padding: 8px 12px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--bad); }
+  .warn { color: var(--warn); font-size: 13px; }
+  summary { cursor: pointer; color: var(--accent); font-size: 14px; margin-top: 12px; }
   a { color: var(--accent); }
   ol { padding-left: 20px; margin: 8px 0 0; color: var(--muted); font-size: 14px; }
 </style>
@@ -40,6 +47,23 @@
     <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+1 555 123 4567">
     <button id="save">Save number</button>
     <div class="msg" id="save-msg"></div>
+  </section>
+
+  <section id="relay" hidden>
+    <label>Your iMessage relay (a Mac)</label>
+    <div id="relay-state" class="muted">Loading…</div>
+    <details id="relay-install" hidden>
+      <summary id="relay-summary">Set up a Mac</summary>
+      <p style="margin:8px 0 0">On any Mac signed in to Messages, open <b>Terminal</b> and paste:</p>
+      <div class="cmd"><code id="relay-cmd"></code><button id="copy" class="secondary">Copy</button></div>
+      <ol>
+        <li>Best: sign Messages on that Mac into a <b>separate Apple ID</b> (texts from your own Apple ID arrive silently as "notes to self").</li>
+        <li>When macOS asks whether <b>python</b> may control <b>Messages</b>, click <b>OK</b>.</li>
+        <li>Come back here and press <b>Send test message</b>.</li>
+      </ol>
+    </details>
+    <p style="margin:10px 0 0;font-size:14px">Reply to any alert with <b>PAUSE 2h</b>, <b>STOP</b>, <b>RESUME</b>, <b>CRITICAL</b>, <b>NORMAL</b> or <b>STATUS</b>.</p>
+    <div id="relay-recent"></div>
   </section>
 
   <section>
@@ -67,6 +91,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 if (TOKEN) $("back").href = q("/");
 
+let loaded = false;  // fill the phone field once; later refreshes must not overwrite typing
 function show(el, text, ok) { el.textContent = text; el.className = "msg " + (ok ? "ok" : "bad"); }
 
 async function load() {
@@ -74,23 +99,58 @@ async function load() {
     const r = await fetch(q("/api/setup"));
     if (!r.ok) throw new Error(await r.text());
     const s = await r.json();
-    if (s.phone && s.phone.length) $("phone").value = s.phone.join(", ");
+    if (s.phone && s.phone.length && !loaded) $("phone").value = s.phone.join(", ");
+    loaded = true;
     if (!s.writable) {
       ["save", "test"].forEach((id) => $(id).disabled = true);
       show($("save-msg"), "This page is read-only from the internet. Set DASHBOARD_TOKEN on the server, then open this page with ?token=YOUR_TOKEN at the end of the address.", false);
     }
+    renderRelay(s);
     const sb = s.channels.find((c) => c.name === "sendblue");
     $("sendblue-tip").hidden = !sb;
     $("sb-from").innerHTML = s.from_number ? ` (<b>${esc(s.from_number)}</b>)` : "";
     $("channels").innerHTML = s.channels.length
-      ? s.channels.map((c) => `<div class="row"><span>${esc(c.name)} <span class="muted">· ${esc(c.min_severity.toLowerCase())}+</span></span>
+      ? s.channels.map((c) => `<div class="row"><span>${esc(c.name)} <span class="muted">· ${esc(c.min_severity.toLowerCase())}+${c.backup ? " · backup" : ""}</span></span>
           <span>${c.sent} sent${c.failed ? ` · <span class="bad">${c.failed} failed</span>` : ""}</span></div>
           ${c.last_error ? `<div class="row bad" style="font-size:12px">${esc(c.last_error)}</div>` : ""}`).join("")
-      : `<span class="bad">No texting service is switched on yet.</span> On your server set <b>SENDBLUE_ENABLED=true</b> plus its keys (see the README), then reload this page.`;
+      : `<span class="bad">No texting service is switched on yet.</span> On your server set <b>RELAY_ENABLED=true</b> (your own Mac sends the iMessages; see docs/IMESSAGE-RELAY.md), then reload this page.`;
+    if (s.phone_mode && s.phone_mode !== "normal") $("channels").insertAdjacentHTML("afterbegin", `<div class="row warn"><span>Texts are ${esc(s.phone_mode)}</span><span>text RESUME / NORMAL</span></div>`);
   } catch (e) {
     $("channels").innerHTML = `<span class="bad">${esc(e.message || e)}</span>`;
   }
 }
+
+const ago = (t) => { if (!t) return "never"; const s = Date.now() / 1000 - t; return s < 90 ? `${Math.round(s)}s ago` : s < 5400 ? `${Math.round(s / 60)}m ago` : s < 172800 ? `${(s / 3600).toFixed(1)}h ago` : `${Math.round(s / 86400)}d ago`; };
+
+let installShown = false;
+async function renderRelay(setup) {
+  const r = setup.relay;
+  $("relay").hidden = !r;
+  if (!r) return;
+  const lines = r.relays.map((m) => `<div class="row"><span><span class="dot on"></span><b>${esc(m.name)}</b> <span class="muted">macOS ${esc(m.macos || "?")}</span></span>
+      <span>${m.sent} sent${m.receipts ? " · receipts on" : ` · <span class="warn">receipts off</span>`}</span></div>
+      ${(m.warnings || []).map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("")}`);
+  if (!r.relays.length) lines.push(`<div class="row"><span><span class="dot off"></span>No Mac connected</span><span class="muted">${r.last_seen ? "last seen " + ago(r.last_seen) : ""}</span></div>
+      <div class="muted" style="font-size:13px">${esc(r.offline_reason)}${r.queued ? ` · ${r.queued} alert(s) queued` : ""}</div>`);
+  if (r.delivery_median_s != null) lines.push(`<div class="muted" style="font-size:13px">Median time to your phone: ${r.delivery_median_s.toFixed(1)}s · ${r.stats.delivered} delivered</div>`);
+  $("relay-state").innerHTML = lines.join("");
+  $("relay-recent").innerHTML = r.recent.length ? `<p style="margin:12px 0 4px;font-size:13px">Recent texts</p>` + r.recent.slice(0, 6).map((m) =>
+      `<div class="row" style="font-size:13px"><span>${esc((m.title || m.id).slice(0, 60))}</span><span class="${m.status === "failed" ? "bad" : m.status === "delivered" ? "ok" : "muted"}" title="${esc(m.error || m.note || "")}">${esc(m.status)}</span></div>`).join("") : "";
+  try {
+    const res = await fetch(q("/api/relay"));
+    const info = res.ok ? await res.json() : {};
+    $("relay-install").hidden = !info.install_command;
+    if (!installShown && info.install_command) { $("relay-install").open = !r.relays.length; installShown = true; }
+    $("relay-summary").textContent = r.relays.length ? "Install on another Mac (or reinstall)" : "Set up a Mac";
+    $("relay-cmd").textContent = info.install_command || "";
+  } catch (e) { /* read-only view */ }
+}
+
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("relay-cmd").textContent); $("copy").textContent = "Copied"; }
+  catch (e) { const range = document.createRange(); range.selectNodeContents($("relay-cmd")); getSelection().removeAllRanges(); getSelection().addRange(range); }
+  setTimeout(() => $("copy").textContent = "Copy", 1500);
+};
 
 $("save").onclick = async () => {
   $("save").disabled = true;
@@ -120,6 +180,7 @@ $("test").onclick = async () => {
 };
 
 load();
+setInterval(() => { if (!document.hidden) load(); }, 10000);
 </script>
 </body>
 </html>

@@ -70,6 +70,13 @@ class Engine:
         saved_phone = self.storage.get_setting("phone")
         if saved_phone:  # a number saved on the dashboard's Setup page wins over IMESSAGE_TO
             self.dispatcher.set_phone(saved_phone.split(","))
+        self.relay_hub = next(
+            (getattr(c, "hub", None) for c in self.dispatcher.channels if c.name == "relay"), None
+        )
+        if self.relay_hub is not None:
+            self.relay_hub.attach(self.storage)
+            self.relay_hub.on_inbound = self.handle_phone_command
+        self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         self.subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._tasks: set[asyncio.Task[Any]] = set()
@@ -117,6 +124,8 @@ class Engine:
                 t.cancel()
             await asyncio.gather(*runners, return_exceptions=True)
             await self.drain(timeout=5)
+            if self.relay_hub is not None:
+                await self.relay_hub.close()
             if web:
                 await web.stop()
             await self.http.close()
@@ -460,6 +469,7 @@ class Engine:
                     "sent": c.sent,
                     "failed": c.failed,
                     "last_error": c.last_error,
+                    "backup": c.backup,
                 }
                 for c in chans
             ],
@@ -467,6 +477,8 @@ class Engine:
             "from_number": next(
                 (getattr(c, "from_number", "") for c in chans if getattr(c, "from_number", "")), ""
             ),
+            "phone_mode": self.phone_mode(),
+            "relay": self.relay_hub.status() if self.relay_hub is not None else None,
         }
 
     async def send_test(self) -> dict[str, str]:
@@ -493,6 +505,84 @@ class Engine:
         )
         return dict(zip((c.name for c in self.dispatcher.phone_channels), results))
 
+    # ------------------------------------------------------------------ texting the relay
+
+    def _load_phone_controls(self) -> None:
+        until = self.storage.get_setting("pause_until")
+        if until:
+            self.dispatcher.paused_until = float(until)
+        level = self.storage.get_setting("phone_min")
+        if level:
+            self.dispatcher.set_phone_min(Severity.parse(level))
+
+    def _tz(self) -> Any:
+        from zoneinfo import ZoneInfo
+
+        name = (self.cfg.notify.quiet_hours or {}).get("timezone") or "America/New_York"
+        try:
+            return ZoneInfo(name)
+        except Exception:  # noqa: BLE001 - unknown zone: fall back to the machine's
+            return None
+
+    def phone_mode(self) -> str:
+        d = self.dispatcher
+        if d.paused:
+            if d.paused_until == float("inf"):
+                return "paused until you text RESUME"
+            from datetime import datetime
+
+            when = datetime.fromtimestamp(d.paused_until, self._tz()).strftime("%I:%M %p %Z").lstrip("0")
+            return f"paused until {when}"
+        if d.phone_min is not None:
+            return f"{d.phone_min.name} and above"
+        return "normal"
+
+    async def handle_phone_command(self, sender: str, text: str) -> str | None:
+        """Runs a command texted to the relay and returns the reply (None = not a command)."""
+        from .relay.commands import HELP, parse_command
+
+        cmd = parse_command(text)
+        if cmd is None:
+            return None
+        log.info("phone command from %s: %s", sender, text[:60])
+        d = self.dispatcher
+        if cmd.action == "pause":
+            until = d.pause(cmd.seconds)
+            self.storage.set_setting("pause_until", "inf" if until == float("inf") else str(until))
+            return f"⏸ Texts {self.phone_mode()}. The dashboard keeps recording. Text RESUME to restart."
+        if cmd.action == "resume":
+            d.resume()
+            self.storage.set_setting("pause_until", "0")
+            return f"▶️ Texts are back on ({self.phone_mode()})."
+        if cmd.action == "level":
+            sev = Severity.parse(cmd.level) if cmd.level else None
+            d.set_phone_min(sev)
+            self.storage.set_setting("phone_min", sev.name if sev else "")
+            if sev is Severity.CRITICAL:
+                return "OK: only CRITICAL alerts by text now. Text NORMAL to undo."
+            if sev is Severity.MEDIUM:
+                return "OK: MEDIUM alerts by text too (more messages). Text NORMAL to undo."
+            return "OK: back to normal (important + critical alerts)."
+        if cmd.action == "status":
+            return self.status_text()
+        return HELP
+
+    def status_text(self) -> str:
+        sources = [s.describe() for s in self.sources]
+        ok = sum(1 for s in sources if s["status"] in ("ok", "starting"))
+        last = self.storage.recent_alerts(1)
+        last_txt = (
+            f"last: {last[0]['title'][:80]} ({fmt_age(time.time() - last[0]['created'])} ago)"
+            if last
+            else "none yet"
+        )
+        counts = self.storage.counts()
+        return (
+            f"✅ News247 up {fmt_age(time.time() - self.started)} · {ok}/{len(sources)} sources OK\n"
+            f"{counts['alerts_24h']} alerts in 24h, {last_txt}\n"
+            f"Texts: {self.phone_mode()}"
+        )
+
     # ------------------------------------------------------------------ status
 
     def status(self) -> dict[str, Any]:
@@ -509,6 +599,8 @@ class Engine:
             },
             "llm": self.llm.stats() if self.llm else {"enabled": False},
             "channels": self.dispatcher.describe(),
+            "phone_mode": self.phone_mode(),
+            "relay": self.relay_hub.status() if self.relay_hub is not None else None,
             "db": self.storage.counts(),
         }
 

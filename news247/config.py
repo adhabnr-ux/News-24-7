@@ -203,6 +203,7 @@ class WebConfig:
     token: str = (
         ""  # if set, the dashboard/API require ?token=... (do set it before exposing beyond localhost)
     )
+    public_url: str = ""  # https://… address Macs use to reach the relay endpoint (auto-detected if empty)
 
 
 @dataclass
@@ -254,6 +255,7 @@ CHANNEL_NAMES = (
     "email",
     "webhook",
     "imessage",
+    "relay",
     "twilio",
     "bluebubbles",
     "sendblue",

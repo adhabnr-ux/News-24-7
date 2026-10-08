@@ -15,7 +15,7 @@ EXPOSE 8247
 HEALTHCHECK --interval=60s --timeout=5s --start-period=30s \
   CMD python -c "import os,urllib.request,sys; p=os.environ.get('PORT','8247'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{p}/health', timeout=4).status == 200 else 1)"
 
-# Configure with environment variables (IMESSAGE_TO, SENDBLUE_*, ...); optionally mount
+# Configure with environment variables (IMESSAGE_TO, RELAY_ENABLED, ...); optionally mount
 # /data/config.yaml for more control and use: news247 -c /data/config.yaml run
 ENTRYPOINT ["news247"]
 CMD ["run"]

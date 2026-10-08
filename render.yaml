@@ -1,9 +1,9 @@
-# One-click cloud deploy on Render (https://render.com): runs News247 24/7 and texts your phone.
+# One-click cloud deploy on Render (https://render.com): runs News247 24/7 and texts your phone
+# through your own Mac relay (docs/IMESSAGE-RELAY.md).
 #   1. Click the "Deploy to Render" button in the README (or New > Blueprint > this repo).
-#   2. Render asks for the values marked "sync: false" below — your phone number and your
-#      Sendblue keys (free at sendblue.com). That's all you type.
-#   3. After it's live, open the dashboard URL + ?token=<DASHBOARD_TOKEN> (shown under
-#      Environment), go to Setup, and press "Send test message".
+#   2. Render asks for the values marked "sync: false" below: your phone number and e-mail.
+#   3. Open the dashboard URL + ?token=<DASHBOARD_TOKEN> (shown under Environment), go to Setup,
+#      copy the one-line command onto a Mac signed in to Messages, then "Send test message".
 services:
   - type: web
     name: news247
@@ -15,18 +15,18 @@ services:
     envVars:
       - key: IMESSAGE_TO
         sync: false          # your phone number, e.g. +15551234567
-      - key: SENDBLUE_ENABLED
-        value: "true"
-      - key: SENDBLUE_API_KEY_ID
-        sync: false
-      - key: SENDBLUE_API_SECRET
-        sync: false
       - key: CONTACT_EMAIL
         sync: false          # the SEC requires a contact e-mail in requests
+      - key: RELAY_ENABLED
+        value: "true"        # iMessages are sent by your own Mac relay
+      - key: RELAY_SECRET
+        generateValue: true  # shared secret between this server and your Mac relay
       - key: DASHBOARD_TOKEN
         generateValue: true  # protects the dashboard/setup page on the public URL
       - key: TIMEZONE
         value: America/New_York
+      # Optional backup while your Mac is asleep (free): install the ntfy app, subscribe to a
+      # hard-to-guess topic, then add NTFY_ENABLED=true, NTFY_BACKUP=true, NTFY_TOPIC=<topic>.
     disk:
       name: news247-data
       mountPath: /data/data

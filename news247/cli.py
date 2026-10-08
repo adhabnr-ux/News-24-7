@@ -523,6 +523,12 @@ def build_parser() -> argparse.ArgumentParser:
     st = sub.add_parser("stats", help="latency per source")
     st.add_argument("--days", type=float, default=7)
 
+    sub.add_parser(
+        "relay",
+        help="run the iMessage relay on a Mac: news247 relay [run|doctor|send-test] (see news247 relay -h)",
+        add_help=False,
+    )
+
     i = sub.add_parser("init", help="write a starter config.yaml")
     i.add_argument("--path", default="config.yaml")
     i.add_argument("--force", action="store_true")
@@ -543,6 +549,10 @@ COMMANDS = {
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["relay"]:  # the Mac-side relay has its own options and needs no config.yaml
+        from .relay.agent import main as relay_main
+
+        return relay_main(argv[1:])
     args = parser.parse_args(argv)
     if args.cmd is None:  # bare `news247` means `news247 run`
         args = parser.parse_args([*argv, "run"])

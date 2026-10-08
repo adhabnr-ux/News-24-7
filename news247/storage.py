@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS alerts (
     payload TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created);
+CREATE TABLE IF NOT EXISTS relay_outbox (
+    id TEXT PRIMARY KEY,
+    created REAL NOT NULL,
+    status TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_relay_created ON relay_outbox(created);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -188,6 +195,20 @@ class Storage:
             (key, value, time.time()),
         )
 
+    # ------------------------------------------------------------------ iMessage relay outbox
+
+    def relay_save(self, msg: dict[str, Any]) -> None:
+        self.db.execute(
+            "INSERT OR REPLACE INTO relay_outbox (id, created, status, payload) VALUES (?,?,?,?)",
+            (msg["id"], msg["created"], msg["status"], json.dumps(msg, default=str)),
+        )
+
+    def relay_load(self, since: float) -> list[dict[str, Any]]:
+        rows = self.db.execute(
+            "SELECT payload FROM relay_outbox WHERE created >= ? ORDER BY created", (since,)
+        ).fetchall()
+        return [json.loads(r[0]) for r in rows]
+
     # ------------------------------------------------------------------ stats
 
     def latency_stats(self, since: float | None = None) -> list[dict[str, Any]]:
@@ -253,4 +274,5 @@ class Storage:
         cutoff = time.time() - retention_days * 86400
         n = self.db.execute("DELETE FROM items WHERE detected < ?", (cutoff,)).rowcount
         self.db.execute("DELETE FROM alerts WHERE created < ?", (cutoff,))
+        self.db.execute("DELETE FROM relay_outbox WHERE created < ?", (cutoff,))
         return n

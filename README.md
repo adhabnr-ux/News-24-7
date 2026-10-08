@@ -2,7 +2,7 @@
 
 News247 runs around the clock and pings your phone within seconds when something breaks that is likely to move stocks. Examples: OpenAI launching an enterprise agent that hits software stocks, an 8-K bankruptcy filing, a "news pending" trading halt, a Fed statement, a tariff post, or a whole sector suddenly dropping 3%.
 
-It watches about 50 sources at once: AI-lab and big-tech newsrooms, newspaper scoop feeds (FT, Bloomberg, The Information), headline squawks, SEC filings, exchange halts, the Fed and White House, press-release wires, financial media, and Bluesky in real time, plus optional push feeds (X, Alpaca/Benzinga). It also watches **prices**, so if software stocks fall together it tells you that, and names the headline that most likely caused it. Alerts arrive as **iMessages to your phone number**, or through ntfy, Telegram, Discord, Slack, Pushover, email or SMS.
+It watches about 50 sources at once: AI-lab and big-tech newsrooms, newspaper scoop feeds (FT, Bloomberg, The Information), headline squawks, SEC filings, exchange halts, the Fed and White House, press-release wires, financial media, and Bluesky in real time, plus optional push feeds (X, Alpaca/Benzinga). It also watches **prices**, so if software stocks fall together it tells you that, and names the headline that most likely caused it. Alerts arrive as **iMessages to your phone number**, sent by News247's own relay on any Mac (no third-party service), or through ntfy, Telegram, Discord, Slack, Pushover, email or SMS.
 
 ![dashboard](docs/dashboard.png)
 
@@ -23,14 +23,18 @@ It watches about 50 sources at once: AI-lab and big-tech newsrooms, newspaper sc
 
 ## Quick start: iMessages to your phone, running 24/7
 
-### Option A: in the cloud, your computer can be off (recommended, ~$7/month)
+### Option A: monitor in the cloud, iMessages from your own Mac relay (recommended, ~$7/month)
 
 **→ Follow [docs/SETUP-CLOUD-IMESSAGE.md](docs/SETUP-CLOUD-IMESSAGE.md) (about 15 minutes, no coding).**
 
 In short:
-1. Sign up at **sendblue.com** (free iMessage sender) and text "hi" to your Sendblue number once from your iPhone.
-2. Click **[Deploy to Render](https://render.com/deploy?repo=https://github.com/adhabnr-ux/News-24-7)**. Render asks for 4 things: **your phone number**, the two Sendblue keys, and your e-mail.
-3. Open the dashboard's **Setup** page and press **Send test message**.
+1. Click **[Deploy to Render](https://render.com/deploy?repo=https://github.com/adhabnr-ux/News-24-7)**. Render asks for **your phone number** and your e-mail.
+2. Open the dashboard's **Setup** page, copy the one-line command, and paste it into Terminal on any Mac signed in to Messages. That Mac becomes your private iMessage sender: [docs/IMESSAGE-RELAY.md](docs/IMESSAGE-RELAY.md).
+3. Press **Send test message**. Optionally add free **ntfy** push as a backup for when that Mac sleeps.
+
+Reply to any alert with `PAUSE 2h`, `STOP`, `RESUME`, `CRITICAL`, `NORMAL` or `STATUS`.
+
+Why a Mac at all? Apple has no public iMessage API. Every iMessage must leave an Apple device, and services like Sendblue are racks of Macs. The relay is that same idea with your own Mac, built into News247: authenticated, queued, with delivery receipts and failover. Details and hardware options are in [docs/IMESSAGE-RELAY.md](docs/IMESSAGE-RELAY.md).
 
 ### Option B: on a Mac that stays on (free, real iMessage)
 
@@ -46,15 +50,16 @@ To see the whole pipeline before setting anything up, run `news247 demo` (simula
 
 | Option | Bubble | Cost | Setup |
 |---|---|---|---|
+| **News247 relay** (built in) | blue (iMessage) | free (needs a Mac signed in to Messages) | Monitor runs anywhere. `RELAY_ENABLED=true`, `IMESSAGE_TO`, then the one-line Mac install from the Setup page. Delivery receipts, failover, text commands. See [docs/IMESSAGE-RELAY.md](docs/IMESSAGE-RELAY.md). |
 | **BlueBubbles** relay | blue (iMessage) | free | Monitor runs anywhere (VPS, Linux, Docker); a Mac at home runs the free [BlueBubbles](https://bluebubbles.app) server. Set `BLUEBUBBLES_ENABLED`, `BLUEBUBBLES_URL`, `BLUEBUBBLES_PASSWORD`, `IMESSAGE_TO`. |
 | **Sendblue** | blue (iMessage) | free sandbox (10 contacts); paid from ~$29/mo | No Mac at all. Text your Sendblue number once from your phone, then set `SENDBLUE_ENABLED`, `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET`, `SENDBLUE_FROM`, `IMESSAGE_TO`. |
 | **Blooio** | blue (iMessage) | from ~$39/mo | No Mac. `BLOOIO_ENABLED`, `BLOOIO_API_KEY`, `IMESSAGE_TO`. |
 | **Textbelt** | green (SMS) | prepaid, ~a few cents/text | No registration paperwork. Links are stripped (Textbelt holds link texts until your account is verified). `TEXTBELT_ENABLED`, `TEXTBELT_KEY`, `SMS_TO`. |
 | **Twilio** | green (SMS) | ~$1/mo + ~1¢/text | US carriers require A2P 10DLC or toll-free verification first (≈$45 and 1–3 weeks for a sole proprietor). |
-| **ntfy** app | push notification | free | Install **ntfy**, subscribe to a secret topic, set `NTFY_TOPIC` and `notify.ntfy.enabled: true`. Most reliable fallback; consider enabling it alongside iMessage. |
+| **ntfy** app | push notification | free | Install **ntfy**, subscribe to a secret topic, set `NTFY_ENABLED=true`, `NTFY_TOPIC`. With `NTFY_BACKUP=true` it only fires when iMessage couldn't be sent (e.g. the relay Mac is asleep). |
 | Telegram / Discord / Slack / Pushover / e-mail / webhook | | free | See `config.example.yaml`. |
 
-All of these are switched on from `.env` (see `news247 init`). Check any channel with `news247 test-notify --only imessage` (or `sendblue`, `ntfy`, …).
+All of these are switched on from `.env` (see `news247 init`). Check any channel with `news247 test-notify --only imessage` (or `relay`, `ntfy`, …). Any channel can be a **backup** (`backup: true`): it fires only when every primary phone channel failed for that alert.
 
 Each channel has a `min_severity`. By default your phone gets **HIGH + CRITICAL**, the console also shows **MEDIUM**, and quiet hours (e.g. 23:30–06:30) let only **CRITICAL** through.
 
@@ -270,9 +275,9 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
  RSS/Atom · SEC EDGAR · Nasdaq halts ─┤                     VIP floor (labs: instant)
  page watcher · Telegram · HN · Reddit┼─► dedupe ─► score (rules) ─► cluster stories ─┬─► SQLite (history, seen ids)
  Mastodon/Truth Social ───────────────┘   (uid)     tickers/themes   +confirmation    ├─► dashboard (SSE) + JSON API
-                                                          │                           └─► alert ─► iMessage/BlueBubbles/
-                                          optional local LLM (bounded, time-boxed)              Sendblue/SMS/ntfy/Telegram/
-                                                                                                Discord/Slack/email/webhook
+                                                          │                           └─► alert ─► relay ══WebSocket══► Mac ─► iMessage
+                                          optional local LLM (bounded, time-boxed)              (backup: ntfy/SMS/Telegram/
+                                                                                                 Discord/Slack/email/webhook)
  Yahoo / Finnhub prices ─► move detector ─► coalesce ─► correlate with recent news ─► price alert
                            (rules, baskets,   (one alert per
                             cooldowns)          sector move)
@@ -284,7 +289,10 @@ news247/
                 apis (hn, reddit, finnhub)
   analysis/     scorer, entities, dedup (story clustering), llm
   market/       detector (move rules, baskets), prices (yahoo, finnhub)
-  notify/       channels (iMessage, BlueBubbles, Sendblue, Blooio, SMS, ntfy, Telegram, …) + dispatcher
+  notify/       channels (relay, iMessage, BlueBubbles, Sendblue, Blooio, SMS, ntfy, Telegram, …) + dispatcher
+                (severity routing, quiet hours, pause/text commands, backup channels)
+  relay/        the iMessage relay: hub (monitor side, queue/digest/failover), agent (Mac side, `news247 relay`),
+                signed protocol, Messages app sender, Messages-database receipts, one-line installer
   web/          dashboard + API
   data/         knowledge.yaml (companies, keywords, themes, baskets), default_sources.yaml, config.example.yaml
   engine.py     the pipeline · storage.py SQLite · cli.py
@@ -294,8 +302,9 @@ news247/
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 170 tests: parsers on real feed formats, scoring calibration, move detection,
-                   # every notification channel's wire format, LLM client, engine end-to-end, web API
+pytest -q          # 195 tests: parsers on real feed formats, scoring calibration, move detection,
+                   # every notification channel's wire format, LLM client, engine end-to-end, web API,
+                   # the iMessage relay over a real WebSocket (auth, queueing, failover, receipts, commands)
 ruff check . && ruff format --check .
 ```
 

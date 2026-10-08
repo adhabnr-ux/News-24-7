@@ -6,9 +6,11 @@ import asyncio
 import hmac
 import json
 import logging
+import os
 import time
 from importlib import resources
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from aiohttp import web
 
@@ -45,11 +47,16 @@ class WebServer:
         app.router.add_get("/api/setup", self.api_setup)
         app.router.add_post("/api/setup", self.api_setup_save)
         app.router.add_post("/api/setup/test", self.api_setup_test)
+        app.router.add_get("/api/relay", self.api_relay)
+        app.router.add_get("/relay/ws", self.relay_ws)
+        app.router.add_get("/relay/install.sh", self.relay_install)
+        app.router.add_get("/relay/package.tar.gz", self.relay_package)
         return app
 
     @web.middleware
     async def _auth(self, request: web.Request, handler: Any) -> web.StreamResponse:
-        if self.cfg.token and request.path != "/health":
+        # /relay/ws authenticates relays itself (challenge-response with the relay secret)
+        if self.cfg.token and request.path not in ("/health", "/relay/ws"):
             supplied = request.query.get("token") or request.headers.get("Authorization", "").removeprefix(
                 "Bearer "
             )
@@ -126,6 +133,72 @@ class WebServer:
     async def api_setup_test(self, request: web.Request) -> web.Response:
         self._check_write(request)
         return _json(await self.engine.send_test())
+
+    # ------------------------------------------------------------------ iMessage relay
+
+    def _hub(self) -> Any:
+        hub = self.engine.relay_hub
+        if hub is None:
+            raise web.HTTPNotFound(
+                text="The iMessage relay is off. Set RELAY_ENABLED=true on the server and restart it."
+            )
+        return hub
+
+    def public_base(self, request: web.Request) -> str:
+        """The address a Mac on the internet uses to reach this server."""
+        if self.cfg.public_url:
+            return self.cfg.public_url.rstrip("/")
+        for env, fmt in (
+            ("RENDER_EXTERNAL_URL", "{}"),
+            ("RAILWAY_PUBLIC_DOMAIN", "https://{}"),
+            ("FLY_APP_NAME", "https://{}.fly.dev"),
+        ):
+            if os.environ.get(env):
+                return fmt.format(os.environ[env]).rstrip("/")
+        proto = request.headers.get("X-Forwarded-Proto", request.scheme).split(",")[0].strip()
+        host = request.headers.get("X-Forwarded-Host", request.host).split(",")[0].strip()
+        return f"{proto}://{host}"
+
+    def _token_qs(self) -> str:
+        return f"?token={quote(self.cfg.token)}" if self.cfg.token else ""
+
+    async def api_relay(self, request: web.Request) -> web.Response:
+        hub = self._hub()
+        out = hub.status()
+        try:
+            self._check_write(request)
+            base = self.public_base(request)
+            out["install_command"] = f"curl -fsSL '{base}/relay/install.sh{self._token_qs()}' | bash"
+            out["server"] = base
+            out["secret"] = hub.secret
+        except web.HTTPForbidden:
+            out["install_command"] = ""
+        return _json(out)
+
+    async def relay_ws(self, request: web.Request) -> web.StreamResponse:
+        return await self._hub().handle(request)
+
+    async def relay_install(self, request: web.Request) -> web.Response:
+        from ..relay.package import install_script
+
+        hub = self._hub()
+        self._check_write(request)  # the script contains the relay secret
+        base = self.public_base(request)
+        script = install_script(base, hub.secret, f"{base}/relay/package.tar.gz{self._token_qs()}")
+        return web.Response(
+            text=script, content_type="text/x-shellscript", headers={"Cache-Control": "no-store"}
+        )
+
+    async def relay_package(self, request: web.Request) -> web.Response:
+        from ..relay.package import source_tarball
+
+        self._hub()
+        data = await asyncio.to_thread(source_tarball)
+        return web.Response(
+            body=data,
+            content_type="application/gzip",
+            headers={"Content-Disposition": 'attachment; filename="news247.tar.gz"'},
+        )
 
     async def health(self, request: web.Request) -> web.Response:
         st = self.engine.status()

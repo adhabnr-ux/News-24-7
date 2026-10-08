@@ -17,6 +17,8 @@ from typing import Any
 
 from ..http import HttpClient
 from ..models import Alert, Severity
+from ..relay.hub import RelayHub
+from ..relay.messages_app import IMESSAGE_SCRIPTS, MessagesApp  # noqa: F401 - IMESSAGE_SCRIPTS re-exported
 from .format import markdown_body, plain_body, short_title, sms_text
 
 log = logging.getLogger(__name__)
@@ -24,6 +26,8 @@ log = logging.getLogger(__name__)
 
 class Notifier:
     name = "base"
+    timeout = 20.0  # seconds the dispatcher waits for send()
+    backup = False  # only used when every primary phone channel failed (option ``backup: true``)
 
     def __init__(self, options: dict[str, Any], http: HttpClient, min_severity: Severity) -> None:
         self.options = options
@@ -329,59 +333,10 @@ class PhoneChannel:
 
 # --------------------------------------------------------------------------- texts to your phone
 
-# Sends through the Messages app of a Mac signed in to iMessage. Arguments are passed via argv,
-# never interpolated into the script, so headlines can't inject AppleScript. AppleScript compiles
-# a whole script up front and Apple renamed the dictionary terms over the years, so each syntax
-# is a separate script, tried in order:
-#   1. participant-of-account  (macOS 11 Big Sur and later, including macOS 26)
-#   2. buddy-of-service        (macOS 10.x)
-#   3. an existing 1:1 chat id (last resort)
-_IMESSAGE_HEAD = """
-on run argv
-    set targetHandle to item 1 of argv
-    set messageText to item 2 of argv
-    set wantSMS to (item 3 of argv is "sms")
-    tell application "Messages"
-"""
-_IMESSAGE_TAIL = """
-    end tell
-end run
-"""
-IMESSAGE_SCRIPTS = [
-    _IMESSAGE_HEAD
-    + """
-        if wantSMS then
-            set targetAccount to 1st account whose service type = SMS
-        else
-            set targetAccount to 1st account whose service type = iMessage
-        end if
-        send messageText to participant targetHandle of targetAccount
-"""
-    + _IMESSAGE_TAIL,
-    _IMESSAGE_HEAD
-    + """
-        if wantSMS then
-            set targetService to 1st service whose service type = SMS
-        else
-            set targetService to 1st service whose service type = iMessage
-        end if
-        send messageText to buddy targetHandle of targetService
-"""
-    + _IMESSAGE_TAIL,
-    _IMESSAGE_HEAD
-    + """
-        if wantSMS then
-            send messageText to chat id ("SMS;-;" & targetHandle)
-        else
-            send messageText to chat id ("iMessage;-;" & targetHandle)
-        end if
-"""
-    + _IMESSAGE_TAIL,
-]
-
 
 class IMessageNotifier(PhoneChannel, Notifier):
-    """iMessage via the Messages app on a Mac (free; the Mac must stay on and signed in).
+    """iMessage via the Messages app when News247 itself runs on a Mac (free; the Mac must stay
+    on and signed in). Monitor in the cloud instead? Use the ``relay`` channel.
 
     Options: ``to`` (phone number(s) like "+15551234567" or Apple ID e-mails),
     ``service``: "imessage" (default), "sms" (needs iPhone Text Message Forwarding to this Mac),
@@ -395,60 +350,81 @@ class IMessageNotifier(PhoneChannel, Notifier):
         self.service = str(self.options.get("service", "imessage")).lower()
         if self.service not in ("imessage", "sms", "auto"):
             raise ValueError("notify.imessage: service must be imessage, sms or auto")
-
-    async def _run_script(self, script: str, handle: str, text: str, service: str) -> None:
-        proc = await asyncio.create_subprocess_exec(
-            "osascript",
-            "-e",
-            script,
-            handle,
-            text,
-            service,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            _, err = await asyncio.wait_for(proc.communicate(), timeout=30)
-        except asyncio.TimeoutError:
-            proc.kill()
-            raise RuntimeError("Messages did not respond within 30s (is it running and signed in?)") from None
-        if proc.returncode != 0:
-            raise RuntimeError(err.decode(errors="replace").strip() or f"osascript exited {proc.returncode}")
-
-    async def _osascript(self, handle: str, text: str, service: str) -> None:
-        errors = []
-        for i in self._script_order():
-            try:
-                await self._run_script(IMESSAGE_SCRIPTS[i], handle, text, service)
-                self._working_script = i  # remember what works on this Mac
-                return
-            except RuntimeError as exc:
-                msg = str(exc)
-                if "-1743" in msg or "Not authorized" in msg:
-                    raise RuntimeError(
-                        msg + " — allow Automation access: System Settings > Privacy & Security > Automation"
-                    ) from None
-                errors.append(msg)
-        raise RuntimeError("Messages could not send: " + " | ".join(errors))
-
-    def _script_order(self) -> list[int]:
-        first = getattr(self, "_working_script", 0)
-        return [first] + [i for i in range(len(IMESSAGE_SCRIPTS)) if i != first]
+        self.app = MessagesApp()
 
     async def send(self, alert: Alert) -> None:
-        if platform.system() != "Darwin":
+        if not self.app.supported():
             raise RuntimeError(
-                "imessage needs macOS with Messages signed in (use sendblue/bluebubbles/twilio elsewhere)"
+                "imessage needs macOS with Messages signed in (in the cloud use the relay channel)"
             )
         text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
         for handle in self.targets():
             if self.service == "auto":
                 try:
-                    await self._osascript(handle, text, "imessage")
+                    await self.app.send(handle, text, "imessage")
                 except RuntimeError:
-                    await self._osascript(handle, text, "sms")
+                    await self.app.send(handle, text, "sms")
             else:
-                await self._osascript(handle, text, self.service)
+                await self.app.send(handle, text, self.service)
+
+
+class RelayNotifier(PhoneChannel, Notifier):
+    """iMessage through your own Mac relay (``news247 relay``): the monitor runs anywhere, any
+    Mac signed in to Messages does the sending over an outbound, authenticated WebSocket.
+
+    Options: ``to``; ``secret`` (empty = generated and shown on the Setup page);
+    ``accept_timeout`` (s, default 5: a relay that doesn't answer this fast is treated as asleep
+    and backup channels take over); ``result_timeout`` (s, default 45); ``late_delivery``
+    (default true: what couldn't be sent is delivered when the relay reconnects);
+    ``max_late_minutes`` (default 60); ``digest_min`` (default 3: that many queued alerts are
+    combined into one text).
+    """
+
+    name = "relay"
+
+    def validate(self) -> None:
+        self._init_recipients()
+        o = self.options
+        self.hub = RelayHub(
+            str(o.get("secret") or ""),
+            accept_timeout=float(o.get("accept_timeout", 5)),
+            result_timeout=float(o.get("result_timeout", 45)),
+            max_late_s=float(o.get("max_late_minutes", 60)) * 60,
+            digest_min=int(o.get("digest_min", 3)),
+            late_delivery=str(o.get("late_delivery", True)).strip().lower()
+            not in ("false", "0", "no", "off"),
+        )
+        self.hub.set_recipients(self.recipients)
+        self.timeout = self.hub.accept_timeout + self.hub.result_timeout + 5
+        self._msg_ids: dict[str, str] = {}
+
+    def set_recipients(self, numbers: list[str]) -> None:
+        super().set_recipients(numbers)
+        self.hub.set_recipients(self.recipients)
+
+    async def send(self, alert: Alert) -> None:
+        to = self.targets()
+        text = sms_text(alert, limit=int(self.options.get("max_chars", 900)))
+        is_test = bool(alert.item and alert.item.source == "news247-test")
+        rec = self.hub.new_message(
+            alert.id, to, text, title=short_title(alert), severity=alert.severity.name, late_ok=not is_test
+        )
+        self._msg_ids[alert.id] = rec.id
+        await self.hub.deliver(rec)
+
+    def superseded(self, alert: Alert, by: str) -> None:
+        msg_id = self._msg_ids.pop(alert.id, None)
+        if msg_id:
+            self.hub.supersede(msg_id, by)
+
+    def describe(self) -> dict[str, Any]:
+        st = self.hub.status()
+        return {
+            **super().describe(),
+            "relay_online": st["online"],
+            "relays": [r["name"] for r in st["relays"]],
+            "queued": st["queued"],
+        }
 
 
 class TwilioSMSNotifier(PhoneChannel, Notifier):
@@ -689,6 +665,7 @@ CHANNEL_CLASSES: dict[str, type[Notifier]] = {
         WebhookNotifier,
         EmailNotifier,
         IMessageNotifier,
+        RelayNotifier,
         TwilioSMSNotifier,
         BlueBubblesNotifier,
         SendblueNotifier,
