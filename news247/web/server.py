@@ -51,6 +51,9 @@ class WebServer:
         app.router.add_get("/relay/ws", self.relay_ws)
         app.router.add_get("/relay/install.sh", self.relay_install)
         app.router.add_get("/relay/package.tar.gz", self.relay_package)
+        app.router.add_get("/api/whatsapp", self.api_whatsapp)
+        app.router.add_post("/api/whatsapp/pair", self.api_whatsapp_pair)
+        app.router.add_post("/api/whatsapp/unlink", self.api_whatsapp_unlink)
         return app
 
     @web.middleware
@@ -199,6 +202,50 @@ class WebServer:
             content_type="application/gzip",
             headers={"Content-Disposition": 'attachment; filename="news247.tar.gz"'},
         )
+
+    # ------------------------------------------------------------------ WhatsApp sender
+
+    def _wa(self) -> Any:
+        wa = self.engine.whatsapp
+        if wa is None:
+            raise web.HTTPNotFound(
+                text="WhatsApp is off. Set WHATSAPP_ENABLED=true on the server and restart it."
+            )
+        return wa
+
+    async def api_whatsapp(self, request: web.Request) -> web.Response:
+        from ..whatsapp.neonize_backend import qr_svg
+
+        wa = self._wa()
+        try:
+            self._check_write(request)
+            writable = True
+        except web.HTTPForbidden:
+            writable = False
+        st = wa.status(qr_svg if writable else None)
+        if not writable:  # whoever scans the QR links *their* account as the sender
+            st["qr"] = st["pair_code"] = None
+        st["writable"] = writable
+        return _json(st)
+
+    async def api_whatsapp_pair(self, request: web.Request) -> web.Response:
+        wa = self._wa()
+        self._check_write(request)
+        try:
+            body = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="expected JSON") from None
+        try:
+            code = await wa.request_pair_code(str(body.get("phone", "")))
+        except Exception as exc:  # noqa: BLE001 - show the reason on the page
+            raise web.HTTPConflict(text=str(exc)) from None
+        return _json({"code": code})
+
+    async def api_whatsapp_unlink(self, request: web.Request) -> web.Response:
+        wa = self._wa()
+        self._check_write(request)
+        await wa.unlink()
+        return _json({"ok": True})
 
     async def health(self, request: web.Request) -> web.Response:
         st = self.engine.status()

@@ -261,6 +261,8 @@ CHANNEL_NAMES = (
     "sendblue",
     "blooio",
     "textbelt",
+    "whatsapp",
+    "whatsapp_cloud",
 )
 
 

@@ -49,6 +49,21 @@
     <div class="msg" id="save-msg"></div>
   </section>
 
+  <section id="wa" hidden>
+    <label>WhatsApp sender <span class="muted" style="font-weight:400">(runs on this server)</span></label>
+    <div id="wa-state" class="muted">Loading…</div>
+    <div id="wa-pair" hidden>
+      <p style="margin:10px 0 6px">Link the WhatsApp account alerts should come <b>from</b> (best: a second number, e.g. WhatsApp Business with a second SIM/eSIM). On that phone: <b>Settings › Linked devices › Link a device</b>, then scan:</p>
+      <div id="wa-qr" style="background:#fff;border-radius:8px;padding:8px;width:max-content;max-width:100%"></div>
+      <p style="margin:12px 0 6px;font-size:14px">On the same phone? Tap <b>Link with phone number instead</b>, enter that account's number here and type the code you get:</p>
+      <div class="cmd"><input id="wa-phone" type="tel" inputmode="tel" placeholder="+1 555 000 1111" style="font-size:16px;padding:9px"><button id="wa-code-btn" class="secondary">Get code</button></div>
+      <div id="wa-code" style="font:700 28px/1.2 ui-monospace,Menlo,monospace;letter-spacing:3px;margin-top:10px"></div>
+    </div>
+    <div id="wa-recent"></div>
+    <button id="wa-unlink" class="secondary" hidden>Unlink this WhatsApp</button>
+    <div class="msg" id="wa-msg"></div>
+  </section>
+
   <section id="relay" hidden>
     <label>Your iMessage relay (a Mac)</label>
     <div id="relay-state" class="muted">Loading…</div>
@@ -113,7 +128,7 @@ async function load() {
       ? s.channels.map((c) => `<div class="row"><span>${esc(c.name)} <span class="muted">· ${esc(c.min_severity.toLowerCase())}+${c.backup ? " · backup" : ""}</span></span>
           <span>${c.sent} sent${c.failed ? ` · <span class="bad">${c.failed} failed</span>` : ""}</span></div>
           ${c.last_error ? `<div class="row bad" style="font-size:12px">${esc(c.last_error)}</div>` : ""}`).join("")
-      : `<span class="bad">No texting service is switched on yet.</span> On your server set <b>RELAY_ENABLED=true</b> (your own Mac sends the iMessages; see docs/IMESSAGE-RELAY.md), then reload this page.`;
+      : `<span class="bad">No texting service is switched on yet.</span> On your server set <b>WHATSAPP_ENABLED=true</b> (WhatsApp from this server) or <b>RELAY_ENABLED=true</b> (iMessage from your own Mac), then reload this page.`;
     if (s.phone_mode && s.phone_mode !== "normal") $("channels").insertAdjacentHTML("afterbegin", `<div class="row warn"><span>Texts are ${esc(s.phone_mode)}</span><span>text RESUME / NORMAL</span></div>`);
   } catch (e) {
     $("channels").innerHTML = `<span class="bad">${esc(e.message || e)}</span>`;
@@ -145,6 +160,57 @@ async function renderRelay(setup) {
     $("relay-cmd").textContent = info.install_command || "";
   } catch (e) { /* read-only view */ }
 }
+
+const WA_STATES = { connected: "Connected", connecting: "Connecting…", pairing: "Waiting to be linked", disconnected: "Reconnecting…",
+  logged_out: "Unlinked: link it again below", banned: "Restricted by WhatsApp", error: "Error, retrying", stopped: "Stopped", not_installed: "Engine not installed" };
+let waTimer = null;
+async function loadWhatsApp() {
+  clearTimeout(waTimer);
+  let st = null;
+  try {
+    const r = await fetch(q("/api/whatsapp"));
+    if (r.status === 404) { $("wa").hidden = true; return; }
+    if (!r.ok) throw new Error(await r.text());
+    st = await r.json();
+  } catch (e) { $("wa-state").innerHTML = `<span class="bad">${esc(e.message || e)}</span>`; waTimer = setTimeout(loadWhatsApp, 10000); return; }
+  $("wa").hidden = false;
+  const on = st.state === "connected";
+  const lines = [`<div class="row"><span><span class="dot ${on ? "on" : (st.state === "pairing" || st.state === "connecting" ? "" : "off")}"></span><b>${esc(WA_STATES[st.state] || st.state)}</b>${st.me ? ` <span class="muted">as ${esc(st.me)}${st.name ? " · " + esc(st.name) : ""}</span>` : ""}</span>
+    <span class="muted">${st.stats.sent} sent${st.stats.delivered ? ` · ${st.stats.delivered} delivered` : ""}${st.stats.read ? ` · ${st.stats.read} read` : ""}</span></div>`];
+  if (st.delivery_median_s != null) lines.push(`<div class="muted" style="font-size:13px">Median time to your phone: ${st.delivery_median_s.toFixed(1)}s</div>`);
+  if (st.last_error && !on) lines.push(`<div class="bad" style="font-size:13px">${esc(st.last_error)}</div>`);
+  (st.warnings || []).forEach((w) => lines.push(`<div class="warn">⚠ ${esc(w)}</div>`));
+  $("wa-state").innerHTML = lines.join("");
+  const pairing = st.writable && ["pairing", "logged_out", "connecting", "error"].includes(st.state) && st.state !== "not_installed";
+  $("wa-pair").hidden = !pairing;
+  $("wa-qr").innerHTML = st.qr_svg || `<div style="color:#333;padding:20px;font-size:14px">QR code appears here when the server is ready…</div>`;
+  if (st.pair_code) $("wa-code").textContent = st.pair_code;
+  $("wa-unlink").hidden = !(on && st.writable);
+  $("wa-recent").innerHTML = st.recent.length ? `<p style="margin:12px 0 4px;font-size:13px">Recent WhatsApp messages</p>` + st.recent.slice(0, 6).map((m) =>
+      `<div class="row" style="font-size:13px"><span>${esc((m.title || m.id).slice(0, 60))}</span><span class="${m.status === "sent" ? "muted" : "ok"}">${esc(m.status)}</span></div>`).join("") : "";
+  waTimer = setTimeout(loadWhatsApp, pairing || st.state === "connecting" ? 3000 : 10000);
+}
+
+$("wa-code-btn").onclick = async () => {
+  $("wa-code-btn").disabled = true;
+  try {
+    const r = await fetch(q("/api/whatsapp/pair"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: $("wa-phone").value }) });
+    if (!r.ok) throw new Error(await r.text());
+    $("wa-code").textContent = (await r.json()).code;
+    show($("wa-msg"), "Type this code into WhatsApp within a minute or two.", true);
+  } catch (e) { show($("wa-msg"), e.message || String(e), false); }
+  $("wa-code-btn").disabled = false;
+};
+
+$("wa-unlink").onclick = async () => {
+  if (!confirm("Unlink this WhatsApp account from News247? Alerts stop until you link one again.")) return;
+  try {
+    const r = await fetch(q("/api/whatsapp/unlink"), { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    show($("wa-msg"), "Unlinked.", true);
+  } catch (e) { show($("wa-msg"), e.message || String(e), false); }
+  loadWhatsApp();
+};
 
 $("copy").onclick = async () => {
   try { await navigator.clipboard.writeText($("relay-cmd").textContent); $("copy").textContent = "Copied"; }
@@ -180,6 +246,7 @@ $("test").onclick = async () => {
 };
 
 load();
+loadWhatsApp();
 setInterval(() => { if (!document.hidden) load(); }, 10000);
 </script>
 </body>

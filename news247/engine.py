@@ -76,6 +76,12 @@ class Engine:
         if self.relay_hub is not None:
             self.relay_hub.attach(self.storage)
             self.relay_hub.on_inbound = self.handle_phone_command
+        wa = next((c for c in self.dispatcher.channels if c.name == "whatsapp"), None)
+        self.whatsapp = getattr(wa, "session", None)
+        if wa is not None and self.whatsapp is not None:
+            wa.attach(cfg.data_path)  # type: ignore[attr-defined]
+            self.whatsapp.on_inbound = self.handle_phone_command
+            self.whatsapp.on_state = self._whatsapp_state
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         self.subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
@@ -113,6 +119,8 @@ class Engine:
             f"{self.cfg.llm.model}@{self.cfg.llm.base_url}" if self.llm else "off",
             ", ".join(f"{c.name}≥{c.min_severity.name.lower()}" for c in self.dispatcher.channels) or "none",
         )
+        if self.whatsapp is not None:
+            await self.whatsapp.start()
         runners = [asyncio.create_task(s.run(self.on_item, stop), name=f"src:{s.name}") for s in self.sources]
         if self.prices:
             runners.append(asyncio.create_task(self.prices.run(self.on_moves, stop), name="prices"))
@@ -126,6 +134,8 @@ class Engine:
             await self.drain(timeout=5)
             if self.relay_hub is not None:
                 await self.relay_hub.close()
+            if self.whatsapp is not None:
+                await self.whatsapp.stop()
             if web:
                 await web.stop()
             await self.http.close()
@@ -507,6 +517,19 @@ class Engine:
 
     # ------------------------------------------------------------------ texting the relay
 
+    def _whatsapp_state(self, state: str, detail: str) -> None:
+        """Tell you (through the other channels) when WhatsApp needs attention."""
+        from .whatsapp.session import BANNED, LOGGED_OUT
+
+        if state not in (LOGGED_OUT, BANNED) or detail == "unlinked from the dashboard":
+            return
+        title = (
+            "News247: WhatsApp was unlinked, pair it again on the Setup page"
+            if state == LOGGED_OUT
+            else "News247: WhatsApp restricted the sending account"
+        )
+        self._spawn(self.publish(Alert(kind="system", severity=Severity.HIGH, title=title, body=detail)))
+
     def _load_phone_controls(self) -> None:
         until = self.storage.get_setting("pause_until")
         if until:
@@ -601,6 +624,7 @@ class Engine:
             "channels": self.dispatcher.describe(),
             "phone_mode": self.phone_mode(),
             "relay": self.relay_hub.status() if self.relay_hub is not None else None,
+            "whatsapp": self.whatsapp.status() if self.whatsapp is not None else None,
             "db": self.storage.counts(),
         }
 

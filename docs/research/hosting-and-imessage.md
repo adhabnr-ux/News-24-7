@@ -56,3 +56,13 @@ Sources: [Render free](https://render.com/docs/free), [Render YAML spec](https:/
 - Run as a LaunchAgent, not a daemon, and approve Automation once.
 
 Sources: [BlueBubbles source](https://github.com/BlueBubblesApp/bluebubbles-server/blob/master/packages/server/src/server/api/apple/scripts.ts), [scriptingosx](https://scriptingosx.com/2020/09/avoiding-applescript-security-and-privacy-requests/).
+
+## WhatsApp from a self-hosted server (researched 2026-10-08)
+- **Unofficial linked-device clients:**
+  - whatsmeow (Go) and its Python binding neonize 0.5.x ([PyPI](https://pypi.org/project/neonize)). The neonize wheel bundles a 24 MB Go library; it needs `libmagic` at import.
+  - Baileys (Node), with a spoofing CVE fixed in 6.7.22 / 7.0.0-rc12 ([advisory](https://vulners.com/euvd/EUVD-2026-52440)).
+  - WAHA, a Docker REST wrapper. Core is free with one session; the Chromium-based WEBJS engine was measured at ~535 MiB, too big next to News247 on a 512 MB instance ([WAHA engines](https://waha.devlike.pro/docs/how-to/engines)).
+- **Decision:** embed whatsmeow through neonize in-process. One container, no browser, and roughly 50–100 MB of extra memory.
+- **Ban risk:** against WhatsApp's terms. There is no authoritative data. One vendor self-reports under 2% bans/year for reactive low-volume bots versus 15–30% for proactive bulk ([Achiya](https://achiya-automation.com/en/blog/whatsapp-spam-detection-2026/), unaudited). Mitigation: a dedicated sender number, sending only to the owner, spacing, and an hourly cap.
+- **Official Cloud API:** a free test number and test WABA, no payment method needed for templates, up to ~5 registered recipients ([Meta](https://developers.facebook.com/documentation/business-messaging/whatsapp/about-the-platform), [WANotifier](https://help.wanotifier.com/en/article/test-phone-number-limitations-kt0ly2/)). Free-form messages are allowed only within 24 h of the user's last message (error 131047 outside it); after that, templates only.
+- **Not used:** CallMeBot, at the owner's request (third-party relay; reported caps of ~25 messages per 4 h on some accounts).

@@ -8,18 +8,21 @@ import html
 import logging
 import os
 import platform
+import re
 import shutil
 import smtplib
 import subprocess
 import sys
 from email.message import EmailMessage
+from pathlib import Path
 from typing import Any
 
-from ..http import HttpClient
+from ..http import HttpClient, HTTPError
 from ..models import Alert, Severity
 from ..relay.hub import RelayHub
 from ..relay.messages_app import IMESSAGE_SCRIPTS, MessagesApp  # noqa: F401 - IMESSAGE_SCRIPTS re-exported
-from .format import markdown_body, plain_body, short_title, sms_text
+from ..util import strip_html
+from .format import markdown_body, plain_body, short_title, sms_text, whatsapp_text
 
 log = logging.getLogger(__name__)
 
@@ -473,8 +476,6 @@ class BlueBubblesNotifier(PhoneChannel, Notifier):
     async def send(self, alert: Alert) -> None:
         import uuid
 
-        from ..http import HTTPError
-
         server = str(self.options["server"]).rstrip("/")
         params = {"password": self.options["password"]}  # kept out of the URL string we log
         method = self.options.get("method", "apple-script")
@@ -532,7 +533,6 @@ class SendblueNotifier(PhoneChannel, Notifier):
 
     async def _call(self, method: str, path: str, **kw: Any) -> Any:
         """Try each API host; remember the first one that answers."""
-        from ..http import HTTPError
 
         last: Exception | None = None
         for host in list(self.hosts):
@@ -646,6 +646,129 @@ class TextbeltNotifier(PhoneChannel, Notifier):
                 raise RuntimeError(f"Textbelt: {data.get('error') or data}")
 
 
+class WhatsAppNotifier(PhoneChannel, Notifier):
+    """WhatsApp from a self-hosted linked device inside News247 (see docs/WHATSAPP.md).
+
+    Pair once on the dashboard's Setup page (QR code, or an 8-character code entered in
+    WhatsApp > Linked devices > Link with phone number). Options: ``to`` (your number);
+    ``min_interval_s`` (spacing between messages, default 2); ``max_per_hour`` (default 60);
+    ``session_dir`` (default <data_dir>/whatsapp: keep it on a persistent disk).
+    """
+
+    name = "whatsapp"
+    timeout = 90.0  # a send may wait for a reconnect and for the spacing between messages
+
+    def validate(self) -> None:
+        from ..whatsapp.session import SessionConfig, WhatsAppSession
+
+        self._init_recipients()
+        o = self.options
+        self.session = WhatsAppSession(
+            None,
+            SessionConfig(
+                min_interval_s=float(o.get("min_interval_s", 2)),
+                max_per_hour=int(o.get("max_per_hour", 60)),
+            ),
+        )
+        self.session.recipients = self.recipients
+
+    def attach(self, data_dir: Path) -> None:
+        """Use the real WhatsApp engine, storing the pairing under ``data_dir``."""
+        from ..whatsapp.neonize_backend import NeonizeBackend, available
+
+        ok, why = available()
+        if not ok:
+            self.session.last_error = f"WhatsApp engine unavailable: {why}"
+            log.error("whatsapp: %s (install with: pip install 'news247[whatsapp]')", why)
+            return
+        db = Path(self.options.get("session_dir") or Path(data_dir) / "whatsapp") / "session.db"
+        self.session.set_backend_factory(lambda: NeonizeBackend(db))
+
+    def set_recipients(self, numbers: list[str]) -> None:
+        super().set_recipients(numbers)
+        self.session.recipients = self.recipients
+
+    async def send(self, alert: Alert) -> None:
+        text = whatsapp_text(alert, limit=int(self.options.get("max_chars", 1500)))
+        await self.session.send(self.targets(), text, title=short_title(alert))
+
+    def describe(self) -> dict[str, Any]:
+        return {**super().describe(), "state": self.session.state, "linked": self.session.me}
+
+
+class WhatsAppCloudNotifier(PhoneChannel, Notifier):
+    """WhatsApp through Meta's official Cloud API (no ban risk, but Meta's rules apply).
+
+    Options: ``token`` (a permanent System User token), ``phone_number_id`` (from WhatsApp >
+    API Setup), ``to``; ``template`` + ``template_lang`` for messages outside the 24-hour
+    window (Meta only allows approved templates there; the template gets one body parameter,
+    or none with ``template_params: 0``, e.g. hello_world); ``api_version``.
+    """
+
+    name = "whatsapp_cloud"
+    REENGAGE = 131047  # "more than 24 hours since the customer last replied"
+
+    def validate(self) -> None:
+        self.require("token", "phone_number_id")
+        self._init_recipients()
+
+    def _url(self) -> str:
+        base = str(self.options.get("api_base") or "https://graph.facebook.com").rstrip("/")
+        return f"{base}/{self.options.get('api_version', 'v23.0')}/{self.options['phone_number_id']}/messages"
+
+    @staticmethod
+    def _error(exc: HTTPError) -> tuple[int | None, str]:
+        import json
+
+        try:
+            err = json.loads(exc.body).get("error", {})
+            detail = (err.get("error_data") or {}).get("details") or err.get("message", "")
+            return err.get("code"), detail
+        except (ValueError, AttributeError):
+            m = re.search(r'"code"\s*:\s*(\d+)', exc.body or "")
+            return (int(m.group(1)) if m else None), strip_html(exc.body, limit=200)
+
+    async def _post(self, payload: dict[str, Any]) -> None:
+        headers = {"Authorization": f"Bearer {self.options['token']}"}
+        await self.http.post(self._url(), json=payload, headers=headers)
+
+    async def send(self, alert: Alert) -> None:
+        text = whatsapp_text(alert, limit=int(self.options.get("max_chars", 4000)))
+        for number in self.targets():
+            base = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": number.lstrip("+")}
+            try:
+                await self._post({**base, "type": "text", "text": {"preview_url": False, "body": text}})
+                continue
+            except HTTPError as exc:
+                code, detail = self._error(exc)
+                if code != self.REENGAGE or not self.options.get("template"):
+                    hint = (
+                        " (message your business number to open a 24-hour window, or set a template)"
+                        if code == self.REENGAGE
+                        else ""
+                    )
+                    raise RuntimeError(
+                        f"WhatsApp Cloud API error {code or exc.status}: {detail}{hint}"
+                    ) from None
+            # outside the 24-hour window: Meta only delivers approved templates
+            template: dict[str, Any] = {
+                "name": self.options["template"],
+                "language": {"code": self.options.get("template_lang", "en_US")},
+            }
+            if int(self.options.get("template_params", 1)):
+                one_line = " · ".join(line for line in text.replace("*", "").splitlines() if line.strip())
+                template["components"] = [
+                    {"type": "body", "parameters": [{"type": "text", "text": one_line[:1000]}]}
+                ]
+            try:
+                await self._post({**base, "type": "template", "template": template})
+            except HTTPError as exc:
+                code, detail = self._error(exc)
+                raise RuntimeError(
+                    f"WhatsApp Cloud API template error {code or exc.status}: {detail}"
+                ) from None
+
+
 def _without_url(alert: Alert) -> Alert:
     import dataclasses
 
@@ -671,5 +794,7 @@ CHANNEL_CLASSES: dict[str, type[Notifier]] = {
         SendblueNotifier,
         BlooioNotifier,
         TextbeltNotifier,
+        WhatsAppNotifier,
+        WhatsAppCloudNotifier,
     )
 }

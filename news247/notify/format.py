@@ -99,3 +99,11 @@ def sms_text(alert: Alert, limit: int = 700) -> str:
         return text
     url = f"\n{alert.url}" if alert.url else ""
     return text[: max(0, limit - len(url) - 1)].rstrip() + "…" + url
+
+
+def whatsapp_text(alert: Alert, limit: int = 1500) -> str:
+    """The SMS layout with a bold headline (WhatsApp renders *text* as bold)."""
+    text = sms_text(alert, limit=limit)
+    head, sep, rest = text.partition("\n")
+    head = head.replace("*", "").strip()  # squawk headlines start with '*', which would break the bold
+    return f"*{head}*{sep}{rest}"

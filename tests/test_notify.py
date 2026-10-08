@@ -128,7 +128,13 @@ async def test_console(capsys):
 
 def test_channels_validate_options():
     for name, cls in CHANNEL_CLASSES.items():
-        if name in ("console", "desktop", "imessage", "relay"):  # need only a number, settable later
+        if name in (
+            "console",
+            "desktop",
+            "imessage",
+            "relay",
+            "whatsapp",
+        ):  # need only a number, settable later
             continue
         with pytest.raises(ValueError, match=f"notify.{name}: missing"):
             cls({}, None, Severity.HIGH)  # type: ignore[arg-type]

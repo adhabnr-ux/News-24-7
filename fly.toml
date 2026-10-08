@@ -1,10 +1,10 @@
 # Fly.io deploy (cheapest always-on option, ~$3-4/month; needs the flyctl CLI):
 #   fly launch --no-deploy --copy-config
 #   fly volumes create news247_data --size 1
-#   fly secrets set IMESSAGE_TO=+15551234567 CONTACT_EMAIL=you@example.com RELAY_ENABLED=true \
-#       RELAY_SECRET=$(openssl rand -hex 24) DASHBOARD_TOKEN=$(openssl rand -hex 16)
+#   fly secrets set WHATSAPP_ENABLED=true WHATSAPP_TO=+15551234567 CONTACT_EMAIL=you@example.com \
+#       DASHBOARD_TOKEN=$(openssl rand -hex 16)
 #   fly deploy
-# Then open https://<app>.fly.dev/setup?token=<DASHBOARD_TOKEN> and install the Mac relay from there.
+# Then open https://<app>.fly.dev/setup?token=<DASHBOARD_TOKEN>, link WhatsApp, and send a test.
 app = "news247"
 primary_region = "iad"
 
