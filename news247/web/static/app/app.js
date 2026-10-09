@@ -105,7 +105,7 @@ function capRow(a) {
   if (s.radar) {  // the title already names the stock and its size: say what the radar saw
     const r = a.edge.radar || {}, news = (a.related || []).some((x) => x.kind === "news");
     const tag = r.rvol && r.rvol >= 1.5 ? `${Math.round(r.rvol)}× normal volume` : r.session === "pre" ? "pre-market" : r.session === "post" ? "after hours" : "";
-    return `<div class="cap ${d}"><span class="capb">◉ Radar</span><span class="capl">${news ? "Moving on the news below" : "Moving before any headline"}</span>${tag ? `<span class="capx">${esc(tag)}</span>` : ""}</div>`;
+    return `<div class="cap ${d}"><span class="capb">◉ Radar</span><span class="capl">${news ? "On the news" : "Before any headline"}</span>${tag ? `<span class="capx">${esc(tag)}</span>` : ""}</div>`;
   }
   return `<div class="cap ${d}"><span class="capb">${esc(s.band)}</span><b class="sym">${esc(s.symbol)}</b><span class="capm">${esc(s.cap)}</span>
     <span class="capl">${esc(s.label)}</span>${s.move_text ? `<span class="capx">${esc(s.move_text)}</span>` : ""}</div>`;
@@ -116,7 +116,8 @@ function footRow(a) {
   const lag = it.published && it.detected ? Math.max(0, it.detected - it.published) : null;
   if (lag != null) parts.push(`<span>⚡ ${dur(lag)} after posted</span>`);
   if (e.lead) parts.push(`<span class="lead">Beat ${esc(outlet(e.lead.source))} by ${dur(e.lead.lead_s)}</span>`);
-  if (a.url) parts.push(`<a href="${esc(a.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Source ↗</a>`);
+  const quote = a.edge?.radar && !(a.related || []).some((x) => x.kind === "news");
+  if (a.url) parts.push(`<a href="${esc(a.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${quote ? "Quote" : "Source"} ↗</a>`);
   return parts.length ? `<div class="foot">${parts.join("")}</div>` : "";
 }
 function alertHTML(a, opts = {}) {
@@ -125,13 +126,13 @@ function alertHTML(a, opts = {}) {
   const why = an.summary || (a.kind !== "news" && a.body ? a.body.split("\n")[0] : "");
   const known = seen.has(a.id);
   const state = a._new ? "new in" : known ? "in" : "";
-  return `<article class="alert ${opts.feature ? "feature " : ""}${known || a._new ? "" : "rv "}${state}" data-id="${esc(a.id)}">
+  return `<article class="alert ${a.edge?.radar ? "radar " : ""}${opts.feature ? "feature " : ""}${known || a._new ? "" : "rv "}${state}" data-id="${esc(a.id)}">
     <div class="glass tilt" style="--sev:${SEV[a.severity] || SEV.LOW}"><i class="sevbar"></i>
       ${opts.feature ? `<div class="eyebrow" style="color:var(--gold);margin-bottom:12px">Top of the tape</div>` : ""}
       <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span><span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
-      ${capRow(a)}${playRow(a)}${tickerChips(a)}${precLine(a)}${footRow(a)}
+      ${capRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${footRow(a)}
     </div>
   </article>`;
 }
@@ -153,7 +154,7 @@ function placeThumb() {
 }
 addEventListener("resize", placeThumb);
 function renderTape() {
-  document.querySelectorAll("#tapeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.f === tapeFilter));
+  document.querySelectorAll("#tapeSeg button").forEach((b) => { const on = b.dataset.f === tapeFilter; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
   placeThumb();
   const pool = tapeFilter === "small" ? alerts.filter(isSmall) : alerts;
   const f = tapeFilter === "small" ? null : featured();
