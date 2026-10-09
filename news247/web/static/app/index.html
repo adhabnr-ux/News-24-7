@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Foretape</title>
+<meta name="description" content="Market-moving news before the tape moves.">
+<meta name="theme-color" content="#0B0A0F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Foretape">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link id="manifest" rel="manifest" href="/app/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/app/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/app/logo.svg">
+<style>
+  :root {
+    --ink: #0B0A0F; --ink2: #121019; --panel: #17141F; --line: #2A2535; --line2: #3A3348;
+    --text: #F2EEE6; --muted: #9A94A8; --dim: #6D6779;
+    --amber: #FFB22E; --amber2: #FFD25E; --spark: #FF2E74; --up: #3DDC97; --down: #FF4D6A; --cyan: #5BD8FF;
+    --r: 16px;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--ink); color: var(--text); font: 15px/1.45 var(--sans); }
+  body { min-height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+         background: radial-gradient(120% 60% at 0% 0%, #1E1530 0%, transparent 60%), var(--ink); }
+  body::after { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .05;
+                background: repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 3px); }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  a { color: var(--amber2); text-decoration: none; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 16px 96px; }
+
+  header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+           max-width: 640px; margin: 0 auto; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+           background: color-mix(in srgb, var(--ink) 78%, transparent); }
+  header img { width: 34px; height: 34px; border-radius: 9px; }
+  .word { font-weight: 850; letter-spacing: .26em; font-size: 15px; }
+  .word small { display: block; font-weight: 500; letter-spacing: .02em; font-size: 11px; color: var(--muted); margin-top: -2px; }
+  .live { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font: 600 11px/1 var(--mono); letter-spacing: .12em;
+          padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line2); color: var(--muted); }
+  .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+  .live.on { color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, transparent); }
+  .live.on i { background: var(--up); box-shadow: 0 0 0 0 var(--up); animation: ping 1.8s infinite; }
+  @keyframes ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--up) 70%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
+
+  .tape { overflow: hidden; border-block: 1px solid var(--line); background: #0E0C13; white-space: nowrap; margin: 4px -16px 14px; }
+  .tape div { display: inline-block; padding: 9px 0; font: 600 12px/1 var(--mono); color: var(--amber2); animation: run 60s linear infinite; }
+  .tape span { margin: 0 18px; } .tape b { color: var(--spark); }
+  @keyframes run { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .tape:active div { animation-play-state: paused; }
+
+  .card { background: linear-gradient(180deg, var(--panel), var(--ink2)); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin-bottom: 12px; }
+  .hero { position: relative; overflow: hidden; }
+  .hero::before { content: ""; position: absolute; right: -40px; top: -40px; width: 160px; height: 160px; border-radius: 50%;
+                  background: radial-gradient(circle, color-mix(in srgb, var(--spark) 35%, transparent), transparent 70%); }
+  .hero h2 { margin: 0 0 6px; font-size: 19px; letter-spacing: -.01em; }
+  .hero p { margin: 0 0 14px; color: var(--muted); }
+  .big { width: 100%; padding: 15px; border-radius: 13px; font-weight: 750; font-size: 16px; color: #1A1206;
+         background: linear-gradient(135deg, var(--amber2), var(--amber) 55%, #FF8A1F); box-shadow: 0 8px 28px -10px var(--amber); }
+  .ghost { padding: 10px 14px; border-radius: 11px; border: 1px solid var(--line2); color: var(--text); font-weight: 600; font-size: 14px; }
+  .steps { margin: 6px 0 0; padding: 0; list-style: none; counter-reset: s; }
+  .steps li { counter-increment: s; display: flex; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px dashed var(--line); }
+  .steps li::before { content: counter(s); flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+                      font: 700 12px/1 var(--mono); color: var(--ink); background: var(--amber); }
+  .share { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: #2B6BFF; vertical-align: -5px; }
+
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 13px; background: #100E15; border: 1px solid var(--line); margin-bottom: 14px; }
+  .tabs button { padding: 9px 0; border-radius: 10px; font-weight: 650; font-size: 13px; color: var(--muted); }
+  .tabs button.on { background: var(--panel); color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); }
+  .tabs b { font: 700 10px/1 var(--mono); color: var(--ink); background: var(--spark); padding: 2px 5px; border-radius: 6px; margin-left: 4px; }
+
+  .alert { position: relative; padding: 14px 14px 12px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); margin-bottom: 10px; overflow: hidden; }
+  .alert::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--sev, var(--dim)); }
+  .alert.new { animation: arrive .9s ease-out; }
+  @keyframes arrive { from { transform: translateY(-8px); box-shadow: 0 0 0 2px var(--sev); } to { transform: none; box-shadow: none; } }
+  .meta { display: flex; align-items: center; gap: 8px; font: 600 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
+  .sev { color: var(--sev); letter-spacing: .14em; }
+  .meta .ago { margin-left: auto; }
+  .alert h3 { margin: 8px 0 6px; font-size: 16px; line-height: 1.32; letter-spacing: -.005em; }
+  .why { margin: 0 0 8px; color: #CFC9D8; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .tk { font: 700 12px/1 var(--mono); padding: 5px 7px; border-radius: 7px; background: #211C2B; border: 1px solid var(--line2); }
+  .tk.down { color: var(--down); } .tk.up { color: var(--up); }
+  .src { font-size: 12px; color: var(--dim); margin-top: 8px; display: flex; gap: 10px; align-items: center; }
+  .src a { margin-left: auto; font-weight: 650; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
+
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; font-size: 14px; }
+  .kv span:nth-child(even) { text-align: right; font-family: var(--mono); color: var(--amber2); }
+  .seg { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .seg button.on { border-color: var(--amber); color: var(--amber2); }
+  h4 { margin: 0 0 10px; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .warn { color: var(--amber2); font-size: 13px; margin-top: 10px; }
+  .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(140%);
+           background: #F2EEE6; color: #15121C; font-weight: 650; padding: 12px 16px; border-radius: 12px; max-width: 92vw;
+           transition: transform .35s cubic-bezier(.2,.9,.3,1.2), opacity .25s, visibility .35s; z-index: 20;
+           box-shadow: 0 12px 40px -10px #000; opacity: 0; visibility: hidden; pointer-events: none; }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; }
+  input { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--line2); background: #0F0D14; color: var(--text); font: 16px var(--mono); margin: 4px 0 12px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <img src="/app/logo.svg" alt="">
+  <div class="word">FORETAPE<small>before the tape moves</small></div>
+  <div class="live" id="live"><i></i><span>OFFLINE</span></div>
+</header>
+
+<div class="wrap">
+  <section id="lock" class="card hero" hidden>
+    <h2>Unlock Foretape</h2>
+    <p>Paste your access key (DASHBOARD_TOKEN in Render → Environment). You only do this once.</p>
+    <input id="key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="access key">
+    <button class="big" id="unlock">Unlock</button>
+  </section>
+
+  <main id="main" hidden>
+    <div class="tape" id="tape" hidden><div id="tapeText"></div></div>
+
+    <section id="install" class="card hero" hidden>
+      <h2>Put Foretape on your home screen</h2>
+      <p>iPhone only delivers alerts to apps on the home screen. Three taps:</p>
+      <ol class="steps">
+        <li><span>Tap <span class="share"><svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="#fff" stroke-width="1.6"><path d="M6 9V1M3 4l3-3 3 3M2 7v6h8V7"/></svg></span> <b>Share</b> at the bottom of Safari</span></li>
+        <li><span>Choose <b>Add to Home Screen</b>, then <b>Add</b></span></li>
+        <li><span>Open <b>Foretape</b> from your home screen and turn on alerts</span></li>
+      </ol>
+    </section>
+
+    <section id="enable" class="card hero" hidden>
+      <h2>Turn on alerts</h2>
+      <p>Get market-moving news as a notification the moment it breaks, even when the app is closed.</p>
+      <button class="big" id="enableBtn">Turn on alerts</button>
+    </section>
+
+    <section id="denied" class="card" hidden>
+      <h4>Notifications are blocked</h4>
+      <p style="margin:0;color:var(--muted)">Turn them on in <b>Settings → Notifications → Foretape</b> (iPhone) or your browser's site settings, then reopen the app.</p>
+    </section>
+
+    <nav class="tabs">
+      <button class="on" data-tab="alerts">Alerts<b id="unread" hidden>0</b></button>
+      <button data-tab="wire">Wire</button>
+      <button data-tab="control">Control</button>
+    </nav>
+
+    <section data-pane="alerts" id="alerts"></section>
+    <section data-pane="wire" id="wire" hidden></section>
+
+    <section data-pane="control" hidden>
+      <div class="card">
+        <h4>This phone</h4>
+        <div class="kv"><span>Push notifications</span><span id="pushState">…</span></div>
+        <div class="seg"><button class="ghost" id="testBtn">Send a test alert</button><button class="ghost" id="resubBtn">Reconnect</button></div>
+        <div class="warn" id="durable" hidden></div>
+      </div>
+      <div class="card">
+        <h4>Alerts</h4>
+        <div class="kv"><span>Now</span><span id="mode">…</span></div>
+        <div class="seg">
+          <button class="ghost" data-cmd="critical">Critical only</button>
+          <button class="ghost" data-cmd="normal">Normal</button>
+          <button class="ghost" data-cmd="more">More</button>
+        </div>
+        <div class="seg">
+          <button class="ghost" data-cmd="pause 30m">Pause 30m</button>
+          <button class="ghost" data-cmd="pause 2h">Pause 2h</button>
+          <button class="ghost" data-cmd="stop">Pause until resumed</button>
+          <button class="ghost" data-cmd="resume">Resume</button>
+        </div>
+      </div>
+      <div class="card">
+        <h4>Engine</h4>
+        <div class="kv" id="engine"></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const SEV = { CRITICAL: "var(--spark)", HIGH: "var(--amber)", MEDIUM: "var(--cyan)", LOW: "var(--dim)" };
+const qs = new URLSearchParams(location.search);
+let TOKEN = qs.get("token") || localStorage.getItem("ft_token") || "";
+if (qs.get("token")) { localStorage.setItem("ft_token", TOKEN); history.replaceState(null, "", location.pathname + location.hash); }
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const pushCapable = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+let alerts = [], unread = 0, tab = "alerts";
+
+function setManifest() { $("manifest").href = "/app/manifest.webmanifest" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""); }
+setManifest();
+
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 3200); }
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN, ...(opts.headers || {}) } });
+  if (r.status === 401) { showLock(); throw new Error("access key needed"); }
+  if (!r.ok) throw new Error((await r.text()) || r.statusText);
+  return r.headers.get("content-type")?.includes("json") ? r.json() : r.text();
+}
+function ago(t) {
+  const s = Math.max(0, Date.now() / 1000 - t);
+  return s < 60 ? Math.round(s) + "s" : s < 3600 ? Math.round(s / 60) + "m" : s < 86400 ? Math.round(s / 3600) + "h" : Math.round(s / 86400) + "d";
+}
+
+// ------------------------------------------------------------------ rendering
+function alertHTML(a, isNew) {
+  const an = a.analysis || {}, it = a.item || {};
+  const dir = an.direction === "down" ? "down" : an.direction === "up" ? "up" : "";
+  const arrow = dir === "down" ? "▼" : dir === "up" ? "▲" : "";
+  const tickers = (a.tickers || an.tickers || []).slice(0, 8).map((t) => `<span class="tk ${dir}">${arrow}${esc(t)}</span>`).join("");
+  const latency = it.published && it.detected ? Math.max(0, it.detected - it.published) : null;
+  return `<article class="alert${isNew ? " new" : ""}" style="--sev:${SEV[a.severity] || "var(--dim)"}" id="a-${esc(a.id)}">
+    <div class="meta"><span class="sev">${esc(a.severity)}</span><span>${esc(a.kind === "price" ? "PRICE" : (it.source || a.kind).toUpperCase())}</span><span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
+    <h3>${esc(a.title)}</h3>
+    ${an.summary ? `<p class="why">${esc(an.summary)}</p>` : a.body ? `<p class="why">${esc(a.body.split("\n")[0])}</p>` : ""}
+    ${tickers ? `<div class="row">${tickers}</div>` : ""}
+    <div class="src">${latency != null ? `<span>⚡ ${latency < 90 ? Math.round(latency) + "s" : Math.round(latency / 60) + "m"} after it was posted</span>` : ""}${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">Source ↗</a>` : ""}</div>
+  </article>`;
+}
+const emptyHTML = (msg) => `<div class="empty"><img src="/app/logo.svg" width="56" alt="" style="opacity:.55"><p>${msg}</p></div>`;
+function renderAlerts() {
+  $("alerts").innerHTML = alerts.length ? alerts.map((a) => alertHTML(a, a._new)).join("") : emptyHTML("No alerts yet. Foretape is watching; the next market-moving headline lands here and on your lock screen.");
+  alerts.forEach((a) => delete a._new);
+  const heads = alerts.slice(0, 12).map((a) => `<span>${a.severity === "CRITICAL" ? "<b>◆</b> " : "◇ "}${esc(a.title)}</span>`).join("");
+  $("tape").hidden = !heads; $("tapeText").innerHTML = heads + heads;
+}
+function renderWire(items) {
+  $("wire").innerHTML = items.length ? items.map((it) => `<article class="alert" style="--sev:${SEV[it.severity] || "var(--dim)"}">
+      <div class="meta"><span class="sev">${esc(it.severity)} · ${Math.round(it.score)}</span><span>${esc(it.source.toUpperCase())}</span><span class="ago" data-t="${it.detected}">${ago(it.detected)}</span></div>
+      <h3 style="font-size:15px">${esc(it.title)}</h3>
+      ${it.tickers?.length ? `<div class="row">${it.tickers.slice(0, 6).map((t) => `<span class="tk">${esc(t)}</span>`).join("")}</div>` : ""}
+      ${it.url ? `<div class="src"><a href="${esc(it.url)}" target="_blank" rel="noopener">Open ↗</a></div>` : ""}</article>`).join("")
+    : emptyHTML("Nothing scored yet.");
+}
+setInterval(() => document.querySelectorAll(".ago").forEach((el) => (el.textContent = ago(+el.dataset.t))), 15000);
+
+// ------------------------------------------------------------------ data
+async function load() {
+  const d = await api("/api/app");
+  alerts = d.alerts; renderAlerts();
+  $("mode").textContent = d.phone_mode;
+  $("engine").innerHTML = [
+    ["Sources healthy", `${d.sources_ok}/${d.sources}`], ["Running for", ago(Date.now() / 1000 - d.uptime_s)],
+    ["Alerts (24h)", d.alerts_24h], ["Phones subscribed", d.devices],
+  ].map(([k, v]) => `<span>${k}</span><span>${esc(v)}</span>`).join("");
+  $("durable").hidden = d.durable; $("durable").textContent = d.durable ? "" :
+    "This server forgets subscribed phones when it restarts. Foretape reconnects this phone every time you open it; for zero gaps, set STATE_DB (free Postgres, see docs).";
+  if (tab === "wire") loadWire();
+}
+async function loadWire() { renderWire(await api("/api/items?limit=60&min_score=35")); }
+
+function connect() {
+  const es = new EventSource("/events?token=" + encodeURIComponent(TOKEN));
+  const live = $("live");
+  let dropped = false;
+  es.onopen = () => {
+    live.classList.add("on"); live.lastElementChild.textContent = "LIVE";
+    if (dropped) { dropped = false; load().catch(() => {}); }  // catch up on anything missed while offline
+  };
+  es.onerror = () => { dropped = true; live.classList.remove("on"); live.lastElementChild.textContent = "RECONNECTING"; };
+  es.addEventListener("alert", (e) => {
+    const a = JSON.parse(e.data); a._new = true;
+    alerts = [a, ...alerts.filter((x) => x.id !== a.id)].slice(0, 150); renderAlerts();
+    if (document.hidden || tab !== "alerts") { unread++; $("unread").textContent = unread; $("unread").hidden = false; }
+  });
+}
+
+// ------------------------------------------------------------------ push
+function b64ToBytes(b64) { const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - b64.length % 4) % 4)); return Uint8Array.from(s, (c) => c.charCodeAt(0)); }
+function deviceLabel() {
+  const ua = navigator.userAgent;
+  const kind = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : "Browser";
+  return kind + (standalone ? " app" : " browser");
+}
+async function subscribe(force) {
+  const reg = await navigator.serviceWorker.ready;
+  const key = (await (await fetch("/app/push-key")).text()).trim();
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && (force || localStorage.getItem("ft_vapid") !== key)) { await sub.unsubscribe(); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+  localStorage.setItem("ft_vapid", key);
+  await api("/api/push/subscribe", { method: "POST", body: JSON.stringify({ subscription: sub.toJSON(), label: deviceLabel() }) });
+  reg.active?.postMessage({ type: "token", token: TOKEN });
+  load().catch(() => {});  // "Phones subscribed" updates right away
+  return sub;
+}
+async function refreshPushUI() {
+  const perm = pushCapable ? Notification.permission : "unsupported";
+  $("install").hidden = !(isIOS && !standalone);
+  $("enable").hidden = !(pushCapable && perm === "default" && !(isIOS && !standalone));
+  $("denied").hidden = perm !== "denied" || (isIOS && !standalone);  // iPhone Safari: install first
+  $("pushState").textContent = !pushCapable ? (isIOS && !standalone ? "add to home screen first" : "not supported here")
+    : perm === "granted" ? "on ✓" : perm === "denied" ? "blocked" : "off";
+  if (pushCapable && perm === "granted") { try { await subscribe(false); } catch (e) { $("pushState").textContent = "error: " + e.message; } }
+}
+$("enableBtn").onclick = async () => {
+  try {
+    const perm = await Notification.requestPermission();      // must come straight from the tap (iOS)
+    if (perm !== "granted") { refreshPushUI(); return; }
+    await subscribe(true);
+    toast("Alerts are on. Sending a test…");
+    await api("/api/push/test", { method: "POST", body: JSON.stringify({}) });
+  } catch (e) { toast("Couldn't turn on alerts: " + e.message); }
+  refreshPushUI();
+};
+$("testBtn").onclick = async () => {
+  try { const r = await api("/api/push/test", { method: "POST", body: JSON.stringify({}) }); toast(r.sent ? `Test sent to ${r.sent} phone(s)` : "No phone subscribed yet"); }
+  catch (e) { toast(e.message); }
+};
+$("resubBtn").onclick = async () => { try { await subscribe(true); toast("Reconnected"); } catch (e) { toast(e.message); } };
+document.querySelectorAll("[data-cmd]").forEach((b) => b.onclick = async () => {
+  try { const r = await api("/api/control", { method: "POST", body: JSON.stringify({ command: b.dataset.cmd }) }); toast(r.reply); $("mode").textContent = r.phone_mode; }
+  catch (e) { toast(e.message); }
+});
+
+// ------------------------------------------------------------------ chrome
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("[data-pane]").forEach((p) => (p.hidden = p.dataset.pane !== tab));
+  if (tab === "alerts") { unread = 0; $("unread").hidden = true; }
+  if (tab === "wire") loadWire().catch(() => {});
+  if (tab === "control") load().catch(() => {});
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { navigator.clearAppBadge?.(); load().catch(() => {}); } });
+function showLock() { $("lock").hidden = false; $("main").hidden = true; }
+$("unlock").onclick = async () => {
+  TOKEN = $("key").value.trim(); localStorage.setItem("ft_token", TOKEN); setManifest();
+  try { await start(); } catch (e) { toast("That key didn't work"); }
+};
+
+async function start() {
+  if (!TOKEN) { showLock(); return; }
+  await load();
+  $("lock").hidden = true; $("main").hidden = false;
+  connect();
+  if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" });
+  navigator.clearAppBadge?.();
+  refreshPushUI();
+  focusAlert();
+}
+// a tapped notification opens /app/#a=<id>: bring that alert into view
+function focusAlert() {
+  const hash = location.hash.match(/a=([\w-]+)/);
+  if (!hash) return;
+  document.querySelector('.tabs button[data-tab="alerts"]')?.click();
+  setTimeout(() => $("a-" + hash[1])?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+}
+window.addEventListener("hashchange", () => load().then(focusAlert).catch(() => {}));
+start().catch(() => {});
+</script>
+</body>
+</html>

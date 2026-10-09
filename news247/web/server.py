@@ -61,6 +61,17 @@ class WebServer:
         app.router.add_post("/api/whatsapp/pair", self.api_whatsapp_pair)
         app.router.add_post("/api/whatsapp/unlink", self.api_whatsapp_unlink)
         app.router.add_get("/api/whatsapp-cloud", self.api_whatsapp_cloud)
+        app.router.add_get("/app", self.app_redirect)
+        app.router.add_get("/app/", self.app_shell)
+        app.router.add_get("/app/sw.js", self.app_sw)
+        app.router.add_get("/app/manifest.webmanifest", self.app_manifest)
+        app.router.add_get("/app/push-key", self.app_push_key)
+        app.router.add_get("/app/{name}", self.app_asset)
+        app.router.add_get("/api/app", self.api_app)
+        app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
+        app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
+        app.router.add_post("/api/push/test", self.api_push_test)
+        app.router.add_post("/api/control", self.api_control)
         app.router.add_get("/about", self.public_page)
         app.router.add_get("/privacy", self.public_page)
         app.router.add_get("/terms", self.public_page)
@@ -71,7 +82,9 @@ class WebServer:
     @web.middleware
     async def _auth(self, request: web.Request, handler: Any) -> web.StreamResponse:
         # these authenticate themselves: relays (challenge-response), Meta (verify token/signature)
-        if self.cfg.token and request.path not in PUBLIC_PATHS:
+        # /app/* is the Foretape shell (no data in it); its data comes from token-protected APIs
+        is_app = request.path == "/app" or request.path.startswith("/app/")
+        if self.cfg.token and request.path not in PUBLIC_PATHS and not is_app:
             supplied = request.query.get("token") or request.headers.get("Authorization", "").removeprefix(
                 "Bearer "
             )
@@ -302,6 +315,166 @@ class WebServer:
         cloud._tasks.add(task)
         task.add_done_callback(cloud._tasks.discard)
         return web.Response(text="ok")
+
+    # ------------------------------------------------------------------ Foretape (phone app)
+
+    APP_ASSETS = {
+        "logo.svg": "image/svg+xml",
+        "maskable.svg": "image/svg+xml",
+        "icon-192.png": "image/png",
+        "icon-512.png": "image/png",
+        "icon-maskable-512.png": "image/png",
+        "apple-touch-icon.png": "image/png",
+        "badge-96.png": "image/png",
+        "favicon-32.png": "image/png",
+    }
+
+    @staticmethod
+    def _app_file(name: str) -> Any:
+        return resources.files("news247.web").joinpath(f"static/app/{name}")
+
+    async def app_redirect(self, request: web.Request) -> web.Response:
+        raise web.HTTPFound("/app/" + (f"?{request.query_string}" if request.query_string else ""))
+
+    async def app_shell(self, request: web.Request) -> web.Response:
+        return web.Response(
+            text=self._app_file("index.html").read_text(encoding="utf-8"),
+            content_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    async def app_sw(self, request: web.Request) -> web.Response:
+        return web.Response(
+            text=self._app_file("sw.js").read_text(encoding="utf-8"),
+            content_type="application/javascript",
+            headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/app/"},
+        )
+
+    async def app_asset(self, request: web.Request) -> web.Response:
+        name = request.match_info["name"]
+        ctype = self.APP_ASSETS.get(name)
+        if ctype is None:
+            raise web.HTTPNotFound()
+        return web.Response(
+            body=self._app_file(name).read_bytes(),
+            content_type=ctype,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    def _token_ok(self, supplied: str | None) -> bool:
+        return (
+            bool(supplied)
+            and bool(self.cfg.token)
+            and hmac.compare_digest(supplied.encode(), self.cfg.token.encode())
+        )
+
+    async def app_manifest(self, request: web.Request) -> web.Response:
+        """When opened with a valid ?token, the installed app starts already unlocked."""
+        token = request.query.get("token")
+        start = "/app/" + (f"?token={quote(token)}" if self._token_ok(token) else "")
+        manifest = {
+            "name": "Foretape",
+            "short_name": "Foretape",
+            "description": "Market-moving news before the tape moves.",
+            "id": "/app/",
+            "start_url": start,
+            "scope": "/app/",
+            "display": "standalone",
+            "orientation": "portrait",
+            "background_color": "#0B0A0F",
+            "theme_color": "#0B0A0F",
+            "categories": ["finance", "news", "business"],
+            "icons": [
+                {"src": "/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                {"src": "/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                {
+                    "src": "/app/icon-maskable-512.png",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "maskable",
+                },
+                {"src": "/app/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+            ],
+        }
+        return web.Response(
+            text=json.dumps(manifest),
+            content_type="application/manifest+json",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    def _push(self) -> Any:
+        wp = self.engine.webpush
+        if wp is None:
+            raise web.HTTPNotFound(text="push notifications are off (WEBPUSH_ENABLED=false)")
+        return wp
+
+    async def app_push_key(self, request: web.Request) -> web.Response:
+        return web.Response(text=self._push().public_key, headers={"Cache-Control": "no-cache"})
+
+    async def api_app(self, request: web.Request) -> web.Response:
+        st = self.engine.status()
+        wp = self.engine.webpush
+        return _json(
+            {
+                "alerts": self.engine.storage.recent_alerts(60),
+                "phone_mode": self.engine.phone_mode(),
+                "sources": len(st["sources"]),
+                "sources_ok": sum(1 for s in st["sources"] if s["status"] in ("ok", "starting")),
+                "uptime_s": st["uptime_s"],
+                "alerts_24h": st["db"]["alerts_24h"],
+                "devices": len(wp.subs) if wp is not None else 0,  # type: ignore[attr-defined]
+                "durable": bool(wp is not None and wp.state is not None) or not os.environ.get("RENDER"),  # type: ignore[attr-defined]
+            }
+        )
+
+    async def api_push_subscribe(self, request: web.Request) -> web.Response:
+        wp = self._push()
+        self._check_write(request)
+        try:
+            body = await request.json()
+            sub = await wp.subscribe(body.get("subscription") or {}, str(body.get("label") or ""))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise web.HTTPBadRequest(text=f"invalid subscription: {exc}") from None
+        return _json({"ok": True, "service": sub.service, "devices": len(wp.subs)})
+
+    async def api_push_unsubscribe(self, request: web.Request) -> web.Response:
+        wp = self._push()
+        self._check_write(request)
+        body = await request.json()
+        return _json({"removed": await wp.unsubscribe(str(body.get("endpoint", "")))})
+
+    async def api_push_test(self, request: web.Request) -> web.Response:
+        wp = self._push()
+        self._check_write(request)
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        only = [body["endpoint"]] if body.get("endpoint") else None
+        payload = {
+            "id": "test",
+            "title": "🔴 Foretape test: alerts will arrive like this",
+            "body": "Market-moving news will look like this: headline, tickers, how fast it was caught.\n"
+            "If you can read this on your lock screen, you're set.",
+            "severity": "CRITICAL",
+            "kind": "system",
+            "tag": f"test-{int(time.time())}",
+            "ts": time.time(),
+        }
+        results = await wp.push(payload, urgency="high", only=only)
+        return _json(
+            {"sent": sum(1 for r in results.values() if r == "ok"), "results": list(results.values())}
+        )
+
+    async def api_control(self, request: web.Request) -> web.Response:
+        self._check_write(request)
+        body = await request.json()
+        reply = await self.engine.handle_phone_command("app", str(body.get("command", "")))
+        if reply is None:
+            raise web.HTTPBadRequest(
+                text="unknown command (try: pause 2h, stop, resume, critical, normal, more)"
+            )
+        return _json({"reply": reply, "phone_mode": self.engine.phone_mode()})
 
     async def public_page(self, request: web.Request) -> web.Response:
         from .public_pages import about_page, contact_email, privacy_page, terms_page

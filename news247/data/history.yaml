@@ -976,6 +976,606 @@ events:
       - {text: "@DeItaone: HASSETT: TRUMP IS CONSIDERING A 90-DAY PAUSE IN TARIFFS FOR ALL COUNTRIES EXCEPT CHINA", tier: media}
     coverage: []
 
+  # ======================================================================= Jun-Oct 2026: where it broke FIRST
+  # Research 2026-10-09 (docs/research/first-sources-2026.md): ~58 market-moving stories traced
+  # back to their earliest public source. Company releases/8-Ks first (~22), then government
+  # output, scoops (FT/Reuters/Bloomberg/WSJ/Axios/NYT), Trump, officials' own X posts, EDGAR.
+  - id: iran-islamabad-mou
+    date: 2026-06-12
+    category: geopolitical_deescalation
+    first_source: "Axios scoop (Barak Ravid), days before the signing"
+    move: "Brent -4.7% to $83; Nasdaq +3% and Dow record on the signing"
+    tickers: [USO, XLE, JETS, SPY]
+    first_reports:
+      - {text: "Axios: U.S. and Iran near 'Islamabad Memorandum of Understanding' with 60-day truce and reopening of Strait of Hormuz", tier: media, approx: true}
+    coverage:
+      - "Stocks jump buoyed by US-Iran deal to end war, reopen Hormuz Strait"
+
+  - id: china-export-list-jun-2026
+    date: 2026-06-22
+    category: chip_export_controls
+    first_source: "MOFCOM / Ministry of Finance announcements"
+    move: "Drone and rare-earth names (MP, USAR) volatile"
+    tickers: [MP, USAR]
+    first_reports:
+      - {text: "MOFCOM adds 10 US companies to export control list; Finance Ministry bars government purchases from 46 US firms", tier: primary, entities: [China], approx: true}
+    coverage:
+      - "China imposes export controls on US defense and drone firms"
+
+  - id: nyt-openai-ipo-delay
+    date: 2026-06-25
+    category: ai_lab_financials
+    first_source: "New York Times, citing people involved in the deliberations (US evening; Asia moved first)"
+    move: "SoftBank -13%, Nikkei -3.7% next morning"
+    tickers: [SFTBY, NVDA, ORCL]
+    first_reports:
+      - {text: "OpenAI leans toward delaying its IPO to 2027, people involved in the deliberations say", tier: media, approx: true}
+    coverage:
+      - "Japan's Nikkei falls as SoftBank tanks on OpenAI IPO delay report"
+
+  - id: trump-dst-tariff
+    date: 2026-06-26
+    category: tariff_threat
+    first_source: "Truth Social @realDonaldTrump"
+    move: "Big tech / EU exporters lower"
+    tickers: [GOOGL, META, AMZN, EWG]
+    first_reports:
+      - {text: "@realDonaldTrump: Any Country that charges a Digital Services Tax on our great American Companies will be subject to a 100% TARIFF, superseding any Trade Deal", tier: primary, entities: [White House], approx: true}
+    coverage:
+      - "Trump threatens tariffs for countries that levy digital taxes"
+
+  - id: unicycive-crl
+    date: 2026-06-30
+    category: fda_rejection
+    first_source: "Company press release / 8-K (FDA stopped publishing CRLs on Jul 10)"
+    move: "UNCY -37%"
+    tickers: [UNCY]
+    first_reports:
+      - {text: "Unicycive Therapeutics receives Complete Response Letter from FDA for oxylanthanum carbonate", tier: wire, approx: true}
+    coverage:
+      - "Unicycive shares plunge after FDA rejection"
+
+  - id: trump-iran-ceasefire-over
+    date: 2026-07-08
+    category: geopolitical_shock
+    first_source: "Trump's spoken remarks at the NATO summit in Ankara, relayed by squawks within seconds"
+    move: "Oil +5-6.5%; Dow -577; airlines hit; 10y near 4.6%"
+    tickers: [USO, XLE, JETS, SPY]
+    first_reports:
+      - {text: "TRUMP: CEASEFIRE WITH IRAN IS OVER, FURTHER TALKS ARE A WASTE OF TIME", tier: media, approx: true}
+    coverage:
+      - "Oil prices surge, stocks tumble after Trump says Iran ceasefire is over"
+
+  - id: tsmc-capex-jul-2026
+    date: 2026-07-16
+    category: capex_shock
+    first_source: "TSMC earnings release and call (Taipei moved first, then US premarket)"
+    move: "TSMC -7.3% in Taipei; SOX -4.3%; NVDA -3%"
+    tickers: [TSM, NVDA, SMH, ASML]
+    first_reports:
+      - {text: "TSMC raises 2026 capital expenditure forecast to $60 billion-$64 billion", tier: primary, entities: [TSMC], approx: true}
+    coverage:
+      - "Chip stock selloff deepens in Asia as TSMC fails to impress"
+
+  - id: kimi-k3
+    date: 2026-07-17
+    category: cheap_frontier_model
+    first_source: "Moonshot AI's own launch announcement"
+    move: "NVDA -3%, SOX -4.3%"
+    tickers: [NVDA, AVGO, SMH]
+    first_reports:
+      - {text: "Moonshot AI releases Kimi K3, an open-weight model that narrows the gap with US frontier models", tier: primary, entities: [Moonshot AI], approx: true}
+    coverage:
+      - "Kimi K3 triggered DeepSeek flashbacks in the stock market"
+
+  - id: nvidia-nebius-13g
+    date: 2026-07-20
+    category: stake_disclosure
+    first_source: "SEC EDGAR Schedule 13G (after hours; moved next premarket)"
+    move: "NBIS +6% premarket"
+    tickers: [NBIS, NVDA]
+    first_reports:
+      - {text: "SCHEDULE 13G: NVIDIA CORP discloses 9.3% stake in Nebius Group N.V.", tier: primary, approx: true}
+    coverage:
+      - "Nebius shares jump as Nvidia filing reveals 9% stake"
+
+  - id: utz-intersnack
+    date: 2026-07-21
+    category: acquisition
+    first_source: "Company press release"
+    move: "UTZ +90% premarket"
+    tickers: [UTZ]
+    first_reports:
+      - {text: "Intersnack to acquire Utz Brands for $14.25 per share in cash", tier: wire, approx: true}
+    coverage:
+      - "Utz shares soar after Intersnack agrees to buy snack maker"
+
+  - id: alphabet-q2-2026
+    date: 2026-07-22
+    category: megacap_earnings
+    first_source: "Alphabet earnings release (abc.xyz), after the close"
+    move: "GOOGL -7.1% next day, worst in over a year (capex $195-205B, negative FCF)"
+    tickers: [GOOGL]
+    first_reports:
+      - {text: "Alphabet Announces Second Quarter 2026 Results", tier: primary, entities: [Alphabet], approx: true}
+    coverage:
+      - "Alphabet falls 7% despite strong Q2 profit, revenue growth"
+
+  - id: tesla-q2-2026
+    date: 2026-07-22
+    category: megacap_earnings
+    first_source: "Tesla Q2 update (IR)"
+    move: "TSLA -14 to -16%"
+    tickers: [TSLA]
+    first_reports:
+      - {text: "Tesla Releases Second Quarter 2026 Financial Results", tier: primary, entities: [Tesla], approx: true}
+    coverage:
+      - "Tesla profit falls well short of expectations as costs rise"
+
+  - id: kospi-crash
+    date: 2026-07-28
+    category: asia_market_shock
+    first_source: "KRX market action plus SK Hynix's capex release (Asia first, US premarket after)"
+    move: "Kospi -10.8%, SK Hynix -14.7%; SOX -4.5%; MU -5 to -8%"
+    tickers: [MU, SNDK, SMH, EWY]
+    first_reports:
+      - {text: "KOSPI PLUNGES 10.8%, SIDECAR TRIGGERED; SK HYNIX -14.7%, SAMSUNG ELECTRONICS -13.4%", tier: media, approx: true}
+    coverage:
+      - "SK Hynix plunges as semiconductor selloff deepens"
+
+  - id: meta-q2-2026
+    date: 2026-07-29
+    category: megacap_earnings
+    first_source: "Company earnings release"
+    move: "META -8 to -9.6% after hours"
+    tickers: [META]
+    first_reports:
+      - {text: "Meta Reports Second Quarter 2026 Results", tier: primary, entities: [Meta Platforms], approx: true}
+    coverage:
+      - "Meta stock crashing after Q2 2026 earnings"
+
+  - id: az-bms-talks
+    date: 2026-08-02
+    category: merger_scoop
+    first_source: "FT (Sunday), citing people familiar; London open moved first"
+    move: "AZN -9% (worst since 2020); BMY +5% premarket"
+    tickers: [AZN, BMY]
+    first_reports:
+      - {text: "AstraZeneca and Bristol Myers Squibb held talks over $400bn tie-up", tier: media, approx: true}
+    coverage:
+      - "AstraZeneca, Bristol-Myers Squibb held talks for tie-up, FT says"
+
+  - id: az-bms-denial
+    date: 2026-08-05
+    category: deal_collapse
+    first_source: "Reuters, citing a senior source"
+    move: "AZN +3%, BMY -3% (reversal)"
+    tickers: [AZN, BMY]
+    first_reports:
+      - {text: "No discussions ongoing on AstraZeneca-Bristol Myers merger; 'There never was a deal to be done,' senior source says", tier: media, approx: true}
+    coverage:
+      - "No discussions ongoing on AstraZeneca-Bristol Myers merger - Reuters"
+
+  - id: hughes-chapter-11
+    date: 2026-08-02
+    category: bankruptcy
+    first_source: "Bankruptcy court petition and 8-K"
+    move: "SATS and bonds"
+    tickers: [SATS]
+    first_reports:
+      - {text: "EchoStar's Hughes Satellite Systems files for Chapter 11 after event of default on 2026 notes", tier: wire, approx: true}
+    coverage:
+      - "EchoStar's Hughes Satellite Systems files for bankruptcy"
+
+  - id: china-drone-controls
+    date: 2026-08-05
+    category: chip_export_controls
+    first_source: "MOFCOM statement"
+    move: "Drone / defense names"
+    tickers: [AVAV, KTOS]
+    first_reports:
+      - {text: "MOFCOM: China to tighten export controls on drone-related dual-use items to the United States, sanctions US entities", tier: primary, entities: [China], approx: true}
+    coverage:
+      - "China to tighten export controls on drone-related dual-use items to US"
+
+  - id: jobs-jul-2026
+    date: 2026-08-07
+    category: macro_data_surprise
+    first_source: "BLS Employment Situation, 8:30 ET"
+    move: "S&P record; September hike odds fell from 57%"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "US JULY NONFARM PAYROLLS -23K; EST. +80K", tier: media, approx: true}
+    coverage:
+      - "Wall Street hits record highs as July payrolls ease rate fears"
+
+  - id: workday-silver-lake
+    date: 2026-08-13
+    category: take_private_scoop
+    first_source: "Reuters exclusive (Milana Vinn), intraday; three volatility halts within minutes"
+    move: "WDAY +18% close, +26% intraday"
+    tickers: [WDAY]
+    first_reports:
+      - {text: "Exclusive-Silver Lake in talks to buy Workday, sources say", tier: media}
+    coverage:
+      - "Silver Lake in talks to buy Workday, sources say - Reuters exclusive"
+
+  - id: ugi-kkr
+    date: 2026-08-17
+    category: take_private_scoop
+    first_source: "WSJ, citing people familiar; brief halt"
+    move: "UGI +12%"
+    tickers: [UGI]
+    first_reports:
+      - {text: "KKR makes $9 billion bid for UGI, people familiar with the matter say", tier: media, approx: true}
+    coverage:
+      - "UGI shares jump on report of KKR takeover bid"
+
+  - id: thirty-year-2007
+    date: 2026-08-18
+    category: yield_threshold
+    first_source: "Bond market data (threshold crossing) plus a Hormuz ship strike"
+    move: "SOX -5%; MU -7%; Nasdaq -1.3%"
+    tickers: [TLT, QQQ, SMH]
+    first_reports:
+      - {text: "US 30-YEAR TREASURY YIELD RISES TO 5.32%, HIGHEST SINCE 2007", tier: media, approx: true}
+    coverage:
+      - "Nasdaq plunges 1.33% as long-bond yields hit highest since 2007"
+
+  - id: moderna-merck-melanoma
+    date: 2026-08-19
+    category: trial_readout
+    first_source: "Joint company press release"
+    move: "MRNA +177% (record day); MRK up"
+    tickers: [MRNA, MRK]
+    first_reports:
+      - {text: "Moderna and Merck announce Phase 3 INTerpath-001 study of intismeran autogene met its primary endpoint in melanoma", tier: wire, approx: true}
+    coverage:
+      - "Moderna and Merck's mRNA cancer vaccine succeeds in late-stage trial"
+
+  - id: trump-clarity-act
+    date: 2026-08-19
+    category: crypto_policy
+    first_source: "Live White House event (spoken remarks)"
+    move: "BTC +4-5%, ETH +9%; COIN +7%, MSTR +10%"
+    tickers: [COIN, MSTR, IBIT]
+    first_reports:
+      - {text: "TRUMP URGES CONGRESS TO PASS CLARITY ACT CRYPTO MARKET STRUCTURE BILL", tier: media, approx: true}
+    coverage:
+      - "Trump asks Congress to pass crypto bill alongside executives"
+
+  - id: trump-canada-autos
+    date: 2026-08-24
+    category: tariff_escalation
+    first_source: "Truth Social @realDonaldTrump"
+    move: "CLF +7%; STLD, NUE +5%; Canadian autos lower"
+    tickers: [CLF, STLD, NUE, GM, F]
+    first_reports:
+      - {text: "@realDonaldTrump: Canadian cars, parts and steel will pay a 50% TARIFF starting January 1, 2027. ZERO TARIFFS if you build in the USA!", tier: primary, entities: [White House], approx: true}
+    coverage:
+      - "Trump threatens 50 percent tariffs on all Canadian cars"
+
+  - id: nvidia-fy28-guide
+    date: 2026-08-26
+    category: earnings_call_guidance
+    first_source: "CFO remarks on the earnings call (the release alone pointed the other way)"
+    move: "NVDA -3% after hours, then +5%"
+    tickers: [NVDA, SMH]
+    first_reports:
+      - {text: "NVIDIA CFO KRESS: EXPECTS FISCAL 2028 REVENUE TO GROW ABOUT 70%", tier: media, approx: true}
+    coverage:
+      - "Nvidia's stock does the limbo, then the moonwalk on 2028 guidance"
+
+  - id: paypal-advent-stripe
+    date: 2026-08-27
+    category: deal_collapse
+    first_source: "Bloomberg (evening), people familiar"
+    move: "PYPL -14 to -16%"
+    tickers: [PYPL]
+    first_reports:
+      - {text: "Advent, Stripe Said to Abandon $50 Billion Pursuit of PayPal", tier: media}
+    coverage:
+      - "PayPal stock drops after Stripe and Advent walk away"
+
+  - id: bioxcel-chapter-11
+    date: 2026-08-28
+    category: bankruptcy
+    first_source: "8-K on Aug 24 flagged the lender deadline; then the petition"
+    move: "BTAI -62% premarket"
+    tickers: [BTAI]
+    first_reports:
+      - {text: "BioXcel Therapeutics files voluntary Chapter 11 petition after missing lender deadline", tier: wire, approx: true}
+    coverage:
+      - "BioXcel Therapeutics files Chapter 11, shares plunge 62%"
+
+  - id: centcom-iran-strikes-sep
+    date: 2026-09-01
+    category: geopolitical_shock
+    first_source: "CENTCOM statement (overnight; Asia and Europe fell first)"
+    move: "Brent +4.6%; S&P -0.7%; 10y 4.79%"
+    tickers: [USO, XLE, SPY, LMT]
+    first_reports:
+      - {text: "CENTCOM: U.S. forces conducted strikes on IRGC air defense, maritime and mine-laying targets in Iran", tier: primary, entities: [CENTCOM], approx: true}
+    coverage:
+      - "Stocks fall as higher bond yields, oil prices pressure Wall Street"
+
+  - id: varonis-proofpoint
+    date: 2026-09-02
+    category: merger_scoop
+    first_source: "Bloomberg per most outlets (WSJ/Reuters also credited); halted"
+    move: "VRNS +10-13%"
+    tickers: [VRNS]
+    first_reports:
+      - {text: "Thoma Bravo's Proofpoint is said to weigh a bid for Varonis", tier: media, approx: true}
+    coverage:
+      - "VRNS stock jumps 10% as Thoma Bravo-owned Proofpoint is said to weigh a bid"
+
+  - id: ultragenyx-aspire-fail
+    date: 2026-09-02
+    category: trial_readout_miss
+    first_source: "Company press release, after the close"
+    move: "RARE -43% after hours, -45% next day"
+    tickers: [RARE]
+    first_reports:
+      - {text: "Ultragenyx announces Phase 3 Aspire study of apazunersen did not meet primary endpoint; plans significant expense reductions", tier: wire, approx: true}
+    coverage:
+      - "Ultragenyx shares drop on failed Phase III trial"
+
+  - id: fhfa-vantagescore
+    date: 2026-09-04
+    category: regulator_social_post
+    first_source: "FHFA Director Bill Pulte on X (before FHFA's own release)"
+    move: "FICO -15 to -18%"
+    tickers: [FICO]
+    first_reports:
+      - {text: "@pulte: Effective immediately, Fannie Mae and Freddie Mac will allow all lenders to use VantageScore 4.0", tier: primary, entities: [FHFA], approx: true}
+    coverage:
+      - "Fair Isaac drops as Pulte lets Fannie, Freddie use VantageScore"
+
+  - id: jobs-aug-2026
+    date: 2026-09-04
+    category: macro_data_surprise
+    first_source: "BLS, 8:30 ET"
+    move: "Stocks slide on hawkish Fed bets"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "US AUGUST NONFARM PAYROLLS +162K; EST. +75K", tier: media, approx: true}
+    coverage:
+      - "Wall Street slides after strong jobs report bolsters hawkish Fed bets"
+
+  - id: nvidia-anthropic-ipo-anchor
+    date: 2026-09-11
+    category: ai_lab_financials
+    first_source: "Reuters, anonymous sources"
+    move: "NVDA and the AI complex"
+    tickers: [NVDA, AMZN, GOOGL]
+    first_reports:
+      - {text: "Exclusive-Nvidia in talks to anchor Anthropic IPO with up to $10 billion, sources say", tier: media, approx: true}
+    coverage:
+      - "Anthropic, Nvidia in record IPO talks"
+
+  - id: altman-no-ipo-2026
+    date: 2026-09-11
+    category: ai_slowdown
+    first_source: "Fortune interview (Friday); with Amodei's Saturday essay, SOX -5.8% on Monday"
+    move: "SOX -5.8%; SoftBank -10.7%; NVDA -3.4%"
+    tickers: [NVDA, MU, SMH, SFTBY]
+    first_reports:
+      - {text: "Altman says no OpenAI IPO in 2026: 'Given everything happening with safety, right now would be an ill-advised moment to go public'", tier: media, approx: true}
+    coverage:
+      - "AI stocks fall after Amodei and Altman comments"
+
+  - id: clarity-cloture-fails
+    date: 2026-09-15
+    category: crypto_policy
+    first_source: "Senate floor roll call (live on C-SPAN)"
+    move: "COIN -8%; BTC -4%"
+    tickers: [COIN, MSTR, IBIT]
+    first_reports:
+      - {text: "SENATE CLOTURE VOTE ON CLARITY ACT CRYPTO BILL FAILS 49-50", tier: media, approx: true}
+    coverage:
+      - "CLARITY Act fails Senate procedural vote"
+
+  - id: fomc-sep-2026
+    date: 2026-09-16
+    category: fed_decision
+    first_source: "federalreserve.gov statement, 2:00 pm ET"
+    move: "Dow -1.2% after Warsh's press conference"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "Federal Reserve issues FOMC statement: Committee raises target range to 3-3/4 to 4 percent", tier: primary, entities: [Federal Reserve], approx: true}
+      - {text: "FED RAISES RATES 25 BP TO 3.75%-4.00%, FIRST HIKE SINCE 2023", tier: media, approx: true}
+    coverage:
+      - "Fed raises rates for the first time since 2023"
+
+  - id: jbhunt-warning
+    date: 2026-09-16
+    category: guidance_shock
+    first_source: "Company release / 8-K"
+    move: "JBHT -13%"
+    tickers: [JBHT]
+    first_reports:
+      - {text: "J.B. Hunt warns third-quarter EPS could decline 5% to 10%, below expectations", tier: wire, approx: true}
+    coverage:
+      - "Stocks making the biggest moves midday: JBHT"
+
+  - id: generac-amazon-8k
+    date: 2026-09-16
+    category: ai_compute_deal
+    first_source: "SEC 8-K a day before the press release (EDGAR led the press)"
+    move: "GNRC +19%"
+    tickers: [GNRC, AMZN]
+    first_reports:
+      - {text: "8-K: Generac enters agreement with Amazon to supply data center backup generators, up to $8 billion; issues warrants to Amazon", tier: primary, approx: true}
+    coverage:
+      - "Generac signs $8bn backup generator deal with Amazon"
+
+  - id: anthropic-gene-editing
+    date: 2026-09-24
+    category: ai_disrupts_industry
+    first_source: "Anthropic announcement"
+    move: "BEAM, CRSP, NTLA, PRME -1.6 to -5.5%"
+    tickers: [BEAM, CRSP, NTLA, PRME]
+    first_reports:
+      - {text: "Claude identified a new enzyme system resembling gene-editing technology", tier: primary, entities: [Anthropic], approx: true}
+    coverage:
+      - "Anthropic AI discovery hits gene-editing stocks"
+
+  - id: akamai-anthropic
+    date: 2026-09-24
+    category: ai_lab_deal
+    first_source: "Akamai press release / 8-K"
+    move: "AKAM +5%"
+    tickers: [AKAM]
+    first_reports:
+      - {text: "Akamai signs seven-year, $11.6 billion cloud contract with Anthropic, the largest in its history; Anthropic receives warrant", tier: wire, approx: true}
+    coverage:
+      - "Anthropic, Akamai $11.6bn cloud deal with warrant"
+
+  - id: faa-737-max-10
+    date: 2026-09-28
+    category: regulator_action
+    first_source: "Boeing's Saturday statement, then the FAA administrator's Monday remarks"
+    move: "BA -6.9%"
+    tickers: [BA]
+    first_reports:
+      - {text: "FAA's Bedford: 'We will be delaying the 10 until we're satisfied' with Boeing 737 MAX software fix", tier: media, approx: true}
+    coverage:
+      - "US aviation regulator delays Boeing 737 MAX 10 certification; shares dive 7%"
+
+  - id: mongodb-ceo-meta
+    date: 2026-09-28
+    category: ceo_exit
+    first_source: "Company release / 8-K Item 5.02 plus Zuckerberg's X post, premarket"
+    move: "MDB -14% premarket, -18% close"
+    tickers: [MDB]
+    first_reports:
+      - {text: "MongoDB announces CEO CJ Desai resigns effective immediately to join Meta", tier: wire, approx: true}
+    coverage:
+      - "MongoDB CEO quits to join Meta, stock crashes"
+
+  - id: pulte-one-pricing-grid
+    date: 2026-09-28
+    category: regulator_social_post
+    first_source: "FHFA Director Bill Pulte on X after the close; full repricing at the next open"
+    move: "FICO -25 to -27%"
+    tickers: [FICO]
+    first_reports:
+      - {text: "@pulte: Fannie Mae and Freddie Mac are hereby moving to ONE PRICING GRID with VantageScore joining the existing FICO Classic pricing grid", tier: primary, entities: [FHFA]}
+    coverage:
+      - "FICO crashes most since 2004 as Pulte's mortgage-score shakeup threatens its moat"
+
+  - id: axios-openai-arr-70b
+    date: 2026-09-28
+    category: ai_lab_financials
+    first_source: "Axios first; Reuters confirmed"
+    move: "ORCL +5-7%"
+    tickers: [ORCL, NVDA, CRWV]
+    first_reports:
+      - {text: "OpenAI's annualized recurring revenue nears $70 billion - Axios", tier: media, approx: true}
+    coverage:
+      - "OpenAI's annual recurring revenue nears $70 billion, Axios reports"
+
+  - id: ten-year-2002
+    date: 2026-09-30
+    category: yield_threshold
+    first_source: "Market data (threshold crossing)"
+    move: "Banks under pressure; 10y 5.30-5.34%"
+    tickers: [TLT, KRE, XHB]
+    first_reports:
+      - {text: "US 10-YEAR YIELD HITS 5.34%, HIGHEST SINCE 2002", tier: media, approx: true}
+    coverage:
+      - "Treasury 10-year yield hits highest since 2002 on rate outlook"
+
+  - id: jobs-sep-2026
+    date: 2026-10-02
+    category: macro_data_surprise
+    first_source: "BLS, 8:30 ET"
+    move: "Nasdaq record; S&P +0.8%; 10y back to 5.2%"
+    tickers: [SPY, QQQ, TLT]
+    first_reports:
+      - {text: "US SEPTEMBER NONFARM PAYROLLS +29K; EST. +70K; UNEMPLOYMENT RATE 4.2%", tier: media, approx: true}
+    coverage:
+      - "Dow jumps 400 points, Nasdaq hits record high after jobs report"
+
+  - id: webull-china-panel
+    date: 2026-10-07
+    category: congressional_finding
+    first_source: "CNBC report on the congressional panel's finding"
+    move: "BULL -20%"
+    tickers: [BULL]
+    first_reports:
+      - {text: "House China committee finds Webull's ties to Chinese government pose national security risk", tier: media, approx: true}
+    coverage:
+      - "Stocks making the biggest moves midday: BULL"
+
+  - id: starbucks-chipotle
+    date: 2026-10-08
+    category: merger_scoop
+    first_source: "Semafor (bankers story) then FT credited by CNBC [unverified]"
+    move: "CMG +6-8%; SBUX -5%"
+    tickers: [CMG, SBUX]
+    first_reports:
+      - {text: "Starbucks has explored a takeover of Chipotle, people familiar with the matter say", tier: media, approx: true}
+    coverage:
+      - "Stocks making the biggest moves midday: CMG, SBUX"
+
+  - id: wolfspeed-dod-loan
+    date: 2026-10-08
+    category: government_financing
+    first_source: "Company release / Department of Defense"
+    move: "WOLF +15%"
+    tickers: [WOLF]
+    first_reports:
+      - {text: "Wolfspeed secures conditional $1.5 billion, 30-year loan from the Department of Defense", tier: wire, approx: true}
+    coverage:
+      - "Stocks making the biggest moves premarket: WOLF"
+
+  - id: hormuz-tankers-oct
+    date: 2026-10-08
+    category: geopolitical_shock
+    first_source: "Shipping incident reports, Kpler transit data, IRGC statements"
+    move: "Brent +4.1% to $104; MPC, APA +4%"
+    tickers: [USO, XLE, MPC, APA]
+    first_reports:
+      - {text: "IRAN STEPS UP ATTACKS ON TANKERS IN STRAIT OF HORMUZ; BRENT TOPS $104", tier: media, approx: true}
+    coverage:
+      - "Oil prices jump as Iran escalates tanker attacks"
+
+  - id: capricor-briefing-docs
+    date: 2026-07-28
+    category: fda_briefing
+    first_source: "FDA advisory-committee briefing documents (posted before the meeting)"
+    move: "CAPR -40%"
+    tickers: [CAPR]
+    first_reports:
+      - {text: "FDA briefing documents raise efficacy concerns about Capricor's deramiocel ahead of advisory committee meeting", tier: primary, entities: [FDA], approx: true}
+    coverage:
+      - "Capricor shares plunge after FDA briefing documents"
+
+  - id: ferguson-sp500
+    date: 2026-09-05
+    category: index_inclusion
+    first_source: "S&P Dow Jones Indices release, after the close"
+    move: "FERG +8%"
+    tickers: [FERG]
+    first_reports:
+      - {text: "Ferguson Enterprises set to join S&P 500; others to join S&P MidCap 400 and S&P SmallCap 600", tier: wire, approx: true}
+    coverage:
+      - "Ferguson jumps on S&P 500 inclusion"
+
+  - id: polymarket-iran-ceasefire
+    date: 2026-04-07
+    category: prediction_market_signal
+    first_source: "Polymarket odds moved (new accounts) hours before the announcement"
+    move: "Oil -10%+ on the ceasefire announcement"
+    tickers: [USO, XLE, JETS]
+    first_reports:
+      - {text: "Polymarket: 'US x Iran ceasefire by April 15?' jumps 31 pts to 74% in 5 min ($2.1M traded in 24h)", tier: social, approx: true}
+    coverage:
+      - "Well-timed bets on Polymarket tied to the Iran war draw scrutiny"
+
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -1064,4 +1664,22 @@ noise:
   - {text: "Federal Reserve Board announces approval of application by a small bank holding company", tier: primary, entities: [Federal Reserve]}
   - {text: "Treasury announces sanctions on two individuals linked to cybercrime", tier: primary, entities: [US Treasury]}
   - {text: "SEC charges investment adviser with misleading clients", tier: primary}
-
+  # ---- look-alikes from the new first-to-publish sources (Oct 2026): must NOT alert
+  - {text: "Public inspection: Advisory Committee on Commercial Operations of Customs and Border Protection; Notice of Federal Advisory Committee Meeting", tier: primary, entities: [Federal Register]}
+  - {text: "Public inspection: Agency Information Collection Activities; Submission to OMB for Review", tier: primary, entities: [Federal Register]}
+  - {text: "SCHEDULE 13G/A: VANGUARD GROUP INC reports 7.9% stake in Xylem Inc", tier: primary}
+  - {text: "SCHEDULE 13G/A: BLACKROCK INC. reports 6.2% stake in Hubbell Inc", tier: primary}
+  - {text: "@pulte: Great meeting today with homebuilders at FHFA headquarters", tier: primary, entities: [FHFA]}
+  - {text: "CENTCOM: USS Carl Vinson conducts routine flight operations in the Arabian Sea", tier: primary, entities: [CENTCOM]}
+  - {text: "Polymarket: 'Fed decision in December?' little changed at 41% ($310K traded in 24h)", tier: social}
+  - {text: "OFAC: Publication of Updated Sanctions List Service Data Specifications", tier: primary, entities: [US Treasury]}
+  - {text: "Supreme Court: order list, certiorari denied in patent infringement case", tier: primary}
+  - {text: "Federal Circuit: nonprecedential opinion affirming Board decision in trademark appeal", tier: primary}
+  - {text: "Bank of Japan releases Tankan survey schedule for 2027", tier: primary, entities: [Bank of Japan]}
+  - {text: "Bank of England publishes speech by Deputy Governor on payments innovation", tier: primary, entities: [Bank of England]}
+  - {text: "European Commission approves State aid scheme for Danish wind farms", tier: primary}
+  - {text: "CMA launches consultation on draft guidance for small mergers", tier: primary}
+  - {text: "Department of War contracts for October 6, 2026", tier: primary}
+  - {text: "US 10-year Treasury yield little changed at 5.18% ahead of auction", tier: media}
+  - {text: "Kospi edges up 0.3% as investors await Fed minutes", tier: media}
+  - {text: "Nikkei Asia: Japanese convenience stores expand AI checkout pilots", tier: media}

@@ -22,6 +22,9 @@ general:
   # Free hosts sleep after a few idle minutes (Render Free: 15). News247 pings its own public
   # /health every 10 min to stay awake. Render sets RENDER_EXTERNAL_URL automatically.
   keepalive_url: ${KEEPALIVE_URL:-${RENDER_EXTERNAL_URL:-}}
+  # Optional free Postgres (neon.com, no card) that keeps phone subscriptions across restarts
+  # of hosts with a temporary disk (Render Free). Without it, phones re-subscribe when opened.
+  state_db: ${STATE_DB:-${WHATSAPP_STATE_DB:-}}
 
 scoring:
   # Score thresholds (0-100). Each channel picks which severities it receives (see notify:).
@@ -87,6 +90,16 @@ notify:
 
   console: {enabled: true, min_severity: medium, bell: true}
   desktop: {enabled: "${DESKTOP_ENABLED:-false}", min_severity: high}
+
+  # ---------------------------------------------------------------- your phone
+
+  # Foretape: the phone app at https://<this server>/app — add it to your home screen, tap
+  # "Turn on alerts", and alerts arrive as real push notifications. Free, no account, no number.
+  webpush:
+    enabled: ${WEBPUSH_ENABLED:-true}
+    min_severity: ${PUSH_MIN_SEVERITY:-high}
+    ttl_s: 1800                         # an alert older than 30 min isn't worth a late push
+    vapid_private: ${WEBPUSH_VAPID_PRIVATE:-}   # empty: derived from DASHBOARD_TOKEN (stable)
 
   # ---------------------------------------------------------------- texts to your phone
   # Which severities reach your phone: high (default) = important + critical; critical = only the biggest.

@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS relay_outbox (
     payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_relay_created ON relay_outbox(created);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    data TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -208,6 +212,20 @@ class Storage:
             "SELECT payload FROM relay_outbox WHERE created >= ? ORDER BY created", (since,)
         ).fetchall()
         return [json.loads(r[0]) for r in rows]
+
+    # ------------------------------------------------------------------ web push subscriptions
+
+    def push_save(self, sub: dict[str, Any]) -> None:
+        self.db.execute(
+            "INSERT OR REPLACE INTO push_subscriptions (endpoint, data) VALUES (?, ?)",
+            (sub["endpoint"], json.dumps(sub)),
+        )
+
+    def push_delete(self, endpoint: str) -> None:
+        self.db.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+
+    def push_all(self) -> list[dict[str, Any]]:
+        return [json.loads(r[0]) for r in self.db.execute("SELECT data FROM push_subscriptions")]
 
     # ------------------------------------------------------------------ stats
 

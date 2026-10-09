@@ -134,7 +134,8 @@ def test_channels_validate_options():
             "imessage",
             "relay",
             "whatsapp",
-        ):  # need only a number, settable later
+            "webpush",
+        ):  # nothing required up front (a number or a phone subscribes later)
             continue
         with pytest.raises(ValueError, match=f"notify.{name}: missing"):
             cls({}, None, Severity.HIGH)  # type: ignore[arg-type]

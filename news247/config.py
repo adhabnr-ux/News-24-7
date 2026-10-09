@@ -113,6 +113,8 @@ class GeneralConfig:
     # News247 requests its own public /health this often to stay awake 24/7
     keepalive_url: str = ""
     keepalive_s: float = 600.0
+    # free Postgres (Neon/Supabase) for what must survive a temporary disk: phone subscriptions
+    state_db: str = ""
 
 
 @dataclass
@@ -267,6 +269,7 @@ CHANNEL_NAMES = (
     "textbelt",
     "whatsapp",
     "whatsapp_cloud",
+    "webpush",
 )
 
 

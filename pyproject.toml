@@ -14,12 +14,14 @@ dependencies = [
   "feedparser>=6.0",
   "PyYAML>=6.0",
   "tzdata>=2024.1",  # time-zone database for slim containers / Windows
+  "cryptography>=41",  # Web Push encryption + VAPID signing (Foretape phone alerts)
+  "pg8000>=1.31",  # pure-Python Postgres driver: optional STATE_DB keeps phone subscriptions durable
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 # self-hosted WhatsApp sender: whatsmeow (Go) through its Python binding; Linux/macOS x86-64 and arm64
-whatsapp = ["neonize>=0.5.2,<0.6", "pg8000>=1.31"]
+whatsapp = ["neonize>=0.5.2,<0.6"]
 
 [project.scripts]
 news247 = "news247.cli:main"
@@ -28,7 +30,7 @@ news247 = "news247.cli:main"
 include = ["news247*"]
 
 [tool.setuptools.package-data]
-news247 = ["web/static/*", "data/*.yaml", "relay/*.sh"]
+news247 = ["web/static/*", "web/static/app/*", "data/*.yaml", "relay/*.sh"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

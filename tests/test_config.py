@@ -32,7 +32,7 @@ def test_example_config_is_valid_and_off_by_default(monkeypatch):
     text = resources.files("news247.data").joinpath("config.example.yaml").read_text()
     cfg = build_config(yaml.safe_load(text))
     enabled = [c.name for c in cfg.notify.channels if c.enabled]
-    assert enabled == ["console"]  # nothing texts anyone until configured
+    assert enabled == ["console", "webpush"]  # push only reaches phones that subscribed in the app
     assert cfg.web.port == 8247 and cfg.web.host == "127.0.0.1"
     assert {c.name for c in cfg.notify.channels} >= {"sendblue", "imessage", "ntfy", "textbelt", "telegram"}
 

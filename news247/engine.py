@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import re
 import time
 from collections import deque
@@ -88,6 +89,18 @@ class Engine:
         self.whatsapp_cloud = getattr(wac, "cloud", None)
         if self.whatsapp_cloud is not None:
             self.whatsapp_cloud.on_inbound = self.handle_phone_command
+        self.state_store = None
+        if cfg.general.state_db:
+            from .statestore import StateStore
+
+            self.state_store = StateStore(cfg.general.state_db)
+        self.webpush = next((c for c in self.dispatcher.channels if c.name == "webpush"), None)
+        if self.webpush is not None:
+            from .web.public_pages import contact_email
+
+            contact = contact_email(cfg.general.user_agent, os.environ.get("CONTACT_EMAIL", ""))
+            subject = f"mailto:{contact}" if contact else (cfg.web.public_url or "")
+            self.webpush.attach(self.storage, secret=cfg.web.token, state=self.state_store, subject=subject)  # type: ignore[attr-defined]
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         self.subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
@@ -125,6 +138,8 @@ class Engine:
             f"{self.cfg.llm.model}@{self.cfg.llm.base_url}" if self.llm else "off",
             ", ".join(f"{c.name}≥{c.min_severity.name.lower()}" for c in self.dispatcher.channels) or "none",
         )
+        if self.webpush is not None:
+            await self.webpush.restore()  # type: ignore[attr-defined]  # fresh container: phones come back
         snap = getattr(self._wa_channel, "snapshot", None)
         if self.whatsapp is not None:
             if snap is not None:

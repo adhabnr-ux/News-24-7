@@ -12,6 +12,7 @@ import shutil
 import smtplib
 import subprocess
 import sys
+import time
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from ..http import HttpClient, HTTPError
 from ..models import Alert, Severity
 from ..relay.hub import RelayHub
 from ..relay.messages_app import IMESSAGE_SCRIPTS, MessagesApp  # noqa: F401 - IMESSAGE_SCRIPTS re-exported
+from ..util import strip_html
 from .format import markdown_body, plain_body, short_title, sms_text, whatsapp_text
 
 log = logging.getLogger(__name__)
@@ -748,6 +750,191 @@ class WhatsAppCloudNotifier(PhoneChannel, Notifier):
         return {**super().describe(), "template_status": self.cloud.template_status}
 
 
+class WebPushNotifier(Notifier):
+    """Push notifications to the Foretape app on your phone (standard Web Push: free, no account,
+    no phone number). Phones subscribe from the app (/app); alerts are encrypted for each phone
+    and sent through its own push service (Apple, Google, Mozilla, Microsoft).
+
+    Options: ``subject`` (contact for push services, mailto: or https:), ``ttl_s`` (how long a
+    push service keeps an undelivered alert, default 1800), ``vapid_private`` (base64url key;
+    default: derived from the dashboard token so it survives restarts)."""
+
+    name = "webpush"
+    timeout = 30.0
+
+    def validate(self) -> None:
+        from ..webpush import Subscription
+
+        self.subs: dict[str, Subscription] = {}
+        self.key: Any = None
+        self.subject = str(self.options.get("subject") or "")
+        self.storage: Any = None
+        self.state: Any = None  # StateStore, when STATE_DB is set
+        self.last_sent: float | None = None
+        self.removed = 0
+
+    # ------------------------------------------------------------------ setup
+
+    def attach(self, storage: Any, *, secret: str = "", state: Any = None, subject: str = "") -> None:
+        from cryptography.hazmat.primitives.asymmetric import ec  # noqa: I001
+
+        from ..webpush import Subscription, derive_vapid_key, private_from_bytes, private_to_bytes, unb64u
+
+        self.storage, self.state = storage, state
+        self.subject = self.subject or subject or "mailto:news247@example.com"
+        raw = str(self.options.get("vapid_private") or "")
+        if raw:
+            self.key = private_from_bytes(unb64u(raw))
+        elif secret:
+            self.key = derive_vapid_key(secret)
+        else:  # local use without a token: a random key, remembered in the database
+            saved = storage.get_setting("vapid_private")
+            self.key = private_from_bytes(unb64u(saved)) if saved else ec.generate_private_key(ec.SECP256R1())
+            if not saved:
+                from ..webpush import b64u
+
+                storage.set_setting("vapid_private", b64u(private_to_bytes(self.key)))
+        for d in storage.push_all():
+            try:
+                sub = Subscription(**d)
+                self.subs[sub.endpoint] = sub
+            except TypeError:
+                continue
+
+    async def restore(self) -> None:
+        """On a fresh container, take the subscriptions back from the state database."""
+        import json as _json
+
+        from ..webpush import Subscription
+
+        if self.state is None or self.subs:
+            return
+        blob = await self.state.get("push-subscriptions")
+        for d in _json.loads(blob or b"[]"):
+            sub = Subscription(**d)
+            self.subs[sub.endpoint] = sub
+            self.storage.push_save(sub.to_dict())
+        if self.subs:
+            log.info("webpush: restored %d phone subscription(s) from the state database", len(self.subs))
+
+    async def _persist(self) -> None:
+        import json as _json
+
+        if self.state is not None:
+            await self.state.put(
+                "push-subscriptions", _json.dumps([s.to_dict() for s in self.subs.values()]).encode()
+            )
+
+    @property
+    def public_key(self) -> str:
+        from ..webpush import b64u, public_bytes
+
+        return b64u(public_bytes(self.key))
+
+    async def subscribe(self, data: dict[str, Any], label: str = "") -> Any:
+        from ..webpush import Subscription
+
+        sub = Subscription.from_browser(data, label)
+        old = self.subs.get(sub.endpoint)
+        if old is not None:
+            sub.created, sub.last_ok = old.created, old.last_ok
+        self.subs[sub.endpoint] = sub
+        self.storage.push_save(sub.to_dict())
+        if old is None or (old.p256dh, old.auth) != (sub.p256dh, sub.auth):
+            await self._persist()
+        return sub
+
+    async def unsubscribe(self, endpoint: str) -> bool:
+        if self.subs.pop(endpoint, None) is None:
+            return False
+        self.storage.push_delete(endpoint)
+        await self._persist()
+        return True
+
+    # ------------------------------------------------------------------ sending
+
+    def payload(self, alert: Alert) -> dict[str, Any]:
+        from .format import push_text
+
+        return {
+            "id": alert.id,
+            "title": short_title(alert)[:160],
+            "body": push_text(alert)[:600],
+            "severity": alert.severity.name,
+            "kind": alert.kind,
+            "tickers": alert.tickers[:8],
+            "url": alert.url,
+            "ts": alert.created,
+            "tag": (alert.item.uid[:24] if alert.item else alert.id),
+        }
+
+    async def push(
+        self, payload: dict[str, Any], *, urgency: str = "high", only: list[str] | None = None
+    ) -> dict[str, str]:
+        """Send one payload to every subscribed phone (or ``only`` these endpoints)."""
+        from ..webpush import build_request
+
+        results: dict[str, str] = {}
+        dead: list[str] = []
+        for sub in list(self.subs.values()):
+            if only is not None and sub.endpoint not in only:
+                continue
+            body, headers = build_request(
+                sub,
+                payload,
+                self.key,
+                self.subject,
+                ttl_s=int(self.options.get("ttl_s", 1800)),
+                urgency=urgency,
+                topic=str(payload.get("tag", "")),
+            )
+            try:
+                await self.http.post(sub.endpoint, data=body, headers=headers, timeout_s=15)
+                sub.last_ok, sub.failures = time.time(), 0
+                results[sub.endpoint] = "ok"
+            except HTTPError as exc:
+                sub.failures += 1
+                if exc.status in (404, 410):  # the phone unsubscribed or the app was deleted
+                    dead.append(sub.endpoint)
+                    results[sub.endpoint] = "gone"
+                else:
+                    results[sub.endpoint] = f"HTTP {exc.status}: {strip_html(exc.body, limit=160)}"
+            except Exception as exc:  # noqa: BLE001 - one phone failing must not stop the others
+                sub.failures += 1
+                results[sub.endpoint] = f"{type(exc).__name__}: {exc}"[:200]
+        for endpoint in dead:
+            self.removed += 1
+            await self.unsubscribe(endpoint)
+        return results
+
+    async def send(self, alert: Alert) -> None:
+        if not self.subs:
+            raise RuntimeError(
+                "no phone has turned on alerts yet: open /app on your phone and tap “Turn on alerts”"
+            )
+        urgency = "high" if alert.severity >= Severity.HIGH else "normal"
+        results = await self.push(self.payload(alert), urgency=urgency)
+        if results and all(r != "ok" for r in results.values()):
+            raise RuntimeError("push failed: " + "; ".join(sorted(set(results.values())))[:300])
+        self.last_sent = time.time()
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            **super().describe(),
+            "devices": [
+                {
+                    "service": s.service,
+                    "label": s.label,
+                    "since": s.created,
+                    "last_ok": s.last_ok,
+                    "failures": s.failures,
+                }
+                for s in self.subs.values()
+            ],
+            "durable": self.state is not None,
+        }
+
+
 def _without_url(alert: Alert) -> Alert:
     import dataclasses
 
@@ -775,5 +962,6 @@ CHANNEL_CLASSES: dict[str, type[Notifier]] = {
         TextbeltNotifier,
         WhatsAppNotifier,
         WhatsAppCloudNotifier,
+        WebPushNotifier,
     )
 }

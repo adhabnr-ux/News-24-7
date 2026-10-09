@@ -36,11 +36,11 @@ TABLE = "news247_state"
 def _connect(url: str) -> Any:
     u = urlsplit(url)
     if u.scheme not in ("postgres", "postgresql"):
-        raise ValueError("WHATSAPP_STATE_DB must be a postgres:// or postgresql:// URL")
+        raise ValueError("STATE_DB / WHATSAPP_STATE_DB must be a postgres:// or postgresql:// URL")
     try:
         import pg8000.native
     except ImportError:
-        raise RuntimeError("the pairing backup needs pg8000: pip install 'news247[whatsapp]'") from None
+        raise RuntimeError("the state database needs pg8000: pip install pg8000") from None
     query = {k: v[-1] for k, v in parse_qs(u.query).items()}
     sslmode = query.get("sslmode", "require" if u.hostname not in ("localhost", "127.0.0.1") else "disable")
     ctx = None

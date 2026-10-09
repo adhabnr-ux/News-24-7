@@ -22,7 +22,7 @@ companies:
   - {name: Perplexity, aliases: [perplexity ai, perplexity], exposure: [GOOGL]}
   - {name: SpaceX, aliases: [spacex, starlink, starship], exposure: [TSLA, RKLB, ASTS]}
   - {name: Databricks, aliases: [databricks], exposure: [SNOW, MDB]}
-  - {name: Moonshot AI, aliases: [moonshot ai, kimi k2, kimi], exposure: [NVDA]}
+  - {name: Moonshot AI, aliases: [moonshot ai, kimi k2, kimi k3, kimi], exposure: [NVDA, SMH]}
   - {name: Alibaba Qwen, aliases: [qwen], exposure: [BABA, NVDA]}
 
   # ---- Mega caps
@@ -120,6 +120,46 @@ companies:
   - {name: European Central Bank, aliases: [european central bank, lagarde], cased: [ECB], exposure: [FXE, SPY], authority: true}
   - {name: Bank of Japan, aliases: [bank of japan, boj, ueda], exposure: [FXY, SPY], authority: true}
   - {name: Bank of England, aliases: [bank of england, boe], exposure: [FXB]}
+
+  # ---- added 2026-10-09 from the "where it broke first" research (Jun-Oct 2026 movers)
+  - {name: FHFA, aliases: [fhfa, federal housing finance agency, bill pulte, pulte, fannie mae, freddie mac, fannie and freddie], exposure: [FICO, RKT, UWMC]}
+  - {name: Fair Isaac, ticker: FICO, aliases: [fair isaac, fico score, fico classic], cased: [FICO]}
+  - {name: PayPal, ticker: PYPL, aliases: [paypal, venmo]}
+  - {name: Generac, ticker: GNRC, aliases: [generac]}
+  - {name: Akamai, ticker: AKAM, aliases: [akamai]}
+  - {name: J.B. Hunt, ticker: JBHT, aliases: [j.b. hunt, jb hunt]}
+  - {name: Moderna, ticker: MRNA, aliases: [moderna]}
+  - {name: Merck, ticker: MRK, aliases: [merck]}
+  - {name: AstraZeneca, ticker: AZN, aliases: [astrazeneca]}
+  - {name: Bristol Myers Squibb, ticker: BMY, aliases: [bristol myers, bristol-myers, bristol myers squibb]}
+  - {name: Chipotle, ticker: CMG, aliases: [chipotle]}
+  - {name: Starbucks, ticker: SBUX, aliases: [starbucks]}
+  - {name: McDonald's, ticker: MCD, aliases: ["mcdonald's", mcdonalds]}
+  - {name: Webull, ticker: BULL, aliases: [webull]}
+  - {name: Wolfspeed, ticker: WOLF, aliases: [wolfspeed]}
+  - {name: Varonis, ticker: VRNS, aliases: [varonis]}
+  - {name: Ultragenyx, ticker: RARE, aliases: [ultragenyx]}
+  - {name: UGI, ticker: UGI, aliases: [ugi corp], cased: [UGI]}
+  - {name: Utz Brands, ticker: UTZ, aliases: [utz brands, utz]}
+  - {name: EchoStar, ticker: SATS, aliases: [echostar, hughes satellite]}
+  - {name: Lennar, ticker: LEN, aliases: [lennar]}
+  - {name: Capricor, ticker: CAPR, aliases: [capricor]}
+  - {name: Ferguson, ticker: FERG, aliases: [ferguson enterprises]}
+  - {name: SoftBank, aliases: [softbank, masayoshi son], exposure: [SFTBY, NVDA, ARM]}
+  - {name: SK Hynix, aliases: [sk hynix, hynix], exposure: [MU, SNDK, SMH]}
+  - {name: Samsung Electronics, aliases: [samsung electronics, samsung], exposure: [MU, SMH]}
+  - {name: CXMT, aliases: [cxmt, changxin memory], exposure: [MU]}
+  - {name: Stripe, aliases: [stripe], exposure: [PYPL]}
+  - {name: Polymarket, aliases: [polymarket, kalshi, prediction market], exposure: []}
+  - {name: CENTCOM, aliases: [centcom, central command, pentagon, department of war, hegseth], exposure: [USO, XLE, LMT, RTX], authority: true}
+  - {name: FAA, aliases: [faa, federal aviation administration], exposure: [BA]}
+  - {name: US courts, aliases: [supreme court, scotus, federal circuit, court of international trade, appeals court, federal judge, judge mehta, judge brinkema], exposure: [SPY], authority: true}
+  - {name: Commerce Department, aliases: [commerce department, department of commerce, bureau of industry and security, lutnick, ustr, trade representative, greer], exposure: [NVDA, AMD, SMH], authority: true}
+  - {name: OFAC, aliases: [ofac, office of foreign assets control], exposure: [USO, XLE], authority: true}
+  - {name: Congress, aliases: [senate, house of representatives, congress, cloture, select committee on the ccp, china committee], exposure: [SPY]}
+  - {name: S&P Dow Jones Indices, aliases: [s&p dow jones indices, s&p 500, s&p midcap 400], exposure: []}
+  - {name: Korea Exchange, aliases: [kospi, kosdaq], exposure: [EWY, MU, SMH]}
+  - {name: Federal Register, aliases: [federal register, public inspection], exposure: []}
 
 # Event keywords and how much they add to the impact score (0-100 scale).
 keywords:
@@ -490,6 +530,81 @@ keywords:
   billions: 8
   hike*: 8
 
+  # ---- added 2026-10-09: wording of the Jun-Oct 2026 first reports (docs/research/first-sources-2026.md)
+  # scoops: Bloomberg's "Said to", Reuters' "Exclusive-", deal-talk verbs
+  said to: 10
+  is said to: 12
+  "exclusive-": 14
+  held talks: 14
+  held discussions: 14
+  weighs * bid: 18
+  weigh * bid: 18
+  makes * bid: 18
+  explored * takeover: 18
+  explored * acquisition: 18
+  hired bankers: 15
+  hires bankers: 15
+  tapped bankers: 15
+  tie-up: 15
+  # deals falling apart move as much as the deal itself
+  abandon*: 18
+  walk away: 15
+  walks away: 15
+  no longer pursuing: 18
+  never was a deal: 22
+  no discussions: 15
+  # disclosures on EDGAR (8-K / 13D / 13G) that the press only picks up later
+  schedule 13d: 22
+  schedule 13g: 10
+  "% stake": 12
+  stake in: 8
+  warrant*: 8
+  largest contract: 15
+  in its history: 10
+  in company history: 10
+  # biotech / FDA
+  primary endpoint: 18
+  did not meet: 28
+  failed to meet: 28
+  met its primary endpoint: 22
+  briefing document*: 18
+  advisory committee: 8
+  expense reductions: 10
+  # government, courts, Congress
+  public inspection: 12
+  cloture: 15
+  fails * vote: 15
+  vote fails: 15
+  national security risk: 20
+  rules * unlawful: 25
+  strikes down: 25
+  upholds: 15
+  certification: 8
+  conditional loan: 18
+  conditional * loan: 18
+  no * ipo: 18
+  warns: 12
+  could decline: 10
+  "set to join s&p": 30
+  join the s&p 500: 25
+  added to the s&p 500: 25
+  hostilities: 15
+  is over: 6
+  memorandum of understanding: 18
+  war powers: 15
+  superseding: 10
+  digital services tax: 15
+  dual-use: 15
+  export control list: 25
+  unreliable entity list: 25
+  # markets: threshold crossings and Asia-first shocks
+  highest since: 14
+  lowest since: 10
+  sidecar: 25
+  # prediction markets (odds jumps before the news)
+  jumps * pts: 15
+  odds: 4
+
 # Phrases that make an item LESS likely to be market-moving (subtracted from score).
 penalties:
   stocks to buy: 35
@@ -638,8 +753,8 @@ themes:
   ai_slowdown:
     description: AI leaders calling to slow development / delaying IPOs — hits AI hardware
     all:
-      - [anthropic, openai, altman, amodei, ai labs, frontier ai, ai development, ai leaders, industry chiefs]
-      - [slow down, slowing, slowdown, should slow, pause, moratorium, no ipo, not ipo, will not ipo]
+      - [anthropic, openai, altman, amodei, ai labs, frontier ai, ai development, ai leaders, industry chiefs, sam altman]
+      - [slow down, slowing, slowdown, should slow, pause, moratorium, no ipo, not ipo, will not ipo, pace the frontier, ill-advised, delay* * ipo, delaying * ipo, no openai ipo]
     weight: 25
     direction: down
     tickers: [NVDA, AMD, MU, LRCX, AMAT, SMH]
@@ -653,14 +768,14 @@ themes:
   megacap_earnings:
     description: Quarterly results from a mega-cap (each can move the whole index)
     all:
-      - [financial results, quarterly results, quarter results, results for, reports first, reports second, reports third, reports fourth, fiscal 20*, q1, q2, q3, q4, earnings]
+      - [financial results, quarterly results, quarter results, quarter * results, results for, reports first, reports second, reports third, reports fourth, fiscal 20*, q1, q2, q3, q4, earnings]
       - [nvidia, microsoft, apple, alphabet, google, amazon, meta, tesla, broadcom, oracle, netflix, amd, palantir, salesforce, coreweave, berkshire]
     weight: 35
     direction: mixed
   guidance_shock:
     description: Company cuts/suspends guidance or dividend, CEO exits suddenly, auditor quits
     all:
-      - [cuts * outlook, cuts * forecast, lowers * forecast, lowers guidance, cuts guidance, suspends * outlook, suspends guidance, suspends dividend, withdraws guidance, profit warning, auditor resign*, auditor * resigned, accounting firm resign*, steps down, ceo exit*, ousted, delays 10-k, below the, short of]
+      - [cuts * outlook, cuts * forecast, lowers * forecast, lowers guidance, cuts guidance, suspends * outlook, suspends guidance, suspends dividend, withdraws guidance, profit warning, auditor resign*, auditor * resigned, accounting firm resign*, steps down, ceo exit*, ousted, delays 10-k, below the, short of, warns * could decline, warns * could fall, warns * below, eps could decline]
     weight: 12
     direction: down
   trial_readout:
@@ -772,6 +887,141 @@ themes:
     weight: 15
     direction: mixed
     tickers: [SPY, USO, XLE, LMT, RTX, GLD]
+
+  # ---- added 2026-10-09 from the Jun-Oct 2026 research: patterns the old rules missed
+  deal_scoop:
+    description: Scoop that a company is in talks / weighing a bid / exploring a sale (Workday, UGI, Varonis, AZ-BMS, Chipotle)
+    all:
+      - [exclusive, "exclusive-", sources say, source says, people familiar, said to, is said to, according to people, held talks, held discussions, in talks, has explored, explored, exploring, weighs, weighing, considering, hired bankers, tapped bankers, makes * bid]
+      - [acqui*, buy, buying, takeover, take private, take-private, merger, tie-up, combination, bid, buyout, sale of]
+    weight: 25
+    direction: up
+  deal_collapse:
+    description: A reported or agreed deal falls apart (PayPal -15% on Advent/Stripe walking away)
+    all:
+      - [abandon*, walk away, walks away, drops pursuit, drop pursuit, ends talks, talks collapse, no longer pursuing, never was a deal, no discussions, called off, scrapped, terminat*, pulls out]
+      - [deal, pursuit, merger, acquisition, takeover, talks, bid, tie-up, combination, buyout]
+    weight: 25
+    direction: down
+  housing_finance_regulator:
+    description: FHFA / Fannie-Freddie policy (Pulte's X posts crashed FICO twice in Sep 2026)
+    all:
+      - [fhfa, pulte, fannie mae, freddie mac, fannie and freddie]
+      - [vantagescore, fico, credit score*, pricing grid, llpa, loan-level, effective immediately, hereby, conservatorship, ipo, guarantee fee, g-fee, mortgage]
+    weight: 30
+    direction: mixed
+    tickers: [FICO, RKT, UWMC, XHB]
+  yield_threshold:
+    description: Treasury yields cross a multi-decade threshold (5y 5%, 10y 5.3%, 30y 2007 high) — hits tech, banks, housing
+    all:
+      - [treasury yield*, yield, yields, 10-year, 30-year, 5-year, 2-year, long bond, bund yields, jgb]
+      - [highest since, lowest since, record high, multi-decade, decade high, tops 5%, above 5%, crosses]
+    weight: 28
+    direction: down
+    tickers: [TLT, QQQ, KRE, XHB]
+  asia_market_shock:
+    description: Asian market crash/surge before the US open (Kospi -10.8%, SoftBank -13%, TSMC -7%)
+    all:
+      - [kospi, kosdaq, nikkei, topix, hang seng, taiex, shanghai composite, sk hynix, samsung, softbank, tsmc]
+      - [plunge*, crash*, tumble*, sink*, circuit breaker, sidecar, worst day, halt*, soar*, record]
+    weight: 22
+    direction: mixed
+    tickers: [EWY, EWJ, MU, SMH, SFTBY]
+  fda_action:
+    description: FDA decision or briefing documents (CRLs now surface via companies; briefing docs moved CAPR -40%)
+    all:
+      - [fda, complete response letter, briefing document*, advisory committee, adcom, pdufa]
+      - [approv*, reject*, complete response, concerns, questions, safety, efficacy, vote*, declin*, refus*, clinical hold, receives]
+    weight: 15
+    direction: mixed
+  trial_endpoint:
+    description: Pivotal trial hits or misses its primary endpoint (MRNA +177%, RARE -45%)
+    all:
+      - [phase 3, phase iii, pivotal, late-stage]
+      - [primary endpoint, did not meet, failed to meet, met its primary, statistically significant, topline]
+    weight: 20
+    direction: mixed
+  court_ruling:
+    description: Court ruling on tariffs, antitrust remedies or a company (SCOTUS IEEPA, CIT, Federal Circuit, Mehta, Brinkema)
+    all:
+      - [supreme court, scotus, court of international trade, federal circuit, appeals court, en banc, judge, court rules, ruling, rules, strikes down, upholds, injunction]
+      - [tariff*, ieepa, google, alphabet, apple, meta, amazon, microsoft, nvidia, antitrust, merger, remedy, remedies, breakup, divest*, unconstitutional, unlawful, illegal, refunds]
+    weight: 20
+    direction: mixed
+  sanctions_action:
+    description: OFAC/BIS/Commerce/USTR action (designations, Entity List, Section 232/301)
+    all:
+      - [ofac, sanction*, sdn, designat*, general license, entity list, bureau of industry and security, export control*, section 232, section 301, ustr, waiver]
+      - [iran, russia, china, chinese, oil, tanker*, bank*, chip*, semiconductor*, rosneft, lukoil, huawei, smic, pharmaceutical*, steel, lumber, copper]
+    weight: 15
+    direction: mixed
+  index_inclusion:
+    description: Added to (or dropped from) the S&P 500 / Nasdaq-100 — forced index buying the next days
+    all:
+      - [s&p 500, s&p midcap 400, s&p smallcap 600, nasdaq-100, nasdaq 100, dow jones industrial average]
+      - [join, joins, set to join, added to, to be added, replace, replacing, inclusion, removed from]
+    weight: 20
+    direction: up
+  prediction_market_jump:
+    description: Prediction-market odds jump on a geopolitical/macro question (insiders bet before Iran news in 2026)
+    all:
+      - [polymarket, kalshi, prediction market]
+      - [jumps, surges, spikes, plunges, collapses, swings, flips]
+    weight: 18
+    direction: mixed
+  government_financing:
+    description: Government loan / equity / contract for a company (DoD, DOE, CHIPS Act)
+    all:
+      - [department of defense, department of war, pentagon, department of energy, doe, office of strategic capital, chips act, commerce department]
+      - [conditional loan, conditional * loan, loan, equity stake, grant, awarded * stake]
+    weight: 20
+    direction: up
+  congress_china_finding:
+    description: Congressional China committee / Senate panel findings on a listed company (Webull -20%)
+    all:
+      - [select committee, china committee, house committee, congressional panel, senate committee, lawmakers]
+      - [national security, chinese government, ccp, ties to, delist*, ban, security risk]
+    weight: 18
+    direction: down
+  ceo_exit_now:
+    description: CEO leaves effective immediately (MDB -18%)
+    all:
+      - [ceo, chief executive]
+      - [resign*, steps down, depart*, exit*, leav*, ousted, to join]
+      - [effective immediately, immediately, abrupt*, unexpected*, sudden*]
+    weight: 20
+    direction: down
+  regulator_blocks_product:
+    description: Regulator delays/blocks a product certification (FAA on the 737 MAX 10)
+    all:
+      - [faa, fda, ftc, fcc, nhtsa, regulator, regulators]
+      - [delay*, delaying, halt*, ground*, block*, reject*, not certify, withhold*, recall*]
+      - [boeing, "737", max, certification, approval, aircraft, vehicle*, drug, device]
+    weight: 28
+    direction: down
+  scheduled_payrolls:
+    description: Payrolls/jobs print with a big negative or far-from-consensus number
+    all:
+      - [nonfarm payrolls, payrolls, jobs report]
+      - ["-*k", "est.", estimate*, expected, revised, unemployment rate]
+    weight: 12
+    direction: mixed
+    tickers: [SPY, QQQ, TLT]
+  strategic_stake:
+    description: A strategic or activist holder discloses a stake (EDGAR 13D/13G before any press, e.g. Nvidia in Nebius)
+    all:
+      - [schedule 13d, schedule 13g, 13d, 13g, stake in, "% stake", activist stake, takes stake, discloses stake]
+      - [nvidia, microsoft, alphabet, google, amazon, apple, meta, berkshire, softbank, openai, anthropic, tesla, oracle, activist, elliott, icahn, starboard, pershing square, trian, jana, third point, valueact]
+    weight: 20
+    direction: up
+  crypto_legislation:
+    description: Crypto market-structure bill / White House crypto push (CLARITY Act)
+    all:
+      - [clarity act, genius act, market structure bill, crypto bill, stablecoin bill, crypto]
+      - [pass, passes, urges, fails, cloture, vote, signs, veto*, congress, senate]
+    weight: 18
+    direction: mixed
+    tickers: [COIN, MSTR, HOOD, IBIT]
 
 # Price-move baskets ("groups"): a group alert fires when the group's average move
 # over `window` seconds reaches `pct` and at least `min_members` members moved >= pct/2

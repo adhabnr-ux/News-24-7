@@ -317,8 +317,10 @@ class Scorer:
             reasons.append(f"(themes capped at {THEME_CAP:.0f})")
         score += min(THEME_CAP, theme_total)
 
-        # --- relevance: news about tickers nobody tracks is scaled down
-        if explicit and not companies and not themes and not any(t in self.tracked for t in explicit):
+        # --- relevance: news about tickers nobody tracks is scaled down. Themes that name their
+        # own tickers (sector baskets) make it relevant; generic ones (FDA, deal talk) don't.
+        relevant_theme = any(t.tickers for t in themes)
+        if explicit and not companies and not relevant_theme and not any(t in self.tracked for t in explicit):
             score *= UNKNOWN_TICKER_FACTOR
             reasons.append(f"×{UNKNOWN_TICKER_FACTOR} untracked ticker(s) {', '.join(explicit[:3])}")
 

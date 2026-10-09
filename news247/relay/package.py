@@ -13,7 +13,14 @@ from pathlib import Path
 
 from .. import __version__
 
-DEPENDENCIES = ["aiohttp>=3.9", "feedparser>=6.0", "PyYAML>=6.0", "tzdata>=2024.1"]
+DEPENDENCIES = [
+    "aiohttp>=3.9",
+    "feedparser>=6.0",
+    "PyYAML>=6.0",
+    "tzdata>=2024.1",
+    "cryptography>=41",
+    "pg8000>=1.31",
+]
 
 PYPROJECT = f"""[build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -33,7 +40,7 @@ news247 = "news247.cli:main"
 include = ["news247*"]
 
 [tool.setuptools.package-data]
-news247 = ["web/static/*", "data/*.yaml", "relay/*.sh"]
+news247 = ["web/static/*", "web/static/app/*", "data/*.yaml", "relay/*.sh"]
 """.replace("'", '"')
 
 

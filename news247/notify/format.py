@@ -107,3 +107,11 @@ def whatsapp_text(alert: Alert, limit: int = 1500) -> str:
     head, sep, rest = text.partition("\n")
     head = head.replace("*", "").strip()  # squawk headlines start with '*', which would break the bold
     return f"*{head}*{sep}{rest}"
+
+
+def push_text(alert: Alert) -> str:
+    """Notification body: everything from the SMS layout except the title line and the link."""
+    lines = sms_text(alert, limit=2000).split("\n")[1:]
+    if alert.url and lines and lines[-1] == alert.url:
+        lines = lines[:-1]
+    return "\n".join(lines)
