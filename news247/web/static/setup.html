@@ -186,6 +186,12 @@ async function loadCloud() {
   const lines = [`<div class="row"><span><span class="dot ${ok ? "on" : "off"}"></span><b>${ok ? "Connected" : "Not connected"}</b>${ph.display_phone_number ? ` <span class="muted">sender +${esc(ph.display_phone_number.replace(/\D/g, ""))}${ph.verified_name ? " · " + esc(ph.verified_name) : ""}</span>` : ""}</span>
       <span class="muted">${st.stats.text + st.stats.template + st.stats.ping} sent${st.stats.delivered ? ` · ${st.stats.delivered} delivered` : ""}${st.stats.read ? ` · ${st.stats.read} read` : ""}</span></div>`];
   if (st.last_error) lines.push(`<div class="bad" style="font-size:13px">${esc(st.last_error)}</div>`);
+  const hs = st.health || {};
+  if (hs.can_send_message) {
+    const cls = hs.can_send_message === "AVAILABLE" ? "ok" : hs.can_send_message === "LIMITED" ? "warn" : "bad";
+    lines.push(`<div class="row" style="font-size:13px"><span>Meta health check${st.account && st.account.account_review_status ? ` · account review: ${esc(st.account.account_review_status.toLowerCase())}` : ""}</span><span class="${cls}">${esc(hs.can_send_message.toLowerCase())}</span></div>`);
+    (hs.problems || []).forEach((p) => lines.push(`<div class="${p.status === "BLOCKED" ? "bad" : "warn"}" style="font-size:13px">${esc(p.entity)}${p.code ? " " + esc(p.code) : ""}: ${esc(p.description)}${p.solution ? `<br><span class="muted">Fix: ${esc(p.solution)}</span>` : ""}</div>`));
+  }
   lines.push(`<div class="row" style="font-size:13px"><span>Alert template <b>${esc(st.template)}</b></span><span class="${tpl === "APPROVED" ? "ok" : tpl === "PENDING" ? "warn" : "bad"}">${esc(tpl.toLowerCase())}</span></div>`);
   if (st.template_note) lines.push(`<div class="muted" style="font-size:12px">${esc(st.template_note)}</div>`);
   for (const [num, closes] of Object.entries(st.window_closes || {})) {

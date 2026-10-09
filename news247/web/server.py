@@ -22,6 +22,11 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+# no dashboard token: health checks, endpoints that authenticate themselves (relays, Meta's webhook)
+# and the public pages Meta requires (business website, privacy policy, terms)
+PUBLIC_PATHS = {"/health", "/relay/ws", "/webhooks/whatsapp", "/about", "/privacy", "/terms"}
+
+
 def _json(data: Any) -> web.Response:
     return web.json_response(data, dumps=lambda d: json.dumps(d, default=str))
 
@@ -55,6 +60,9 @@ class WebServer:
         app.router.add_post("/api/whatsapp/pair", self.api_whatsapp_pair)
         app.router.add_post("/api/whatsapp/unlink", self.api_whatsapp_unlink)
         app.router.add_get("/api/whatsapp-cloud", self.api_whatsapp_cloud)
+        app.router.add_get("/about", self.public_page)
+        app.router.add_get("/privacy", self.public_page)
+        app.router.add_get("/terms", self.public_page)
         app.router.add_get("/webhooks/whatsapp", self.whatsapp_webhook_verify)
         app.router.add_post("/webhooks/whatsapp", self.whatsapp_webhook)
         return app
@@ -62,7 +70,7 @@ class WebServer:
     @web.middleware
     async def _auth(self, request: web.Request, handler: Any) -> web.StreamResponse:
         # these authenticate themselves: relays (challenge-response), Meta (verify token/signature)
-        if self.cfg.token and request.path not in ("/health", "/relay/ws", "/webhooks/whatsapp"):
+        if self.cfg.token and request.path not in PUBLIC_PATHS:
             supplied = request.query.get("token") or request.headers.get("Authorization", "").removeprefix(
                 "Bearer "
             )
@@ -292,6 +300,13 @@ class WebServer:
         cloud._tasks.add(task)
         task.add_done_callback(cloud._tasks.discard)
         return web.Response(text="ok")
+
+    async def public_page(self, request: web.Request) -> web.Response:
+        from .public_pages import about_page, contact_email, privacy_page, terms_page
+
+        contact = contact_email(self.engine.cfg.general.user_agent, os.environ.get("CONTACT_EMAIL", ""))
+        page = {"/about": about_page, "/privacy": privacy_page, "/terms": terms_page}[request.path](contact)
+        return web.Response(text=page, content_type="text/html")
 
     async def health(self, request: web.Request) -> web.Response:
         st = self.engine.status()

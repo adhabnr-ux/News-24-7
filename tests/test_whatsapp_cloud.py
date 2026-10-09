@@ -427,3 +427,86 @@ async def test_engine_maintains_template_and_keepalive(tmp_path, meta, server):
     finally:
         stop.set()
         await asyncio.wait_for(run, 10)
+
+
+# --------------------------------------------------------------------------- locked accounts + public pages
+
+
+async def test_locked_account_explains_itself(meta, http):
+    async def locked(request: web.Request) -> web.Response:
+        return FakeMeta.error(131031, "Business Account locked")
+
+    health = {
+        "health_status": {
+            "can_send_message": "BLOCKED",
+            "entities": [
+                {"entity_type": "PHONE_NUMBER", "id": PHONE_ID, "can_send_message": "AVAILABLE"},
+                {
+                    "entity_type": "WABA",
+                    "id": WABA,
+                    "can_send_message": "BLOCKED",
+                    "errors": [
+                        {
+                            "error_code": 141006,
+                            "error_description": "There is an error with the payment method.",
+                            "possible_solution": "Add a valid payment method or complete Business info.",
+                        }
+                    ],
+                },
+            ],
+        }
+    }
+
+    async def node(request: web.Request) -> web.Response:
+        if request.query.get("fields") == "health_status":
+            return web.json_response(health)
+        return web.json_response({"name": "News247", "account_review_status": "PENDING"})
+
+    app = web.Application()
+    app.router.add_post("/v23.0/{phone}/messages", locked)
+    app.router.add_get("/v23.0/{node}", node)
+    srv = TestServer(app)
+    await srv.start_server()
+    try:
+        c = CloudAPI(
+            http, token=TOKEN, phone_number_id=PHONE_ID, waba_id=WABA, api_base=str(srv.make_url(""))
+        )
+        with pytest.raises(CloudError) as exc:
+            await c.send_alert(ME, FULL, "t")
+        assert (
+            exc.value.code == 131031 and "Business info" in str(exc.value) and "Setup page" in str(exc.value)
+        )
+        await asyncio.sleep(0.1)  # the health check runs in the background after a lock
+        st = c.status()
+        assert (
+            st["health"]["can_send_message"] == "BLOCKED"
+            and st["account"]["account_review_status"] == "PENDING"
+        )
+        (problem,) = st["health"]["problems"]
+        assert (
+            problem["entity"] == "WABA" and problem["code"] == 141006 and "payment" in problem["description"]
+        )
+        assert "131031" in st["last_error"]
+    finally:
+        await srv.close()
+
+
+async def test_public_pages_for_meta(tmp_path, meta):
+    eng = cloud_engine(tmp_path, meta)
+    eng.cfg.general.user_agent = "News247Monitor/1.0 (owner@example.com)"
+    srv = TestServer(WebServer(eng, eng.cfg.web).app)
+    await srv.start_server()
+    try:
+        async with aiohttp.ClientSession() as s:
+            for path, must in (
+                ("/about", "personal market-news alert"),
+                ("/privacy", 'id="deletion"'),
+                ("/terms", "not investment advice"),
+            ):
+                async with s.get(srv.make_url(path)) as r:  # no dashboard token needed
+                    text = await r.text()
+                    assert r.status == 200 and must in text and "owner@example.com" in text, path
+            async with s.get(srv.make_url("/api/status")) as r:
+                assert r.status == 401  # everything else stays private
+    finally:
+        await srv.close()

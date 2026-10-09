@@ -95,6 +95,39 @@ That's it. It runs 24/7 at no cost.
   - Meta's pricing for messages can change ([Meta](https://developers.facebook.com/documentation/business-messaging/whatsapp/get-started)). The test number doesn't require a payment method, so you can't be charged.
 - **Template wording:** the alert template reads "📈 News247 alert: <headline · tickers> — tap below for the full details." Meta doesn't allow a template to start or end with the variable part, so the fixed words stay.
 
+## If Meta says "Business Account locked" (131031)
+
+On brand-new setups Meta's automated checks often lock the WhatsApp Business Account before a single real message has gone out. The usual triggers are a business profile without a working website or legal name, and an unpublished app. Meta's free test numbers are also known to get stuck in this state. News247 gives you everything Meta asks for. Your server serves these public pages (replace the address with yours):
+
+| Page | Address |
+|---|---|
+| Website | `https://<your-app>.onrender.com/about` |
+| Privacy policy (with data-deletion instructions) | `https://<your-app>.onrender.com/privacy` |
+| Terms of service | `https://<your-app>.onrender.com/terms` |
+
+1. **See Meta's exact reason.** The Setup page's WhatsApp section shows **Meta health check: blocked**, plus Meta's own error description and suggested fix for each part (app, business, WhatsApp account, number).
+2. **Complete Business info.** Go to business.facebook.com → **Settings → Business info → Edit**.
+   - **Legal business name:** your full name. A personal business portfolio is fine.
+   - Add your address and phone number.
+   - **Website:** the `/about` address above.
+3. **Publish the app.** On developers.facebook.com, open the News247 app.
+   - Under **App settings → Basic**, set:
+     - **Privacy policy URL:** `/privacy`
+     - **Terms of service URL:** `/terms`
+     - **User data deletion → Data deletion instructions URL:** `/privacy#deletion`
+     - **Category:** any; Business and pages works.
+     - **App icon:** any square image.
+   - **Save**, then switch **App mode** to **Live** (or click **Publish**).
+   - Publishing your own app for your own WhatsApp account doesn't normally need business verification. If the dashboard insists, it says exactly what's missing.
+   - Published apps also receive your real replies through the webhook. Unpublished apps only get Meta's test events.
+4. **Ask for a review.** Go to business.facebook.com → **Account Quality** (or WhatsApp Manager → Overview). If your WhatsApp account shows **Request review**, use it and say it's a personal alert tool that only messages its owner.
+5. Wait for the Setup page's health check to turn **available**. It re-checks every 2 minutes while there's a problem. Then press **Send test message**.
+6. **Still locked after a day or two?** Meta's test numbers sometimes stay stuck. Your business info is complete now, so create a **new app** with the WhatsApp use case inside the same business portfolio; it gets a fresh test number. Then:
+   - add your number as a recipient again;
+   - give the system user access to the new app and WhatsApp account, and generate a new token;
+   - in Render, update `WHATSAPP_CLOUD_TOKEN`, `WHATSAPP_CLOUD_PHONE_ID`, `WHATSAPP_CLOUD_WABA_ID` and `WHATSAPP_CLOUD_APP_SECRET`;
+   - set the webhook up in the new app.
+
 ## Troubleshooting
 
 | Setup page shows | Fix |
@@ -104,3 +137,5 @@ That's it. It runs 24/7 at no cost.
 | Template `rejected` | Delete it in WhatsApp Manager → Message templates. News247 recreates it on the next restart, or set `WHATSAPP_CLOUD_TEMPLATE` to a new name. |
 | Webhook "nothing received yet" | Check the Callback URL and Verify token in Meta → WhatsApp → Configuration, and that **messages** is subscribed. |
 | Alerts arrive as "Hello World" | The template is still in review. Reply anything to get the alerts in full. |
+| `error 131031 … Business Account locked` | See [If Meta says "Business Account locked"](#if-meta-says-business-account-locked-131031) above. |
+| Meta test webhook works but your real replies don't arrive | The app is unpublished: publish it (step 3 of the section above). |

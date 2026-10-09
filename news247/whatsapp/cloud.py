@@ -36,6 +36,12 @@ log = logging.getLogger(__name__)
 WINDOW_S = 24 * 3600
 WINDOW_MARGIN_S = 30 * 60  # treat the window as closed a little early (clock skew, slow sends)
 REENGAGE = 131047  # "more than 24 hours have passed since the recipient last replied"
+LOCKED = 131031  # "Business Account locked": Meta restricted the WhatsApp Business Account
+LOCKED_HINT = (
+    " — Meta locked the WhatsApp Business Account. The Setup page shows Meta's health check with the "
+    "exact reason; usual fix: complete Business info (legal name, address, website), publish the app, "
+    "and request a review (docs/FREE-SETUP.md#if-meta-says-business-account-locked-131031)"
+)
 DETAILS_BUTTON = "Show details"
 DETAILS_WORDS = {"details", "show details", "more details", "full", "show", "alerts", "what", "what happened"}
 TEMPLATE_BODY = "📈 News247 alert: {{1}} — tap below for the full details."
@@ -44,6 +50,8 @@ TEMPLATE_EXAMPLE = "🔴 OpenAI launches enterprise agents · ▼ CRM INTU NOW �
 
 class CloudError(RuntimeError):
     def __init__(self, code: int | None, message: str) -> None:
+        if code == LOCKED and LOCKED_HINT not in message:
+            message += LOCKED_HINT
         super().__init__(
             f"WhatsApp Cloud API error {code}: {message}" if code else f"WhatsApp Cloud API: {message}"
         )
@@ -89,6 +97,8 @@ class CloudAPI:
         self.recipients: list[str] = []
         self.on_inbound: Callable[[str, str], Awaitable[str | None]] | None = None
         self.phone: dict[str, Any] = {}
+        self.health: dict[str, Any] = {}  # Meta's health_status: can the number send, and if not, why
+        self.account: dict[str, Any] = {}
         self.template_status = ""  # APPROVED | PENDING | REJECTED | PAUSED | DISABLED | missing | ""
         self.template_note = ""
         self.last_error = ""
@@ -129,6 +139,45 @@ class CloudAPI:
             self.phone_number_id,
             params={"fields": "display_phone_number,verified_name,quality_rating,code_verification_status"},
         )
+
+    async def refresh_health(self) -> dict[str, Any]:
+        """Meta's own diagnosis (GET <phone>?fields=health_status): per node (app, business, WABA,
+        number) whether it can send, and if not the error, its description and a possible fix."""
+        data = await self._graph("GET", self.phone_number_id, params={"fields": "health_status"})
+        hs = data.get("health_status") or {}
+        problems = []
+        for ent in hs.get("entities") or []:
+            for err in ent.get("errors") or []:
+                problems.append(
+                    {
+                        "entity": ent.get("entity_type", ""),
+                        "status": ent.get("can_send_message", ""),
+                        "code": err.get("error_code"),
+                        "description": err.get("error_description", ""),
+                        "solution": err.get("possible_solution", ""),
+                    }
+                )
+            for info in ent.get("additional_info") or []:
+                problems.append(
+                    {
+                        "entity": ent.get("entity_type", ""),
+                        "status": ent.get("can_send_message", ""),
+                        "code": None,
+                        "description": str(info),
+                        "solution": "",
+                    }
+                )
+        self.health = {
+            "can_send_message": hs.get("can_send_message", ""),
+            "problems": problems,
+            "checked": time.time(),
+        }
+        if self.waba_id:
+            with contextlib.suppress(CloudError):
+                self.account = await self._graph(
+                    "GET", self.waba_id, params={"fields": "name,account_review_status"}
+                )
+        return self.health
 
     async def ensure_template(self) -> str:
         """Create the alert template if it doesn't exist; return its review status."""
@@ -181,11 +230,17 @@ class CloudAPI:
         while not stop.is_set():
             try:
                 await self.refresh_phone()
+                with contextlib.suppress(CloudError):  # diagnostics only: never blocks sending
+                    await self.refresh_health()
                 await self.ensure_template()
                 self.last_error = ""
             except Exception as exc:  # noqa: BLE001 - shown on the Setup page, retried
-                self.last_error = str(exc)[:300]
+                self.last_error = str(exc)[:600]
                 log.warning("WhatsApp Cloud API check failed: %s", self.last_error)
+            if self.health.get("can_send_message") == "BLOCKED":
+                self.last_error = (
+                    self.last_error or "Meta reports this number can't send messages (see the health check)"
+                )
             wait = (
                 120
                 if (self.template_status in ("PENDING", "") and self.waba_id) or self.last_error
@@ -277,6 +332,20 @@ class CloudAPI:
 
     async def send_alert(self, to: str, full: str, title: str) -> str:
         """Deliver one alert in the best form Meta currently allows."""
+        try:
+            wamid = await self._send_alert(to, full, title)
+            if self.last_error.startswith("WhatsApp Cloud API error"):
+                self.last_error = ""  # a send worked again
+            return wamid
+        except CloudError as exc:
+            if exc.code == LOCKED:  # fetch Meta's reason now so the Setup page can show it
+                task = asyncio.ensure_future(self.refresh_health())
+                self._tasks.add(task)
+                task.add_done_callback(lambda t: (self._tasks.discard(t), t.cancelled() or t.exception()))
+            self.last_error = str(exc)[:600]
+            raise
+
+    async def _send_alert(self, to: str, full: str, title: str) -> str:
         d = digits(to)
         if self.window_open(d) or self.template_status != "APPROVED":
             try:  # free-form: allowed inside the window (and maybe after a restart, when we can't know)
@@ -415,6 +484,8 @@ class CloudAPI:
         windows = {f"+{d}": self.window_closes(d) for d in (digits(r) for r in self.recipients)}
         return {
             "phone": self.phone,
+            "health": self.health,
+            "account": self.account,
             "template": self.template,
             "template_status": self.template_status,
             "template_note": self.template_note,
