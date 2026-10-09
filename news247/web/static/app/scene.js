@@ -35,6 +35,9 @@ uniform float uMood;
 uniform float uTension;
 uniform vec2  uTexel;
 uniform float uSharp;
+uniform float uBlur;
+uniform float uQuality;
+uniform float uPull;
 
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p) {
@@ -48,7 +51,7 @@ float fbm(vec2 p) {
 }
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
-vec3 photo(vec2 uv) { return texture2D(uPhoto, clamp(uv, vec2(0.001, 0.0005), vec2(0.999, 0.9995))).rgb; }
+vec3 photo(vec2 uv) { return texture2D(uPhoto, clamp(uv, vec2(0.001, 0.0005), vec2(0.999, 0.9995)), uBlur).rgb; }   // uBlur: mip bias = rack focus
 
 // distant stars + a faint galactic band, shown above the top of the photograph
 vec3 space(vec2 uv, float amt, float t) {
@@ -78,7 +81,7 @@ void main() {
   float hh0 = min(0.5, 0.5 * uAspect / sa);
   float k1 = smoothstep(0.0, 0.55, uClimb);
   float k2 = smoothstep(0.35, 2.2, uClimb);
-  float zoom = (1.0 + 0.38 * k1 + 0.30 * k2) * (1.0 + 0.11 * (1.0 - uIntro) * (1.0 - uIntro));
+  float zoom = (1.0 + 0.38 * k1 + 0.30 * k2) * (1.0 + 0.11 * (1.0 - uIntro) * (1.0 - uIntro)) * (1.0 - 0.10 * uPull);
   float anchor = mix(0.5, 0.565, 1.0 - smoothstep(0.2, 0.5, hh0));   // wide screens frame the whole rocket + plume
   float cy = mix(anchor, anchor - 0.30, k1) - 0.75 * k2;
   float hh = hh0 / zoom, hw = hh * sa / uAspect;
@@ -178,6 +181,35 @@ void main() {
     col = mix(col, above, clamp(seam * seam * (3.0 - 2.0 * seam) + step(uv0.y, 0.0), 0.0, 1.0));
   }
 
+  // ---- procedural micro-detail: the photo is 2x upscaled, so add the fine grain real clouds, smoke and mud have
+  if (uQuality > 0.5 && uBlur < 0.5) {
+    float ld = luma(col);
+    float dm = smoothstep(0.18, 0.55, ld) * (1.0 - smoothstep(0.85, 1.0, ld));      // mid-bright: clouds and sunlit ground
+    float n1 = noise(uv * vec2(780.0, 520.0)), n2 = noise(uv * vec2(1700.0, 1100.0) + 3.3);
+    col *= 1.0 + ((n1 - 0.5) * 0.10 + (n2 - 0.5) * 0.07) * dm * (0.4 + 0.6 * smoothstep(0.30, 0.75, uv.y));
+  }
+
+  // ---- anamorphic streak off the plume's base, and light dust drifting in the golden air
+  {
+    float sx = uv.x - 0.489, sy = uv.y - 0.676;
+    float streak = exp(-abs(sy) * 210.0) * exp(-abs(sx) * 4.2) * (0.16 + 0.10 * fk + 0.5 * uPulse + 0.35 * pow(max(1.0 - uIntro, 0.0001), 2.0));
+    col += vec3(1.0, 0.78, 0.55) * streak * smoothstep(0.0, 0.2, uv0.y + 0.2);
+  }
+  if (uQuality > 0.5) {
+    for (int i = 0; i < 14; i++) {
+      float id = float(i);
+      float z = 0.25 + 0.75 * hash(vec2(id, 21.0));                                   // depth: near motes are big, soft, fast
+      vec2 p0 = vec2(hash(vec2(id, 22.0)), hash(vec2(id, 23.0)));
+      vec2 p = fract(p0 + vec2(t * 0.004 * z + uTilt.x * 0.05 * z, -t * 0.007 * z - uClimb * 0.30 * z + uTilt.y * 0.03 * z));
+      vec2 dd = (s - p) * vec2(sa, 1.0);
+      float r = 0.006 + 0.020 * z;
+      float d = length(dd);
+      float disc = (1.0 - smoothstep(r * 0.55, r, d)) * 0.5 + (1.0 - smoothstep(r * 0.86, r, d)) * smoothstep(r * 0.7, r * 0.9, d) * 0.5;   // bokeh: a disc with a brighter rim
+      float lit = smoothstep(0.25, 0.85, luma(col));
+      col += vec3(1.0, 0.86, 0.66) * disc * (0.025 + 0.06 * lit) * (0.6 + 0.4 * sin(t * (0.4 + z) + id * 5.0)) * (1.0 - 0.7 * uBlur);
+    }
+  }
+
   // ---- the lower frame darkens a little as we leave the pad behind
   col *= 1.0 - 0.18 * k1;
 
@@ -211,12 +243,15 @@ void main() {
 
   const Scene = {
     ok: false, climb: 0, climbTarget: 0, tilt: [0, 0], tiltTarget: [0, 0], intro: 0, introStart: null,
-    scale: 1, frames: 0, slow: 0, paused: false, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    scale: 1, tier: 1, frames: 0, slow: 0, paused: false, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
     onReady: null,
 
     async start(canvas, opts) {
       opts = opts || {};
       this.canvas = canvas;
+      // device tier: modest phones skip the dust motes and micro-detail and render fewer pixels
+      const mem = navigator.deviceMemory || 4, cores = navigator.hardwareConcurrency || 4;
+      if (mem <= 2 || cores <= 3) { this.tier = 0; this.scale = 0.75; }
       const q = parseFloat(new URLSearchParams(location.search).get("scale"));  // ?scale=0.4 renders fewer pixels (testing, slow GPUs)
       if (q > 0.2 && q <= 1) this.scale = q;
       const photoUrl = opts.photo || "/app/launch.webp", depthUrl = opts.depth || "/app/depth.png";
@@ -251,7 +286,7 @@ void main() {
         tex(0, photo, true); tex(1, depth, false);
         this.gl = gl;
         this.u = {};
-        ["uPhoto", "uDepth", "uRes", "uTime", "uClimb", "uTilt", "uIntro", "uAspect", "uMotion", "uPulse", "uMood", "uTension", "uTexel", "uSharp"].forEach((n) => (this.u[n] = gl.getUniformLocation(prog, n)));
+        ["uPhoto", "uDepth", "uRes", "uTime", "uClimb", "uTilt", "uIntro", "uAspect", "uMotion", "uPulse", "uMood", "uTension", "uTexel", "uSharp", "uBlur", "uQuality", "uPull"].forEach((n) => (this.u[n] = gl.getUniformLocation(prog, n)));
         gl.uniform1i(this.u.uPhoto, 0); gl.uniform1i(this.u.uDepth, 1);
         gl.uniform1f(this.u.uAspect, photo.width / photo.height);
         gl.uniform2f(this.u.uTexel, 1 / photo.width, 1 / photo.height);
@@ -293,7 +328,7 @@ void main() {
       const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
       const hh0 = Math.min(0.5, (0.5 * ia) / sa), cl = this.climb;
       const k1 = sm(0, 0.55, cl), k2 = sm(0.35, 2.2, cl), iv = 1 - this.intro;
-      const zoom = (1 + 0.38 * k1 + 0.3 * k2) * (1 + 0.11 * iv * iv);
+      const zoom = (1 + 0.38 * k1 + 0.3 * k2) * (1 + 0.11 * iv * iv) * (1 - 0.1 * (this.pull || 0));
       const anchor = 0.5 + 0.065 * (1 - sm(0.2, 0.5, hh0));
       const cy = anchor + (anchor - 0.3 - anchor) * k1 - 0.75 * k2;
       const hh = hh0 / zoom, hw = (hh * sa) / ia, dz = (depth ?? 0.46) - 0.32;
@@ -304,6 +339,8 @@ void main() {
 
     ignite() { this.introStart = performance.now(); },
     pulse() { this.pulseAt = performance.now(); },
+    setPull(v) { this.pullTarget = v; },
+    setBlur(v) { this.blurTarget = v; },
     setMood(open, tension) { this.moodTarget = open ? 1 : 0; this.tensionTarget = tension || 0; },
     setClimb(v) { this.climbTarget = v; },
     setTilt(x, y) { this.tiltTarget = [Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y))]; },
@@ -333,6 +370,11 @@ void main() {
       this.mood = (this.mood ?? 0.5) + ((this.moodTarget ?? 0.5) - (this.mood ?? 0.5)) * (1 - Math.exp(-dt * 0.8));
       this.tension = (this.tension ?? 0) + ((this.tensionTarget ?? 0) - (this.tension ?? 0)) * (1 - Math.exp(-dt * 0.6));
       gl.uniform1f(this.u.uMood, this.mood); gl.uniform1f(this.u.uTension, this.tension);
+      this.blur = (this.blur ?? 0) + ((this.blurTarget ?? 0) - (this.blur ?? 0)) * (1 - Math.exp(-dt * 4.0));   // rack focus eases in and out
+      gl.uniform1f(this.u.uBlur, this.blur);
+      gl.uniform1f(this.u.uQuality, this.tier);
+      this.pull = (this.pull ?? 0) + ((this.pullTarget ?? 0) - (this.pull ?? 0)) * (1 - Math.exp(-dt * 9.0));
+      gl.uniform1f(this.u.uPull, this.pull);
       const pk = this.pulseAt ? Math.max(0, 1 - (now - this.pulseAt) / 1800) : 0;
       gl.uniform1f(this.u.uPulse, pk * pk * (this.reduced ? 0 : 1));
       if (this.climb > 1.1 && (this.frames & 1) && !this.pulseAt) { this.frames++; requestAnimationFrame((n) => this.loop(n)); return; }

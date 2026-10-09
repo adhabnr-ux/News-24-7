@@ -14,7 +14,7 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platfor
 const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const pushCapable = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let alerts = [], app = {}, tab = "tape", unread = 0, showAll = false;
+let alerts = [], app = {}, tab = "tape", unread = 0, showAll = false, sheetOpen = false;
 const seen = new Set();
 
 function setManifest() { $("manifest").href = "/app/manifest.webmanifest" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""); }
@@ -303,10 +303,11 @@ async function openSheet(id) {
   ].filter(Boolean);
   $("sheetBody").innerHTML = blocks.join("");
   [...$("sheetBody").children].forEach((c, i) => c.style.setProperty("--k", i));
-  document.body.style.overflow = "hidden";
+  document.body.style.overflow = "hidden"; sheetOpen = true; Fx.dirty = true;
   $("scrim").classList.add("on"); $("sheet").classList.add("on"); $("sheet").scrollTop = 0;
 }
 function closeSheet() {
+  sheetOpen = false; Fx.dirty = true;
   $("scrim").classList.remove("on"); $("sheet").classList.remove("on"); document.body.style.overflow = "";
   if (/#a=/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
 }
@@ -493,7 +494,10 @@ const Fx = {
     Scene.setTilt(Motion.on ? Motion.gx : Motion.px * 0.6, Motion.on ? Motion.gy : Motion.py * 0.6);
     // veil: the hero is the raw photograph; content gets a darker sky behind it
     const veil = tab === "tape" ? clamp((y - vh * 0.30) / (vh * 0.55)) * 0.9 : 0.55 + clamp(y / vh) * 0.3;
+    Scene.setPull(clamp(-y / 160));   // iOS rubber-band at the top: the camera dips toward the pad
     doc.style.setProperty("--veil", veil.toFixed(3));
+    // rack focus: the scene softens behind content so cards and text separate from it, like a lens pulling focus
+    Scene.setBlur(sheetOpen ? 3.2 : tab === "tape" ? clamp((y - vh * 0.35) / (vh * 0.9)) * 1.6 : 1.2 + clamp(y / vh) * 0.6);
     doc.style.setProperty("--sy", clamp(y / vh, 0, 3).toFixed(3));
     // light follows the phone (or the scroll, when there's no gyro)
     const gx = 50 + (Motion.on ? Motion.gx : Motion.px) * 38, gy = Motion.on ? 14 + Motion.gy * 26 : 10 + (Motion.py + 1) * 12 + ((y / vh) % 1) * 24;
@@ -550,7 +554,12 @@ const Fx = {
     requestAnimationFrame(() => this.tick());
   },
 };
-addEventListener("scroll", () => (Fx.dirty = true), { passive: true });
+let lastY = 0;
+addEventListener("scroll", () => {
+  Fx.dirty = true;
+  const y = scrollY, d = y - lastY;
+  if (Math.abs(d) > 6) { $("dock").classList.toggle("tucked", d > 0 && y > 120 && !sheetOpen); lastY = y; }   // tuck away while reading down, return on the way up
+}, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
 const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch };
