@@ -95,6 +95,7 @@ class Analysis:
     direction: str = "unknown"  # "up" | "down" | "mixed" | "unknown"
     summary: str = ""  # optional one-liner (LLM)
     llm_used: bool = False
+    smallcap: dict[str, Any] = field(default_factory=dict)  # small/mid-cap catalyst read, if any
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

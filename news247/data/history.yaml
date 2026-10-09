@@ -1576,6 +1576,300 @@ events:
       - "Well-timed bets on Polymarket tied to the Iran war draw scrutiny"
 
 
+  # ======================================================================= the little things
+  # Small and mid caps that moved 25–3,000% on one headline (research 2026-10-09, sources in
+  # docs/SMALLCAPS.md). `smallcap` is what the market-cap universe knew BEFORE the move
+  # (market cap ≈ last close × shares; `price` only where a per-share offer needs it, derived
+  # from the stated premium). `tickers` on a headline = the exchange:ticker category the wire
+  # attaches (GlobeNewswire / PR Newswire), which the live RSS source reads.
+  - id: serve-nvidia-13g
+    date: 2024-07-19
+    category: smallcap_mega_stake
+    first_source: "SEC EDGAR Schedule 13G filed by NVIDIA"
+    move: "SERV +187% close, +233% over two days"
+    tickers: [SERV]
+    smallcap: {symbol: SERV, name: "Serve Robotics Inc.", mcap: 100e6, industry: "Industrial Machinery/Components"}
+    first_reports:
+      - {text: "SCHEDULE 13G: Nvidia Corp discloses stake in Serve Robotics Inc. (SERV)", tier: primary, approx: true}
+
+  - id: ilearningengines-hindenburg
+    date: 2024-08-29
+    category: smallcap_short_report
+    first_source: "hindenburgresearch.com + X, premarket"
+    move: "AILE −30% early, −60% at the low"
+    tickers: [AILE]
+    smallcap: {symbol: AILE, name: "iLearningEngines, Inc.", mcap: 430e6, industry: "Computer Software: Prepackaged Software"}
+    first_reports:
+      - {text: "@HindenburgRes: We are short iLearningEngines: the majority of iLearningEngines' revenue doesn't exist", tier: primary, entities: [], approx: true}
+
+  - id: cassava-rethink-alz
+    date: 2024-11-25
+    category: smallcap_trial
+    move: "SAVA −83.8%"
+    tickers: [SAVA]
+    smallcap: {symbol: SAVA, name: "Cassava Sciences, Inc.", mcap: 1.27e9, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Cassava Sciences Announces Topline Results from Phase 3 ReThink-ALZ Study of Simufilam in Alzheimer's Disease", tier: wire, tickers: [SAVA], approx: true}
+
+  - id: poseida-roche
+    date: 2024-11-26
+    category: smallcap_acquired
+    move: "PSTX ≈+200% (215% premium, $9 + CVR)"
+    tickers: [PSTX]
+    smallcap: {symbol: PSTX, name: "Poseida Therapeutics, Inc.", mcap: 320e6, price: 2.86, industry: "Biotechnology: Biological Products"}
+    first_reports:
+      - {text: "Roche enters into a definitive agreement to acquire Poseida Therapeutics, including cell therapy candidates and related platform technologies", tier: primary}
+
+  - id: applied-therapeutics-crl
+    date: 2024-11-27
+    category: smallcap_fda
+    move: "APLT −76% after hours, −76.3% next session"
+    tickers: [APLT]
+    smallcap: {symbol: APLT, name: "Applied Therapeutics, Inc.", mcap: 1.0e9, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Applied Therapeutics Receives FDA Complete Response Letter for Govorestat New Drug Application", tier: wire, tickers: [APLT]}
+
+  - id: matterport-costar
+    date: 2024-04-22
+    category: smallcap_acquired
+    move: "MTTR +175–181% intraday (216% premium)"
+    tickers: [MTTR]
+    smallcap: {symbol: MTTR, name: "Matterport, Inc.", mcap: 550e6, price: 1.74, industry: "Computer Software: Prepackaged Software"}
+    first_reports:
+      - {text: "CoStar Group to Acquire Matterport for $5.50 per Share in Cash and Stock", tier: wire, tickers: [CSGP, MTTR], approx: true}
+
+  - id: morphic-lilly
+    date: 2024-07-08
+    category: smallcap_acquired
+    move: "MORF ≈+75% (79% premium)"
+    tickers: [MORF]
+    smallcap: {symbol: MORF, name: "Morphic Holding, Inc.", mcap: 1.6e9, price: 31.84, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Lilly to acquire Morphic Holding for $57 per share in cash", tier: wire, tickers: [LLY, MORF], approx: true}
+
+  - id: upexi-solana-treasury
+    date: 2025-04-21
+    category: smallcap_crypto_treasury
+    move: "UPXI +335% close"
+    tickers: [UPXI]
+    smallcap: {symbol: UPXI, name: "Upexi, Inc.", mcap: 45e6, industry: "Catalog/Specialty Distribution"}
+    first_reports:
+      - {text: "Upexi Announces $100 Million Private Placement to Initiate Solana Treasury Strategy", tier: wire, tickers: [UPXI], approx: true}
+
+  - id: navitas-nvidia-800v
+    date: 2025-05-21
+    category: smallcap_mega_partner
+    first_source: "GlobeNewswire, after the close"
+    move: "NVTS ~+190% after hours, +164% on May 22 (record day)"
+    tickers: [NVTS]
+    smallcap: {symbol: NVTS, name: "Navitas Semiconductor Corporation", mcap: 400e6, industry: "Semiconductors"}
+    first_reports:
+      - {text: "NVIDIA Selects Navitas to Collaborate on Next Generation 800 V HVDC Architecture", tier: wire, tickers: [NVTS]}
+
+  - id: vigil-sanofi
+    date: 2025-05-22
+    category: smallcap_acquired
+    move: "VIGL ≈+240% (246% premium, $8 + $2 CVR)"
+    tickers: [VIGL]
+    smallcap: {symbol: VIGL, name: "Vigil Neuroscience, Inc.", mcap: 130e6, price: 2.31, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Vigil Neuroscience Enters into Definitive Merger Agreement to be Acquired by Sanofi", tier: wire, tickers: [VIGL]}
+
+  - id: sharplink-ether-treasury
+    date: 2025-05-27
+    category: smallcap_crypto_treasury
+    first_source: "GlobeNewswire 08:00 ET"
+    move: "SBET +400%+ intraday (then −69% on Jun 13 after a resale S-3)"
+    tickers: [SBET]
+    smallcap: {symbol: SBET, name: "SharpLink Gaming, Inc.", mcap: 9e6, industry: "Services-Misc. Amusement & Recreation"}
+    first_reports:
+      - {text: "SharpLink Gaming Announces $425,000,000 Private Placement to Initiate Ethereum Treasury Strategy", tier: wire, tickers: [SBET]}
+
+  - id: spero-pivot-po
+    date: 2025-05-28
+    category: smallcap_trial
+    first_source: "GlobeNewswire 07:00 ET + 8-K"
+    move: "SPRO +244% close"
+    tickers: [SPRO]
+    smallcap: {symbol: SPRO, name: "Spero Therapeutics, Inc.", mcap: 40e6, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Spero Therapeutics and GSK Announce PIVOT-PO Phase 3 Study for Tebipenem HBr Stopped Early for Efficacy Following Review by Independent Data Monitoring Committee", tier: wire, tickers: [SPRO]}
+
+  - id: applied-digital-coreweave
+    date: 2025-06-02
+    category: smallcap_contract
+    move: "APLD +19% premarket, +48% intraday"
+    tickers: [APLD]
+    smallcap: {symbol: APLD, name: "Applied Digital Corporation", mcap: 1.5e9, industry: "EDP Services"}
+    first_reports:
+      - {text: "Applied Digital Signs Two 15-Year Leases with CoreWeave for 250MW, Worth Approximately $7 Billion", tier: wire, tickers: [APLD], approx: true}
+
+  - id: verve-lilly
+    date: 2025-06-17
+    category: smallcap_acquired
+    move: "VERV +81% ($10.50 + $3 CVR)"
+    tickers: [VERV]
+    smallcap: {symbol: VERV, name: "Verve Therapeutics, Inc.", mcap: 550e6, industry: "Biotechnology: Biological Products"}
+    first_reports:
+      - {text: "Lilly to acquire Verve Therapeutics to advance one-time treatments for people with cardiovascular disease", tier: wire, tickers: [LLY, VERV], approx: true}
+
+  - id: bitmine-ether-treasury
+    date: 2025-06-30
+    category: smallcap_crypto_treasury
+    move: "BMNR +695% close (1.4M-share float)"
+    tickers: [BMNR]
+    smallcap: {symbol: BMNR, name: "BitMine Immersion Technologies, Inc.", mcap: 25e6, industry: "Finance: Consumer Services"}
+    first_reports:
+      - {text: "BitMine Immersion Technologies Announces $250 Million Private Placement to Initiate Ethereum Treasury Strategy", tier: wire, tickers: [BMNR]}
+
+  - id: mp-materials-dod
+    date: 2025-07-10
+    category: smallcap_gov_stake
+    move: "MP +50% close, +60% intraday (DoD $400M preferred, ~15% holder)"
+    tickers: [MP]
+    smallcap: {symbol: MP, name: "MP Materials Corp.", mcap: 4.9e9, industry: "Metal Mining"}
+    first_reports:
+      - {text: "MP Materials Announces Transformational Public-Private Partnership with the Department of Defense to Accelerate Build-Out of End-to-End U.S. Rare Earth Magnet Supply Chain", tier: wire, tickers: [MP], approx: true}
+
+  - id: replimune-crl
+    date: 2025-07-22
+    category: smallcap_fda
+    move: "REPL −78% premarket, ~−63% to −77% on the day"
+    tickers: [REPL]
+    smallcap: {symbol: REPL, name: "Replimune Group, Inc.", mcap: 950e6, industry: "Biotechnology: Biological Products"}
+    first_reports:
+      - {text: "Replimune Receives Complete Response Letter from FDA for RP1 Biologics License Application", tier: wire, tickers: [REPL], approx: true}
+
+  - id: eightco-worldcoin-treasury
+    date: 2025-09-08
+    category: smallcap_crypto_treasury
+    move: "OCTO +3,009% close, +5,000% intraday"
+    tickers: [OCTO]
+    smallcap: {symbol: OCTO, name: "Eightco Holdings Inc.", mcap: 5e6, industry: "Containers/Packaging"}
+    first_reports:
+      - {text: "Eightco Holdings Announces $250 Million Private Placement to Initiate Worldcoin Treasury Strategy", tier: wire, tickers: [OCTO], approx: true}
+
+  - id: uniqure-amt130
+    date: 2025-09-24
+    category: smallcap_trial
+    first_source: "GlobeNewswire, premarket"
+    move: "QURE +248% close on 6,000% of normal volume ($200M offering the same afternoon)"
+    tickers: [QURE]
+    smallcap: {symbol: QURE, name: "uniQure N.V.", mcap: 750e6, industry: "Biotechnology: Biological Products"}
+    first_reports:
+      - {text: "uniQure Announces Positive Topline Results from Pivotal Phase I/II Study of AMT-130 in Patients with Huntington's Disease", tier: wire, tickers: [QURE]}
+
+  - id: lithium-americas-stake-scoop
+    date: 2025-09-24
+    category: smallcap_gov_stake
+    first_source: "Reuters, evening of Sep 23"
+    move: "LAC +95.7% close"
+    tickers: [LAC]
+    smallcap: {symbol: LAC, name: "Lithium Americas Corp.", mcap: 700e6, industry: "Metal Mining"}
+    first_reports:
+      - {text: "Trump administration seeks equity stake in Lithium Americas, sources say", tier: media, approx: true}
+
+  - id: trilogy-metals-stake
+    date: 2025-10-06
+    category: smallcap_gov_stake
+    first_source: "Reuters / White House, then the company release at 17:03 ET"
+    move: "TMQ +205% premarket, +211% close (10% stake + warrants)"
+    tickers: [TMQ]
+    smallcap: {symbol: TMQ, name: "Trilogy Metals Inc.", mcap: 330e6, industry: "Metal Mining"}
+    first_reports:
+      - {text: "Trilogy Metals Announces Strategic Investment by US Federal Government", tier: wire, tickers: [TMQ]}
+
+  - id: critical-metals-stake-talks
+    date: 2025-10-06
+    category: smallcap_gov_stake
+    move: "CRML +75% premarket, ~+45% after the White House denial"
+    tickers: [CRML]
+    smallcap: {symbol: CRML, name: "Critical Metals Corp.", mcap: 800e6, industry: "Metal Mining"}
+    first_reports:
+      - {text: "Trump administration in talks to take stake in Critical Metals, sources say", tier: media, approx: true}
+
+  - id: capricor-hope3
+    date: 2025-12-03
+    category: smallcap_trial
+    move: "CAPR ~4x intraday (+356%)"
+    tickers: [CAPR]
+    smallcap: {symbol: CAPR, name: "Capricor Therapeutics, Inc.", mcap: 290e6, industry: "Biotechnology: Biological Products"}
+    first_reports:
+      - {text: "Capricor Therapeutics Announces Positive Topline Results from Pivotal Phase 3 HOPE-3 Study of Deramiocel in Duchenne Muscular Dystrophy", tier: wire, tickers: [CAPR]}
+
+  - id: rezolute-sunrize
+    date: 2025-12-11
+    category: smallcap_trial
+    move: "RZLT opened −89% ($10.94 → $1.23)"
+    tickers: [RZLT]
+    smallcap: {symbol: RZLT, name: "Rezolute, Inc.", mcap: 1.0e9, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Rezolute Announces Topline Results from Phase 3 sunRIZE Study of Ersodetug in Congenital Hyperinsulinism", tier: wire, tickers: [RZLT], approx: true}
+
+  - id: aldeyra-third-crl
+    date: 2026-03-17
+    category: smallcap_fda
+    move: "ALDX −70.7%"
+    tickers: [ALDX]
+    smallcap: {symbol: ALDX, name: "Aldeyra Therapeutics, Inc.", mcap: 250e6, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Aldeyra Therapeutics Receives Complete Response Letter from FDA for Reproxalap", tier: wire, tickers: [ALDX], approx: true}
+
+  - id: grace-therapeutics-crl
+    date: 2026-04-23
+    category: smallcap_fda
+    move: "GRCE −58%"
+    tickers: [GRCE]
+    smallcap: {symbol: GRCE, name: "Grace Therapeutics, Inc.", mcap: 60e6, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Grace Therapeutics Receives Complete Response Letter from FDA", tier: wire, tickers: [GRCE], approx: true}
+
+  - id: unicycive-crl
+    date: 2026-06-30
+    category: smallcap_fda
+    move: "UNCY −37% (manufacturing-only CRL)"
+    tickers: [UNCY]
+    smallcap: {symbol: UNCY, name: "Unicycive Therapeutics, Inc.", mcap: 100e6, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Unicycive Receives Complete Response Letter from FDA for Oxylanthanum Carbonate New Drug Application", tier: wire, tickers: [UNCY], approx: true}
+
+  - id: atai-lilly
+    date: 2026-07-16
+    category: smallcap_acquired
+    move: "ATAI ≈+25% (26% premium; GHRS +11% in sympathy)"
+    tickers: [ATAI]
+    smallcap: {symbol: ATAI, name: "AtaiBeckley Inc.", mcap: 2.2e9, price: 5.36, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Lilly to acquire AtaiBeckley for $6.75 per share in cash plus a CVR", tier: wire, tickers: [LLY, ATAI], approx: true}
+
+  - id: capricor-adcomm
+    date: 2026-07-30
+    category: smallcap_fda
+    move: "CAPR −58% premarket, −54% intraday"
+    tickers: [CAPR]
+    smallcap: {symbol: CAPR, name: "Capricor Therapeutics, Inc.", mcap: 300e6, industry: "Biotechnology: Biological Products"}
+    first_reports:
+      - {text: "FDA advisory committee votes 9-3 against Capricor's deramiocel for Duchenne muscular dystrophy", tier: media, approx: true}
+
+  - id: xos-registered-direct
+    date: 2026-06-04
+    category: smallcap_dilution
+    move: "XOS −24% premarket ($6M registered direct at $5.50)"
+    tickers: [XOS]
+    smallcap: {symbol: XOS, name: "Xos, Inc.", mcap: 50e6, industry: "Auto Manufacturing"}
+    first_reports:
+      - {text: "Xos Announces $6 Million Registered Direct Offering", tier: wire, tickers: [XOS], approx: true}
+
+  - id: kodiak-daybreak
+    date: 2026-09-28
+    category: smallcap_trial
+    first_source: "Company release before the 08:30 ET call (date pre-announced Sep 25)"
+    move: "KOD +65% premarket, +178% close ($32.35 → $89.92)"
+    tickers: [KOD]
+    smallcap: {symbol: KOD, name: "Kodiak Sciences Inc.", mcap: 1.7e9, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "Kodiak Sciences Announces Positive Topline Results from DAYBREAK Pivotal Phase 3 Study of Zenkuda and KSI-501 in Wet AMD", tier: wire, tickers: [KOD], approx: true}
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -1683,3 +1977,21 @@ noise:
   - {text: "US 10-year Treasury yield little changed at 5.18% ahead of auction", tier: media}
   - {text: "Kospi edges up 0.3% as investors await Fed minutes", tier: media}
   - {text: "Nikkei Asia: Japanese convenience stores expand AI checkout pilots", tier: media}
+  # Small-cap press-release traffic that sounds like a catalyst and is not (representative
+  # wording of daily wire noise; issuers are fictional, sized like real micro caps)
+  - {text: "Acmera Therapeutics Receives Nasdaq Notification Regarding Minimum Bid Price Deficiency", tier: wire, tickers: [ACMR9], smallcap: {symbol: ACMR9, name: "Acmera Therapeutics, Inc.", mcap: 80e6, industry: "Biotechnology: Pharmaceutical Preparations"}}
+  - {text: "Acmera Therapeutics to Present at the H.C. Wainwright 27th Annual Global Investment Conference", tier: wire, tickers: [ACMR9]}
+  - {text: "Brightline Robotics Joins NVIDIA Inception Program", tier: wire, tickers: [BRTL9], smallcap: {symbol: BRTL9, name: "Brightline Robotics Inc.", mcap: 120e6, industry: "Industrial Machinery/Components"}}
+  - {text: "Brightline Robotics AI Platform Now Available on AWS Marketplace", tier: wire, tickers: [BRTL9]}
+  - {text: "Coastal Drone Corp Signs Letter of Intent with European Defense Distributor", tier: wire, tickers: [CDRN9], smallcap: {symbol: CDRN9, name: "Coastal Drone Corp", mcap: 90e6, industry: "Aerospace"}}
+  - {text: "Coastal Drone Corp Receives Follow-On Purchase Order from Existing Customer", tier: wire, tickers: [CDRN9]}
+  - {text: "Delta Bio Announces Grant of Inducement Awards Under Nasdaq Listing Rule 5635(c)(4)", tier: wire, tickers: [DLTB9], smallcap: {symbol: DLTB9, name: "Delta Bio, Inc.", mcap: 210e6, industry: "Biotechnology: Biological Products"}}
+  - {text: "Delta Bio Announces Clinical Trial Collaboration and Supply Agreement with Merck to Evaluate DB-201 in Combination with KEYTRUDA", tier: wire, tickers: [DLTB9]}
+  - {text: "Echo Mining Corp Announces $2 Million Non-Brokered Private Placement", tier: wire, tickers: [ECMN9], smallcap: {symbol: ECMN9, name: "Echo Mining Corp", mcap: 150e6, industry: "Metal Mining"}}
+  - {text: "Falcon Space Inc. Awarded $1.2 Million NASA SBIR Phase II Contract", tier: wire, tickers: [FLCN9], smallcap: {symbol: FLCN9, name: "Falcon Space Inc.", mcap: 900e6, industry: "Aerospace"}}
+  - {text: "Glacier Tech Regains Compliance with Nasdaq Listing Requirements", tier: wire, tickers: [GLCT9], smallcap: {symbol: GLCT9, name: "Glacier Tech Inc.", mcap: 45e6}}
+  - {text: "Harbor Bio Announces Publication of Preclinical Data in Peer-Reviewed Journal", tier: wire, tickers: [HRBB9], smallcap: {symbol: HRBB9, name: "Harbor Bio Inc.", mcap: 130e6, industry: "Biotechnology: Pharmaceutical Preparations"}}
+  - {text: "Ion Pump Ltd (NASDAQ: IONP9) Announces Strategic Partnership with NVIDIA", tier: wire, smallcap: {symbol: IONP9, name: "Ion Pump Ltd", mcap: 60e6, country: China, ipo_year: 2025}}
+  - {text: "Juno Crypto Holdings Announces $5 Million Bitcoin Treasury Strategy", tier: wire, tickers: [JUNO9], smallcap: {symbol: JUNO9, name: "Juno Crypto Holdings Inc.", mcap: 20e6}}
+  - {text: "Kite Ridge Therapeutics Receives FDA Orphan Drug Designation for KR-101", tier: wire, tickers: [KTRG9], smallcap: {symbol: KTRG9, name: "Kite Ridge Therapeutics, Inc.", mcap: 300e6, industry: "Biotechnology: Pharmaceutical Preparations"}}
+  - {text: "Lumen Ridge Energy Announces Reverse Stock Split", tier: wire, tickers: [LMRE9], smallcap: {symbol: LMRE9, name: "Lumen Ridge Energy Inc.", mcap: 35e6}}

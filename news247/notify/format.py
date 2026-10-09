@@ -36,6 +36,15 @@ def short_title(alert: Alert) -> str:
     return f"{alert.severity.emoji} {alert.title}"
 
 
+def smallcap_line(alert: Alert) -> str:
+    """'Small cap: ACMB $180M micro cap · FDA approval · +18–48% typical' when the news is
+    material for a small/mid cap (see analysis/smallcap.py)."""
+    sc = alert.edge.get("smallcap") or {}
+    if not sc.get("material") or not sc.get("move_text"):
+        return ""
+    return f"Small cap: {sc['symbol']} {sc['cap']} {sc['band']} · {sc['label']} · {sc['move_text']}"
+
+
 def plain_body(alert: Alert, include_url: bool = True) -> str:
     """Multi-line plain-text body shared by most channels."""
     lines: list[str] = []
@@ -51,6 +60,9 @@ def plain_body(alert: Alert, include_url: bool = True) -> str:
         if an.themes:
             lines.append("Themes: " + ", ".join(t.replace("_", " ") for t in an.themes))
         lines.append(f"Impact score {an.score:.0f}/100" + (" (AI-reviewed)" if an.llm_used else ""))
+        sc = smallcap_line(alert)
+        if sc:
+            lines.append(sc)
     if alert.body:
         lines.append(alert.body)
     for rel in alert.related[:3]:
@@ -81,6 +93,9 @@ def sms_text(alert: Alert, limit: int = 700) -> str:
         lag = f"{fmt_age(it.latency)} after post" if it.latency is not None else "just now"
         bits.append(f"{it.source} · {lag}")
         lines.append(" · ".join(bits))
+        sc = smallcap_line(alert)
+        if sc:
+            lines.append(sc)
         if an.summary:
             lines.append(an.summary)
     elif alert.body:

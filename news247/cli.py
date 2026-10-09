@@ -205,22 +205,93 @@ def cmd_check(cfg: Config, args: argparse.Namespace) -> int:
 
 def cmd_score(cfg: Config, args: argparse.Namespace) -> int:
     from .analysis.scorer import Scorer
+    from .market.radar import SmallCapFeed
 
     scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
+    uni = SmallCapFeed.load_cached(cfg.data_path) if cfg.smallcap.enabled else None
+    if uni is not None:  # small caps are sized against the market caps `news247 universe` saved
+        scorer.attach_universe(uni, **cfg.smallcap.filters())
     tier = SourceTier[args.tier.upper()]
-    item = NewsItem(source=args.source, title=" ".join(args.headline), summary=args.summary or "", tier=tier)
+    item = NewsItem(
+        source=args.source,
+        title=" ".join(args.headline),
+        summary=args.summary or "",
+        tier=tier,
+        tickers=[t.upper() for t in (args.ticker or [])],
+    )
     if args.entity:
         item.extra["entities"] = args.entity
     a = scorer.explain(item)
     print(f"\n  {a.severity.emoji} {a.severity.name}  score {a.score:.1f}/100   direction: {a.direction}")
     print(f"  tickers:  {' '.join(a.tickers) or '-'}")
     print(f"  entities: {', '.join(a.entities) or '-'}")
-    print(f"  themes:   {', '.join(a.themes) or '-'}\n")
+    print(f"  themes:   {', '.join(a.themes) or '-'}")
+    if a.smallcap:
+        sc = a.smallcap
+        print(
+            f"  small cap: {sc['symbol']} {sc['cap']} {sc['band']} · {sc.get('label', '-')} · {sc.get('move_text', '')}"
+        )
+    elif uni is None and cfg.smallcap.enabled:
+        print("  small cap: no universe cached yet (run `news247 universe` once to size small caps)")
+    print()
     for r in a.reasons:
         print(f"    {r}")
     t = cfg.scoring
     print(f"\n  thresholds: medium {t.medium:.0f} · high {t.high:.0f} · critical {t.critical:.0f}\n")
     return 0
+
+
+# --------------------------------------------------------------------------- universe
+
+
+async def _universe(cfg: Config, symbols: list[str], refresh: bool) -> int:
+    from .http import HttpClient
+    from .market.radar import SmallCapFeed
+    from .market.universe import Universe, fmt_cap
+
+    uni = SmallCapFeed.load_cached(cfg.data_path) or Universe()
+    if refresh or not len(uni):
+        cfg.data_path.mkdir(parents=True, exist_ok=True)
+        async with HttpClient(cfg.general.user_agent, timeout_s=60) as http:
+            feed = SmallCapFeed(cfg.smallcap, http, uni, cfg.data_path)
+            feed._saved_at = 0.0
+            if await feed.refresh_universe() is None:
+                print(f"  could not load the Nasdaq screener: {feed.health.last_error}")
+                if not len(uni):
+                    return 1
+                print(f"  using the cached universe ({len(uni)} listings)")
+            else:
+                uni.save(cfg.data_path / "universe.json.gz")
+    bands: dict[str, int] = {}
+    for li in uni.by_symbol.values():
+        if li.common:
+            bands[li.band] = bands.get(li.band, 0) + 1
+    age = "?" if uni.age == float("inf") else f"{uni.age / 3600:.1f}h old"
+    print(f"\n  {len(uni)} listings ({uni.source}, {age})")
+    for b in ("mega cap", "large cap", "mid cap", "small cap", "micro cap", "nano cap", "unknown size"):
+        if bands.get(b):
+            print(f"    {b:<13} {bands[b]:>5}")
+    lo, hi = cfg.smallcap.min_market_cap, cfg.smallcap.max_market_cap
+    lane = sum(
+        1 for li in uni.by_symbol.values() if li.common and li.market_cap and lo <= li.market_cap <= hi
+    )
+    print(f"  small-cap lane ({fmt_cap(lo)}–{fmt_cap(hi)}): {lane} companies sized against their news\n")
+    for sym in symbols:
+        li = uni.get(sym) or uni.lookup_name(sym)
+        if li is None:
+            print(f"  {sym}: not listed")
+            continue
+        print(f"  {li.symbol}  {li.name}")
+        print(
+            f"     {li.cap_label} {li.band} · ${li.price or 0:,.2f} · {li.sector or '-'} / {li.industry or '-'}"
+        )
+        if li.pump_profile:
+            print(f"     ⚠ {li.pump_profile}")
+    return 0
+
+
+def cmd_universe(cfg: Config, args: argparse.Namespace) -> int:
+    return asyncio.run(_universe(cfg, args.symbols, args.refresh))
 
 
 # --------------------------------------------------------------------------- test-notify
@@ -507,6 +578,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--entity", action="append", help="entity hint, e.g. --entity OpenAI (as if posted on its blog)"
     )
+    s.add_argument("--ticker", action="append", help="ticker the source attached, e.g. --ticker ACMB")
+
+    u = sub.add_parser("universe", help="load every listed company's market cap; look up symbols")
+    u.add_argument("symbols", nargs="*", help="symbols or company names to show")
+    u.add_argument("--refresh", action="store_true", help="download a fresh copy now")
 
     tn = sub.add_parser("test-notify", help="send a test alert to every enabled channel")
     tn.add_argument(
@@ -543,6 +619,7 @@ COMMANDS = {
     "demo": cmd_demo,
     "stats": cmd_stats,
     "backtest": cmd_backtest,
+    "universe": cmd_universe,
 }
 
 

@@ -859,7 +859,7 @@ class WebPushNotifier(Notifier):
 
         body = push_text(alert)
         line = EdgeDesk.push_line(alert)
-        if line:
+        if line and line not in body and line.split(" · ")[-1] not in body:
             body = f"{body}\n{line}" if body else line
         play = alert.edge.get("play") or {}
         return {
@@ -871,6 +871,7 @@ class WebPushNotifier(Notifier):
             "severity": alert.severity.name,
             "kind": alert.kind,
             "tickers": alert.tickers[:8],
+            "smallcap": bool(alert.edge.get("smallcap")),
             "url": alert.url,
             "ts": alert.created,
             "tag": (alert.item.uid[:24] if alert.item else alert.id),

@@ -72,6 +72,22 @@ market:
   correlate_minutes: 45         # how far back to look for a headline explaining a move
   # groups: replaces the built-in baskets (software, semis, megacap, ai_infra, crypto, index)
 
+# The little things (docs/SMALLCAPS.md): every listed company's market cap, so a $40M contract,
+# an FDA decision or a buyout premium is scored by how big it is for THAT company, plus a radar
+# for small caps ripping before any headline exists.
+smallcap:
+  enabled: ${SMALLCAP_ENABLED:-true}
+  min_market_cap: ${SMALLCAP_MIN_CAP:-30000000}   # below: pump territory, shown but never boosted
+  min_price: ${SMALLCAP_MIN_PRICE:-1}
+  max_market_cap: 10000000000   # above: the big-cap scorer is in charge
+  radar: ${SMALLCAP_RADAR:-true}
+  radar_provider: yahoo         # yahoo (small-cap gainers each minute, pre/after hours) | nasdaq
+  radar_min_pct: 20             # on the radar at +/-20% on the day ...
+  radar_jump_pct: 8             # ... or +/-8% within a few minutes
+  radar_min_dollar_volume: 2000000
+  radar_push_pct: ${SMALLCAP_RADAR_PUSH_PCT:-35}   # pushed to your phone at this move (with real volume)
+  radar_daily_pushes: ${SMALLCAP_RADAR_DAILY_PUSHES:-8}
+
 # Sources: ~50 built-ins are on by default (`news247 check` lists them). Override one by
 # repeating its name here (e.g. {name: hackernews, enabled: false}) or add your own:
 #   - {name: my-feed, type: rss, url: "https://example.com/feed.xml", tier: media, interval: 60}

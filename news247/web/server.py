@@ -73,6 +73,7 @@ class WebServer:
         app.router.add_get("/api/brief", self.api_brief)
         app.router.add_get("/api/calendar", self.api_calendar)
         app.router.add_get("/api/watch", self.api_watch)
+        app.router.add_get("/api/radar", self.api_radar)
         app.router.add_get("/api/alert/{id}", self.api_alert)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
@@ -496,6 +497,15 @@ class WebServer:
         ]
         rows.sort(key=lambda r: abs(r["chg_day"] or 0.0), reverse=True)
         return _json({"symbols": rows, "market": self.engine.calendar.market_status()})
+
+    async def api_radar(self, request: web.Request) -> web.Response:
+        """The small-cap radar: names breaking out right now, how big they are, how much is
+        trading, and the headline behind the move if one exists yet."""
+        try:
+            limit = max(1, min(100, int(request.query.get("limit", "40"))))
+        except ValueError:
+            limit = 40
+        return _json(self.engine.radar_board(limit))
 
     async def api_alert(self, request: web.Request) -> web.Response:
         """Everything about one alert: the analysis, the play, precedents, every source that

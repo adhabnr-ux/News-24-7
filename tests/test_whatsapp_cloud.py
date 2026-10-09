@@ -459,7 +459,14 @@ async def test_engine_maintains_template_and_keepalive(tmp_path, meta, server):
     stop = asyncio.Event()
     run = asyncio.ensure_future(eng.run(stop))
     try:
-        await asyncio.sleep(0.5)
+        # wait on the outcome, not a fixed sleep: start-up work (the history warm-up thread)
+        # can hold the event loop for a moment on a slow or busy machine
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 5
+        while loop.time() < deadline and not (
+            meta.created and sum(1 for r in server.requests if r["path"] == "/health") >= 3
+        ):
+            await asyncio.sleep(0.05)
         assert eng.whatsapp_cloud.template_status == "PENDING" and meta.created  # type: ignore[union-attr]
         assert eng.whatsapp_cloud.phone["display_phone_number"] == "15551234000"  # type: ignore[union-attr]
         assert sum(1 for r in server.requests if r["path"] == "/health") >= 3  # keeps a free host awake

@@ -50,16 +50,17 @@ Five tabs:
 
 | Tab | What's on it |
 |---|---|
-| **Tape** | The hero line, then three numbers: your **median lead over the news** (7 days), alerts in the last 24 h, and sources live. Then the **next big catalyst** on the calendar. Below that, **Top of the tape** (the strongest alert of the last 6 h, in large type) and every other alert. Tap any alert for its full dossier. |
+| **Tape** | The hero line, then three numbers: your **median lead over the news** (7 days), alerts in the last 24 h, and sources live. Then the **next big catalyst** on the calendar. Below that, **Top of the tape** (the strongest alert of the last 6 h, in large type) and every other alert. Tap any alert for its full dossier. The **All / Small caps** switch above the tape filters to small- and mid-cap catalysts and radar hits (remembered on the phone). |
 | **Brief** | The morning meeting: catalysts **since the last close**, the themes in focus, SPY/QQQ/IWM/DIA and the biggest movers, the week's calendar, and **your edge** (stories you had before the mainstream, median and biggest head start). |
 | **Calendar** | Scheduled catalysts for the next 60 days, with time (ET) and impact: FOMC decisions, jobs reports, elections, option expirations and quad witching, market holidays and early closes, plus one-offs like the end of China's rare-earth suspension. Edit `news247/data/calendar.yaml` to add your own (earnings dates, investor days). |
-| **Watch** | The board: every quoted symbol sorted by today's move, with the 5-minute change. Tickers from fresh alerts are added automatically. |
+| **Watch** | The **small-cap radar** first: small caps breaking out right now on real volume (±20% on the day or a fast jump, $2M+ traded), with market cap, dollars traded, relative volume, pre-market/after-hours tag and the headline behind the move, or "No headline yet". Then the board: every quoted symbol sorted by today's move, with the 5-minute change. Tickers from fresh alerts are added automatically. |
 | **Desk** | Push status, **Send a test alert**, **Reconnect**, motion on/off, alert level (**Critical only / Normal / More**), **Pause 30m / 2h / until resumed**, **Resume**, the Brief time, and engine health. |
 
 ### Every alert comes with an analysis
 
 | Part | What it tells you |
 |---|---|
+| **The little thing** | For a small or mid cap: the company, its market cap and size band, the catalyst, the typical move **for a company that size** (*"Contract from U.S. Army worth 64% of market cap · +36–96% typical"*) and the deal size as a share of the company. On cards it is the gold **MICRO CAP / SMALL CAP / MID CAP** pill; radar alerts carry **◉ Radar** with relative volume. See [SMALLCAPS.md](SMALLCAPS.md). |
 | **The play** | **▲ Bullish / ▼ Bearish / ◆ Two-way**, a 5-bar **conviction** meter (Low → Maximum, from the score), the **direct** tickers and the **read-through** names (suppliers, competitors, the sector basket). When the headline itself doesn't say which way it cuts (a Fed hike, a tariff post, a Polymarket jump), the direction comes from how the most similar past events traded, and the app says so. |
 | **Precedents** | The most similar market-moving events on record (150+ since 2016, including every Jun–Oct 2026 mover we traced), matched on the same themes, entities and tickers the scorer found. Each shows what the stocks did then. Example: an FHFA post about VantageScore → *"Last time (Sep 28, 2026): FICO −25 to −27%"*. The top precedent is also on the lock-screen notification. |
 | **The tape since** | Each direct ticker's move since the alert ("FICO −9.76% since alert"), live from the price feed. |

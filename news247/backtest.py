@@ -18,6 +18,7 @@ from typing import Any
 
 from .analysis.scorer import Scorer
 from .config import Config, load_package_yaml
+from .market.universe import Universe
 from .models import Analysis, NewsItem, Severity, SourceTier
 
 _TIERS = {t.name.lower(): t for t in SourceTier}
@@ -70,7 +71,8 @@ class BacktestReport:
 
 
 def headline_item(h: Any, default_tier: str = "media") -> NewsItem:
-    """A history headline is either a string or {text, tier, entities, summary, source}."""
+    """A history headline is either a string or {text, tier, entities, summary, source, tickers}.
+    ``tickers`` are the exchange:ticker categories a wire attaches (read by the RSS source)."""
     if isinstance(h, str):
         h = {"text": h}
     tier = _TIERS[str(h.get("tier", default_tier)).lower()]
@@ -79,6 +81,7 @@ def headline_item(h: Any, default_tier: str = "media") -> NewsItem:
         title=h["text"],
         summary=h.get("summary", ""),
         tier=tier,
+        tickers=[str(t).upper() for t in h.get("tickers", [])],
         extra={"entities": list(h.get("entities", [])), "boost": float(h.get("boost", 0))},
     )
 
@@ -87,11 +90,33 @@ def load_history() -> dict[str, Any]:
     return load_package_yaml("history.yaml") or {}
 
 
+def history_universe(history: dict[str, Any]) -> Universe | None:
+    """The market caps the live universe would have known for the history's small caps."""
+    entries: dict[str, dict[str, Any]] = {}
+    for ev in history.get("events", []):
+        sc = ev.get("smallcap")
+        if sc:
+            entries[str(sc["symbol"]).upper()] = sc
+    for h in history.get("noise", []):
+        sc = h.get("smallcap") if isinstance(h, dict) else None
+        if sc:
+            entries[str(sc["symbol"]).upper()] = sc
+    return Universe.stub(entries) if entries else None
+
+
+def history_scorer(cfg: Config, history: dict[str, Any]) -> Scorer:
+    scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
+    uni = history_universe(history)
+    if uni is not None:
+        scorer.attach_universe(uni, **cfg.smallcap.filters())
+    return scorer
+
+
 def run_backtest(
     cfg: Config, history: dict[str, Any] | None = None, threshold: Severity = Severity.HIGH
 ) -> BacktestReport:
     history = history if history is not None else load_history()
-    scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
+    scorer = history_scorer(cfg, history)
     events: list[EventResult] = []
     for ev in history.get("events", []):
         firsts = [

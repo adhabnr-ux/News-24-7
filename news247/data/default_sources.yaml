@@ -106,6 +106,25 @@
 - {name: globenewswire, type: rss, url: "https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies", tier: wire, interval: 20}
 - {name: businesswire, type: rss, url: "https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEFtRWA==", tier: wire, interval: 20, browser_headers: true}
 
+# ------------------------------------------------------------------ The little things: small-cap catalysts
+# Small caps move 30–300% on their own press release (a buyout at a premium, an FDA decision, a
+# contract worth half the company). The firehose feeds above carry ~20 items, which is minutes
+# on a busy morning, so the catalyst-specific feeds make sure none slips past. Releases are
+# sized against the company's market cap by analysis/smallcap.py; GlobeNewswire and PR
+# Newswire tag each release with its exchange:ticker. See docs/SMALLCAPS.md.
+- {name: gnw-mergers, type: rss, url: "https://www.globenewswire.com/RssFeed/subjectcode/27-Mergers%20And%20Acquisitions/feedTitle/GlobeNewswire%20-%20Mergers%20And%20Acquisitions", tier: wire, interval: 30}
+- {name: gnw-contracts, type: rss, url: "https://www.globenewswire.com/RssFeed/subjectcode/7-Business%20Contracts/feedTitle/GlobeNewswire%20-%20Business%20Contracts", tier: wire, interval: 30}
+- {name: gnw-clinical, type: rss, url: "https://www.globenewswire.com/RssFeed/subjectcode/90-Clinical%20Study/feedTitle/GlobeNewswire%20-%20Clinical%20Study", tier: wire, interval: 30}
+- {name: gnw-financing, type: rss, url: "https://www.globenewswire.com/RssFeed/subjectcode/17-Financing%20Agreements/feedTitle/GlobeNewswire%20-%20Financing%20Agreements", tier: wire, interval: 45}
+- {name: gnw-biotech, type: rss, url: "https://www.globenewswire.com/RssFeed/industry/4573-Biotechnology/feedTitle/GlobeNewswire%20-%20Biotechnology", tier: wire, interval: 30}
+- {name: gnw-defense, type: rss, url: "https://www.globenewswire.com/RssFeed/industry/2717-Defense/feedTitle/GlobeNewswire%20-%20Defense", tier: wire, interval: 45}
+- {name: prn-fda-approvals, type: rss, url: "https://www.prnewswire.com/rss/health-latest-news/fda-approval-list.rss", tier: wire, interval: 30}
+- {name: prn-aerospace-defense, type: rss, url: "https://www.prnewswire.com/rss/heavy-industry-manufacturing-latest-news/aerospace-defense-list.rss", tier: wire, interval: 45}
+- {name: bw-aerospace, type: rss, url: "https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeGFNZXQ==", tier: wire, interval: 45, browser_headers: true}
+- {name: newsfile-biotech, type: rss, url: "https://feeds.newsfilecorp.com/industry/biotechnology", tier: wire, interval: 60, browser_headers: true}
+- {name: newsfile-mining, type: rss, url: "https://feeds.newsfilecorp.com/industry/mining-metals", tier: wire, interval: 60, browser_headers: true}
+- {name: fda-drugs, type: rss, url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/drugs/rss.xml", tier: primary, interval: 120}
+
 # ------------------------------------------------------------------ Scoop publishers
 # Market-moving AI news is often a newspaper scoop, not a company post: on 2026-10-08 an FT
 # story on OpenAI's revenue knocked 300+ points off the Nasdaq-100 within ~30 minutes, while

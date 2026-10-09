@@ -187,6 +187,37 @@ class MarketConfig:
 
 
 @dataclass
+class SmallCapConfig:
+    """The little things: small/mid caps sized against their market cap, plus a movers radar."""
+
+    enabled: bool = True
+    # the universe: every listed US stock with its market cap (Nasdaq's public screener)
+    universe_url: str = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&download=true"
+    refresh_hours: float = 6.0
+    # pump-and-dump guards: below these a catalyst is shown but never boosted
+    min_market_cap: float = 30e6
+    min_price: float = 1.0
+    max_market_cap: float = 10e9  # above this the big-cap scorer is in charge
+    # the radar: small caps ripping with no headline yet (the news is about to drop)
+    radar: bool = True
+    radar_provider: str = "yahoo"  # "yahoo" (small-cap gainers/losers screeners) or "nasdaq"
+    radar_seconds: float = 60.0
+    radar_max_cap: float = 2e9
+    radar_min_pct: float = 20.0  # day move that puts a name on the radar
+    radar_jump_pct: float = 8.0  # move between two scans (~1 min) that flags it at once
+    radar_min_dollar_volume: float = 2e6  # a move nobody trades is not a move
+    radar_push_pct: float = 35.0  # at/above this (with real volume) the radar pushes (HIGH)
+    radar_daily_pushes: int = 8  # most radar pushes per day; the rest show in the app
+
+    def filters(self) -> dict[str, float]:
+        return {
+            "min_market_cap": self.min_market_cap,
+            "max_market_cap": self.max_market_cap,
+            "min_price": self.min_price,
+        }
+
+
+@dataclass
 class ChannelConfig:
     name: str
     enabled: bool = False
@@ -223,6 +254,7 @@ class Config:
     sources: list[dict[str, Any]]
     knowledge: dict[str, Any]
     path: Path | None = None
+    smallcap: SmallCapConfig = field(default_factory=SmallCapConfig)
 
     @property
     def data_path(self) -> Path:
@@ -319,6 +351,7 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         "market",
         "notify",
         "web",
+        "smallcap",
         "sources",
         "include_default_sources",
     }
@@ -383,6 +416,11 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         )
     notify = NotifyConfig(channels=channels, rate_limit_per_minute=rate, quiet_hours=quiet)
     web = _dataclass_from(WebConfig, raw.get("web"), "web")
+    smallcap = _dataclass_from(SmallCapConfig, raw.get("smallcap"), "smallcap")
+    if smallcap.radar_provider not in ("yahoo", "nasdaq"):
+        raise ConfigError("[smallcap] radar_provider must be 'yahoo' or 'nasdaq'")
+    if smallcap.radar_seconds < 20:
+        raise ConfigError("[smallcap] radar_seconds must be at least 20 (be polite to free endpoints)")
 
     defaults = (
         expand_env(load_package_yaml("default_sources.yaml"))
@@ -395,7 +433,7 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
             raise ConfigError(f"source '{s['name']}' needs a 'type'")
         s["enabled"] = as_bool(s.get("enabled", True))
 
-    return Config(general, scoring, llm, market, notify, web, sources, knowledge, path)
+    return Config(general, scoring, llm, market, notify, web, sources, knowledge, path, smallcap)
 
 
 def load_config(path: str | Path | None = None) -> Config:

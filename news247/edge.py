@@ -139,6 +139,9 @@ class EdgeDesk:
                 direct.append(comp.ticker)
         if alert.item is not None:
             direct.extend(self.scorer.entities.find_tickers(alert.item.text, alert.item.title))
+        sc = an.smallcap or {}
+        if sc.get("material") and sc.get("symbol"):
+            direct.insert(0, sc["symbol"])  # the small cap the news is about leads the play
         direct = list(dict.fromkeys(direct))[:6]
         read_through = [t for t in an.tickers if t not in direct][:8]
         if not direct:  # macro news: the market-wide names lead
@@ -219,6 +222,8 @@ class EdgeDesk:
             return
         play = self.play(alert)
         alert.edge["play"] = play
+        if alert.analysis.smallcap:
+            alert.edge["smallcap"] = dict(alert.analysis.smallcap)
         # never delay an alert: until the history is scored (first seconds after start) skip it
         precs = self.precedents_for(alert.analysis, alert.title) if self.ready else []
         alert.edge["precedents"] = precs
@@ -279,7 +284,13 @@ class EdgeDesk:
 
     @staticmethod
     def push_line(alert: Alert) -> str:
-        """One line for the lock screen: the strongest precedent."""
+        """One line for the lock screen: for a small cap, how big the news is for that company;
+        otherwise the strongest precedent."""
+        sc = alert.edge.get("smallcap") or {}
+        if sc.get("material") and sc.get("move_text"):
+            return f"{sc['symbol']} · {sc['cap']} {sc['band']} · {sc['label']} · {sc['move_text']}"[:160]
+        if sc.get("radar"):
+            return f"{sc['symbol']} · {sc['cap']} {sc['band']} · {sc['label']}"[:160]
         precs = alert.edge.get("precedents") or []
         if not precs:
             return ""

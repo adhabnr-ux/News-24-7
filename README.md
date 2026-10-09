@@ -162,7 +162,7 @@ Built-in safeguards: polling uses conditional GETs, so checking every 5–10 s c
 
 ## How it decides what matters
 
-> **Research-backed.** The criteria come from a study of 151 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first) and the headline that first reported each one. `news247 backtest` replays them: **95% are caught from the first report, with 0 false alarms on 103 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
+> **Research-backed.** The criteria come from a study of 182 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first and 31 small caps that moved 25–3,000% on one headline) and the headline that first reported each one. `news247 backtest` replays them: **96% are caught from the first report, with 0 false alarms on 119 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
 
 Every item is scored from 0 to 100 by a deterministic rule engine. It takes about 50 µs per item, never goes down, and every score can be explained:
 
@@ -178,6 +178,8 @@ Every item is scored from 0 to 100 by a deterministic rule engine. It takes abou
 - **Penalties**: law-firm class-action spam, "stocks to buy", "here's why", event schedules, podcasts, question headlines
 - **Confirmation**: the same story from several outlets is clustered into **one** alert. Each extra source raises the score, and an alert re-fires only when the story *escalates* to a higher severity.
 - **Signals from the source itself**: 8-K item codes (1.03 bankruptcy, 4.02 restatement…), halt reason codes (T1 news pending, MWC circuit breaker)
+
+- **Small and mid caps, sized against the company**: every listed company's market cap is known, so a $45M Army contract for a $70M drone maker, a buyout at a 100% premium or an FDA letter for a one-drug biotech is scored by the move it means *for that company* (see below)
 
 Severity: **CRITICAL ≥ 75**, **HIGH ≥ 55**, **MEDIUM ≥ 35** (all configurable).
 
@@ -217,6 +219,36 @@ Items the rules find at least somewhat interesting are sent to your local model.
 - The model can only **nudge** the score (−20 / +25), so a confused model cannot hide a circuit breaker.
 - The model is kept loaded in memory (`keep_alive`) to avoid cold-start delays.
 - Any OpenAI-compatible server works too (LM Studio, llama.cpp, vLLM): `provider: openai`.
+
+---
+
+## The little things: small caps that move big
+
+Big stocks are half the game. The other half is the $200M company whose FDA approval, buyout or
+government stake sends it +60% to +300% before most people have heard of it. News247 knows the
+market cap of every listed US stock (Nasdaq's free screener, cached daily) and reads each
+headline the way a small-cap trader does:
+
+- **Sized against the company**: contract or deal value ÷ market cap, the buyout premium vs. the
+  last price, binary FDA and trial outcomes for small biotechs, NVIDIA/OpenAI/hyperscaler deals
+  and stakes, US government equity stakes, crypto-treasury PIPEs, short reports, offerings.
+  A catalyst worth +25% or more for that company is pushed to your phone.
+- **Pump-and-dump guards**: under $30M, under $1, recent China/HK micro-cap IPOs and fluff
+  ("joins NVIDIA Inception") are shown but never boosted.
+- **The radar**: every minute from 04:00 to 20:00 ET it scans the whole small-cap market (pre-
+  and after-hours included) and flags names breaking out on real volume **before any headline**,
+  then tells you when the news lands that the radar had it first.
+- **In Foretape**: a gold SMALL CAP pill with the catalyst and typical move, an All / Small caps
+  tape switch, and a live small-cap radar board on the Watch tab.
+
+```text
+$ news247 score --tier wire 'Dronez Systems (NASDAQ: DRNZ) Awarded $45 Million U.S. Army Contract'
+  🟠 HIGH  score 70.0/100   direction: up
+  small cap: DRNZ $70M micro cap · Contract from U.S. Army worth 64% of market cap · +36–96% typical
+```
+
+Backtest: 30 of 31 small-cap events (2024 to Oct 2026) caught from the first report, 0 of 16
+small-cap noise releases flagged. Full guide: [docs/SMALLCAPS.md](docs/SMALLCAPS.md).
 
 ---
 
@@ -299,16 +331,17 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 |---|---|
 | `news247 run` | Start monitoring (`--no-web`, `--no-market`, `--port`, `--host`) |
 | `news247 check [names…]` | Fetch every source once from this machine; shows status, newest item and errors |
-| `news247 score "headline"` | Explain a score (`--tier primary --entity OpenAI --summary …`) |
+| `news247 score "headline"` | Explain a score (`--tier primary --entity OpenAI --ticker ACMB --summary …`) |
+| `news247 universe [--refresh] [SYM…]` | Load every listed company's market cap; look companies up |
 | `news247 test-notify [--only imessage]` | Send a test alert through every enabled channel (or just one) |
 | `news247 demo` | Simulated "AI launch → software selloff" through the real pipeline, dashboard and notifications |
 | `news247 stats` | Measured detection latency per source, and which source had each story first |
-| `news247 backtest [-v]` | Replay ~100 historical market-moving events and ~85 noise headlines through the scoring rules |
+| `news247 backtest [-v]` | Replay 182 historical market-moving events and 119 noise headlines through the scoring rules |
 | `news247 init` | Write a starter `config.yaml` + `.env` |
 
 ### API
 
-`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
+`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
 
 ---
 
@@ -327,14 +360,17 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
  Yahoo / Finnhub prices ─► move detector ─► coalesce ─► correlate with recent news ─► price alert
                            (rules, baskets,   (one alert per
                             cooldowns)          sector move)
+ Nasdaq screener ─► universe (market caps) ─► small-cap sizing in the scorer
+ Yahoo small-cap gainers ─► radar (ladder, volume, pump guards) ─► "moving before the news" alert
 ```
 
 ```
 news247/
   sources/      rss, sec_edgar, halts, pagewatch, bluesky, x_stream, alpaca_news, telegram, social (x, mastodon),
                 apis (hn, reddit, finnhub)
-  analysis/     scorer, entities, dedup (story clustering), llm
-  market/       detector (move rules, baskets), prices (yahoo, finnhub)
+  analysis/     scorer, smallcap (catalyst sizing vs. market cap), entities, dedup (story clustering), llm
+  market/       detector (move rules, baskets), prices (yahoo, finnhub), universe (every listing's size),
+                radar (small caps breaking out before the news)
   notify/       channels (relay, iMessage, BlueBubbles, Sendblue, Blooio, SMS, ntfy, Telegram, …) + dispatcher
                 (severity routing, quiet hours, pause/text commands, backup channels)
   whatsapp/     WhatsApp: Cloud API client (templates, 24-hour window, webhook) and the self-hosted

@@ -19,6 +19,8 @@ from .edge import Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
 from .market.prices import PriceMonitor
+from .market.radar import MoversRadar, RadarHit, SmallCapFeed
+from .market.universe import Universe, fmt_cap
 from .models import Alert, Analysis, NewsItem, PriceMove, Severity, SourceTier
 from .notify import Dispatcher
 from .notify.format import move_headline, window_label
@@ -59,6 +61,25 @@ class Engine:
         self.scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
         self.edge = EdgeDesk(self.scorer)
         self.calendar = Calendar()
+        # the little things: every listed company's size, so small caps are scored by how big
+        # the news is for them, plus a radar for small caps moving before any headline
+        sc = cfg.smallcap
+        self.universe = SmallCapFeed.load_cached(cfg.data_path) or Universe()
+        self.radar: MoversRadar | None = None
+        self.smallcap_feed: SmallCapFeed | None = None
+        self.radar_seen: dict[str, tuple[float, float]] = {}  # symbol -> (flagged at, % move)
+        if sc.enabled:
+            self.scorer.attach_universe(self.universe, **sc.filters())
+            if cfg.market.enabled:
+                self.radar = MoversRadar(sc, self.universe) if sc.radar else None
+                self.smallcap_feed = SmallCapFeed(
+                    sc,
+                    self.http,
+                    self.universe,
+                    cfg.data_path,
+                    self.radar,
+                    market_phase=lambda now: self.calendar.market_status(now)["phase"],
+                )
         self.clusterer = StoryClusterer(window_s=cfg.scoring.cluster_window_minutes * 60)
         self.dispatcher = dispatcher or Dispatcher(cfg.notify, self.http)
         self.detector = MoveDetector(cfg.market)
@@ -154,6 +175,8 @@ class Engine:
             runners.append(asyncio.create_task(self.prices.run(self.on_moves, stop), name="prices"))
         runners.append(asyncio.create_task(self._maintenance(stop), name="maintenance"))
         runners.append(asyncio.create_task(self._edge_loop(stop), name="edge"))
+        if self.smallcap_feed is not None:
+            runners.append(asyncio.create_task(self.smallcap_feed.run(self.on_radar, stop), name="smallcap"))
         if self.whatsapp_cloud is not None:
             runners.append(asyncio.create_task(self.whatsapp_cloud.maintain(stop), name="whatsapp-cloud"))
         if self.cfg.general.keepalive_url:
@@ -301,6 +324,9 @@ class Engine:
             notes.insert(0, "⚠️ UNCONFIRMED — single social/squawk post, no official source yet")
         if escalation:
             notes.append("⬆ escalated" + (" after AI review" if late else ""))
+        radar = self._radar_note(analysis.tickers[:4], time.time())
+        if radar:
+            notes.append(radar)
         push = True
         if item.extra.get("backfill"):
             age = time.time() - item.published if item.published else None
@@ -475,6 +501,98 @@ class Engine:
             move=combined,
             related=catalysts,
         )
+
+    # ------------------------------------------------------------------ the radar
+
+    async def on_radar(self, hits: list[RadarHit]) -> None:
+        for hit in hits:
+            self.radar_seen[hit.symbol] = (hit.detected, hit.quote.change_pct or 0.0)
+            await self.publish(self._radar_alert(hit))
+        cutoff = time.time() - 12 * 3600
+        for sym, (ts, _) in list(self.radar_seen.items()):
+            if ts < cutoff:
+                del self.radar_seen[sym]
+
+    def _radar_alert(self, hit: RadarHit) -> Alert:
+        q = hit.quote
+        d = hit.to_dict()
+        pct = q.change_pct or 0.0
+        arrow = "▲" if hit.direction == "up" else "▼"
+        when = {"pre": " pre-market", "post": " after hours"}.get(q.session, "")
+        if hit.kind == "jump" and hit.jump_pct is not None:
+            headline = (
+                f"{fmt_pct(hit.jump_pct)} in {window_label(hit.jump_window_s)} ({fmt_pct(pct)} on the day)"
+            )
+        else:
+            headline = f"{fmt_pct(pct)}{when}"
+        name = (q.name or hit.symbol)[:48]
+        title = f"{arrow} {hit.symbol} {headline} · {name} · {d['cap']} {d['band']}"
+        parts = []
+        if q.price and q.prev_close:
+            parts.append(f"${q.price:,.2f} vs ${q.prev_close:,.2f} prev close")
+        if q.dollar_volume:
+            vol = f"{fmt_cap(q.dollar_volume)} traded"
+            if q.rvol and q.rvol >= 1.5:
+                vol += f" ({q.rvol:.0f}× normal volume)"
+            parts.append(vol)
+        body = " · ".join(parts)
+        if hit.flags:
+            body += "\n⚠ " + "; ".join(hit.flags)
+        catalysts = self.find_catalysts([hit.symbol], hit.detected)
+        if not catalysts:
+            body += "\nNo headline yet — on the radar before the news. Watch halts, 8-Ks and the wires."
+        move = PriceMove(
+            hit.symbol,
+            round(hit.jump_pct if hit.kind == "jump" and hit.jump_pct is not None else pct, 3),
+            hit.jump_window_s if hit.kind == "jump" else 86400,
+            float(q.price or 0.0),
+            float(hit.ref_price or q.prev_close or 0.0),
+            detected=hit.detected,
+        )
+        alert = Alert(
+            kind="price",
+            severity=Severity.parse(hit.severity),
+            title=title,
+            body=body,
+            url=catalysts[0]["url"] if catalysts else f"https://finance.yahoo.com/quote/{hit.symbol}",
+            tickers=[hit.symbol],
+            move=move,
+            related=catalysts,
+        )
+        alert.edge["radar"] = d
+        alert.edge["smallcap"] = {
+            "symbol": hit.symbol,
+            "name": d["name"],
+            "cap": d["cap"],
+            "band": d["band"],
+            "market_cap": d["market_cap"],
+            "label": "Radar: moving before the news" if not catalysts else "Radar: moving on the news",
+            "direction": hit.direction,
+            "radar": True,
+        }
+        self._track_symbols([hit.symbol])
+        return alert
+
+    def _radar_note(self, tickers: list[str], now: float) -> str:
+        for t in tickers:
+            seen = self.radar_seen.get(t)
+            if seen and 0 <= now - seen[0] <= 6 * 3600:
+                return (
+                    f"📡 Radar flagged {t} {fmt_pct(seen[1])} {fmt_age(now - seen[0])} before this headline"
+                )
+        return ""
+
+    def radar_board(self, limit: int = 40) -> dict[str, Any]:
+        rows = self.radar.snapshot(limit) if self.radar is not None else []
+        now = time.time()
+        for r in rows:
+            r["news"] = self.find_catalysts([r["symbol"]], now)[:1]
+        return {
+            "enabled": self.radar is not None,
+            "market": self.calendar.market_status(now),
+            "rows": rows,
+            "status": self.smallcap_feed.status() if self.smallcap_feed is not None else None,
+        }
 
     # ------------------------------------------------------------------ output
 
@@ -676,6 +794,11 @@ class Engine:
                 **(self.prices.health.to_dict() if self.prices else {}),
             },
             "llm": self.llm.stats() if self.llm else {"enabled": False},
+            "smallcap": (
+                self.smallcap_feed.status()
+                if self.smallcap_feed is not None
+                else {"listings": len(self.universe), "radar": {"enabled": False}}
+            ),
             "channels": self.dispatcher.describe(),
             "phone_mode": self.phone_mode(),
             "relay": self.relay_hub.status() if self.relay_hub is not None else None,

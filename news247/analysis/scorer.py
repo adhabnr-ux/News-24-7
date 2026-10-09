@@ -8,8 +8,11 @@ The score (0-100) estimates how likely an item is to move stocks *right now*:
   + company relevance (watchlist / known names / exposed tickers)
   + urgency markers ("BREAKING", "*" bulletins) and source boosts (8-K items, halt codes)
   − penalties (law-firm spam, listicles, "here's why", event schedules)
+  + small/mid caps: the catalyst sized against the company (``smallcap.py``) — a contract worth
+    half the market cap, a buyout premium, an FDA decision for a one-drug biotech
 
-then scaled down for tickers nobody is tracking. ``explain`` returns every contribution, so
+then scaled down for tickers nobody is tracking (unless the small-cap read says the news is
+material for that company). ``explain`` returns every contribution, so
 tuning is a matter of reading `news247 score "<headline>"`.
 """
 
@@ -22,6 +25,7 @@ from typing import Any
 from ..config import ScoringConfig
 from ..models import Analysis, NewsItem, SourceTier
 from .entities import EntityMatcher
+from .smallcap import SmallCapDesk
 
 TIER_BASE = {SourceTier.PRIMARY: 20.0, SourceTier.WIRE: 12.0, SourceTier.MEDIA: 10.0, SourceTier.SOCIAL: 5.0}
 UNKNOWN_TICKER_FACTOR = 0.45
@@ -179,6 +183,8 @@ class Scorer:
             t.upper() for t in knowledge.get("default_watchlist", [])
         }
         self.tracked = self.watchlist | {t.upper() for t in (tracked or [])}
+        # set by attach_universe(): sizes small/mid-cap news against the company's market cap
+        self.smallcap: SmallCapDesk | None = None
         self.entities = EntityMatcher(companies, sorted(self.tracked))
 
         kw: dict[str, float] = {**knowledge.get("keywords", {}), **cfg.keywords}
@@ -211,6 +217,12 @@ class Scorer:
                 )
 
     # ------------------------------------------------------------------ public
+
+    def attach_universe(self, universe: Any, **filters: float) -> SmallCapDesk:
+        """Know every listed company's size (``market.universe.Universe``): small and mid caps
+        are then scored by how big the news is for *them*."""
+        self.smallcap = SmallCapDesk(universe, **filters)
+        return self.smallcap
 
     def score(self, item: NewsItem) -> Analysis:
         return self.explain(item)
@@ -317,15 +329,57 @@ class Scorer:
             reasons.append(f"(themes capped at {THEME_CAP:.0f})")
         score += min(THEME_CAP, theme_total)
 
+        # --- small and mid caps: how big is this news for THIS company?
+        small = None
+        if self.smallcap is not None:
+            small = self.smallcap.read(title, summary, explicit, item.extra)
+        if small is not None:
+            sym = small.listing.symbol
+            cat = small.catalyst
+            if small.material:
+                explicit = [sym, *[t for t in explicit if t != sym]]
+            elif sym not in explicit:
+                explicit.append(sym)
+            tag = f"{sym} {small.listing.cap_label} {small.listing.band}"
+            if cat is not None and cat.kind == "routine":
+                score -= 10
+                reasons.append(f"-10 routine small-cap update ({tag})")
+            elif cat is not None and small.blocked:
+                reasons.append(f"+0 {cat.label} — not credited: {tag} is {small.blocked}")
+            elif cat is not None and small.points:
+                score += small.points
+                reasons.append(f"+{small.points:.0f} {tag}: {cat.label}, {cat.move_text}")
+                # a rumor on social media earns less trust than the company's own release
+                floor = small.floor * (0.85 if item.tier == SourceTier.SOCIAL else 1.0)
+                if score < floor:
+                    reasons.append(f"+{floor - score:.0f} small-cap floor (a {cat.expected:.0f}% mover)")
+                    score = floor
+
         # --- relevance: news about tickers nobody tracks is scaled down. Themes that name their
-        # own tickers (sector baskets) make it relevant; generic ones (FDA, deal talk) don't.
+        # own tickers (sector baskets) make it relevant; generic ones (FDA, deal talk) don't —
+        # unless the catalyst is material for a small/mid cap.
         relevant_theme = any(t.tickers for t in themes)
-        if explicit and not companies and not relevant_theme and not any(t in self.tracked for t in explicit):
+        material = small is not None and small.material
+        if (
+            explicit
+            and not companies
+            and not relevant_theme
+            and not material
+            and not any(t in self.tracked for t in explicit)
+        ):
             score *= UNKNOWN_TICKER_FACTOR
             reasons.append(f"×{UNKNOWN_TICKER_FACTOR} untracked ticker(s) {', '.join(explicit[:3])}")
 
         score = max(0.0, min(100.0, score))
         tickers = list(dict.fromkeys(explicit + theme_tickers + entity_tickers))[:20]
+        direction = self._direction(title, themes)
+        if (
+            material
+            and small is not None
+            and small.catalyst is not None
+            and small.catalyst.direction in ("up", "down")
+        ):
+            direction = small.catalyst.direction  # "to be acquired at $X" is up whatever the verbs say
         return Analysis(
             score=round(score, 1),
             severity=self.cfg.severity_for(score),
@@ -333,7 +387,8 @@ class Scorer:
             entities=[c.name for c in companies],
             themes=[t.name for t in themes],
             reasons=reasons,
-            direction=self._direction(title, themes),
+            direction=direction,
+            smallcap=small.to_dict() if small is not None and small.catalyst is not None else {},
         )
 
     def rescore(self, analysis: Analysis, delta: float, reason: str) -> Analysis:

@@ -64,7 +64,15 @@ class RSSSource(PollingSource):
             # GlobeNewswire/PRN put "NASDAQ:ABCD" / "NYSE:XYZ" in categories
             if ":" in term:
                 exch, _, sym = term.partition(":")
-                if exch.strip().upper() in {"NASDAQ", "NYSE", "NYSEAMERICAN", "AMEX", "OTC", "TSX", "CBOE"}:
+                if exch.strip().upper().replace(" ", "") in {
+                    "NASDAQ",
+                    "NYSE",
+                    "NYSEAMERICAN",
+                    "AMEX",
+                    "OTC",
+                    "TSX",
+                    "CBOE",
+                }:
                     sym = sym.strip().upper()
                     if sym.replace(".", "").replace("-", "").isalnum() and len(sym) <= 6:
                         tickers.append(sym)

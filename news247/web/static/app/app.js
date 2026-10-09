@@ -93,6 +93,19 @@ function playRow(a) {
   const d = p.direction in dirLabel ? `<span class="dir ${p.direction}">${dirLabel[p.direction]}</span>` : "";
   return `<div class="play">${d}${meter(p.meter)}<span class="conv">${esc(p.conviction)} conviction</span></div>`;
 }
+function capRow(a) {
+  const s = a.edge?.smallcap;
+  if (!s || !(s.material || s.radar)) return "";
+  const d = ["up", "down"].includes(s.direction) ? s.direction : "mixed";
+  if (s.radar) {  // the title already names the stock and its size: say what the radar saw
+    const r = a.edge.radar || {}, news = (a.related || []).some((x) => x.kind === "news");
+    const tag = r.rvol && r.rvol >= 1.5 ? `${Math.round(r.rvol)}× normal volume` : r.session === "pre" ? "pre-market" : r.session === "post" ? "after hours" : "";
+    return `<div class="cap ${d}"><span class="capb">◉ Radar</span><span class="capl">${news ? "Moving on the news below" : "Moving before any headline"}</span>${tag ? `<span class="capx">${esc(tag)}</span>` : ""}</div>`;
+  }
+  return `<div class="cap ${d}"><span class="capb">${esc(s.band)}</span><b class="sym">${esc(s.symbol)}</b><span class="capm">${esc(s.cap)}</span>
+    <span class="capl">${esc(s.label)}</span>${s.move_text ? `<span class="capx">${esc(s.move_text)}</span>` : ""}</div>`;
+}
+const isSmall = (a) => !!(a.edge?.smallcap && (a.edge.smallcap.material || a.edge.smallcap.radar));
 function footRow(a) {
   const it = a.item || {}, e = a.edge || {}, parts = [];
   const lag = it.published && it.detected ? Math.max(0, it.detected - it.published) : null;
@@ -103,7 +116,7 @@ function footRow(a) {
 }
 function alertHTML(a, opts = {}) {
   const an = a.analysis || {}, it = a.item || {};
-  const src = a.kind === "price" ? "PRICE ACTION" : a.kind === "system" ? "FORETAPE" : (it.source || a.kind).toUpperCase();
+  const src = a.edge?.radar ? "SMALL-CAP RADAR" : a.kind === "price" ? "PRICE ACTION" : a.kind === "system" ? "FORETAPE" : (it.source || a.kind).toUpperCase();
   const why = an.summary || (a.kind !== "news" && a.body ? a.body.split("\n")[0] : "");
   const known = seen.has(a.id);
   const state = a._new ? "new in" : known ? "in" : "";
@@ -113,7 +126,7 @@ function alertHTML(a, opts = {}) {
       <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span><span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
-      ${playRow(a)}${tickerChips(a)}${precLine(a)}${footRow(a)}
+      ${capRow(a)}${playRow(a)}${tickerChips(a)}${precLine(a)}${footRow(a)}
     </div>
   </article>`;
 }
@@ -125,14 +138,18 @@ function featured() {
   return alerts.filter((a) => a.created >= cutoff && a.kind !== "system")
     .sort((x, y) => (rank[y.severity] - rank[x.severity]) || (y.created - x.created))[0];
 }
+let tapeFilter = (() => { try { return localStorage.getItem("ft.tape") || "all"; } catch (_) { return "all"; } })();
 function renderTape() {
-  const f = featured();
+  document.querySelectorAll("#tapeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.f === tapeFilter));
+  const pool = tapeFilter === "small" ? alerts.filter(isSmall) : alerts;
+  const f = tapeFilter === "small" ? null : featured();
   $("featureWrap").innerHTML = f ? alertHTML(f, { feature: true }) : "";
-  const rest = alerts.filter((a) => a !== f);
+  const rest = pool.filter((a) => a !== f);
   const shown = rest.slice(0, showAll ? 150 : 30);   // dozens of blurred glass layers are expensive on a phone: older ones load on demand
   $("alerts").innerHTML = rest.length ? shown.map((a) => alertHTML(a)).join("") + (rest.length > shown.length ? `<button class="more" id="moreBtn">Show ${rest.length - shown.length} older</button>` : "")
-    : f ? "" : emptyHTML("Quiet tape. Foretape is watching every first-to-publish source; the next market-moving headline lands here and on your lock screen.");
-  $("tapeCount").textContent = alerts.length ? `${alerts.length} recent` : "";
+    : f ? "" : emptyHTML(tapeFilter === "small"
+      ? "No small-cap catalysts yet. Every listed company is sized against its news; the first one that moves the needle for its size lands here."
+      : "Quiet tape. Foretape is watching every first-to-publish source; the next market-moving headline lands here and on your lock screen.");
   alerts.forEach((a) => { seen.add(a.id); delete a._new; });
   $("moreBtn")?.addEventListener("click", () => { showAll = true; renderTape(); });
   Fx.observe($("featureWrap")); Fx.observe($("alerts"));
@@ -232,7 +249,30 @@ async function loadTicker() {
     $("belt").style.setProperty("--dur", Math.max(24, top.length * 3.6) + "s");
   } catch (_) { /* the ticker is decoration: never break the page for it */ }
 }
+function radarRow(r) {
+  const v = r.change_pct ?? 0, news = (r.news || [])[0];
+  const bits = [`${esc(r.cap)} ${esc(r.band)}`];
+  if (r.dollar_volume) bits.push(`$${r.dollar_volume >= 1e9 ? (r.dollar_volume / 1e9).toFixed(1) + "B" : r.dollar_volume >= 1e6 ? (r.dollar_volume / 1e6).toFixed(r.dollar_volume < 1e7 ? 1 : 0) + "M" : Math.round(r.dollar_volume / 1e3) + "K"} traded`);
+  if (r.rvol && r.rvol >= 1.5) bits.push(`${Math.round(r.rvol)}× volume`);
+  const why = news ? `<a href="${esc(news.url)}" target="_blank" rel="noopener" class="rnews">${esc(news.title)}</a>`
+    : `<span class="rnone">No headline yet</span>`;
+  return `<div class="li radar-li${r.flagged ? " hot" : ""}"><span class="sym" style="width:64px">${esc(r.symbol)}</span>
+    <div class="grow"><div class="rname">${esc(r.name || "")}</div><div class="sub">${bits.join(" · ")}${(r.flags || []).length ? ` · <span class="neg">⚠ ${esc(r.flags[0])}</span>` : ""}</div><div class="sub">${why}</div></div>
+    <span class="chg num ${cls(v)}" style="width:auto;min-width:64px">${pct(v)}${r.session && r.session !== "regular" ? `<small class="rsess">${r.session === "pre" ? "pre-mkt" : "after hrs"}</small>` : ""}</span></div>`;
+}
+async function loadRadar() {
+  try {
+    const r = await api("/api/radar");
+    const rows = r.rows || [];
+    $("radarSub").textContent = r.enabled ? (r.market?.phase === "closed" ? "sleeps until 4:00 ET" : "moving before the news") : "off";
+    $("radar").innerHTML = rows.length ? rows.slice(0, 25).map(radarRow).join("")
+      : `<div class="li"><span class="muted">${!r.enabled ? "The radar runs with the market feed (smallcap.radar in config)."
+        : r.market?.phase === "closed" ? "Market closed. The radar wakes for pre-market at 4:00 ET and scans every small cap each minute."
+        : "Nothing ripping on real volume right now. Breakouts of 20%+ on $2M+ traded land here, and big ones on your lock screen."}</span></div>`;
+  } catch (_) { $("radar").innerHTML = `<div class="li"><span class="muted">Radar unavailable.</span></div>`; }
+}
 async function loadWatch() {
+  loadRadar();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -279,10 +319,27 @@ async function openSheet(id) {
   const tl = (a.story_sources || []).map((s, i) => `<div class="li"><div class="grow"><b>${esc(s.source)}</b>
       <div class="sub">${i === 0 ? "first" : "+" + dur(s.detected - a.story_sources[0].detected)} · ${esc(s.tier || "")}</div></div></div>`).join("");
   const chart = sparkline(a.series, a.created);
+  const sc = e.smallcap, rd = e.radar, rel = a.kind === "price" ? (a.related || []).filter((x) => x.kind === "news") : [];
+  const money = (v) => v == null ? "—" : v >= 1e9 ? "$" + (v / 1e9).toFixed(1) + "B" : v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M" : "$" + Math.round(v / 1e3) + "K";
+  const capBlock = sc ? `<h4>${sc.radar ? "On the radar" : "The little thing"}</h4><div class="panel glass">
+      <div class="kv"><span>Company</span><b>${esc(sc.name || sc.symbol)} (${esc(sc.symbol)})</b></div>
+      <div class="kv"><span>Size</span><b class="num">${esc(sc.cap)} · ${esc(sc.band)}</b></div>
+      ${sc.label && !sc.radar ? `<div class="kv"><span>Catalyst</span><b>${esc(sc.label)}</b></div>` : ""}
+      ${sc.radar ? `<div class="kv"><span>Headline</span><b>${(a.related || []).some((x) => x.kind === "news") ? "found — below" : "none yet"}</b></div>` : ""}
+      ${sc.move_text ? `<div class="kv"><span>For a company this size</span><b class="${sc.direction === "down" ? "neg" : sc.direction === "up" ? "pos" : ""}">${esc(sc.move_text)}</b></div>` : ""}
+      ${sc.relative != null ? `<div class="kv"><span>Deal size vs. the company</span><b class="num">${Math.round(sc.relative * 100)}% of market cap</b></div>` : ""}
+      ${rd ? `<div class="kv"><span>Price</span><b class="num">$${(rd.price ?? 0).toFixed(2)} <span class="${cls(rd.change_pct)}">${pct(rd.change_pct)}</span></b></div>
+        <div class="kv"><span>Traded</span><b class="num">${money(rd.dollar_volume)}${rd.rvol ? ` · ${rd.rvol}× normal volume` : ""}</b></div>` : ""}
+      ${sc.blocked ? `<div class="sub" style="padding:10px 0 4px">Not boosted: ${esc(sc.blocked)}</div>` : ""}
+      ${sc.move_text ? `<div class="sub" style="padding:10px 0 4px">Typical moves are rules of thumb from 2024–26 small-cap history, not a forecast.</div>` : ""}</div>` : "";
   const blocks = [
-    `<div class="meta" style="--sev:${SEV[a.severity]}"><span class="sev">${esc(a.severity)}</span><span>${esc((it.source || a.kind).toUpperCase())}</span><span class="ago">${ago(a.created)} ago</span></div>`,
+    `<div class="meta" style="--sev:${SEV[a.severity]}"><span class="sev">${esc(a.severity)}</span><span>${esc(e.radar ? "SMALL-CAP RADAR" : (it.source || a.kind).toUpperCase())}</span><span class="ago">${ago(a.created)} ago</span></div>`,
     `<h2>${esc(a.title)}</h2>`,
-    an.summary ? `<p class="muted" style="font-size:15.5px">${esc(an.summary)}</p>` : a.body ? `<p class="muted">${esc(a.body)}</p>` : "",
+    an.summary ? `<p class="muted" style="font-size:15.5px">${esc(an.summary)}</p>` : a.body ? `<p class="muted" style="white-space:pre-line">${esc(a.body)}</p>` : "",
+    capBlock,
+    rel.length ? `<h4>The headline behind it</h4><div class="panel glass">${rel.map((x) => `<div class="li"><div class="grow">
+        <a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a>
+        <div class="sub">${esc(x.source)} · ${esc(x.age)} before the move</div></div></div>`).join("")}</div>` : "",
     chart ? `<h4>The tape since the alert</h4>${chart}` : "",
     p.direction ? `<h4>The play</h4><div class="panel glass padded">
         <div class="play" style="margin:0">${p.direction in dirLabel ? `<span class="dir ${p.direction}">${dirLabel[p.direction]}</span>` : ""}${meter(p.meter)}<span class="conv">${esc(p.conviction)} conviction · score ${Math.round(p.score)}</span></div>
@@ -293,13 +350,13 @@ async function openSheet(id) {
     e.precedents?.length ? `<h4>Precedents</h4><div class="panel glass">${e.precedents.map((x) => `<div class="li"><div class="grow">
         <div class="sub">${esc(prettyDate(x.date))}, ${esc(x.date.slice(0, 4))} · ${esc(x.category)}${x.first_source ? " · first: " + esc(x.first_source) : ""}</div>
         <div style="font-weight:600;margin:3px 0">${esc(x.headline)}</div><div class="${/(^|\s)[-−]\d/.test(x.move) ? "neg" : "pos"}" style="font-size:13.5px">${esc(x.move)}</div></div></div>`).join("")}</div>` : "",
-    `<h4>The edge</h4><div class="panel glass">
+    a.kind === "news" && `<h4>The edge</h4><div class="panel glass">
       ${lag != null ? `<div class="kv"><span>Caught after it was posted</span><b class="num">${dur(lag)}</b></div>` : ""}
       <div class="kv"><span>First seen on</span><b>${esc(it.source || "—")}</b></div>
       <div class="kv"><span>Mainstream caught up</span><b class="num">${e.lead ? `${esc(outlet(e.lead.source))}, ${dur(e.lead.lead_s)} later` : "not yet"}</b></div></div>`,
     tl ? `<h4>Who carried it</h4><div class="tl">${tl}</div>` : "",
     an.reasons?.length ? `<h4>Why Foretape flagged it</h4><details><summary>Score ${Math.round(an.score)} / 100 — show the breakdown</summary><ul class="reasons" style="margin-top:10px">${an.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></details>` : "",
-    a.url ? `<div style="margin-top:26px"><a class="btn primary" href="${esc(a.url)}" target="_blank" rel="noopener">Open the source ↗</a></div>` : "",
+    a.url ? `<div style="margin-top:26px"><a class="btn primary" href="${esc(a.url)}" target="_blank" rel="noopener">${rd && !rel.length ? "Open the quote" : "Open the source"} ↗</a></div>` : "",
   ].filter(Boolean);
   $("sheetBody").innerHTML = blocks.join("");
   [...$("sheetBody").children].forEach((c, i) => c.style.setProperty("--k", i));
@@ -334,6 +391,12 @@ $("scrim").onclick = closeSheet; $("closeSheet").onclick = closeSheet;
 })();
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
 document.addEventListener("click", (e) => {
+  const seg = e.target.closest("#tapeSeg button");
+  if (seg) {
+    tapeFilter = seg.dataset.f; showAll = false;
+    try { localStorage.setItem("ft.tape", tapeFilter); } catch (_) { /* private mode */ }
+    renderTape(); return;
+  }
   const el = e.target.closest("[data-id]");
   if (el && !e.target.closest("a")) openSheet(el.dataset.id);
 });
