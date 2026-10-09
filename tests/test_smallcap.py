@@ -798,6 +798,11 @@ async def test_api_radar_and_webpush_payload(tmp_path: Path, uni: Universe):
             async with s.get(srv.make_url("/api/radar?token=tok&limit=5")) as r:
                 body = await r.json()
             assert body["enabled"] and body["rows"][0]["symbol"] == "SERV" and "market" in body
+            async with s.get(srv.make_url("/api/app?token=tok")) as r:
+                app = await r.json()
+            assert (
+                app["smallcap"]["listings"] == len(STUB) and app["smallcap"]["radar"] is False
+            )  # no feed: market off
     finally:
         await srv.close()
         await eng.http.close()

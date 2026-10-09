@@ -468,6 +468,7 @@ class WebServer:
                 },
                 "next": self.engine.calendar.upcoming(days=35)[:6],
                 "brief_time": str(wp.options.get("brief_time", "08:15") or "") if wp is not None else "",
+                "smallcap": self._smallcap_brief(st.get("smallcap") or {}),
             }
         )
 
@@ -497,6 +498,19 @@ class WebServer:
         ]
         rows.sort(key=lambda r: abs(r["chg_day"] or 0.0), reverse=True)
         return _json({"symbols": rows, "market": self.engine.calendar.market_status()})
+
+    @staticmethod
+    def _smallcap_brief(sc: dict[str, Any]) -> dict[str, Any]:
+        """For the Desk: is the small-cap lane armed (companies sized, radar scanning)?"""
+        radar = sc.get("radar") or {}
+        return {
+            "listings": sc.get("listings", 0),
+            "age_s": sc.get("universe_age_s"),
+            "radar": bool(radar.get("enabled")),
+            "radar_status": radar.get("status", ""),
+            "scans": radar.get("scans", 0),
+            "hits": radar.get("hits", 0),
+        }
 
     async def api_radar(self, request: web.Request) -> web.Response:
         """The small-cap radar: names breaking out right now, how big they are, how much is
