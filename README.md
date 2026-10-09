@@ -34,9 +34,9 @@ In short:
 
 Inside Meta's 24-hour window you get full alerts. Outside it you get a short alert with a **Show details** button, and one tap brings everything in full. Reply `PAUSE 2h`, `STOP`, `RESUME`, `CRITICAL`, `NORMAL` or `STATUS` to control it.
 
-### Option A1: WhatsApp from a linked device (~$7/month for an always-on disk)
+### Option A1: your own "CallMeBot", also 100% free
 
-The server becomes a linked device of a second WhatsApp account and sends full messages any time: [docs/SETUP-CLOUD.md](docs/SETUP-CLOUD.md), [docs/WHATSAPP.md](docs/WHATSAPP.md).
+The server becomes a linked WhatsApp device of a spare number, so you get full messages any time with no Meta app, no templates and no 24-hour rule. The pairing is backed up to a free Postgres, so Render's free plan works: [docs/OWN-CALLMEBOT.md](docs/OWN-CALLMEBOT.md).
 
 ### Option A2: iMessage from your own Mac relay
 
@@ -314,7 +314,7 @@ news247/
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 225 tests: parsers on real feed formats, scoring calibration, move detection,
+pytest -q          # 229 tests: parsers on real feed formats, scoring calibration, move detection,
                    # every notification channel's wire format, LLM client, engine end-to-end, web API,
                    # the iMessage relay over a real WebSocket (auth, queueing, failover, receipts, commands),
                    # WhatsApp pairing/sending/receipts/commands (+ booting the real engine when installed)

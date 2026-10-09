@@ -102,6 +102,8 @@ notify:
     to: ${WHATSAPP_TO:-}                # your own WhatsApp number, e.g. +15551234567
     min_interval_s: 2                   # spacing between messages
     max_per_hour: 60                    # hard cap: protects the sending account
+    # Free hosts wipe the disk on restart: keep the pairing in a free Postgres (Neon/Supabase)
+    state_db: ${WHATSAPP_STATE_DB:-}    # postgres://user:pass@host/db?sslmode=require
 
   # WhatsApp via Meta's official Cloud API (developers.facebook.com > WhatsApp). No ban risk;
   # outside 24 h after your last message to the business number only approved templates go out.

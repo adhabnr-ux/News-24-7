@@ -78,6 +78,8 @@ class Engine:
             self.relay_hub.on_inbound = self.handle_phone_command
         wa = next((c for c in self.dispatcher.channels if c.name == "whatsapp"), None)
         self.whatsapp = getattr(wa, "session", None)
+        self._wa_channel = wa
+        self._wa_save_soon = asyncio.Event()
         if wa is not None and self.whatsapp is not None:
             wa.attach(cfg.data_path)  # type: ignore[attr-defined]
             self.whatsapp.on_inbound = self.handle_phone_command
@@ -123,7 +125,10 @@ class Engine:
             f"{self.cfg.llm.model}@{self.cfg.llm.base_url}" if self.llm else "off",
             ", ".join(f"{c.name}≥{c.min_severity.name.lower()}" for c in self.dispatcher.channels) or "none",
         )
+        snap = getattr(self._wa_channel, "snapshot", None)
         if self.whatsapp is not None:
+            if snap is not None:
+                await snap.restore()  # fresh container: put the saved pairing back first
             await self.whatsapp.start()
         runners = [asyncio.create_task(s.run(self.on_item, stop), name=f"src:{s.name}") for s in self.sources]
         if self.prices:
@@ -133,6 +138,8 @@ class Engine:
             runners.append(asyncio.create_task(self.whatsapp_cloud.maintain(stop), name="whatsapp-cloud"))
         if self.cfg.general.keepalive_url:
             runners.append(asyncio.create_task(self._keepalive(stop), name="keepalive"))
+        if snap is not None and self.whatsapp is not None:
+            runners.append(asyncio.create_task(snap.run(stop, self._wa_save_soon), name="whatsapp-state"))
         try:
             await stop.wait()
         finally:
@@ -144,6 +151,8 @@ class Engine:
                 await self.relay_hub.close()
             if self.whatsapp is not None:
                 await self.whatsapp.stop()
+                if snap is not None:
+                    await snap.save()  # last copy before the host wipes the disk
             if web:
                 await web.stop()
             await self.http.close()
@@ -527,8 +536,10 @@ class Engine:
 
     def _whatsapp_state(self, state: str, detail: str) -> None:
         """Tell you (through the other channels) when WhatsApp needs attention."""
-        from .whatsapp.session import BANNED, LOGGED_OUT
+        from .whatsapp.session import BANNED, CONNECTED, LOGGED_OUT
 
+        if state in (CONNECTED, LOGGED_OUT):
+            self._wa_save_soon.set()  # newly paired (or unlinked): back the session up soon
         if state not in (LOGGED_OUT, BANNED) or detail == "unlinked from the dashboard":
             return
         title = (
@@ -616,6 +627,16 @@ class Engine:
 
     # ------------------------------------------------------------------ status
 
+    def whatsapp_status(self) -> dict[str, Any] | None:
+        if self.whatsapp is None:
+            return None
+        from .whatsapp.neonize_backend import qr_svg
+
+        st = self.whatsapp.status(qr_svg)
+        snap = getattr(self._wa_channel, "snapshot", None)
+        st["state_db"] = snap.status() if snap is not None else None
+        return st
+
     def status(self) -> dict[str, Any]:
         return {
             "uptime_s": time.time() - self.started,
@@ -632,7 +653,7 @@ class Engine:
             "channels": self.dispatcher.describe(),
             "phone_mode": self.phone_mode(),
             "relay": self.relay_hub.status() if self.relay_hub is not None else None,
-            "whatsapp": self.whatsapp.status() if self.whatsapp is not None else None,
+            "whatsapp": self.whatsapp_status(),
             "whatsapp_cloud": self.whatsapp_cloud.status() if self.whatsapp_cloud is not None else None,
             "db": self.storage.counts(),
         }

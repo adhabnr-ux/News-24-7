@@ -234,9 +234,10 @@ class WebServer:
             writable = True
         except web.HTTPForbidden:
             writable = False
-        st = wa.status(qr_svg if writable else None)
+        st = self.engine.whatsapp_status() or wa.status(qr_svg)
         if not writable:  # whoever scans the QR links *their* account as the sender
             st["qr"] = st["pair_code"] = None
+            st["qr_svg"] = ""
         st["writable"] = writable
         return _json(st)
 

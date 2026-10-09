@@ -225,6 +225,7 @@ async function loadWhatsApp() {
   const lines = [`<div class="row"><span><span class="dot ${on ? "on" : (st.state === "pairing" || st.state === "connecting" ? "" : "off")}"></span><b>${esc(WA_STATES[st.state] || st.state)}</b>${st.me ? ` <span class="muted">as ${esc(st.me)}${st.name ? " · " + esc(st.name) : ""}</span>` : ""}</span>
     <span class="muted">${st.stats.sent} sent${st.stats.delivered ? ` · ${st.stats.delivered} delivered` : ""}${st.stats.read ? ` · ${st.stats.read} read` : ""}</span></div>`];
   if (st.delivery_median_s != null) lines.push(`<div class="muted" style="font-size:13px">Median time to your phone: ${st.delivery_median_s.toFixed(1)}s</div>`);
+  if (st.state_db) lines.push(`<div class="${st.state_db.last_error ? "warn" : "muted"}" style="font-size:13px">Pairing backup: ${st.state_db.last_error ? esc(st.state_db.last_error) : st.state_db.last_saved ? "saved " + esc(fmtTime(st.state_db.last_saved)) : st.state_db.restored ? "restored after restart" : "waiting for first save"}</div>`);
   if (st.last_error && !on) lines.push(`<div class="bad" style="font-size:13px">${esc(st.last_error)}</div>`);
   (st.warnings || []).forEach((w) => lines.push(`<div class="warn">⚠ ${esc(w)}</div>`));
   $("wa-state").innerHTML = lines.join("");

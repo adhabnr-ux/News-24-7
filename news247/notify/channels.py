@@ -655,6 +655,7 @@ class WhatsAppNotifier(PhoneChannel, Notifier):
 
     name = "whatsapp"
     timeout = 90.0  # a send may wait for a reconnect and for the spacing between messages
+    snapshot: Any = None  # PostgresSnapshot when state_db is set
 
     def validate(self) -> None:
         from ..whatsapp.session import SessionConfig, WhatsAppSession
@@ -681,6 +682,13 @@ class WhatsAppNotifier(PhoneChannel, Notifier):
             return
         db = Path(self.options.get("session_dir") or Path(data_dir) / "whatsapp") / "session.db"
         self.session.set_backend_factory(lambda: NeonizeBackend(db))
+        state_db = str(self.options.get("state_db") or "")
+        if state_db:  # free hosts wipe the disk on restart: keep the pairing in Postgres
+            from ..whatsapp.snapshot import PostgresSnapshot
+
+            self.snapshot = PostgresSnapshot(
+                state_db, db, interval_s=float(self.options.get("state_interval_s", 1800))
+            )
 
     def set_recipients(self, numbers: list[str]) -> None:
         super().set_recipients(numbers)

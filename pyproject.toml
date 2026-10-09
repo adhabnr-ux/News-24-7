@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 # self-hosted WhatsApp sender: whatsmeow (Go) through its Python binding; Linux/macOS x86-64 and arm64
-whatsapp = ["neonize>=0.5.2,<0.6"]
+whatsapp = ["neonize>=0.5.2,<0.6", "pg8000>=1.31"]
 
 [project.scripts]
 news247 = "news247.cli:main"
