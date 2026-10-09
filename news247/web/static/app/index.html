@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Foretape</title>
 <meta name="description" content="Market-moving news before the tape moves.">
-<meta name="theme-color" content="#0E2A62">
+<meta name="theme-color" content="#07163A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Foretape">
@@ -13,357 +13,140 @@
 <link id="manifest" rel="manifest" href="/app/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/app/apple-touch-icon.png">
 <link rel="icon" type="image/svg+xml" href="/app/logo.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --night: #060F24; --deep: #0A1C44; --cobalt: #1C4FB0;
-    --gold: #F6C680; --amber: #F2A65A; --ember: #FF8447; --cream: #FFF3E0;
-    --text: #F7F2E9; --muted: rgba(247, 242, 233, .64); --faint: rgba(247, 242, 233, .4);
-    --up: #8DE5C1; --down: #FF9C86; --mid: #A9C8FF;
-    --glass: rgba(255, 255, 255, .065); --glass2: rgba(255, 255, 255, .11); --hair: rgba(255, 255, 255, .13);
-    --r: 22px;
-    --serif: "Instrument Serif", "Iowan Old Style", "Palatino", Georgia, serif;
-    --sans: "Inter", -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
-    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-    --tabbar: 74px;
-  }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; color: var(--text); font: 15px/1.45 var(--sans); background: var(--night);
-               -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
-  body { min-height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
-  button, input { font: inherit; color: inherit; }
-  a { color: var(--gold); text-decoration: none; }
-  .num { font-variant-numeric: tabular-nums; }
-
-  /* ---------------------------------------------------------------- the sky */
-  .sky { position: fixed; inset: 0; z-index: -2; overflow: hidden;
-         background:
-           radial-gradient(130% 48% at 50% 112%, rgba(255, 176, 96, .62) 0%, rgba(236, 120, 62, .22) 34%, transparent 62%),
-           radial-gradient(55% 22% at 12% 46%, rgba(255, 214, 160, .22), transparent 72%),
-           radial-gradient(50% 22% at 92% 40%, rgba(255, 196, 140, .18), transparent 72%),
-           linear-gradient(180deg, #2A63CF 0%, #2153B4 16%, #17408C 34%, #0F2C66 54%, #0A1B40 76%, #060E22 100%); }
-  .sky i { position: absolute; display: block; height: 2px; border-radius: 2px; transform-origin: left center; filter: blur(.3px); }
-  .sky .c1 { top: 3%; left: -18%; width: 92%; transform: rotate(38deg);
-             background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .5) 32%, rgba(255, 255, 255, .18) 76%, transparent); }
-  .sky .c2 { top: 9%; left: 34%; width: 80%; transform: rotate(52deg); opacity: .5;
-             background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35) 40%, transparent); }
-  .sky .wisp { position: absolute; border-radius: 50%; filter: blur(30px); opacity: .8; }
-  .sky .w1 { width: 78vw; height: 20vh; left: -16vw; top: 22vh; background: radial-gradient(closest-side, rgba(255, 222, 176, .6), rgba(255, 170, 100, .18) 60%, transparent); }
-  .sky .w2 { width: 70vw; height: 22vh; right: -18vw; top: 15vh; background: radial-gradient(closest-side, rgba(255, 214, 168, .55), rgba(255, 160, 96, .16) 60%, transparent); }
-  .sky .w3 { width: 100vw; height: 20vh; left: 0; top: 48vh; background: radial-gradient(closest-side, rgba(255, 196, 128, .4), transparent); }
-  .sky .w4 { width: 60vw; height: 12vh; left: 30vw; top: 6vh; background: radial-gradient(closest-side, rgba(255, 255, 255, .22), transparent); }
-  .grain { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .07; mix-blend-mode: overlay;
-           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); }
-
-  /* ---------------------------------------------------------------- frame */
-  .wrap { max-width: 620px; margin: 0 auto; padding: 0 16px calc(var(--tabbar) + 28px + env(safe-area-inset-bottom)); }
-  header.top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px;
-               padding: 14px 16px 12px; margin: 0 -16px; backdrop-filter: blur(18px) saturate(140%);
-               -webkit-backdrop-filter: blur(18px) saturate(140%); background: linear-gradient(180deg, rgba(14, 40, 98, .72), rgba(14, 40, 98, .28));
-               border-bottom: 1px solid rgba(255, 255, 255, .06); }
-  .brand { display: flex; align-items: center; gap: 10px; flex: none; margin-right: auto; }
-  .brand img { width: 30px; height: 30px; border-radius: 8px; box-shadow: 0 6px 18px -6px rgba(0, 0, 0, .6); }
-  .wordmark { font: 400 25px/1 var(--serif); letter-spacing: .01em; }
-  .wordmark em { font-style: italic; color: var(--gold); }
-  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px; font-size: 12px; font-weight: 600;
-          background: var(--glass); border: 1px solid var(--hair); color: var(--muted); white-space: nowrap; min-width: 0; }
-  .chip > span:last-child { overflow: hidden; text-overflow: ellipsis; }
-  #live { padding: 9px; } #live span:last-child { display: none; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
-  .live .dot { background: var(--up); box-shadow: 0 0 0 4px rgba(141, 229, 193, .16); animation: pulse 2.4s infinite; }
-  @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(141, 229, 193, 0); } }
-
-  .glass { background: var(--glass); border: 1px solid var(--hair); border-radius: var(--r);
-           backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%);
-           box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 24px 60px -30px rgba(0, 0, 0, .55); }
-  .eyebrow { font-size: 11.5px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
-  .section-title { display: flex; align-items: baseline; justify-content: space-between; margin: 30px 2px 12px; }
-  .section-title h2 { margin: 0; font: 400 26px/1.1 var(--serif); }
-  .section-title span { font-size: 12.5px; color: var(--faint); }
-  .muted { color: var(--muted); } .faint { color: var(--faint); }
-  [hidden] { display: none !important; }
-
-  /* ---------------------------------------------------------------- hero */
-  .hero { position: relative; padding: 26px 2px 6px; }
-  .hero h1 { margin: 10px 0 0; font: 400 clamp(40px, 11vw, 58px)/.98 var(--serif); letter-spacing: -.01em; text-wrap: balance; }
-  .hero h1 em { font-style: italic; color: var(--gold); }
-  .hero .plume { position: absolute; right: 18px; top: 18px; bottom: -6px; width: 2px; border-radius: 2px; opacity: .9;
-                 background: linear-gradient(0deg, rgba(255, 178, 92, 0), #FFC47A 45%, #FFF6E6); }
-  .hero .plume::before { content: ""; position: absolute; top: -4px; left: -3px; width: 8px; height: 8px; border-radius: 50%;
-                          background: #fff; box-shadow: 0 0 18px 6px rgba(255, 214, 160, .65); }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 22px; }
-  .stat { padding: 13px 14px 12px; }
-  .stat b { display: block; font: 400 25px/1.05 var(--serif); color: var(--cream); }
-  .stat span { display: block; margin-top: 4px; font-size: 11.5px; color: var(--muted); line-height: 1.3; }
-  .next { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 12px 14px; }
-  .next .ico { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; flex: none;
-               background: linear-gradient(160deg, rgba(246, 198, 128, .28), rgba(255, 132, 71, .12)); color: var(--gold); }
-  .next .t { flex: 1; min-width: 0; font-size: 14px; }
-  .next .t small { display: block; color: var(--faint); font-size: 12px; }
-
-  /* ---------------------------------------------------------------- alerts */
-  .alert { position: relative; padding: 16px 16px 14px; margin-bottom: 12px; cursor: pointer; overflow: hidden;
-           transition: transform .18s ease, background .18s; }
-  .alert:active { transform: scale(.99); }
-  .alert::before { content: ""; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--sev); }
-  .alert.new { animation: arrive .9s cubic-bezier(.2, .8, .2, 1); }
-  @keyframes arrive { from { transform: translateY(-10px); opacity: 0; box-shadow: 0 0 0 1px var(--gold), 0 0 50px -6px var(--amber); } }
-  .meta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--faint); }
-  .meta .sev { font-weight: 700; letter-spacing: .12em; color: var(--sev); }
-  .meta .src { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta .ago { margin-left: auto; flex: none; }
-  .alert h3 { margin: 8px 0 0; font-size: 16.5px; line-height: 1.32; font-weight: 600; letter-spacing: -.005em; text-wrap: pretty; }
-  .why { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
-  .play { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-  .dir { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
-  .dir.down { color: var(--down); background: rgba(255, 156, 134, .12); }
-  .dir.up { color: var(--up); background: rgba(141, 229, 193, .12); }
-  .dir.mixed { color: var(--mid); background: rgba(169, 200, 255, .12); }
-  .meter { display: inline-flex; align-items: flex-end; gap: 3px; height: 14px; }
-  .meter i { width: 4px; border-radius: 2px; background: rgba(255, 255, 255, .16); }
-  .meter i.on { background: linear-gradient(0deg, var(--amber), var(--cream)); }
-  .meter i:nth-child(1) { height: 5px; } .meter i:nth-child(2) { height: 7px; } .meter i:nth-child(3) { height: 9px; }
-  .meter i:nth-child(4) { height: 11px; } .meter i:nth-child(5) { height: 14px; }
-  .conv { font-size: 12.5px; color: var(--muted); }
-  .tks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
-  .tk { display: inline-flex; align-items: baseline; gap: 6px; padding: 5px 9px; border-radius: 10px; font: 600 12.5px/1.2 var(--mono);
-        background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .08); }
-  .tk small { font: 600 11.5px var(--sans); }
-  .tk.rt { opacity: .62; font-weight: 500; }
-  .pos { color: var(--up); } .neg { color: var(--down); }
-  .prec { margin-top: 11px; padding: 9px 11px; border-radius: 12px; font-size: 13px; color: var(--muted);
-          background: linear-gradient(90deg, rgba(246, 198, 128, .1), rgba(246, 198, 128, .02)); border: 1px solid rgba(246, 198, 128, .14); }
-  .prec b { color: var(--gold); font-weight: 600; }
-  .foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 12.5px; color: var(--faint); flex-wrap: wrap; }
-  .lead { color: var(--cream); background: linear-gradient(90deg, rgba(255, 132, 71, .28), rgba(246, 198, 128, .16)); padding: 4px 9px; border-radius: 999px; font-weight: 600; }
-  .foot a { margin-left: auto; font-weight: 600; }
-
-  .feature { padding: 22px 20px 18px; margin-top: 18px; }
-  .feature::before { top: 22px; bottom: 22px; }
-  .feature h3 { font: 400 29px/1.08 var(--serif); letter-spacing: 0; margin-top: 12px; }
-  .feature .why { font-size: 15px; }
-
-  /* ---------------------------------------------------------------- onboarding cards */
-  .card { padding: 20px; margin-top: 18px; position: relative; overflow: hidden; }
-  .card h2 { margin: 0 0 6px; font: 400 27px/1.1 var(--serif); }
-  .card p { margin: 0 0 12px; color: var(--muted); }
-  .steps { margin: 12px 0 0; padding: 0; list-style: none; counter-reset: s; }
-  .steps li { counter-increment: s; display: flex; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid rgba(255, 255, 255, .07); }
-  .steps li::before { content: counter(s); flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-                      font: 600 13px var(--sans); color: #1B1306; background: linear-gradient(160deg, var(--cream), var(--gold)); }
-  .share { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: #2E6BEA; vertical-align: -5px; margin: 0 2px; }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; cursor: pointer; border-radius: 14px;
-         padding: 13px 18px; font-weight: 600; font-size: 15px; transition: transform .12s, filter .2s; }
-  .btn:active { transform: scale(.98); }
-  .btn.primary { width: 100%; color: #1C1205; background: linear-gradient(180deg, #FFE3B3, #F6B868 55%, #EE9550);
-                 box-shadow: 0 14px 34px -14px rgba(255, 150, 80, .85), 0 1px 0 rgba(255, 255, 255, .6) inset; }
-  .btn.ghost { background: var(--glass2); border: 1px solid var(--hair); }
-  .btn.small { padding: 9px 13px; font-size: 13.5px; border-radius: 12px; }
-  .btn.sel { background: linear-gradient(180deg, rgba(255, 227, 179, .25), rgba(246, 184, 104, .18)); border-color: rgba(246, 198, 128, .5); color: var(--cream); }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; }
-
-  /* ---------------------------------------------------------------- lists */
-  .panel { padding: 6px 16px; margin-bottom: 12px; }
-  .li { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid rgba(255, 255, 255, .07); }
-  .li:first-child { border-top: 0; }
-  .li .grow { flex: 1; min-width: 0; }
-  .sub { font-size: 12.5px; color: var(--faint); }
-  .kv { display: flex; justify-content: space-between; gap: 14px; padding: 11px 0; border-top: 1px solid rgba(255, 255, 255, .07); font-size: 14.5px; }
-  .kv:first-child { border-top: 0; }
-  .kv b { font-weight: 600; text-align: right; }
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-  .tile { padding: 12px 10px; text-align: center; }
-  .tile small { display: block; font: 600 11px var(--mono); color: var(--faint); letter-spacing: .06em; }
-  .tile b { display: block; margin-top: 4px; font: 400 21px/1 var(--serif); }
-  .sym { font: 600 14px var(--mono); letter-spacing: .02em; }
-  .bar { position: relative; width: 84px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .07); flex: none; }
-  .bar i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
-  .chg { width: 72px; text-align: right; font-weight: 600; font-size: 14px; }
-  .day-head { margin: 22px 4px 8px; display: flex; justify-content: space-between; align-items: baseline; }
-  .day-head b { font: 400 21px var(--serif); } .day-head span { font-size: 12.5px; color: var(--faint); }
-  .imp { display: inline-flex; gap: 3px; } .imp i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, .16); }
-  .imp i.on { background: var(--gold); box-shadow: 0 0 8px rgba(246, 198, 128, .6); }
-  .time { width: 52px; flex: none; font: 600 13px var(--mono); color: var(--gold); }
-  .pill { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
-  .empty { text-align: center; padding: 46px 24px; color: var(--muted); }
-  .empty img { width: 64px; border-radius: 16px; opacity: .9; margin-bottom: 12px; }
-  .warn { margin-top: 10px; font-size: 13px; color: var(--gold); }
-
-  /* ---------------------------------------------------------------- tab bar */
-  nav.tabs { position: fixed; z-index: 20; left: 0; right: 0; bottom: 0; display: flex; justify-content: center;
-             padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); backdrop-filter: blur(24px) saturate(160%);
-             -webkit-backdrop-filter: blur(24px) saturate(160%); background: rgba(8, 20, 48, .62); border-top: 1px solid rgba(255, 255, 255, .08); }
-  nav.tabs .in { display: flex; width: 100%; max-width: 560px; justify-content: space-between; }
-  nav.tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0; border: 0; background: none;
-                    color: var(--faint); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; cursor: pointer; position: relative; }
-  nav.tabs button svg { width: 23px; height: 23px; }
-  nav.tabs button.on { color: var(--cream); }
-  nav.tabs button.on svg { filter: drop-shadow(0 0 8px rgba(246, 198, 128, .55)); color: var(--gold); }
-  .badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px;
-           background: var(--ember); color: #fff; font-size: 10.5px; line-height: 17px; }
-
-  /* ---------------------------------------------------------------- sheet */
-  .scrim { position: fixed; inset: 0; z-index: 30; background: rgba(3, 8, 20, .55); opacity: 0; pointer-events: none; transition: opacity .25s; }
-  .scrim.on { opacity: 1; pointer-events: auto; }
-  .sheet { position: fixed; z-index: 31; left: 0; right: 0; bottom: 0; max-height: 92dvh; overflow: auto; overscroll-behavior: contain;
-           transform: translateY(105%); transition: transform .34s cubic-bezier(.2, .85, .25, 1);
-           background: linear-gradient(180deg, rgba(22, 52, 112, .96), rgba(8, 20, 46, .985) 38%); border-radius: 28px 28px 0 0;
-           border-top: 1px solid rgba(255, 255, 255, .14); box-shadow: 0 -30px 80px -20px rgba(0, 0, 0, .7);
-           padding: 10px 20px calc(28px + env(safe-area-inset-bottom)); }
-  .sheet:not(.on) { visibility: hidden; transition: transform .34s cubic-bezier(.2, .85, .25, 1), visibility 0s .34s; }
-  .sheet.on { transform: none; }
-  .sheet > .inner > .meta { padding-right: 48px; }
-  .sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .25); margin: 4px auto 14px; }
-  .sheet .inner { max-width: 580px; margin: 0 auto; }
-  .sheet h2 { margin: 12px 0 0; font: 400 31px/1.08 var(--serif); text-wrap: balance; }
-  .sheet h4 { margin: 24px 0 10px; font-size: 11.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-  .close { position: absolute; right: 16px; top: 14px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .1); cursor: pointer; }
-  .tl { position: relative; padding-left: 20px; }
-  .tl .li { border-top: 0; padding: 8px 0; }
-  .tl::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 14px; width: 1px; background: linear-gradient(var(--gold), rgba(246, 198, 128, .1)); }
-  .tl .li::before { content: ""; position: absolute; left: 1px; width: 9px; height: 9px; border-radius: 50%; background: var(--deep); border: 2px solid var(--gold); }
-  .reasons { margin: 0; padding: 0; list-style: none; font: 12.5px/1.7 var(--mono); color: var(--muted); }
-  details summary { cursor: pointer; color: var(--muted); font-size: 13.5px; list-style: none; }
-  details summary::-webkit-details-marker { display: none; }
-
-  /* ---------------------------------------------------------------- lock */
-  #lock { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
-  #lock .box { width: 100%; max-width: 420px; padding: 30px 24px; text-align: center; }
-  #lock img { width: 76px; border-radius: 20px; box-shadow: 0 20px 50px -18px rgba(255, 150, 80, .6); }
-  #lock h1 { font: 400 46px/1 var(--serif); margin: 18px 0 6px; }
-  input.key { width: 100%; padding: 14px; border-radius: 14px; border: 1px solid var(--hair); background: rgba(0, 0, 0, .25);
-              font: 16px var(--mono); margin: 16px 0 12px; text-align: center; }
-
-  .toast { position: fixed; left: 50%; bottom: calc(var(--tabbar) + 18px + env(safe-area-inset-bottom)); z-index: 40;
-           transform: translateX(-50%) translateY(20px); opacity: 0; visibility: hidden; pointer-events: none;
-           transition: transform .3s cubic-bezier(.2, .9, .3, 1.2), opacity .25s, visibility .3s;
-           background: rgba(255, 243, 224, .96); color: #14213D; font-weight: 600; padding: 12px 16px; border-radius: 14px; max-width: 90vw;
-           box-shadow: 0 18px 40px -12px rgba(0, 0, 0, .6); }
-  .toast.show { transform: translateX(-50%); opacity: 1; visibility: visible; }
-  @media (min-width: 900px) { .hero h1 { font-size: 64px; } }
-  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
-</style>
+<link rel="preload" href="/app/launch.webp" as="image">
+<link rel="preload" href="/app/fonts/instrument-serif-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/app/fonts/inter-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/app/app.css">
 </head>
 <body>
-<div class="sky" aria-hidden="true"><i class="c1"></i><i class="c2"></i><div class="wisp w1"></div><div class="wisp w2"></div><div class="wisp w3"></div><div class="wisp w4"></div></div>
-<div class="grain" aria-hidden="true"></div>
+<canvas id="scene" aria-hidden="true"></canvas>
+<div class="veil" aria-hidden="true"></div>
+<div class="curtain" id="curtain" aria-hidden="true"></div>
+<div class="rail" aria-hidden="true"><i id="railDot"></i><span id="railAlt">ALT 0.0 KM</span></div>
 
 <section id="lock" hidden>
-  <div class="box glass">
+  <div class="box glass tilt">
     <img src="/app/logo.svg" alt="">
-    <h1>Fore<em style="color:var(--gold)">tape</em></h1>
-    <p class="muted">Before the tape moves. Enter the access key from your server (DASHBOARD_TOKEN).</p>
+    <h1>Fore<em>tape</em></h1>
+    <p>Before the tape moves. Enter the access key from your server (DASHBOARD_TOKEN).</p>
     <input class="key" id="key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="access key">
     <button class="btn primary" id="unlock">Unlock</button>
   </div>
 </section>
 
 <div id="main" hidden>
-  <div class="wrap">
-    <header class="top">
-      <div class="brand"><img src="/app/logo.svg" alt=""><span class="wordmark">Fore<em>tape</em></span></div>
-      <span class="chip" id="mkt"><span class="dot"></span><span>—</span></span>
-      <span class="chip" id="live" title="Live stream"><span class="dot"></span><span>LIVE</span></span>
-    </header>
+  <header class="bar" id="bar">
+    <div class="brand"><img src="/app/logo.svg" alt=""><span class="wordmark">Fore<em>tape</em></span></div>
+    <span class="chip" id="mkt"><span class="dot"></span><span>—</span></span>
+    <span class="chip live" id="live" title="Live stream"><span class="dot"></span></span>
+  </header>
 
-    <!-- ============================================================ TAPE -->
-    <section data-view="tape">
-      <section id="install" class="card glass" hidden>
-        <div class="eyebrow">One-time setup</div>
-        <h2>Put Foretape on your home screen</h2>
-        <p>iPhone delivers alerts only to apps on the home screen. Three taps:</p>
-        <ol class="steps">
-          <li><span>Tap <span class="share"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 15V3M7 8l5-5 5 5M5 12v8h14v-8"/></svg></span> <b>Share</b> at the bottom of Safari</span></li>
-          <li><span>Choose <b>Add to Home Screen</b>, then <b>Add</b></span></li>
-          <li><span>Open <b>Foretape</b> from your home screen and turn on alerts</span></li>
-        </ol>
-      </section>
-      <section id="enable" class="card glass" hidden>
-        <div class="eyebrow">Never miss the open</div>
-        <h2>Turn on alerts</h2>
-        <p>Market-moving news on your lock screen the moment it breaks, even when Foretape is closed.</p>
-        <button class="btn primary" id="enableBtn">Turn on alerts</button>
-      </section>
-      <section id="denied" class="card glass" hidden>
-        <div class="eyebrow">Notifications are off</div>
-        <p style="margin:6px 0 0">Turn them on in <b>Settings → Notifications → Foretape</b> (iPhone) or your browser's site settings, then reopen the app.</p>
-      </section>
-
-      <div class="hero">
-        <div class="plume" aria-hidden="true"></div>
+  <!-- ====================================================== TAPE -->
+  <section class="view on" data-view="tape">
+    <div class="hero" id="hero">
+      <div class="hero-in" id="heroIn">
         <div class="eyebrow" id="greet">—</div>
-        <h1 id="heroLine">Before the tape <em>moves.</em></h1>
+        <h1 class="display" id="heroLine" data-split>Before the tape moves.</h1>
+        <p class="lede" id="heroSub">Every first-to-publish source, scored in seconds, on your lock screen.</p>
       </div>
-      <div class="stats">
-        <div class="stat glass"><b class="num" id="sLead">—</b><span>median lead over the news, 7 days</span></div>
-        <div class="stat glass"><b class="num" id="sAlerts">—</b><span>alerts in the last 24 hours</span></div>
-        <div class="stat glass"><b class="num" id="sSources">—</b><span>sources live</span></div>
+      <div class="hero-dock">
+        <section id="install" class="dockcard glass tilt" hidden>
+          <div class="eyebrow">One-time setup</div>
+          <h3>Put Foretape on your home screen</h3>
+          <ol class="steps">
+            <li><span>Tap <span class="share"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 15V3M7 8l5-5 5 5M5 12v8h14v-8"/></svg></span> <b>Share</b> in Safari</span></li>
+            <li><span>Choose <b>Add to Home Screen</b></span></li>
+            <li><span>Open <b>Foretape</b> from there</span></li>
+          </ol>
+        </section>
+        <section id="enable" class="dockcard glass tilt" hidden>
+          <div class="eyebrow">Never miss the open</div>
+          <h3>Alerts on your lock screen</h3>
+          <button class="btn primary" id="enableBtn">Turn on alerts</button>
+        </section>
+        <section id="denied" class="dockcard glass tilt" hidden>
+          <div class="eyebrow">Notifications are off</div>
+          <p>Turn them on in <b>Settings → Notifications → Foretape</b>, then reopen the app.</p>
+        </section>
+        <button class="chip motion" id="motionBtn" hidden>✦ Tilt your phone: enable motion</button>
+        <div class="cue" aria-hidden="true"><span>Scroll</span><i></i></div>
       </div>
-      <div class="next glass" id="nextCat" hidden>
-        <div class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></div>
-        <div class="t" id="nextText"></div>
-        <span class="faint">›</span>
-      </div>
+    </div>
 
+    <div class="stage">
+      <div class="stats rv">
+        <div class="stat glass tilt"><b class="num" id="sLead">—</b><span>median lead over the news, 7 days</span></div>
+        <div class="stat glass tilt"><b class="num" id="sAlerts">—</b><span>alerts in the last 24 hours</span></div>
+        <div class="stat glass tilt"><b class="num" id="sSources">—</b><span>sources live</span></div>
+      </div>
+      <button class="next glass tilt rv" id="nextCat" hidden>
+        <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+        <span class="t" id="nextText"></span><span class="faint">›</span>
+      </button>
       <div id="featureWrap"></div>
-      <div class="section-title"><h2>The tape</h2><span id="tapeCount"></span></div>
+      <div class="sec-title rv"><h2>The tape</h2><span id="tapeCount"></span></div>
       <div id="alerts"></div>
-    </section>
+    </div>
+  </section>
 
-    <!-- ============================================================ BRIEF -->
-    <section data-view="brief" hidden>
-      <div class="hero"><div class="plume" aria-hidden="true"></div>
-        <div class="eyebrow" id="bDate">—</div>
-        <h1>The <em>Brief</em></h1>
-        <p class="muted" id="bSub" style="margin:10px 0 0"></p>
-      </div>
-      <div class="section-title"><h2>Overnight</h2><span>since the last close</span></div>
-      <div class="panel glass" id="bOvernight"></div>
-      <div id="bThemesWrap"><div class="section-title"><h2>In focus</h2></div><div class="row" id="bThemes"></div></div>
-      <div class="section-title"><h2>The market</h2><span id="bMkt"></span></div>
-      <div class="tiles" id="bIdx"></div>
-      <div class="panel glass" id="bMovers" style="margin-top:10px"></div>
-      <div class="section-title"><h2>On the calendar</h2><span>next 7 days</span></div>
-      <div class="panel glass" id="bCal"></div>
-      <div class="section-title"><h2>Your edge</h2><span>last 7 days</span></div>
-      <div class="panel glass" id="bEdge"></div>
-    </section>
+  <!-- ====================================================== BRIEF -->
+  <section class="view" data-view="brief" hidden>
+    <div class="thero"><div class="thero-in">
+      <div class="eyebrow" id="bDate">—</div>
+      <h1 class="display">The <em>Brief</em></h1>
+      <p class="lede" id="bSub"></p>
+    </div></div>
+    <div class="stage">
+      <div class="sec-title rv"><h2>Overnight</h2><span>since the last close</span></div>
+      <div class="panel glass tilt rv" id="bOvernight"></div>
+      <div id="bThemesWrap" class="rv"><div class="sec-title"><h2>In focus</h2></div><div class="row" id="bThemes"></div></div>
+      <div class="sec-title rv"><h2>The market</h2><span id="bMkt"></span></div>
+      <div class="tiles rv" id="bIdx"></div>
+      <div class="panel glass tilt rv" id="bMovers" style="margin-top:12px"></div>
+      <div class="sec-title rv"><h2>On the calendar</h2><span>next 7 days</span></div>
+      <div class="panel glass tilt rv" id="bCal"></div>
+      <div class="sec-title rv"><h2>Your edge</h2><span>last 7 days</span></div>
+      <div class="panel glass tilt rv" id="bEdge"></div>
+    </div>
+  </section>
 
-    <!-- ============================================================ CALENDAR -->
-    <section data-view="calendar" hidden>
-      <div class="hero"><div class="plume" aria-hidden="true"></div>
-        <div class="eyebrow">Scheduled catalysts</div>
-        <h1>What's <em>coming</em></h1>
-      </div>
-      <div id="cal"></div>
-    </section>
+  <!-- ====================================================== CALENDAR -->
+  <section class="view" data-view="calendar" hidden>
+    <div class="thero"><div class="thero-in">
+      <div class="eyebrow">Scheduled catalysts</div>
+      <h1 class="display">What's <em>coming</em></h1>
+    </div></div>
+    <div class="stage" id="cal"></div>
+  </section>
 
-    <!-- ============================================================ WATCH -->
-    <section data-view="watch" hidden>
-      <div class="hero"><div class="plume" aria-hidden="true"></div>
-        <div class="eyebrow" id="wMkt">—</div>
-        <h1>The <em>board</em></h1>
-      </div>
-      <div class="section-title"><h2>Biggest movers</h2><span>today · 5 min</span></div>
-      <div class="panel glass" id="watch"></div>
-    </section>
+  <!-- ====================================================== WATCH -->
+  <section class="view" data-view="watch" hidden>
+    <div class="thero"><div class="thero-in">
+      <div class="eyebrow" id="wMkt">—</div>
+      <h1 class="display">The <em>board</em></h1>
+    </div></div>
+    <div class="stage">
+      <div class="sec-title rv"><h2>Biggest movers</h2><span>today · 5 min</span></div>
+      <div class="panel glass tilt rv" id="watch"></div>
+    </div>
+  </section>
 
-    <!-- ============================================================ DESK -->
-    <section data-view="desk" hidden>
-      <div class="hero"><div class="plume" aria-hidden="true"></div>
-        <div class="eyebrow">Your settings</div>
-        <h1>The <em>desk</em></h1>
-      </div>
-      <div class="section-title"><h2>This phone</h2></div>
-      <div class="panel glass">
+  <!-- ====================================================== DESK -->
+  <section class="view" data-view="desk" hidden>
+    <div class="thero"><div class="thero-in">
+      <div class="eyebrow">Your settings</div>
+      <h1 class="display">The <em>desk</em></h1>
+    </div></div>
+    <div class="stage">
+      <div class="sec-title rv"><h2>This phone</h2></div>
+      <div class="panel glass tilt rv">
         <div class="kv"><span>Push notifications</span><b id="pushState">—</b></div>
         <div class="kv"><span>Morning brief</span><b id="briefTime">—</b></div>
-        <div class="row" style="padding:6px 0 14px"><button class="btn ghost small" id="testBtn">Send a test alert</button><button class="btn ghost small" id="resubBtn">Reconnect</button></div>
+        <div class="kv"><span>Motion effects</span><b id="motionState">—</b></div>
+        <div class="row pad"><button class="btn ghost small" id="testBtn">Send a test alert</button><button class="btn ghost small" id="resubBtn">Reconnect</button></div>
       </div>
-      <div class="section-title"><h2>Alert level</h2><span id="mode"></span></div>
-      <div class="panel glass" style="padding:14px 16px">
+      <div class="sec-title rv"><h2>Alert level</h2><span id="mode"></span></div>
+      <div class="panel glass tilt rv padded">
         <div class="row" id="levels">
           <button class="btn ghost small" data-cmd="critical">Critical only</button>
           <button class="btn ghost small" data-cmd="normal">Normal</button>
@@ -376,388 +159,29 @@
           <button class="btn ghost small" data-cmd="resume">Resume</button>
         </div>
       </div>
-      <div class="section-title"><h2>The engine</h2></div>
-      <div class="panel glass" id="engine"></div>
+      <div class="sec-title rv"><h2>The engine</h2></div>
+      <div class="panel glass tilt rv" id="engine"></div>
       <div class="warn" id="durable" hidden></div>
-    </section>
-  </div>
-
-  <nav class="tabs"><div class="in">
-    <button data-tab="tape" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg>Tape<span class="badge" id="unread" hidden>0</span></button>
-    <button data-tab="brief"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="13" r="4"/><path d="M12 3v2M4.9 6.9l1.4 1.4M19.1 6.9l-1.4 1.4M3 17h18M6 21h12"/></svg>Brief</button>
-    <button data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</button>
-    <button data-tab="watch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>Watch</button>
-    <button data-tab="desk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Desk</button>
-  </div></nav>
+    </div>
+  </section>
 </div>
+
+<nav class="dock" id="dock" hidden>
+  <div class="in glass">
+    <i class="pip" id="pip"></i>
+    <button data-tab="tape" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 6-8 3 3"/><path d="M3 21h18"/></svg><span>Tape</span><b class="badge" id="unread" hidden>0</b></button>
+    <button data-tab="brief"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="13" r="4"/><path d="M12 3v2M4.9 6.9l1.4 1.4M19.1 6.9l-1.4 1.4M3 17h18M6 21h12"/></svg><span>Brief</span></button>
+    <button data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Calendar</span></button>
+    <button data-tab="watch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg><span>Watch</span></button>
+    <button data-tab="desk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Desk</span></button>
+  </div>
+</nav>
 
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="grab"></div><button class="close" id="closeSheet" aria-label="Close">✕</button><div class="inner" id="sheetBody"></div></div>
 <div class="toast" id="toast"></div>
 
-<script>
-"use strict";
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const SEV = { CRITICAL: "#FF8447", HIGH: "#F6C680", MEDIUM: "#A9C8FF", LOW: "rgba(255,255,255,.35)" };
-const OUTLETS = [["cnbc", "CNBC"], ["yahoo", "Yahoo Finance"], ["gnews", "Google News"], ["mw-", "MarketWatch"], ["wsj", "WSJ"],
-  ["bloomberg", "Bloomberg"], ["nyt", "NYT"], ["fortune", "Fortune"], ["axios", "Axios"], ["hackernews", "Hacker News"]];
-const params = new URLSearchParams(location.search);
-let TOKEN = params.get("token") || (() => { try { return localStorage.getItem("ft_token"); } catch (_) { return null; } })() || "";
-if (params.get("token")) { try { localStorage.setItem("ft_token", TOKEN); } catch (_) {} }
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-const pushCapable = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-let alerts = [], app = {}, tab = "tape", unread = 0;
-
-function setManifest() { $("manifest").href = "/app/manifest.webmanifest" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""); }
-setManifest();
-function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 3200); }
-async function api(path, opts = {}) {
-  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN, ...(opts.headers || {}) } });
-  if (r.status === 401) { showLock(); throw new Error("access key needed"); }
-  if (!r.ok) throw new Error((await r.text()) || r.statusText);
-  return r.headers.get("content-type")?.includes("json") ? r.json() : r.text();
-}
-
-// ------------------------------------------------------------------ formatting
-function ago(t) {
-  const s = Math.max(0, Date.now() / 1000 - t);
-  return s < 60 ? Math.round(s) + "s" : s < 3600 ? Math.round(s / 60) + "m" : s < 86400 ? Math.round(s / 3600) + "h" : Math.round(s / 86400) + "d";
-}
-function dur(s) {
-  if (s == null) return "—";
-  s = Math.max(0, Math.round(s));
-  if (s < 60) return s + "s";
-  if (s < 3600) return Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
-  if (s < 86400) return Math.floor(s / 3600) + "h " + String(Math.floor(s % 3600 / 60)).padStart(2, "0") + "m";
-  return Math.floor(s / 86400) + "d " + Math.floor(s % 86400 / 3600) + "h";
-}
-const pct = (v) => (v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2) + "%");
-const cls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
-const outlet = (src) => (OUTLETS.find(([p]) => (src || "").startsWith(p)) || [0, src])[1];
-const dirLabel = { up: "▲ Bullish", down: "▼ Bearish", mixed: "◆ Two-way" };
-function marketText(m) {
-  if (!m) return "—";
-  const until = m.until_s != null ? dur(m.until_s).replace(/ \d+s$/, "") : "";
-  if (m.phase === "open") return "Open · closes in " + until;
-  if (m.phase === "pre-market") return "Pre-market · opens in " + until;
-  if (m.phase === "after-hours") return "After hours";
-  return "Closed" + (until ? " · opens in " + until : "");
-}
-function prettyDate(iso) {
-  const d = new Date(iso + "T12:00:00");
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-function inDays(n) { return n === 0 ? "today" : n === 1 ? "tomorrow" : "in " + n + " days"; }
-
-// ------------------------------------------------------------------ rendering
-function meter(n) { return `<span class="meter">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</span>`; }
-function tickerChips(a, limit = 6) {
-  const play = a.edge?.play, since = a.since || {};
-  const direct = play?.direct?.length ? play.direct : (a.tickers || []);
-  const rt = play?.read_through || [];
-  const chips = direct.slice(0, limit).map((t) => {
-    const s = since[t];
-    return `<span class="tk">${esc(t)}${s != null ? ` <small class="${cls(s)}">${pct(s)}</small>` : ""}</span>`;
-  });
-  rt.slice(0, Math.max(0, limit - chips.length + 2)).forEach((t) => chips.push(`<span class="tk rt">${esc(t)}</span>`));
-  return chips.length ? `<div class="tks">${chips.join("")}</div>` : "";
-}
-function precLine(a) {
-  const p = a.edge?.precedents?.[0];
-  if (!p) return "";
-  return `<div class="prec"><b>Last time</b> · ${esc(prettyDate(p.date))}, ${esc(p.date.slice(0, 4))} — ${esc(p.move)}</div>`;
-}
-function playRow(a) {
-  const p = a.edge?.play;
-  if (!p) return "";
-  const d = p.direction in dirLabel ? `<span class="dir ${p.direction}">${dirLabel[p.direction]}</span>` : "";
-  return `<div class="play">${d}${meter(p.meter)}<span class="conv">${esc(p.conviction)} conviction</span></div>`;
-}
-function footRow(a) {
-  const it = a.item || {}, e = a.edge || {};
-  const parts = [];
-  const lag = it.published && it.detected ? Math.max(0, it.detected - it.published) : null;
-  if (lag != null) parts.push(`<span>⚡ ${dur(lag)} after posted</span>`);
-  if (e.lead) parts.push(`<span class="lead">Beat ${esc(outlet(e.lead.source))} by ${dur(e.lead.lead_s)}</span>`);
-  if (a.url) parts.push(`<a href="${esc(a.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Source ↗</a>`);
-  return parts.length ? `<div class="foot">${parts.join("")}</div>` : "";
-}
-function alertHTML(a, opts = {}) {
-  const an = a.analysis || {}, it = a.item || {};
-  const src = a.kind === "price" ? "PRICE ACTION" : a.kind === "system" ? "FORETAPE" : (it.source || a.kind).toUpperCase();
-  const why = an.summary || (a.kind !== "news" && a.body ? a.body.split("\n")[0] : "");
-  return `<article class="alert glass${opts.feature ? " feature" : ""}${a._new ? " new" : ""}" style="--sev:${SEV[a.severity] || SEV.LOW}" data-id="${esc(a.id)}">
-    ${opts.feature ? `<div class="eyebrow" style="color:var(--gold);margin-bottom:10px">Top of the tape</div>` : ""}
-    <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span><span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
-    <h3>${esc(a.title)}</h3>
-    ${why ? `<p class="why">${esc(why)}</p>` : ""}
-    ${playRow(a)}${tickerChips(a)}${precLine(a)}${footRow(a)}
-  </article>`;
-}
-const emptyHTML = (msg) => `<div class="empty"><img src="/app/logo.svg" alt=""><div>${msg}</div></div>`;
-
-function featured() {
-  const cutoff = Date.now() / 1000 - 6 * 3600;
-  const rank = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
-  return alerts.filter((a) => a.created >= cutoff && a.kind !== "system")
-    .sort((x, y) => (rank[y.severity] - rank[x.severity]) || (y.created - x.created))[0];
-}
-function renderTape() {
-  const f = featured();
-  $("featureWrap").innerHTML = f ? alertHTML(f, { feature: true }) : "";
-  const rest = alerts.filter((a) => a !== f);
-  $("alerts").innerHTML = rest.length ? rest.map((a) => alertHTML(a)).join("")
-    : f ? "" : emptyHTML("Quiet tape. Foretape is watching every first-to-publish source; the next market-moving headline lands here and on your lock screen.");
-  $("tapeCount").textContent = alerts.length ? `${alerts.length} recent` : "";
-  alerts.forEach((a) => delete a._new);
-}
-function renderTop() {
-  const hour = new Date().getHours();
-  const g = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  $("greet").textContent = `${g} · ${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`;
-  const m = app.market;
-  $("mkt").lastElementChild.textContent = marketText(m);
-  $("mkt").classList.toggle("live", !!m?.open);
-  $("sLead").textContent = app.edge?.median_lead_s != null ? dur(app.edge.median_lead_s).replace(/ 0?0s$/, "") : "—";
-  $("sAlerts").textContent = app.alerts_24h ?? "—";
-  $("sSources").textContent = app.sources ? `${app.sources_ok}/${app.sources}` : "—";
-  const n = (app.next || []).find((e) => (e.impact || 1) >= 2) || (app.next || [])[0];
-  $("nextCat").hidden = !n;
-  if (n) $("nextText").innerHTML = `<b>${esc(n.title)}</b><small>${esc(prettyDate(n.date))}${n.time ? " · " + esc(n.time) + " ET" : ""} · ${inDays(n.in_days)}</small>`;
-}
-async function load() {
-  app = await api("/api/app");
-  alerts = app.alerts;
-  renderTop(); renderTape();
-  $("mode").textContent = app.phone_mode;
-  $("briefTime").textContent = app.brief_time ? app.brief_time + " ET, weekdays" : "off";
-  $("engine").innerHTML = [
-    ["Sources healthy", `${app.sources_ok}/${app.sources}`], ["Running for", dur(app.uptime_s).replace(/ \d+s$/, "")],
-    ["Alerts (24h)", app.alerts_24h], ["Phones subscribed", app.devices],
-    ["Stories beaten (7d)", app.edge?.stories ?? 0],
-  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("");
-  $("durable").hidden = app.durable;
-  $("durable").textContent = app.durable ? "" : "This server forgets subscribed phones when it restarts. Foretape reconnects this phone every time you open it; for zero gaps, set STATE_DB (free Postgres, see docs).";
-  const lvl = /CRITICAL/.test(app.phone_mode) ? "critical" : /MEDIUM/.test(app.phone_mode) ? "more" : /normal/.test(app.phone_mode) ? "normal" : "";
-  document.querySelectorAll("#levels button").forEach((b) => b.classList.toggle("sel", b.dataset.cmd === lvl));
-  if (tab === "brief") loadBrief().catch(() => {});
-}
-
-async function loadBrief() {
-  const b = await api("/api/brief");
-  $("bDate").textContent = `${b.greeting} · ${b.date}`;
-  $("bSub").textContent = b.count ? `${b.count} catalyst${b.count > 1 ? "s" : ""} since the last close.` : "A quiet night. Nothing crossed the alert line since the last close.";
-  $("bOvernight").innerHTML = b.overnight.length ? b.overnight.map((a) => `<div class="li" data-id="${esc(a.id)}" style="cursor:pointer">
-      <span class="dot" style="background:${SEV[a.severity]}"></span>
-      <div class="grow"><div style="font-weight:600;line-height:1.35">${esc(a.title)}</div>
-      <div class="sub">${esc(a.source)} · ${ago(a.created)} ago${a.tickers.length ? " · " + esc(a.tickers.join(" ")) : ""}</div></div>
-      <span class="${a.direction === "down" ? "neg" : a.direction === "up" ? "pos" : "faint"}" style="font-size:13px">${a.direction === "down" ? "▼" : a.direction === "up" ? "▲" : "◆"}</span></div>`).join("")
-    : `<div class="li"><span class="muted">Nothing overnight.</span></div>`;
-  $("bThemesWrap").hidden = !b.themes.length;
-  $("bThemes").innerHTML = b.themes.map((t) => `<span class="chip" style="color:var(--cream)">${esc(t)}</span>`).join("");
-  $("bMkt").textContent = marketText(b.market);
-  const idx = ["SPY", "QQQ", "IWM", "DIA"];
-  $("bIdx").innerHTML = idx.map((s) => `<div class="tile glass"><small>${s}</small><b class="num ${cls(b.indexes[s])}">${pct(b.indexes[s])}</b></div>`).join("");
-  $("bMovers").innerHTML = b.movers.length ? b.movers.map(moverRow).join("") : `<div class="li"><span class="muted">No quotes yet.</span></div>`;
-  $("bCal").innerHTML = b.calendar.length ? b.calendar.map((e) => calRow(e)).join("") : `<div class="li"><span class="muted">Nothing scheduled this week.</span></div>`;
-  const e = b.edge;
-  $("bEdge").innerHTML = [
-    ["Stories you had before the mainstream", e.stories],
-    ["Median head start", e.median_lead_s != null ? dur(e.median_lead_s) : "—"],
-    ["Biggest head start", e.best_lead_s != null ? dur(e.best_lead_s) : "—"],
-  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("");
-}
-function moverRow(m) {
-  const v = m.chg_day ?? 0, w = Math.min(42, Math.abs(v) * 6);
-  return `<div class="li"><span class="sym" style="width:64px">${esc(m.symbol)}</span><span class="grow num faint">${m.price != null ? m.price.toFixed(2) : ""}</span>
-    <span class="bar"><i style="${v >= 0 ? `left:42px;width:${w}px;background:var(--up)` : `right:42px;width:${w}px;background:var(--down)`}"></i></span>
-    <span class="chg num ${cls(v)}">${pct(m.chg_day)}</span></div>`;
-}
-const KIND = { fed: "Federal Reserve", data: "Economic data", politics: "Politics", trade: "Trade policy", options: "Options expiry", market: "Market hours", earnings: "Earnings" };
-function calRow(e, grouped) {
-  const sub = grouped ? [KIND[e.kind] || e.kind, e.note].filter(Boolean).map(esc).join(" · ")
-    : `${esc(prettyDate(e.date))} · ${inDays(e.in_days)}${e.note ? " · " + esc(e.note) : ""}`;
-  return `<div class="li"><span class="time">${esc(e.time || "—")}</span><div class="grow"><div style="font-weight:600">${esc(e.title)}</div>
-    <div class="sub">${sub}</div></div>
-    <span class="imp">${[1, 2, 3].map((i) => `<i class="${i <= (e.impact || 1) ? "on" : ""}"></i>`).join("")}</span></div>`;
-}
-async function loadCalendar() {
-  const c = await api("/api/calendar?days=60");
-  const byDay = {};
-  c.events.forEach((e) => (byDay[e.date] = byDay[e.date] || []).push(e));
-  $("cal").innerHTML = Object.keys(byDay).length ? Object.entries(byDay).map(([d, evs]) => `<div class="day-head"><b>${esc(prettyDate(d))}</b><span>${inDays(evs[0].in_days)}</span></div>
-      <div class="panel glass">${evs.map((e) => calRow(e, true)).join("")}</div>`).join("") : emptyHTML("Nothing scheduled in the next 60 days.");
-}
-async function loadWatch() {
-  const w = await api("/api/watch");
-  $("wMkt").textContent = marketText(w.market);
-  $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
-    const v = s.chg_day ?? 0, w2 = Math.min(42, Math.abs(v) * 6);
-    return `<div class="li"><span class="sym" style="width:64px">${esc(s.symbol)}</span>
-      <span class="grow num" style="white-space:nowrap"><div>${s.price != null ? s.price.toFixed(2) : "—"}</div><div class="sub">${s.chg_5m != null ? `<span class="${cls(s.chg_5m)}">${pct(s.chg_5m)}</span> in 5 min` : "&nbsp;"}</div></span>
-      <span class="bar"><i style="${v >= 0 ? `left:42px;width:${w2}px;background:var(--up)` : `right:42px;width:${w2}px;background:var(--down)`}"></i></span>
-      <span class="chg num ${cls(v)}">${pct(s.chg_day)}</span></div>`;
-  }).join("") : `<div class="li"><span class="muted">No quotes yet; prices appear once the market feed connects.</span></div>`;
-}
-
-// ------------------------------------------------------------------ detail sheet
-async function openSheet(id) {
-  let a;
-  try { a = await api("/api/alert/" + encodeURIComponent(id)); } catch (_) { a = alerts.find((x) => x.id === id); }
-  if (!a) return;
-  const an = a.analysis || {}, it = a.item || {}, e = a.edge || {}, p = e.play || {};
-  const since = a.since || {};
-  const lag = it.published && it.detected ? Math.max(0, it.detected - it.published) : null;
-  const tl = (a.story_sources || []).map((s, i) => `<div class="li"><div class="grow"><b>${esc(s.source)}</b>
-      <div class="sub">${i === 0 ? "first" : "+" + dur(s.detected - a.story_sources[0].detected)} · ${esc(s.tier || "")}</div></div></div>`).join("");
-  $("sheetBody").innerHTML = `
-    <div class="meta" style="--sev:${SEV[a.severity]}"><span class="sev">${esc(a.severity)}</span><span>${esc((it.source || a.kind).toUpperCase())}</span><span class="ago">${ago(a.created)} ago</span></div>
-    <h2>${esc(a.title)}</h2>
-    ${an.summary ? `<p class="muted" style="font-size:15.5px">${esc(an.summary)}</p>` : a.body ? `<p class="muted">${esc(a.body)}</p>` : ""}
-    ${p.direction ? `<h4>The play</h4>
-      <div class="panel glass" style="padding:14px 16px">
-        <div class="play" style="margin:0">${p.direction in dirLabel ? `<span class="dir ${p.direction}">${dirLabel[p.direction]}</span>` : ""}${meter(p.meter)}<span class="conv">${esc(p.conviction)} conviction · score ${Math.round(p.score)}</span></div>
-        ${p.direction_basis === "precedents" ? `<div class="sub" style="margin-top:8px">Direction inferred from how similar events traded.</div>` : ""}
-        ${p.direct?.length ? `<div class="sub" style="margin-top:12px">Direct</div><div class="tks" style="margin-top:6px">${p.direct.map((t) => `<span class="tk">${esc(t)}${since[t] != null ? ` <small class="${cls(since[t])}">${pct(since[t])} since alert</small>` : ""}</span>`).join("")}</div>` : ""}
-        ${p.read_through?.length ? `<div class="sub" style="margin-top:12px">Read-through</div><div class="tks" style="margin-top:6px">${p.read_through.map((t) => `<span class="tk rt">${esc(t)}</span>`).join("")}</div>` : ""}
-        ${p.themes?.length ? `<div class="sub" style="margin-top:12px">${esc(p.themes.join(" · "))}</div>` : ""}
-      </div>` : ""}
-    ${e.precedents?.length ? `<h4>Precedents</h4><div class="panel glass">${e.precedents.map((x) => `<div class="li"><div class="grow">
-        <div class="sub">${esc(prettyDate(x.date))}, ${esc(x.date.slice(0, 4))} · ${esc(x.category)}${x.first_source ? " · first: " + esc(x.first_source) : ""}</div>
-        <div style="font-weight:600;margin:3px 0">${esc(x.headline)}</div><div class="${/(^|\s)[-−]\d/.test(x.move) ? "neg" : "pos"}" style="font-size:13.5px">${esc(x.move)}</div></div></div>`).join("")}</div>` : ""}
-    <h4>The edge</h4>
-    <div class="panel glass">
-      ${lag != null ? `<div class="kv"><span>Caught after it was posted</span><b class="num">${dur(lag)}</b></div>` : ""}
-      <div class="kv"><span>First seen on</span><b>${esc(it.source || "—")}</b></div>
-      <div class="kv"><span>Mainstream caught up</span><b class="num">${e.lead ? `${esc(outlet(e.lead.source))}, ${dur(e.lead.lead_s)} later` : "not yet"}</b></div>
-    </div>
-    ${tl ? `<h4>Who carried it</h4><div class="tl">${tl}</div>` : ""}
-    ${an.reasons?.length ? `<h4>Why Foretape flagged it</h4><details><summary>Score ${Math.round(an.score)} / 100 — show the breakdown</summary>
-      <ul class="reasons" style="margin-top:10px">${an.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></details>` : ""}
-    ${a.url ? `<div style="margin-top:24px"><a class="btn primary" href="${esc(a.url)}" target="_blank" rel="noopener">Open the source ↗</a></div>` : ""}`;
-  $("scrim").classList.add("on"); $("sheet").classList.add("on"); $("sheet").scrollTop = 0;
-}
-function closeSheet() { $("scrim").classList.remove("on"); $("sheet").classList.remove("on"); if (/#a=/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search); }
-$("scrim").onclick = closeSheet; $("closeSheet").onclick = closeSheet;
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
-document.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-id]");
-  if (el && !e.target.closest("a")) openSheet(el.dataset.id);
-});
-
-// ------------------------------------------------------------------ live stream
-function connect() {
-  const es = new EventSource("/events?token=" + encodeURIComponent(TOKEN));
-  const live = $("live");
-  let dropped = false;
-  es.onopen = () => { live.classList.add("live"); live.lastElementChild.textContent = "LIVE"; if (dropped) { dropped = false; load().catch(() => {}); } };
-  es.onerror = () => { dropped = true; live.classList.remove("live"); live.lastElementChild.textContent = "RECONNECTING"; };
-  es.addEventListener("alert", (e) => {
-    const a = JSON.parse(e.data); a._new = true; a.since = a.since || {};
-    alerts = [a, ...alerts.filter((x) => x.id !== a.id)].slice(0, 150);
-    renderTape();
-    if (document.hidden || tab !== "tape") { unread++; $("unread").textContent = unread; $("unread").hidden = false; }
-  });
-  es.addEventListener("edge", (e) => {
-    const d = JSON.parse(e.data), a = alerts.find((x) => x.id === d.id);
-    if (!a) return;
-    a.edge = { ...(a.edge || {}), ...d };
-    renderTape();
-  });
-}
-
-// ------------------------------------------------------------------ push
-function b64ToBytes(b64) { const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - b64.length % 4) % 4)); return Uint8Array.from(s, (c) => c.charCodeAt(0)); }
-function deviceLabel() {
-  const ua = navigator.userAgent;
-  const kind = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : "Browser";
-  return kind + (standalone ? " app" : " browser");
-}
-async function subscribe(force) {
-  const reg = await navigator.serviceWorker.ready;
-  const key = (await (await fetch("/app/push-key")).text()).trim();
-  let sub = await reg.pushManager.getSubscription();
-  let stored = null; try { stored = localStorage.getItem("ft_vapid"); } catch (_) {}
-  if (sub && (force || stored !== key)) { await sub.unsubscribe(); sub = null; }
-  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
-  try { localStorage.setItem("ft_vapid", key); } catch (_) {}
-  await api("/api/push/subscribe", { method: "POST", body: JSON.stringify({ subscription: sub.toJSON(), label: deviceLabel() }) });
-  reg.active?.postMessage({ type: "token", token: TOKEN });
-  load().catch(() => {});
-  return sub;
-}
-async function refreshPushUI() {
-  const perm = pushCapable ? Notification.permission : "unsupported";
-  $("install").hidden = !(isIOS && !standalone);
-  $("enable").hidden = !(pushCapable && perm === "default" && !(isIOS && !standalone));
-  $("denied").hidden = perm !== "denied" || (isIOS && !standalone);  // iPhone Safari: install first
-  $("pushState").textContent = !pushCapable ? (isIOS && !standalone ? "add to home screen first" : "not supported here")
-    : perm === "granted" ? "on ✓" : perm === "denied" ? "blocked" : "off";
-  if (pushCapable && perm === "granted") { try { await subscribe(false); } catch (e) { $("pushState").textContent = "error: " + e.message; } }
-}
-$("enableBtn").onclick = async () => {
-  try {
-    const perm = await Notification.requestPermission();      // must come straight from the tap (iOS)
-    if (perm !== "granted") { refreshPushUI(); return; }
-    await subscribe(true);
-    toast("Alerts are on. Sending a test…");
-    await api("/api/push/test", { method: "POST", body: JSON.stringify({}) });
-  } catch (e) { toast("Couldn't turn on alerts: " + e.message); }
-  refreshPushUI();
-};
-$("testBtn").onclick = async () => {
-  try { const r = await api("/api/push/test", { method: "POST", body: JSON.stringify({}) }); toast(r.sent ? `Test sent to ${r.sent} phone(s)` : "No phone subscribed yet"); }
-  catch (e) { toast(e.message); }
-};
-$("resubBtn").onclick = async () => { try { await subscribe(true); toast("Reconnected"); } catch (e) { toast(e.message); } };
-document.querySelectorAll("[data-cmd]").forEach((b) => b.onclick = async () => {
-  try { const r = await api("/api/control", { method: "POST", body: JSON.stringify({ command: b.dataset.cmd }) }); toast(r.reply); $("mode").textContent = r.phone_mode; load().catch(() => {}); }
-  catch (e) { toast(e.message); }
-});
-
-// ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch };
-function go(name) {
-  tab = name;
-  document.querySelectorAll("nav.tabs button").forEach((x) => x.classList.toggle("on", x.dataset.tab === name));
-  document.querySelectorAll("[data-view]").forEach((v) => (v.hidden = v.dataset.view !== name));
-  if (name === "tape") { unread = 0; $("unread").hidden = true; }
-  if (name === "desk") load().catch(() => {});
-  LOADERS[name]?.().catch(() => {});
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-document.querySelectorAll("nav.tabs button").forEach((b) => (b.onclick = () => go(b.dataset.tab)));
-$("nextCat").onclick = () => go("calendar");
-setInterval(() => document.querySelectorAll(".ago[data-t]").forEach((el) => (el.textContent = ago(+el.dataset.t))), 15000);
-setInterval(() => { if (!document.hidden && TOKEN && !$("main").hidden) { load().catch(() => {}); if (tab === "watch") loadWatch().catch(() => {}); } }, 60000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && TOKEN) { navigator.clearAppBadge?.(); load().catch(() => {}); } });
-function showLock() { $("lock").hidden = false; $("main").hidden = true; }
-$("unlock").onclick = async () => {
-  TOKEN = $("key").value.trim(); try { localStorage.setItem("ft_token", TOKEN); } catch (_) {} setManifest();
-  try { await start(); } catch (e) { toast("That key didn't work"); }
-};
-// a tapped notification opens /app/#a=<id>; the morning brief opens #a=brief
-function route() {
-  const m = location.hash.match(/a=([\w-]+)/);
-  if (!m) return;
-  if (m[1] === "brief") return go("brief");
-  if (m[1] !== "test") openSheet(m[1]);
-}
-window.addEventListener("hashchange", route);
-
-async function start() {
-  if (!TOKEN) { showLock(); return; }
-  await load();
-  $("lock").hidden = true; $("main").hidden = false;
-  connect();
-  if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" });
-  navigator.clearAppBadge?.();
-  refreshPushUI();
-  route();
-}
-start().catch(() => {});
-</script>
+<script src="/app/scene.js"></script>
+<script src="/app/app.js"></script>
 </body>
 </html>

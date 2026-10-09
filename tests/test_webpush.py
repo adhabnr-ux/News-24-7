@@ -327,18 +327,44 @@ async def test_app_shell_is_public_and_installable(app_server):
     async with s.get(srv.make_url("/app/")) as r:
         html = await r.text()
         assert r.status == 200 and "<title>Foretape</title>" in html and "manifest" in html
-        assert "apple-touch-icon" in html and "Notification.requestPermission" in html
+        assert "apple-touch-icon" in html and '<canvas id="scene"' in html
+        assert "/app/app.js" in html and "/app/scene.js" in html and "/app/app.css" in html
+    async with s.get(srv.make_url("/app/app.js")) as r:
+        js = await r.text()
+        assert r.status == 200 and r.content_type == "application/javascript"
+        assert "Notification.requestPermission" in js and "/api/push/subscribe" in js
+    async with s.get(srv.make_url("/app/scene.js")) as r:
+        glsl = await r.text()
+        assert r.status == 200 and "gl_FragColor" in glsl and "uDepth" in glsl
+    async with s.get(srv.make_url("/app/app.css")) as r:
+        assert r.status == 200 and r.content_type == "text/css" and "backdrop-filter" in await r.text()
     async with s.get(srv.make_url("/app/sw.js")) as r:
         assert r.status == 200 and r.headers["Service-Worker-Allowed"] == "/app/"
-        assert "showNotification" in await r.text()
+        sw = await r.text()
+        assert "showNotification" in sw and "/app/launch.webp" in sw
     for name, ctype in (
         ("logo.svg", "image/svg+xml"),
         ("icon-192.png", "image/png"),
         ("badge-96.png", "image/png"),
+        ("launch.webp", "image/webp"),
+        ("depth.png", "image/png"),
+        ("fonts/inter-normal.woff2", "font/woff2"),
+        ("fonts/instrument-serif-italic.woff2", "font/woff2"),
     ):
         async with s.get(srv.make_url(f"/app/{name}")) as r:
             assert r.status == 200 and r.content_type == ctype, name
-    for bad in ("/app/index.py", "/app/nope.png", "/app/%2e%2e%2fserver.py"):
+            assert len(await r.read()) > 500, name
+    async with s.get(srv.make_url("/app/launch.webp")) as r:
+        assert "immutable" in r.headers["Cache-Control"]  # the photo never changes for a given release
+    async with s.get(srv.make_url("/app/app.js")) as r:
+        assert r.headers["Cache-Control"] == "no-cache"  # the code always revalidates
+    for bad in (
+        "/app/index.py",
+        "/app/nope.png",
+        "/app/%2e%2e%2fserver.py",
+        "/app/fonts/nope.woff2",
+        "/app/fonts/%2e%2e%2f..%2fserver.py",
+    ):
         async with s.get(srv.make_url(bad)) as r:
             assert r.status == 404, bad  # only the whitelisted shell files are served
     async with s.get(srv.make_url("/app/push-key")) as r:

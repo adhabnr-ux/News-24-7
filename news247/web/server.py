@@ -66,6 +66,7 @@ class WebServer:
         app.router.add_get("/app/sw.js", self.app_sw)
         app.router.add_get("/app/manifest.webmanifest", self.app_manifest)
         app.router.add_get("/app/push-key", self.app_push_key)
+        app.router.add_get("/app/fonts/{font}", self.app_font)
         app.router.add_get("/app/{name}", self.app_asset)
         app.router.add_get("/api/app", self.api_app)
         app.router.add_get("/api/foretape", self.api_foretape)
@@ -332,7 +333,17 @@ class WebServer:
         "apple-touch-icon.png": "image/png",
         "badge-96.png": "image/png",
         "favicon-32.png": "image/png",
+        "app.css": "text/css",
+        "app.js": "application/javascript",
+        "scene.js": "application/javascript",
+        "launch.webp": "image/webp",
+        "depth.png": "image/png",
+        "fonts/instrument-serif-normal.woff2": "font/woff2",
+        "fonts/instrument-serif-italic.woff2": "font/woff2",
+        "fonts/inter-normal.woff2": "font/woff2",
+        "fonts/jetbrains-mono-normal.woff2": "font/woff2",
     }
+    LONG_CACHE = ("fonts/", "launch.webp", "depth.png")  # versioned by the service worker's cache name
 
     @staticmethod
     def _app_file(name: str) -> Any:
@@ -365,16 +376,22 @@ class WebServer:
             headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/app/"},
         )
 
-    async def app_asset(self, request: web.Request) -> web.Response:
-        name = request.match_info["name"]
-        ctype = self.APP_ASSETS.get(name)
+    def _serve_app_file(self, name: str) -> web.Response:
+        ctype = self.APP_ASSETS.get(name)  # a whitelist: nothing outside the app folder is reachable
         if ctype is None:
             raise web.HTTPNotFound()
+        long = name.startswith(self.LONG_CACHE)
         return web.Response(
             body=self._app_file(name).read_bytes(),
             content_type=ctype,
-            headers={"Cache-Control": "public, max-age=86400"},
+            headers={"Cache-Control": "public, max-age=2592000, immutable" if long else "no-cache"},
         )
+
+    async def app_asset(self, request: web.Request) -> web.Response:
+        return self._serve_app_file(request.match_info["name"])
+
+    async def app_font(self, request: web.Request) -> web.Response:
+        return self._serve_app_file("fonts/" + request.match_info["font"])
 
     def _token_ok(self, supplied: str | None) -> bool:
         return (
@@ -490,6 +507,7 @@ class WebServer:
         uid = (alert.get("item") or {}).get("uid")
         story = self.engine.storage.story_of(uid) if uid else None
         alert["story_sources"] = self.engine.storage.story_sources(story) if story is not None else []
+        alert["series"] = self.engine.price_series(alert)
         return _json(alert)
 
     async def api_foretape(self, request: web.Request) -> web.Response:

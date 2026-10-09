@@ -41,7 +41,7 @@ news247 = "news247.cli:main"
 include = ["news247*"]
 
 [tool.setuptools.package-data]
-news247 = ["web/static/*", "web/static/app/*", "data/*.yaml", "relay/*.sh"]
+news247 = ["web/static/*", "web/static/app/*", "web/static/app/fonts/*", "data/*.yaml", "relay/*.sh"]
 """.replace("'", '"')
 
 

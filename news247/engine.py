@@ -722,6 +722,23 @@ class Engine:
             if sym not in tracked and len(tracked) < 150 and re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", sym):
                 tracked.append(sym)
 
+    def price_series(self, alert: dict[str, Any], points: int = 90) -> dict[str, list[list[float]]]:
+        """Recent prices of an alert's direct tickers (from just before the alert to now), for the
+        app's chart. Only what the price monitor still holds in memory (about the last hour)."""
+        play = (alert.get("edge") or {}).get("play") or {}
+        since = float(alert.get("created", 0)) - 900
+        out: dict[str, list[list[float]]] = {}
+        for sym in (play.get("direct") or [])[:3]:
+            pts = [[t, p] for t, p in self.detector.history.get(sym, ()) if t >= since]
+            if len(pts) < 3:
+                continue
+            step = max(1, len(pts) // points)
+            sampled = pts[::step]
+            if sampled[-1] is not pts[-1]:
+                sampled.append(pts[-1])
+            out[sym] = [[round(t, 1), round(p, 4)] for t, p in sampled]
+        return out
+
     def edge_since(self, alert: dict[str, Any]) -> dict[str, float]:
         return EdgeDesk.since((alert.get("edge") or {}).get("refs") or {}, self.detector.last_price)
 
