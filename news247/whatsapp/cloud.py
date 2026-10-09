@@ -46,6 +46,21 @@ DETAILS_BUTTON = "Show details"
 DETAILS_WORDS = {"details", "show details", "more details", "full", "show", "alerts", "what", "what happened"}
 TEMPLATE_BODY = "📈 News247 alert: {{1}} — tap below for the full details."
 TEMPLATE_EXAMPLE = "🔴 OpenAI launches enterprise agents · ▼ CRM INTU NOW · x, 3s after post"
+# If Meta rejects a wording, the next one is submitted automatically (different names, because a
+# rejected name can't be resubmitted unchanged). Variables never start or end the body (Meta rule).
+TEMPLATE_VARIANTS = [
+    {"suffix": "", "body": TEMPLATE_BODY, "button": True},
+    {
+        "suffix": "_v2",
+        "body": "News247 market update: {{1}}. Reply to this chat any time for more.",
+        "button": False,
+    },
+    {
+        "suffix": "_v3",
+        "body": "Your requested News247 alert: {{1}}. Reply STOP to pause alerts.",
+        "button": False,
+    },
+]
 
 
 class CloudError(RuntimeError):
@@ -90,7 +105,9 @@ class CloudAPI:
         self.waba_id = str(waba_id or "")
         self.app_secret = app_secret
         self.verify_token = verify_token
-        self.template = template
+        self.template = template  # the name in use (base name, or a fallback variant)
+        self.template_base = template
+        self.template_button = True
         self.template_lang = template_lang
         self.fallback_template = fallback_template
         self.base = f"{api_base.rstrip('/')}/{api_version}"
@@ -180,7 +197,11 @@ class CloudAPI:
         return self.health
 
     async def ensure_template(self) -> str:
-        """Create the alert template if it doesn't exist; return its review status."""
+        """Find an approved alert template, or submit one; return the review status.
+
+        Tries the wordings in TEMPLATE_VARIANTS in order: an approved one is used at once, a
+        pending one is waited for, and when Meta has rejected every existing one the next
+        wording is submitted."""
         if not self.waba_id:
             self.template_status, self.template_note = (
                 "",
@@ -190,40 +211,61 @@ class CloudAPI:
         data = await self._graph(
             "GET",
             f"{self.waba_id}/message_templates",
-            params={"name": self.template, "fields": "name,status,language,category,rejected_reason"},
+            params={"fields": "name,status,language,category,rejected_reason", "limit": "200"},
         )
-        found = [
-            t
+        mine = {
+            t.get("name"): t
             for t in data.get("data", [])
-            if t.get("name") == self.template and t.get("language") == self.template_lang
+            if t.get("language") == self.template_lang
+            and str(t.get("name", "")).startswith(self.template_base)
+        }
+        variants = [(self.template_base + v["suffix"], v) for v in TEMPLATE_VARIANTS]
+
+        def use(name: str, variant: dict[str, Any], status: str, note: str = "") -> str:
+            self.template, self.template_button = name, bool(variant["button"])
+            self.template_status, self.template_note = status, note
+            return status
+
+        for name, v in variants:
+            if str(mine.get(name, {}).get("status", "")).upper() == "APPROVED":
+                return use(name, v, "APPROVED")
+        for name, v in variants:
+            if str(mine.get(name, {}).get("status", "")).upper() in ("PENDING", "IN_APPEAL"):
+                return use(name, v, "PENDING", "in Meta's review (usually minutes)")
+        refused = [
+            f"{n}: {str(t.get('status', '')).lower()} {t.get('rejected_reason') or ''}".strip()
+            for n, t in mine.items()
         ]
-        if not found:
+        for name, v in variants:
+            if name in mine:
+                continue
+            components: list[dict[str, Any]] = [
+                {"type": "BODY", "text": v["body"], "example": {"body_text": [[TEMPLATE_EXAMPLE]]}}
+            ]
+            if v["button"]:
+                components.append(
+                    {"type": "BUTTONS", "buttons": [{"type": "QUICK_REPLY", "text": DETAILS_BUTTON}]}
+                )
             created = await self._graph(
                 "POST",
                 f"{self.waba_id}/message_templates",
                 json={
-                    "name": self.template,
+                    "name": name,
                     "language": self.template_lang,
                     "category": "UTILITY",
-                    "components": [
-                        {
-                            "type": "BODY",
-                            "text": TEMPLATE_BODY,
-                            "example": {"body_text": [[TEMPLATE_EXAMPLE]]},
-                        },
-                        {"type": "BUTTONS", "buttons": [{"type": "QUICK_REPLY", "text": DETAILS_BUTTON}]},
-                    ],
+                    "components": components,
                 },
             )
-            self.template_status = str(created.get("status") or "PENDING").upper()
-            self.template_note = "created; Meta usually reviews utility templates within minutes"
-            log.info("WhatsApp template %s created (%s)", self.template, self.template_status)
-        else:
-            t = found[0]
-            self.template_status = str(t.get("status", "")).upper()
-            reason = t.get("rejected_reason")
-            self.template_note = f"rejected: {reason}" if reason and reason != "NONE" else ""
-        return self.template_status
+            status = str(created.get("status") or "PENDING").upper()
+            note = "submitted; Meta usually reviews utility templates within minutes"
+            if refused:
+                note += " (earlier wording refused: " + "; ".join(refused) + ")"
+            log.info("WhatsApp template %s submitted (%s)", name, status)
+            return use(
+                name, v, status if status != "APPROVED" else "APPROVED", note if status != "APPROVED" else ""
+            )
+        name, v = variants[0]
+        return use(name, v, "REJECTED", "Meta refused every wording: " + "; ".join(refused))
 
     async def maintain(self, stop: asyncio.Event) -> None:
         """Check the number and template at start, and keep checking until the template is approved."""
@@ -308,7 +350,7 @@ class CloudAPI:
         d = digits(to)
         tpl: dict[str, Any] = {
             "name": name,
-            "language": {"code": self.template_lang if name == self.template else "en_US"},
+            "language": {"code": "en_US" if name == self.fallback_template else self.template_lang},
         }
         components: list[dict[str, Any]] = []
         if param is not None:
@@ -368,7 +410,9 @@ class CloudAPI:
                     raise
                 self.last_inbound.pop(d, None)  # the window is closed
         if self.template_status == "APPROVED":
-            wamid = await self.send_template(d, self.template, one_line(full), title, button=True)
+            wamid = await self.send_template(
+                d, self.template, one_line(full), title, button=self.template_button
+            )
             self._remember(d, full, title)
             return wamid
         if self.fallback_template:  # template still in review: ping, and keep the alert for your reply

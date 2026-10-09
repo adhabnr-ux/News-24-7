@@ -9,6 +9,9 @@ You need: a GitHub account (you have one), a Facebook account (for Meta's develo
 
 ## How the free WhatsApp number behaves
 
+**Minimum that works:** Meta app + test number + the four values in Render. Publishing the app, the webhook and replying "hi" are optional. Without them, every alert still arrives as News247's approved template, with the headline, tickers, summary and link on one line. If Meta rejects the template wording, News247 submits another wording automatically (`news247_alert`, then `_v2`, then `_v3`); the Setup page shows which one is live.
+
+
 Meta's rule: a business can send you **normal messages only within 24 hours of your last message to it**. News247 handles that for you:
 
 | Situation | What you get |

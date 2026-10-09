@@ -67,7 +67,7 @@ class FakeMeta:
 
     async def list_templates(self, request: web.Request) -> web.Response:
         name = request.query.get("name")
-        return web.json_response({"data": [t for t in self.templates.values() if t["name"] == name]})
+        return web.json_response({"data": [t for t in self.templates.values() if name in (None, t["name"])]})
 
     async def create_template(self, request: web.Request) -> web.Response:
         body = await request.json()
@@ -549,3 +549,27 @@ async def test_public_pages_for_meta(tmp_path, meta):
                 assert r.status == 401  # everything else stays private
     finally:
         await srv.close()
+
+
+async def test_rejected_template_is_replaced_automatically(meta, http):
+    c = make_cloud(meta, http)
+    assert await c.ensure_template() == "PENDING" and c.template == "news247_alert"
+    meta.templates["news247_alert"].update(status="REJECTED", rejected_reason="INVALID_FORMAT")
+    assert await c.ensure_template() == "PENDING"
+    assert c.template == "news247_alert_v2" and not c.template_button
+    v2 = meta.created[-1]
+    assert v2["name"] == "news247_alert_v2" and len(v2["components"]) == 1  # no button this time
+    assert "INVALID_FORMAT" in c.template_note
+    body = v2["components"][0]["text"]
+    assert not body.startswith("{{") and not body.rstrip(".").endswith("}}")
+    meta.templates["news247_alert_v2"]["status"] = "APPROVED"
+    assert await c.ensure_template() == "APPROVED" and len(meta.created) == 2
+    await c.send_alert(ME, FULL, "t")
+    tpl = meta.sent[-1]["template"]
+    assert tpl["name"] == "news247_alert_v2" and len(tpl["components"]) == 1  # body only
+    # every wording refused: said plainly
+    for name in ("news247_alert_v2",):
+        meta.templates[name]["status"] = "REJECTED"
+    await c.ensure_template()  # submits v3
+    meta.templates["news247_alert_v3"]["status"] = "REJECTED"
+    assert await c.ensure_template() == "REJECTED" and "refused every wording" in c.template_note

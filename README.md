@@ -314,7 +314,7 @@ news247/
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 229 tests: parsers on real feed formats, scoring calibration, move detection,
+pytest -q          # 230 tests: parsers on real feed formats, scoring calibration, move detection,
                    # every notification channel's wire format, LLM client, engine end-to-end, web API,
                    # the iMessage relay over a real WebSocket (auth, queueing, failover, receipts, commands),
                    # WhatsApp pairing/sending/receipts/commands (+ booting the real engine when installed)
