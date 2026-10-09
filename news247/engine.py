@@ -507,7 +507,10 @@ class Engine:
     async def on_radar(self, hits: list[RadarHit]) -> None:
         for hit in hits:
             self.radar_seen[hit.symbol] = (hit.detected, hit.quote.change_pct or 0.0)
-            await self.publish(self._radar_alert(hit))
+            alert = self._radar_alert(hit)
+            await self.publish(alert)
+            if self.radar is not None and hit.symbol in self.radar.board:
+                self.radar.board[hit.symbol]["alert_id"] = alert.id  # the board row opens this alert
         cutoff = time.time() - 12 * 3600
         for sym, (ts, _) in list(self.radar_seen.items()):
             if ts < cutoff:

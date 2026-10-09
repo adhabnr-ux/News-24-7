@@ -742,6 +742,7 @@ async def test_radar_alert_then_news_says_radar_was_first(tmp_path: Path, uni: U
     assert EdgeDesk.push_line(ra) == "ACMB · $180M micro cap · Radar: moving before the news"
     board = eng.radar_board()
     assert board["enabled"] and board["rows"][0]["symbol"] == "ACMB" and board["rows"][0]["flagged"]
+    assert board["rows"][0]["alert_id"] == ra.id  # the row opens the radar alert
     # the headline lands afterwards: the alert says the radar had it first
     await eng.on_item(
         NewsItem(

@@ -413,4 +413,6 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 #radar.settled .radar-li { animation: none; }
 #radar.settled .radar-li.arrive { animation: contact 1.6s var(--ease) both; }
 @keyframes contact { 0% { opacity: 0; transform: translateX(-14px); background: rgba(255, 210, 140, .22); } 40% { opacity: 1; transform: none; background: rgba(255, 210, 140, .16); } 100% { background: transparent; } }
+.radar-li[data-id] { cursor: pointer; transition: background .3s; border-radius: 14px; }
+.radar-li[data-id]:active { background: rgba(255, 217, 160, .08); }
 

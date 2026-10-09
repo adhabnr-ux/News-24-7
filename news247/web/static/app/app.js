@@ -273,7 +273,7 @@ function radarRow(r, i = 0) {
   if (r.rvol && r.rvol >= 1.5) bits.push(`${Math.round(r.rvol)}× volume`);
   const why = news ? `<a href="${esc(news.url)}" target="_blank" rel="noopener" class="rnews">${esc(news.title)}</a>`
     : `<span class="rnone">No headline yet</span>`;
-  return `<div class="li radar-li${r.flagged ? " hot" : ""}" style="--k:${i}"><span class="sym" style="width:64px">${r.flagged ? `<i class="ping"></i>` : ""}${esc(r.symbol)}</span>
+  return `<div class="li radar-li${r.flagged ? " hot" : ""}" style="--k:${i}"${r.alert_id ? ` data-id="${esc(r.alert_id)}" role="button"` : ""}><span class="sym" style="width:64px">${r.flagged ? `<i class="ping"></i>` : ""}${esc(r.symbol)}</span>
     <div class="grow"><div class="rname">${esc(r.name || "")}</div><div class="sub">${bits.join(" · ")}${(r.flags || []).length ? ` · <span class="neg">⚠ ${esc(r.flags[0])}</span>` : ""}</div><div class="sub">${why}</div></div>
     <span class="chg num ${cls(v)}" style="width:auto;min-width:64px"><span data-pct="${v}">${pct(v)}</span>${r.session && r.session !== "regular" ? `<small class="rsess">${r.session === "pre" ? "pre-mkt" : "after hrs"}</small>` : ""}</span></div>`;
 }
