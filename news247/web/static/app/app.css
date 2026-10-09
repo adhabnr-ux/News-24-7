@@ -357,8 +357,15 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 .cap.down .capx { color: #FFB4A2; background: rgba(255, 120, 90, .14); }
 .cap.mixed .capx { color: var(--ice); background: rgba(150, 190, 255, .14); }
 .seg { display: inline-flex; padding: 3px; border-radius: 999px; background: rgba(8, 18, 40, .42); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
-.seg button { appearance: none; border: 0; background: none; color: var(--muted); font: 600 12px var(--sans); padding: 7px 12px; border-radius: 999px; cursor: pointer; transition: background .35s var(--ease), color .35s var(--ease); }
-.seg button.on { color: #1B1206; background: linear-gradient(180deg, #FFE2B4, #F6B36A); box-shadow: 0 0 18px -6px rgba(255, 180, 100, .9); }
+.seg { position: relative; }
+.seg button { position: relative; z-index: 1; appearance: none; border: 0; background: none; color: var(--muted); font: 600 12px var(--sans); padding: 7px 12px; border-radius: 999px; cursor: pointer; transition: color .45s var(--ease); }
+.seg button.on { color: #1B1206; }
+.seg:not(.ready) button.on { background: linear-gradient(180deg, #FFE2B4, #F6B36A); }
+/* the gold thumb glides between options with a little spring overshoot */
+.seg .thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: 0; border-radius: 999px; opacity: 0;
+  background: linear-gradient(180deg, #FFE7C2, #F6B36A 70%, #EA9450); box-shadow: 0 0 22px -6px rgba(255, 180, 100, .95), inset 0 1px 0 rgba(255, 255, 255, .75);
+  transition: transform .65s cubic-bezier(.34, 1.45, .5, 1), width .5s var(--ease), opacity .3s; }
+.seg.ready .thumb { opacity: 1; }
 .radar-li .rname { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .radar-li .sub { margin-top: 2px; color: var(--muted); }
 .radar-li .rsess { display: block; font: 600 10px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-top: 3px; }
@@ -366,3 +373,31 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 .radar-li .rnone { color: var(--ice); letter-spacing: .02em; }
 .radar-li.hot .sym { color: var(--gold); text-shadow: 0 0 14px rgba(255, 190, 110, .7); }
 
+/* a live radar sweep beside the board's title */
+.sweep { position: relative; display: inline-block; width: 26px; height: 26px; margin-right: 12px; vertical-align: 3px; border-radius: 50%;
+  background: radial-gradient(circle, transparent 0 34%, rgba(255, 217, 160, .22) 35% 37%, transparent 38% 66%, rgba(255, 217, 160, .22) 67% 69%, transparent 70%);
+  box-shadow: inset 0 0 0 1px rgba(255, 217, 160, .45), 0 0 22px -6px rgba(255, 180, 100, .8); overflow: hidden; }
+.sweep::before { content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(255, 210, 140, .85), rgba(255, 210, 140, 0) 70deg, transparent 360deg); animation: sweep 2.8s linear infinite; }
+.sweep i { position: absolute; left: 66%; top: 28%; width: 4px; height: 4px; border-radius: 50%; background: #FFE2B4; box-shadow: 0 0 8px #FFB86B; animation: blip 2.8s linear infinite; }
+@keyframes sweep { to { transform: rotate(360deg); } }
+@keyframes blip { 0%, 8% { opacity: 0; } 12% { opacity: 1; } 60%, 100% { opacity: 0; } }
+
+/* radar rows arrive one after another; flagged names ping like a contact on the scope */
+.radar-li { animation: sheetIn .8s var(--ease) both; animation-delay: calc(var(--k, 0) * .06s); }
+.radar-li .sym { position: relative; }
+.radar-li .ping { position: absolute; left: -13px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 10px var(--amber); }
+.radar-li .ping::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 1px solid rgba(255, 217, 160, .8); animation: ping 2.2s var(--ease) infinite; }
+.radar-li .chg [data-pct] { font-variant-numeric: tabular-nums; }
+
+/* the size pill catches the light now and then */
+.cap .capb { position: relative; overflow: hidden; }
+.cap .capb::after { content: ""; position: absolute; top: 0; bottom: 0; width: 45%; left: -70%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .85), transparent);
+  transform: skewX(-18deg); animation: sheen 6.5s ease-in-out infinite; animation-delay: calc(var(--d, 0s) + 1.2s); }
+/* the Brief: a small cap's size and typical move under its headline */
+.bcap { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; margin-top: 7px; font: 600 12px var(--sans); color: var(--gold); }
+.bcap .capb { font: 700 8.5px/1 var(--sans); letter-spacing: .2em; text-transform: uppercase; color: #1B1206; padding: 4px 7px; border-radius: 999px;
+  background: linear-gradient(180deg, #FFE2B4, #F6B36A); position: relative; overflow: hidden; }
+
+/* over bright cloud the faint captions wash out: a soft dark halo keeps them legible */
+.panel .sub, .glass .sub, .glass .foot { text-shadow: 0 1px 10px rgba(4, 12, 32, .55), 0 0 2px rgba(4, 12, 32, .35); }

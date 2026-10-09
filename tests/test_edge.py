@@ -221,6 +221,27 @@ def test_brief_overnight_market_calendar_edge():
     assert b["date"] == "Wednesday, October 28"
     assert b["calendar"][0]["title"] == "FOMC decision" and b["calendar"][0]["in_days"] == 0
     assert b["edge"] == {"stories": 3, "median_lead_s": 400.0, "best_lead_s": 1100.0}
+    assert b["overnight"][0]["smallcap"] is None
+    small = brief_alert("d", "Acme Biotech Announces FDA Approval", now - 600, 85)
+    small["edge"]["smallcap"] = {
+        "symbol": "ACMB",
+        "cap": "$180M",
+        "band": "micro cap",
+        "label": "FDA approval",
+        "move_text": "+21–55% typical",
+        "direction": "up",
+        "material": True,
+        "points": 24,
+    }
+    sc = build_brief([small], Calendar(), {}, [], now)["overnight"][0]["smallcap"]
+    assert sc == {
+        "symbol": "ACMB",
+        "cap": "$180M",
+        "band": "micro cap",
+        "label": "FDA approval",
+        "move_text": "+21–55% typical",
+        "direction": "up",
+    }
     push = brief_push(b)
     assert push["title"] == "☀️ The Brief · 2 overnight catalysts" and push["id"] == "brief"
     assert push["body"].splitlines() == [

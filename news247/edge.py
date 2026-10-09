@@ -418,6 +418,13 @@ class Calendar:
         return now_dt.timestamp() - 86400
 
 
+def _brief_cap(sc: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The small-cap read, trimmed for the Brief: who, how big, and the typical move."""
+    if not sc or not sc.get("material"):
+        return None
+    return {k: sc.get(k) for k in ("symbol", "cap", "band", "label", "move_text", "direction")}
+
+
 def build_brief(
     alerts: list[dict[str, Any]],
     calendar: Calendar,
@@ -461,6 +468,7 @@ def build_brief(
                 "direction": ((a.get("edge") or {}).get("play") or {}).get("direction")
                 or (a.get("analysis") or {}).get("direction", ""),
                 "source": (a.get("item") or {}).get("source", ""),
+                "smallcap": _brief_cap((a.get("edge") or {}).get("smallcap")),
             }
             for a in news[:6]
         ],

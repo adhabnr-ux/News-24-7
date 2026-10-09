@@ -139,8 +139,17 @@ function featured() {
     .sort((x, y) => (rank[y.severity] - rank[x.severity]) || (y.created - x.created))[0];
 }
 let tapeFilter = (() => { try { return localStorage.getItem("ft.tape") || "all"; } catch (_) { return "all"; } })();
+function placeThumb() {
+  const seg = $("tapeSeg"), on = seg?.querySelector("button.on"), th = seg?.querySelector(".thumb");
+  if (!on || !th || !on.offsetWidth) return;  // hidden tab: placed again when shown
+  th.style.width = on.offsetWidth + "px";
+  th.style.transform = `translateX(${on.offsetLeft - 3}px)`;
+  seg.classList.add("ready");
+}
+addEventListener("resize", placeThumb);
 function renderTape() {
   document.querySelectorAll("#tapeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.f === tapeFilter));
+  placeThumb();
   const pool = tapeFilter === "small" ? alerts.filter(isSmall) : alerts;
   const f = tapeFilter === "small" ? null : featured();
   $("featureWrap").innerHTML = f ? alertHTML(f, { feature: true }) : "";
@@ -202,7 +211,8 @@ async function loadBrief() {
   $("bOvernight").innerHTML = b.overnight.length ? b.overnight.map((a) => `<div class="li" data-id="${esc(a.id)}" style="cursor:pointer">
       <span class="dot-sev" style="background:${SEV[a.severity]};color:${SEV[a.severity]}"></span>
       <div class="grow"><div style="font-weight:600;line-height:1.35">${esc(a.title)}</div>
-      <div class="sub">${esc(a.source)} · ${ago(a.created)} ago${a.tickers.length ? " · " + esc(a.tickers.join(" ")) : ""}</div></div>
+      <div class="sub">${esc(a.source)} · ${ago(a.created)} ago${a.tickers.length ? " · " + esc(a.tickers.join(" ")) : ""}</div>
+      ${a.smallcap ? `<div class="bcap"><span class="capb">${esc(a.smallcap.band)}</span><span>${esc(a.smallcap.cap)}</span><span class="${a.smallcap.direction === "down" ? "neg" : a.smallcap.direction === "up" ? "pos" : ""}">${esc(a.smallcap.move_text || "")}</span></div>` : ""}</div>
       <span class="${a.direction === "down" ? "neg" : a.direction === "up" ? "pos" : "faint"}" style="font-size:13px">${a.direction === "down" ? "▼" : a.direction === "up" ? "▲" : "◆"}</span></div>`).join("")
     : `<div class="li"><span class="muted">Nothing overnight.</span></div>`;
   $("bThemesWrap").hidden = !b.themes.length;
@@ -249,26 +259,36 @@ async function loadTicker() {
     $("belt").style.setProperty("--dur", Math.max(24, top.length * 3.6) + "s");
   } catch (_) { /* the ticker is decoration: never break the page for it */ }
 }
-function radarRow(r) {
+function radarRow(r, i = 0) {
   const v = r.change_pct ?? 0, news = (r.news || [])[0];
   const bits = [`${esc(r.cap)} ${esc(r.band)}`];
   if (r.dollar_volume) bits.push(`$${r.dollar_volume >= 1e9 ? (r.dollar_volume / 1e9).toFixed(1) + "B" : r.dollar_volume >= 1e6 ? (r.dollar_volume / 1e6).toFixed(r.dollar_volume < 1e7 ? 1 : 0) + "M" : Math.round(r.dollar_volume / 1e3) + "K"} traded`);
   if (r.rvol && r.rvol >= 1.5) bits.push(`${Math.round(r.rvol)}× volume`);
   const why = news ? `<a href="${esc(news.url)}" target="_blank" rel="noopener" class="rnews">${esc(news.title)}</a>`
     : `<span class="rnone">No headline yet</span>`;
-  return `<div class="li radar-li${r.flagged ? " hot" : ""}"><span class="sym" style="width:64px">${esc(r.symbol)}</span>
+  return `<div class="li radar-li${r.flagged ? " hot" : ""}" style="--k:${i}"><span class="sym" style="width:64px">${r.flagged ? `<i class="ping"></i>` : ""}${esc(r.symbol)}</span>
     <div class="grow"><div class="rname">${esc(r.name || "")}</div><div class="sub">${bits.join(" · ")}${(r.flags || []).length ? ` · <span class="neg">⚠ ${esc(r.flags[0])}</span>` : ""}</div><div class="sub">${why}</div></div>
-    <span class="chg num ${cls(v)}" style="width:auto;min-width:64px">${pct(v)}${r.session && r.session !== "regular" ? `<small class="rsess">${r.session === "pre" ? "pre-mkt" : "after hrs"}</small>` : ""}</span></div>`;
+    <span class="chg num ${cls(v)}" style="width:auto;min-width:64px"><span data-pct="${v}">${pct(v)}</span>${r.session && r.session !== "regular" ? `<small class="rsess">${r.session === "pre" ? "pre-mkt" : "after hrs"}</small>` : ""}</span></div>`;
 }
 async function loadRadar() {
   try {
     const r = await api("/api/radar");
     const rows = r.rows || [];
     $("radarSub").textContent = r.enabled ? (r.market?.phase === "closed" ? "sleeps until 4:00 ET" : "moving before the news") : "off";
-    $("radar").innerHTML = rows.length ? rows.slice(0, 25).map(radarRow).join("")
+    const prev = {};
+    $("radar").querySelectorAll("[data-sym]").forEach((el) => (prev[el.dataset.sym] = +el.dataset.pct));
+    $("radar").innerHTML = rows.length ? rows.slice(0, 25).map((x, i) => radarRow(x, i)).join("")
       : `<div class="li"><span class="muted">${!r.enabled ? "The radar runs with the market feed (smallcap.radar in config)."
         : r.market?.phase === "closed" ? "Market closed. The radar wakes for pre-market at 4:00 ET and scans every small cap each minute."
         : "Nothing ripping on real volume right now. Breakouts of 20%+ on $2M+ traded land here, and big ones on your lock screen."}</span></div>`;
+    // living numbers: each move counts up from where it was (or from zero on first sight)
+    $("radar").querySelectorAll(".radar-li").forEach((row, i) => {
+      const r = rows[i], el = row.querySelector("[data-pct]");
+      if (!r || !el) return;
+      row.dataset.sym = r.symbol; row.dataset.pct = r.change_pct ?? 0;
+      el._to = NaN; el._now = prev[r.symbol] ?? 0;  // NaN: "animate from _now", unlike null
+      countTo(el, r.change_pct ?? 0, pct);
+    });
   } catch (_) { $("radar").innerHTML = `<div class="li"><span class="muted">Radar unavailable.</span></div>`; }
 }
 async function loadWatch() {
@@ -568,9 +588,13 @@ const Fx = {
     // hero parallax: the headline rides slower than the page and dissolves into the sky
     const hi = tab === "tape" ? $("heroIn") : document.querySelector(`[data-view="${tab}"] .thero-in`);
     if (hi) {
-      const k = clamp(y / (vh * 0.62));
-      hi.style.transform = `translate3d(0, ${(y * 0.42).toFixed(1)}px, 0) scale(${(1 - k * 0.07).toFixed(4)})`;
+      // a short tab header must be gone before the first section slides under it: dissolve over
+      // its own height (the tall launch hero keeps its long, slow fade)
+      const span = tab === "tape" ? vh * 0.62 : Math.max(120, (hi.parentElement?.offsetHeight || vh * 0.46) * 0.5);
+      const k = clamp(y / span);
+      hi.style.transform = `translate3d(0, ${(y * (tab === "tape" ? 0.42 : 0.3)).toFixed(1)}px, 0) scale(${(1 - k * 0.07).toFixed(4)})`;
       hi.style.opacity = (1 - k * 1.1).toFixed(3);
+      hi.style.filter = tab === "tape" || k < 0.02 ? "" : `blur(${(k * 7).toFixed(1)}px)`;
     }
     document.querySelectorAll(".hero-dock").forEach((d) => { d.style.opacity = (1 - clamp(y / (vh * 0.4))).toFixed(3); d.style.transform = `translate3d(0, ${(y * 0.2).toFixed(1)}px, 0)`; });
     // cards sit on a cylinder: rising from the horizon, they straighten at eye level
@@ -641,6 +665,7 @@ function go(name) {
   scrollTo(0, 0);
   Fx.dirty = true;
   if (name === "desk") load().catch(() => {});
+  if (name === "tape") requestAnimationFrame(placeThumb);
   Promise.resolve(LOADERS[name]?.()).catch(() => {}).then(() => requestAnimationFrame(() => Fx.observe(document.querySelector(".view.on"))));
   Fx.observe(document.querySelector(".view.on"));
 }
