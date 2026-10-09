@@ -44,8 +44,10 @@ html.nogl #scene { display: none; }
           linear-gradient(180deg, rgba(3, 10, 30, .55) 0%, rgba(3, 10, 30, 0) 22%, rgba(3, 10, 30, 0) 62%, rgba(3, 10, 30, .62) 100%),
           radial-gradient(120% 80% at 50% 50%, rgba(3, 10, 30, calc(var(--veil) * .55)), rgba(3, 10, 30, calc(var(--veil) * .78)));
         transition: background .3s; }
-.curtain { position: fixed; inset: 0; z-index: 90; background: #02060f; opacity: 1; pointer-events: none; transition: opacity 1.6s ease .15s; }
-.curtain.off { opacity: 0; }
+.curtain { position: fixed; inset: 0; z-index: 90; background: #02060f; opacity: 1; pointer-events: none; transition: opacity 1.6s ease .15s; display: grid; place-items: center; }
+.curtain::before { content: ""; width: 74px; height: 74px; border-radius: 19px; background: url(/app/logo.svg) center / cover; box-shadow: 0 20px 60px -18px rgba(255, 150, 80, .7); animation: breathe 2.2s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.06); filter: brightness(1.2); } }
+.curtain.off { opacity: 0; } .curtain.off::before { animation: none; opacity: 0; transition: opacity .6s; }
 /* callouts pinned to the rocket (positions come from Scene.project each frame) */
 .hud { position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .6s; }
 .hud.on { opacity: 1; }
@@ -163,8 +165,8 @@ html.nogl #scene { display: none; }
 
 /* glass panels tilt in 3D (pointer, gyro, and the scroll cylinder): one transform composes all three */
 .tilt { transform: perspective(1100px) rotateX(calc(var(--srx, 0deg) + var(--prx, 0deg) + var(--rvx, 0deg))) rotateY(var(--pry, 0deg)) translateZ(var(--stz, 0px));
-        transition: transform .26s var(--ease); will-change: transform; }
-.tilt.hot { transition: transform .1s linear; }
+        transition: transform .26s var(--ease); }
+.tilt.hot { transition: transform .1s linear; will-change: transform; }
 /* a panel that is both tilted and revealed reveals with the individual transform properties so the two never fight */
 .rv.tilt { transform: perspective(1100px) rotateX(calc(var(--srx, 0deg) + var(--prx, 0deg) + var(--rvx, 0deg))) rotateY(var(--pry, 0deg)) translateZ(var(--stz, 0px)); --rvx: 18deg; translate: 0 56px; scale: .95;
            transition: opacity .9s var(--ease), transform .26s var(--ease), translate 1.05s var(--ease), scale 1.05s var(--ease), filter .8s var(--ease); transition-delay: var(--d, 0s), 0s, var(--d, 0s), var(--d, 0s), var(--d, 0s); }
@@ -182,7 +184,7 @@ html.nogl #scene { display: none; }
 .next .t small { display: block; color: var(--faint); font-size: 12px; }
 
 /* ------------------------------------------------------------------ alerts */
-.alert { position: relative; margin-bottom: 14px; cursor: pointer; perspective: 1100px; }
+.alert { position: relative; margin-bottom: 14px; cursor: pointer; perspective: 1100px; content-visibility: auto; contain-intrinsic-size: auto 300px; }
 .alert .tilt { padding: 18px 18px 15px; }
 .alert .tilt::before { z-index: -1; }
 .alert .sevbar { position: absolute; left: 0; top: 20px; bottom: 20px; width: 3px; border-radius: 0 3px 3px 0; background: var(--sev); box-shadow: 0 0 18px var(--sev); }
@@ -326,3 +328,6 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; transition-delay: 0s !important; }
   .rv, .display .w, .hero .eyebrow, .hero .lede, .hero-dock > * { opacity: 1 !important; transform: none !important; filter: none !important; }
 }
+
+.more { display: block; width: 100%; margin: 6px 0 24px; padding: 14px; text-align: center; border: 0; border-radius: 18px; cursor: pointer; font-weight: 600; color: var(--muted);
+        background: rgba(255, 255, 255, .07); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), inset 0 0 0 1px rgba(255, 255, 255, .06); }

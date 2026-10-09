@@ -33,6 +33,8 @@ uniform float uMotion;
 uniform float uPulse;
 uniform float uMood;
 uniform float uTension;
+uniform vec2  uTexel;
+uniform float uSharp;
 
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p) {
@@ -112,6 +114,11 @@ void main() {
   // ---- the photograph, with a touch of lateral chromatic fringing toward the edges
   vec2 ca = (s - 0.5) * 0.0016;
   vec3 col = vec3(photo(uv + ca * vec2(1.0, 0.5)).r, photo(uv).g, photo(uv - ca * vec2(1.0, 0.5)).b);
+
+  // ---- local contrast: the photo is a 2x upscale, so a light unsharp mask restores crispness at retina scale
+  vec2 tx = uTexel * 1.35;
+  vec3 nb = (photo(uv + vec2(tx.x, 0.0)) + photo(uv - vec2(tx.x, 0.0)) + photo(uv + vec2(0.0, tx.y)) + photo(uv - vec2(0.0, tx.y))) * 0.25;
+  col += (col - nb) * 0.7 * uSharp;
 
   // ---- bloom from the brightest parts (plume, sunlit cloud tops)
   vec3 bl = vec3(0.0);
@@ -241,9 +248,11 @@ void main() {
         tex(0, photo, true); tex(1, depth, false);
         this.gl = gl;
         this.u = {};
-        ["uPhoto", "uDepth", "uRes", "uTime", "uClimb", "uTilt", "uIntro", "uAspect", "uMotion", "uPulse", "uMood", "uTension"].forEach((n) => (this.u[n] = gl.getUniformLocation(prog, n)));
+        ["uPhoto", "uDepth", "uRes", "uTime", "uClimb", "uTilt", "uIntro", "uAspect", "uMotion", "uPulse", "uMood", "uTension", "uTexel", "uSharp"].forEach((n) => (this.u[n] = gl.getUniformLocation(prog, n)));
         gl.uniform1i(this.u.uPhoto, 0); gl.uniform1i(this.u.uDepth, 1);
         gl.uniform1f(this.u.uAspect, photo.width / photo.height);
+        gl.uniform2f(this.u.uTexel, 1 / photo.width, 1 / photo.height);
+        gl.uniform1f(this.u.uSharp, opts.sharp ?? parseFloat(new URLSearchParams(location.search).get("sharp") ?? "1"));
         this.resize();
         addEventListener("resize", () => this.resize());
         document.addEventListener("visibilitychange", () => { this.paused = document.hidden; if (!this.paused) this.loop(performance.now()); });

@@ -14,7 +14,7 @@ const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platfor
 const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const pushCapable = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let alerts = [], app = {}, tab = "tape", unread = 0;
+let alerts = [], app = {}, tab = "tape", unread = 0, showAll = false;
 const seen = new Set();
 
 function setManifest() { $("manifest").href = "/app/manifest.webmanifest" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""); }
@@ -129,10 +129,12 @@ function renderTape() {
   const f = featured();
   $("featureWrap").innerHTML = f ? alertHTML(f, { feature: true }) : "";
   const rest = alerts.filter((a) => a !== f);
-  $("alerts").innerHTML = rest.length ? rest.map((a) => alertHTML(a)).join("")
+  const shown = rest.slice(0, showAll ? 150 : 30);   // dozens of blurred glass layers are expensive on a phone: older ones load on demand
+  $("alerts").innerHTML = rest.length ? shown.map((a) => alertHTML(a)).join("") + (rest.length > shown.length ? `<button class="more" id="moreBtn">Show ${rest.length - shown.length} older</button>` : "")
     : f ? "" : emptyHTML("Quiet tape. Foretape is watching every first-to-publish source; the next market-moving headline lands here and on your lock screen.");
   $("tapeCount").textContent = alerts.length ? `${alerts.length} recent` : "";
   alerts.forEach((a) => { seen.add(a.id); delete a._new; });
+  $("moreBtn")?.addEventListener("click", () => { showAll = true; renderTape(); });
   Fx.observe($("featureWrap")); Fx.observe($("alerts"));
 }
 function renderTop() {
@@ -498,7 +500,9 @@ const Fx = {
       view?.querySelectorAll(".alert .tilt, .panel.tilt, .stat.tilt").forEach((el) => {
         const r = el.getBoundingClientRect();
         if (r.bottom < -80 || r.top > vh + 80) return;
-        const c = clamp(((r.top + r.height / 2) / vh - 0.52) * 2, -1.2, 1.2);
+        // a panel taller than most of the screen (the board) would skew like a banner in the wind: leave it flat
+        const tall = r.height > vh * 0.62;
+        const c = tall ? 0 : clamp(((r.top + r.height / 2) / vh - 0.52) * 2, -1.2, 1.2);
         el.style.setProperty("--srx", (c * 6.5).toFixed(2) + "deg");
         el.style.setProperty("--stz", (-Math.abs(c) * 46).toFixed(1) + "px");
       });
@@ -509,6 +513,7 @@ const Fx = {
       const cardUp = !!document.querySelector(".hero-dock .dockcard:not([hidden])");  // onboarding covers the rocket: callouts step aside
       const show = tab === "tape" && y < vh * 0.5 && !$("main").hidden && !cardUp;
       hud.classList.toggle("on", show);
+      if (!show) hud.style.opacity = "0";   // an inline opacity from a previous frame would otherwise outlive the class
       if (show) {
         hud.style.opacity = (1 - clamp(y / (vh * 0.42))).toFixed(3);
         hud.querySelectorAll(".co").forEach((co) => {
@@ -589,7 +594,10 @@ async function start() {
 
 // boot: the scene starts immediately (it's behind the lock screen too), the app follows
 Fx.split();
-Scene.onReady = () => requestAnimationFrame(() => { $("curtain").classList.add("off"); Scene.ignite(); });
+let lifted = false;
+const lift = () => { if (lifted) return; lifted = true; $("curtain").classList.add("off"); Scene.ignite(); };
+Scene.onReady = () => requestAnimationFrame(lift);
+setTimeout(lift, 9000);   // never leave someone on a black screen if the photo is slow
 Scene.start($("scene"));
 Fx.tick();
 start().catch(() => {});
