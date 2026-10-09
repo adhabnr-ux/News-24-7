@@ -49,6 +49,13 @@
     <div class="msg" id="save-msg"></div>
   </section>
 
+  <section id="wac" hidden>
+    <label>WhatsApp <span class="muted" style="font-weight:400">(Meta Cloud API, free test number)</span></label>
+    <div id="wac-state" class="muted">Loading…</div>
+    <div id="wac-hook"></div>
+    <div id="wac-recent"></div>
+  </section>
+
   <section id="wa" hidden>
     <label>WhatsApp sender <span class="muted" style="font-weight:400">(runs on this server)</span></label>
     <div id="wa-state" class="muted">Loading…</div>
@@ -128,7 +135,7 @@ async function load() {
       ? s.channels.map((c) => `<div class="row"><span>${esc(c.name)} <span class="muted">· ${esc(c.min_severity.toLowerCase())}+${c.backup ? " · backup" : ""}</span></span>
           <span>${c.sent} sent${c.failed ? ` · <span class="bad">${c.failed} failed</span>` : ""}</span></div>
           ${c.last_error ? `<div class="row bad" style="font-size:12px">${esc(c.last_error)}</div>` : ""}`).join("")
-      : `<span class="bad">No texting service is switched on yet.</span> On your server set <b>WHATSAPP_ENABLED=true</b> (WhatsApp from this server) or <b>RELAY_ENABLED=true</b> (iMessage from your own Mac), then reload this page.`;
+      : `<span class="bad">No texting service is switched on yet.</span> On your server set <b>WHATSAPP_CLOUD_ENABLED=true</b> with its Meta keys (free, see docs/FREE-SETUP.md), <b>WHATSAPP_ENABLED=true</b> (linked device) or <b>RELAY_ENABLED=true</b> (iMessage from your own Mac), then reload this page.`;
     if (s.phone_mode && s.phone_mode !== "normal") $("channels").insertAdjacentHTML("afterbegin", `<div class="row warn"><span>Texts are ${esc(s.phone_mode)}</span><span>text RESUME / NORMAL</span></div>`);
   } catch (e) {
     $("channels").innerHTML = `<span class="bad">${esc(e.message || e)}</span>`;
@@ -163,6 +170,38 @@ async function renderRelay(setup) {
 
 const WA_STATES = { connected: "Connected", connecting: "Connecting…", pairing: "Waiting to be linked", disconnected: "Reconnecting…",
   logged_out: "Unlinked: link it again below", banned: "Restricted by WhatsApp", error: "Error, retrying", stopped: "Stopped", not_installed: "Engine not installed" };
+const fmtTime = (t) => t ? new Date(t * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
+async function loadCloud() {
+  let st;
+  try {
+    const r = await fetch(q("/api/whatsapp-cloud"));
+    if (r.status === 404) { $("wac").hidden = true; return; }
+    if (!r.ok) throw new Error(await r.text());
+    st = await r.json();
+  } catch (e) { $("wac").hidden = false; $("wac-state").innerHTML = `<span class="bad">${esc(e.message || e)}</span>`; return; }
+  $("wac").hidden = false;
+  const ph = st.phone || {};
+  const ok = !st.last_error && ph.display_phone_number;
+  const tpl = st.template_status || "unknown";
+  const lines = [`<div class="row"><span><span class="dot ${ok ? "on" : "off"}"></span><b>${ok ? "Connected" : "Not connected"}</b>${ph.display_phone_number ? ` <span class="muted">sender +${esc(ph.display_phone_number.replace(/\D/g, ""))}${ph.verified_name ? " · " + esc(ph.verified_name) : ""}</span>` : ""}</span>
+      <span class="muted">${st.stats.text + st.stats.template + st.stats.ping} sent${st.stats.delivered ? ` · ${st.stats.delivered} delivered` : ""}${st.stats.read ? ` · ${st.stats.read} read` : ""}</span></div>`];
+  if (st.last_error) lines.push(`<div class="bad" style="font-size:13px">${esc(st.last_error)}</div>`);
+  lines.push(`<div class="row" style="font-size:13px"><span>Alert template <b>${esc(st.template)}</b></span><span class="${tpl === "APPROVED" ? "ok" : tpl === "PENDING" ? "warn" : "bad"}">${esc(tpl.toLowerCase())}</span></div>`);
+  if (st.template_note) lines.push(`<div class="muted" style="font-size:12px">${esc(st.template_note)}</div>`);
+  for (const [num, closes] of Object.entries(st.window_closes || {})) {
+    const open = closes && closes * 1000 > Date.now();
+    lines.push(`<div class="row" style="font-size:13px"><span>Full messages to ${esc(num)}</span><span class="${open ? "ok" : "muted"}">${open ? "until " + esc(fmtTime(closes)) : "send any message to reopen"}</span></div>`);
+  }
+  if (st.pending) lines.push(`<div class="warn">${st.pending} alert(s) waiting: reply anything (or tap “Show details”) to get them in full</div>`);
+  if (st.delivery_median_s != null) lines.push(`<div class="muted" style="font-size:13px">Median time to your phone: ${st.delivery_median_s.toFixed(1)}s</div>`);
+  $("wac-state").innerHTML = lines.join("");
+  $("wac-hook").innerHTML = st.verify_token ? `<p style="margin:12px 0 4px;font-size:13px">Webhook (Meta app › WhatsApp › Configuration): ${st.webhook_seen ? `<span class="ok">receiving, last ${esc(fmtTime(st.webhook_seen))}</span>` : `<span class="warn">nothing received yet</span>`}${st.signature_check ? "" : ` · <span class="warn">set WHATSAPP_CLOUD_APP_SECRET to verify calls</span>`}</p>
+      <div class="cmd"><code>${esc(st.webhook_url)}</code></div><div class="cmd"><code>${esc(st.verify_token)}</code></div>
+      <p class="muted" style="margin:4px 0 0;font-size:12px">Callback URL and Verify token; subscribe to the <b>messages</b> field.</p>` : "";
+  $("wac-recent").innerHTML = st.recent.length ? `<p style="margin:12px 0 4px;font-size:13px">Recent WhatsApp messages</p>` + st.recent.slice(0, 6).map((m) =>
+      `<div class="row" style="font-size:13px"><span>${esc((m.title || m.id).slice(0, 58))}${m.kind !== "text" ? ` <span class="muted">(${esc(m.kind)})</span>` : ""}</span><span class="${m.status === "failed" ? "bad" : m.status === "sent" ? "muted" : "ok"}" title="${esc(m.error || "")}">${esc(m.status)}</span></div>`).join("") : "";
+}
+
 let waTimer = null;
 async function loadWhatsApp() {
   clearTimeout(waTimer);
@@ -247,7 +286,8 @@ $("test").onclick = async () => {
 
 load();
 loadWhatsApp();
-setInterval(() => { if (!document.hidden) load(); }, 10000);
+loadCloud();
+setInterval(() => { if (!document.hidden) { load(); loadCloud(); } }, 10000);
 </script>
 </body>
 </html>

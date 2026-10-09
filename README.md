@@ -23,17 +23,20 @@ It watches about 50 sources at once: AI-lab and big-tech newsrooms, newspaper sc
 
 ## Quick start: alerts on your phone, running 24/7
 
-### Option A: everything in the cloud, alerts on WhatsApp (recommended, ~$7/month)
+### Option A: 100% free, 24/7, alerts on WhatsApp (recommended)
 
-**→ Follow [docs/SETUP-CLOUD.md](docs/SETUP-CLOUD.md) (about 15 minutes, no coding).**
+**→ Follow [docs/FREE-SETUP.md](docs/FREE-SETUP.md) (about 30 minutes, once, no coding, no credit card).**
 
 In short:
-1. Click **[Deploy to Render](https://render.com/deploy?repo=https://github.com/adhabnr-ux/News-24-7)**. Render asks for **your WhatsApp number** and your e-mail.
-2. Open the dashboard's **Setup** page. Scan the QR code with the WhatsApp account that should *send* the alerts (best: WhatsApp Business with a second number).
-   - The server becomes a linked device of that account, like WhatsApp Web, and sends to you 24/7 with nothing else running: [docs/WHATSAPP.md](docs/WHATSAPP.md).
-3. Press **Send test message**. Optionally add free **ntfy** push as a backup.
+1. On developers.facebook.com, create an app with **WhatsApp**. Meta gives you a free test number. Add your WhatsApp number as a recipient and copy the IDs and a permanent token.
+2. Click **[Deploy to Render](https://render.com/deploy?repo=https://github.com/adhabnr-ux/News-24-7)** (Free plan). Paste your number and the Meta values. News247 pings itself so the free plan never sleeps.
+3. Paste the webhook URL and token from the Setup page into Meta, then press **Send test message**.
 
-Reply to any alert with `PAUSE 2h`, `STOP`, `RESUME`, `CRITICAL`, `NORMAL` or `STATUS`. Zero-ban-risk alternative: Meta's official WhatsApp Cloud API (`whatsapp_cloud`, same doc).
+Inside Meta's 24-hour window you get full alerts. Outside it you get a short alert with a **Show details** button, and one tap brings everything in full. Reply `PAUSE 2h`, `STOP`, `RESUME`, `CRITICAL`, `NORMAL` or `STATUS` to control it.
+
+### Option A1: WhatsApp from a linked device (~$7/month for an always-on disk)
+
+The server becomes a linked device of a second WhatsApp account and sends full messages any time: [docs/SETUP-CLOUD.md](docs/SETUP-CLOUD.md), [docs/WHATSAPP.md](docs/WHATSAPP.md).
 
 ### Option A2: iMessage from your own Mac relay
 
@@ -56,7 +59,7 @@ To see the whole pipeline before setting anything up, run `news247 demo` (simula
 | Option | Bubble | Cost | Setup |
 |---|---|---|---|
 | **WhatsApp, self-hosted** (built in) | WhatsApp | free (+ a second number for the sender, recommended) | Runs inside the monitor as a linked device. `WHATSAPP_ENABLED=true`, `WHATSAPP_TO`, then scan the QR on the Setup page. Receipts, commands, auto-reconnect. Unofficial client, so see the risk note in [docs/WHATSAPP.md](docs/WHATSAPP.md). |
-| **WhatsApp Cloud API** (Meta, official) | WhatsApp | free test number; per-message pricing in production | `WHATSAPP_CLOUD_ENABLED`, `WHATSAPP_CLOUD_TOKEN`, `WHATSAPP_CLOUD_PHONE_ID`, `WHATSAPP_TO`. Free-form within 24 h of your last message, approved template otherwise. |
+| **WhatsApp Cloud API** (Meta, official) | WhatsApp | **free** with Meta's test number | `WHATSAPP_CLOUD_ENABLED`, `WHATSAPP_CLOUD_TOKEN`, `WHATSAPP_CLOUD_PHONE_ID`, `WHATSAPP_CLOUD_WABA_ID`, `WHATSAPP_TO`. Creates its own template, handles the 24-hour window, takes replies through a webhook: [docs/FREE-SETUP.md](docs/FREE-SETUP.md). |
 | **News247 relay** (built in) | blue (iMessage) | free (needs a Mac signed in to Messages) | Monitor runs anywhere. `RELAY_ENABLED=true`, `IMESSAGE_TO`, then the one-line Mac install from the Setup page. Delivery receipts, failover, text commands. See [docs/IMESSAGE-RELAY.md](docs/IMESSAGE-RELAY.md). |
 | **BlueBubbles** relay | blue (iMessage) | free | Monitor runs anywhere (VPS, Linux, Docker); a Mac at home runs the free [BlueBubbles](https://bluebubbles.app) server. Set `BLUEBUBBLES_ENABLED`, `BLUEBUBBLES_URL`, `BLUEBUBBLES_PASSWORD`, `IMESSAGE_TO`. |
 | **Sendblue** | blue (iMessage) | free sandbox (10 contacts); paid from ~$29/mo | No Mac at all. Text your Sendblue number once from your phone, then set `SENDBLUE_ENABLED`, `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET`, `SENDBLUE_FROM`, `IMESSAGE_TO`. |
@@ -298,7 +301,8 @@ news247/
   market/       detector (move rules, baskets), prices (yahoo, finnhub)
   notify/       channels (relay, iMessage, BlueBubbles, Sendblue, Blooio, SMS, ntfy, Telegram, …) + dispatcher
                 (severity routing, quiet hours, pause/text commands, backup channels)
-  whatsapp/     self-hosted WhatsApp: session supervisor (pairing, spacing, receipts, commands) + whatsmeow engine
+  whatsapp/     WhatsApp: Cloud API client (templates, 24-hour window, webhook) and the self-hosted
+                linked device (session supervisor + whatsmeow engine)
   relay/        the iMessage relay: hub (monitor side, queue/digest/failover), agent (Mac side, `news247 relay`),
                 signed protocol, Messages app sender, Messages-database receipts, one-line installer
   web/          dashboard + API
@@ -310,7 +314,7 @@ news247/
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 213 tests: parsers on real feed formats, scoring calibration, move detection,
+pytest -q          # 221 tests: parsers on real feed formats, scoring calibration, move detection,
                    # every notification channel's wire format, LLM client, engine end-to-end, web API,
                    # the iMessage relay over a real WebSocket (auth, queueing, failover, receipts, commands),
                    # WhatsApp pairing/sending/receipts/commands (+ booting the real engine when installed)

@@ -19,6 +19,9 @@ general:
   max_item_age_minutes: 30          # ignore anything published longer ago than this
   log_level: ${LOG_LEVEL:-INFO}
   db_retention_days: 30
+  # Free hosts sleep after a few idle minutes (Render Free: 15). News247 pings its own public
+  # /health every 10 min to stay awake. Render sets RENDER_EXTERNAL_URL automatically.
+  keepalive_url: ${KEEPALIVE_URL:-${RENDER_EXTERNAL_URL:-}}
 
 scoring:
   # Score thresholds (0-100). Each channel picks which severities it receives (see notify:).
@@ -102,15 +105,22 @@ notify:
 
   # WhatsApp via Meta's official Cloud API (developers.facebook.com > WhatsApp). No ban risk;
   # outside 24 h after your last message to the business number only approved templates go out.
+  # 100% free with Meta's test number (docs/FREE-SETUP.md). News247 creates and tracks its
+  # alert template, handles the 24-hour window, and takes your replies through the webhook
+  # https://<your server>/webhooks/whatsapp
   whatsapp_cloud:
     enabled: ${WHATSAPP_CLOUD_ENABLED:-false}
     backup: ${WHATSAPP_CLOUD_BACKUP:-false}
     min_severity: ${PHONE_MIN_SEVERITY:-high}
     token: ${WHATSAPP_CLOUD_TOKEN:-}            # permanent System User access token
     phone_number_id: ${WHATSAPP_CLOUD_PHONE_ID:-}
+    waba_id: ${WHATSAPP_CLOUD_WABA_ID:-}        # WhatsApp Business Account ID (template management)
+    app_secret: ${WHATSAPP_CLOUD_APP_SECRET:-}  # App settings > Basic > App secret (webhook signatures)
+    verify_token: ${WHATSAPP_CLOUD_VERIFY_TOKEN:-}
     to: ${WHATSAPP_TO:-}
-    template: ${WHATSAPP_CLOUD_TEMPLATE:-}      # e.g. news247_alert: body "News247: {{1}}"
+    template: ${WHATSAPP_CLOUD_TEMPLATE:-news247_alert}
     template_lang: ${WHATSAPP_CLOUD_TEMPLATE_LANG:-en_US}
+    fallback_template: ${WHATSAPP_CLOUD_FALLBACK_TEMPLATE:-hello_world}
 
 
   # Your own iMessage gateway: the monitor runs anywhere (cloud), any Mac signed in to Messages

@@ -1,33 +1,41 @@
-# One-click cloud deploy on Render (https://render.com): runs News247 24/7 and sends alerts to
-# your WhatsApp from the server itself (a linked WhatsApp device, docs/WHATSAPP.md).
+# 100% free cloud deploy on Render (https://render.com) — runs 24/7 on the Free plan and sends
+# alerts to your WhatsApp through Meta's official Cloud API with Meta's free test number.
+# Step-by-step: docs/FREE-SETUP.md
 #   1. Click the "Deploy to Render" button in the README (or New > Blueprint > this repo).
-#   2. Render asks for the values marked "sync: false" below: your WhatsApp number and e-mail.
-#   3. Open the dashboard URL + ?token=<DASHBOARD_TOKEN> (shown under Environment), go to Setup,
-#      link the sending WhatsApp account (QR or code), then press "Send test message".
+#   2. Render asks for the values marked "sync: false" below (your number, e-mail and the IDs/
+#      token from Meta's developer page). Everything else is generated or preset.
+#   3. Open the dashboard URL + ?token=<DASHBOARD_TOKEN> (shown under Environment), go to Setup.
+#
+# Free plan notes: News247 pings itself every 10 minutes so Render never puts it to sleep (one
+# service running all month uses ~744 of the 750 free hours). The disk is temporary: history
+# resets when Render restarts the service, which doesn't matter for alerts.
 services:
   - type: web
     name: news247
     runtime: docker
-    plan: starter            # always on (~$7/month); the free plan sleeps and would miss news
+    plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     autoDeploy: true
     envVars:
-      - key: WHATSAPP_ENABLED
-        value: "true"
       - key: WHATSAPP_TO
         sync: false          # YOUR WhatsApp number (where alerts go), e.g. +16235551234
       - key: CONTACT_EMAIL
         sync: false          # the SEC requires a contact e-mail in requests
+      - key: WHATSAPP_CLOUD_ENABLED
+        value: "true"
+      - key: WHATSAPP_CLOUD_TOKEN
+        sync: false          # Meta: permanent System User access token
+      - key: WHATSAPP_CLOUD_PHONE_ID
+        sync: false          # Meta: WhatsApp > API Setup > "Phone number ID"
+      - key: WHATSAPP_CLOUD_WABA_ID
+        sync: false          # Meta: WhatsApp > API Setup > "WhatsApp Business Account ID"
+      - key: WHATSAPP_CLOUD_APP_SECRET
+        sync: false          # Meta: App settings > Basic > "App secret" (verifies your replies)
+      - key: WHATSAPP_CLOUD_VERIFY_TOKEN
+        generateValue: true  # pasted into Meta's webhook form (shown on the Setup page)
       - key: DASHBOARD_TOKEN
-        generateValue: true  # protects the dashboard/setup page (and WhatsApp pairing)
-      - key: RELAY_SECRET
-        generateValue: true  # only used if you also turn on the iMessage relay (RELAY_ENABLED=true)
+        generateValue: true  # protects the dashboard/setup page on the public URL
       - key: TIMEZONE
         value: America/New_York
       # Optional free push backup: NTFY_ENABLED=true, NTFY_BACKUP=true, NTFY_TOPIC=<secret topic>.
-      # Optional iMessage from your own Mac: RELAY_ENABLED=true, IMESSAGE_TO=<number>.
-    disk:
-      name: news247-data     # also keeps the WhatsApp pairing across restarts and deploys
-      mountPath: /data/data
-      sizeGB: 1

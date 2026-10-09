@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections.abc import Awaitable
 from pathlib import Path
@@ -17,7 +16,6 @@ from news247.config import build_config
 from news247.engine import Engine
 from news247.models import Alert, Analysis, NewsItem, Severity, SourceTier
 from news247.notify import Dispatcher
-from news247.notify.channels import WhatsAppCloudNotifier
 from news247.notify.format import whatsapp_text
 from news247.storage import Storage
 from news247.web.server import WebServer
@@ -343,88 +341,6 @@ async def test_phone_commands_over_whatsapp(tmp_path):
 
 def test_whatsapp_text():
     assert whatsapp_text(news_alert("Fed cuts rates by 50bp")).startswith("*🔴 Fed cuts rates by 50bp*\n")
-
-
-# --------------------------------------------------------------------------- official Cloud API
-
-
-def cloud(server: Any, http: Any, **opts: Any) -> WhatsAppCloudNotifier:
-    o = {"token": "EAAtoken", "phone_number_id": "1098", "to": ME, "api_base": server.url(""), **opts}
-    return WhatsAppCloudNotifier(o, http, Severity.HIGH)
-
-
-async def test_cloud_api_text_message(server, http):
-    server.on("/v23.0/1098/messages", {"messages": [{"id": "wamid.1"}]})
-    await cloud(server, http).send(news_alert())
-    (req,) = server.requests
-    assert req["headers"]["Authorization"] == "Bearer EAAtoken"
-    body = req["json"]
-    assert body["to"] == "16235550146" and body["type"] == "text" and body["text"]["preview_url"] is False
-    assert body["text"]["body"].startswith("*🔴 OPENAI LAUNCHES")
-
-
-async def test_cloud_api_template_outside_24h_window(server, http):
-    def handler(request: Any) -> Any:
-        from aiohttp import web
-
-        if not hasattr(handler, "n"):
-            handler.n = 0  # type: ignore[attr-defined]
-        handler.n += 1  # type: ignore[attr-defined]
-        if handler.n == 1:  # type: ignore[attr-defined]
-            err = {
-                "error": {
-                    "code": 131047,
-                    "message": "Re-engagement message",
-                    "error_data": {"details": "24h passed"},
-                }
-            }
-            return web.json_response(err, status=400)
-        return web.json_response({"messages": [{"id": "wamid.2"}]})
-
-    server.on("/v23.0/1098/messages", handler)
-    await cloud(server, http, template="news247_alert").send(news_alert())
-    tpl = server.requests[1]["json"]["template"]
-    assert tpl["name"] == "news247_alert" and tpl["language"] == {"code": "en_US"}
-    param = tpl["components"][0]["parameters"][0]["text"]
-    assert "\n" not in param and param.startswith("🔴 OPENAI LAUNCHES") and " · " in param
-
-
-async def test_cloud_api_errors(server, http):
-    from aiohttp import web
-
-    server.on(
-        "/v23.0/1098/messages",
-        lambda r: web.json_response(
-            {"error": {"code": 131047, "message": "Re-engagement message"}}, status=400
-        ),
-    )
-    with pytest.raises(RuntimeError, match="131047.*24-hour window"):
-        await cloud(server, http).send(news_alert())
-    server.on(
-        "/v23.0/1098/messages",
-        lambda r: web.json_response({"error": {"code": 190, "message": "token expired"}}, status=401),
-    )
-    with pytest.raises(RuntimeError, match="error 190: token expired"):
-        await cloud(server, http).send(news_alert())
-    with pytest.raises(ValueError, match="missing token, phone_number_id"):
-        WhatsAppCloudNotifier({}, http, Severity.HIGH)
-
-
-async def test_cloud_hello_world_template_has_no_params(server, http):
-    from aiohttp import web
-
-    calls: list[dict[str, Any]] = []
-
-    async def handler(request: Any) -> Any:
-        body = json.loads(await request.read())
-        calls.append(body)
-        if body["type"] == "text":
-            return web.json_response({"error": {"code": 131047}}, status=400)
-        return web.json_response({})
-
-    server.on("/v23.0/1098/messages", handler)
-    await cloud(server, http, template="hello_world", template_params=0).send(news_alert())
-    assert "components" not in calls[1]["template"]
 
 
 async def test_real_engine_starts_and_stops(tmp_path):

@@ -82,6 +82,10 @@ class Engine:
             wa.attach(cfg.data_path)  # type: ignore[attr-defined]
             self.whatsapp.on_inbound = self.handle_phone_command
             self.whatsapp.on_state = self._whatsapp_state
+        wac = next((c for c in self.dispatcher.channels if c.name == "whatsapp_cloud"), None)
+        self.whatsapp_cloud = getattr(wac, "cloud", None)
+        if self.whatsapp_cloud is not None:
+            self.whatsapp_cloud.on_inbound = self.handle_phone_command
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         self.subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
@@ -125,6 +129,10 @@ class Engine:
         if self.prices:
             runners.append(asyncio.create_task(self.prices.run(self.on_moves, stop), name="prices"))
         runners.append(asyncio.create_task(self._maintenance(stop), name="maintenance"))
+        if self.whatsapp_cloud is not None:
+            runners.append(asyncio.create_task(self.whatsapp_cloud.maintain(stop), name="whatsapp-cloud"))
+        if self.cfg.general.keepalive_url:
+            runners.append(asyncio.create_task(self._keepalive(stop), name="keepalive"))
         try:
             await stop.wait()
         finally:
@@ -625,8 +633,23 @@ class Engine:
             "phone_mode": self.phone_mode(),
             "relay": self.relay_hub.status() if self.relay_hub is not None else None,
             "whatsapp": self.whatsapp.status() if self.whatsapp is not None else None,
+            "whatsapp_cloud": self.whatsapp_cloud.status() if self.whatsapp_cloud is not None else None,
             "db": self.storage.counts(),
         }
+
+    async def _keepalive(self, stop: asyncio.Event) -> None:
+        """Request our own public URL so free hosts that sleep when idle keep us running."""
+        url = self.cfg.general.keepalive_url.rstrip("/") + "/health"
+        log.info("keep-alive: requesting %s every %.0f s", url, self.cfg.general.keepalive_s)
+        while not stop.is_set():
+            await _sleep_or_stop(stop, self.cfg.general.keepalive_s)
+            if stop.is_set():
+                break
+            try:
+                await self.http.get(url, timeout_s=30)
+                self.stats["keepalive_ok"] = self.stats.get("keepalive_ok", 0) + 1
+            except Exception as exc:  # noqa: BLE001 - next round tries again
+                log.warning("keep-alive request failed: %s", exc)
 
     async def _maintenance(self, stop: asyncio.Event) -> None:
         last_prune = 0.0

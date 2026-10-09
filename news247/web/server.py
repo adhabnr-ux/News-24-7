@@ -54,12 +54,15 @@ class WebServer:
         app.router.add_get("/api/whatsapp", self.api_whatsapp)
         app.router.add_post("/api/whatsapp/pair", self.api_whatsapp_pair)
         app.router.add_post("/api/whatsapp/unlink", self.api_whatsapp_unlink)
+        app.router.add_get("/api/whatsapp-cloud", self.api_whatsapp_cloud)
+        app.router.add_get("/webhooks/whatsapp", self.whatsapp_webhook_verify)
+        app.router.add_post("/webhooks/whatsapp", self.whatsapp_webhook)
         return app
 
     @web.middleware
     async def _auth(self, request: web.Request, handler: Any) -> web.StreamResponse:
-        # /relay/ws authenticates relays itself (challenge-response with the relay secret)
-        if self.cfg.token and request.path not in ("/health", "/relay/ws"):
+        # these authenticate themselves: relays (challenge-response), Meta (verify token/signature)
+        if self.cfg.token and request.path not in ("/health", "/relay/ws", "/webhooks/whatsapp"):
             supplied = request.query.get("token") or request.headers.get("Authorization", "").removeprefix(
                 "Bearer "
             )
@@ -246,6 +249,49 @@ class WebServer:
         self._check_write(request)
         await wa.unlink()
         return _json({"ok": True})
+
+    # ------------------------------------------------------------------ WhatsApp Cloud API (Meta)
+
+    def _cloud(self) -> Any:
+        cloud = self.engine.whatsapp_cloud
+        if cloud is None:
+            raise web.HTTPNotFound(
+                text="WhatsApp Cloud API is off (WHATSAPP_CLOUD_ENABLED=true and its keys)"
+            )
+        return cloud
+
+    async def api_whatsapp_cloud(self, request: web.Request) -> web.Response:
+        cloud = self._cloud()
+        st = cloud.status()
+        st["webhook_url"] = f"{self.public_base(request)}/webhooks/whatsapp"
+        try:
+            self._check_write(request)
+            st["verify_token"] = cloud.verify_token  # needed to fill in Meta's webhook form
+        except web.HTTPForbidden:
+            st["verify_token"] = ""
+        return _json(st)
+
+    async def whatsapp_webhook_verify(self, request: web.Request) -> web.Response:
+        challenge = self._cloud().verify_subscription(dict(request.query))
+        if challenge is None:
+            raise web.HTTPForbidden(text="verify token mismatch")
+        return web.Response(text=challenge)
+
+    async def whatsapp_webhook(self, request: web.Request) -> web.Response:
+        cloud = self._cloud()
+        raw = await request.read()
+        if not cloud.signature_ok(raw, request.headers.get("X-Hub-Signature-256")):
+            log.warning("WhatsApp webhook with a bad signature from %s", request.remote)
+            raise web.HTTPForbidden(text="bad signature")
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            raise web.HTTPBadRequest(text="expected JSON") from None
+        # answer Meta immediately (it retries slow webhooks); replies are sent in the background
+        task = asyncio.ensure_future(cloud.handle_webhook(payload))
+        cloud._tasks.add(task)
+        task.add_done_callback(cloud._tasks.discard)
+        return web.Response(text="ok")
 
     async def health(self, request: web.Request) -> web.Response:
         st = self.engine.status()

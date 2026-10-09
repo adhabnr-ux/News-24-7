@@ -8,7 +8,6 @@ import html
 import logging
 import os
 import platform
-import re
 import shutil
 import smtplib
 import subprocess
@@ -21,7 +20,6 @@ from ..http import HttpClient, HTTPError
 from ..models import Alert, Severity
 from ..relay.hub import RelayHub
 from ..relay.messages_app import IMESSAGE_SCRIPTS, MessagesApp  # noqa: F401 - IMESSAGE_SCRIPTS re-exported
-from ..util import strip_html
 from .format import markdown_body, plain_body, short_title, sms_text, whatsapp_text
 
 log = logging.getLogger(__name__)
@@ -697,76 +695,49 @@ class WhatsAppNotifier(PhoneChannel, Notifier):
 
 
 class WhatsAppCloudNotifier(PhoneChannel, Notifier):
-    """WhatsApp through Meta's official Cloud API (no ban risk, but Meta's rules apply).
+    """WhatsApp through Meta's official Cloud API: free with Meta's test number, no ban risk.
+    See news247/whatsapp/cloud.py for how the 24-hour window is handled.
 
-    Options: ``token`` (a permanent System User token), ``phone_number_id`` (from WhatsApp >
-    API Setup), ``to``; ``template`` + ``template_lang`` for messages outside the 24-hour
-    window (Meta only allows approved templates there; the template gets one body parameter,
-    or none with ``template_params: 0``, e.g. hello_world); ``api_version``.
+    Options: ``token`` (permanent System User token), ``phone_number_id``, ``waba_id`` (lets
+    News247 create and track its message template), ``app_secret`` (verifies webhook calls),
+    ``verify_token`` (for the webhook handshake), ``to``; ``template`` (default news247_alert),
+    ``template_lang`` (en_US), ``fallback_template`` (hello_world; "" to disable), ``api_version``.
     """
 
     name = "whatsapp_cloud"
-    REENGAGE = 131047  # "more than 24 hours since the customer last replied"
 
     def validate(self) -> None:
+        from ..whatsapp.cloud import CloudAPI
+
         self.require("token", "phone_number_id")
         self._init_recipients()
+        o = self.options
+        self.cloud = CloudAPI(
+            self.http,
+            token=str(o["token"]),
+            phone_number_id=str(o["phone_number_id"]),
+            waba_id=str(o.get("waba_id") or ""),
+            app_secret=str(o.get("app_secret") or ""),
+            verify_token=str(o.get("verify_token") or ""),
+            template=str(o.get("template") or "news247_alert"),
+            template_lang=str(o.get("template_lang") or "en_US"),
+            fallback_template=str(o.get("fallback_template", "hello_world") or ""),
+            api_version=str(o.get("api_version") or "v23.0"),
+            api_base=str(o.get("api_base") or "https://graph.facebook.com"),
+        )
+        self.cloud.recipients = self.recipients
 
-    def _url(self) -> str:
-        base = str(self.options.get("api_base") or "https://graph.facebook.com").rstrip("/")
-        return f"{base}/{self.options.get('api_version', 'v23.0')}/{self.options['phone_number_id']}/messages"
-
-    @staticmethod
-    def _error(exc: HTTPError) -> tuple[int | None, str]:
-        import json
-
-        try:
-            err = json.loads(exc.body).get("error", {})
-            detail = (err.get("error_data") or {}).get("details") or err.get("message", "")
-            return err.get("code"), detail
-        except (ValueError, AttributeError):
-            m = re.search(r'"code"\s*:\s*(\d+)', exc.body or "")
-            return (int(m.group(1)) if m else None), strip_html(exc.body, limit=200)
-
-    async def _post(self, payload: dict[str, Any]) -> None:
-        headers = {"Authorization": f"Bearer {self.options['token']}"}
-        await self.http.post(self._url(), json=payload, headers=headers)
+    def set_recipients(self, numbers: list[str]) -> None:
+        super().set_recipients(numbers)
+        self.cloud.recipients = self.recipients
 
     async def send(self, alert: Alert) -> None:
-        text = whatsapp_text(alert, limit=int(self.options.get("max_chars", 4000)))
+        full = whatsapp_text(alert, limit=int(self.options.get("max_chars", 3500)))
         for number in self.targets():
-            base = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": number.lstrip("+")}
-            try:
-                await self._post({**base, "type": "text", "text": {"preview_url": False, "body": text}})
-                continue
-            except HTTPError as exc:
-                code, detail = self._error(exc)
-                if code != self.REENGAGE or not self.options.get("template"):
-                    hint = (
-                        " (message your business number to open a 24-hour window, or set a template)"
-                        if code == self.REENGAGE
-                        else ""
-                    )
-                    raise RuntimeError(
-                        f"WhatsApp Cloud API error {code or exc.status}: {detail}{hint}"
-                    ) from None
-            # outside the 24-hour window: Meta only delivers approved templates
-            template: dict[str, Any] = {
-                "name": self.options["template"],
-                "language": {"code": self.options.get("template_lang", "en_US")},
-            }
-            if int(self.options.get("template_params", 1)):
-                one_line = " · ".join(line for line in text.replace("*", "").splitlines() if line.strip())
-                template["components"] = [
-                    {"type": "body", "parameters": [{"type": "text", "text": one_line[:1000]}]}
-                ]
-            try:
-                await self._post({**base, "type": "template", "template": template})
-            except HTTPError as exc:
-                code, detail = self._error(exc)
-                raise RuntimeError(
-                    f"WhatsApp Cloud API template error {code or exc.status}: {detail}"
-                ) from None
+            await self.cloud.send_alert(number, full, short_title(alert))
+
+    def describe(self) -> dict[str, Any]:
+        return {**super().describe(), "template_status": self.cloud.template_status}
 
 
 def _without_url(alert: Alert) -> Alert:

@@ -1,5 +1,7 @@
 # WhatsApp alerts from your own server (self-hosted, 24/7)
 
+> Want it **100% free**? Use Meta's free test number with the Cloud API instead: [FREE-SETUP.md](FREE-SETUP.md). This page covers the linked-device option, which needs a persistent disk (a paid host) and ideally a second number.
+
 News247 can send alerts to your WhatsApp **from the server it already runs on**. There's no third-party messaging service, no Mac, and no computer of yours that has to stay on.
 
 ```

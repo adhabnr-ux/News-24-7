@@ -109,6 +109,10 @@ class GeneralConfig:
     http_timeout_s: float = 15.0
     max_concurrency: int = 32
     db_retention_days: int = 30
+    # free hosts that sleep when idle (Render Free: after 15 min without inbound traffic):
+    # News247 requests its own public /health this often to stay awake 24/7
+    keepalive_url: str = ""
+    keepalive_s: float = 600.0
 
 
 @dataclass
