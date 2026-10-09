@@ -304,9 +304,13 @@ details summary::-webkit-details-marker { display: none; }
 #lock p { color: var(--muted); margin: 0; }
 input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid var(--hair); background: rgba(0, 0, 0, .3); font: 16px var(--mono); margin: 18px 0 14px; text-align: center; box-shadow: inset 0 2px 8px rgba(0, 0, 0, .4); }
 .toast { position: fixed; left: 50%; bottom: calc(var(--dock) + 14px + env(safe-area-inset-bottom)); z-index: 80; transform: translateX(-50%) translateY(20px) scale(.96); opacity: 0; visibility: hidden; pointer-events: none;
-         transition: transform .4s cubic-bezier(.2, .9, .3, 1.2), opacity .3s, visibility .4s; background: rgba(255, 246, 232, .97); color: #12203D; font-weight: 650; padding: 13px 18px; border-radius: 16px; max-width: 90vw;
-         box-shadow: 0 24px 50px -14px rgba(0, 0, 0, .7); }
-.toast.show { transform: translateX(-50%); opacity: 1; visibility: visible; }
+         transition: transform .5s cubic-bezier(.2, .9, .3, 1.15), opacity .35s, visibility .5s, filter .4s; filter: blur(6px);
+         width: max-content; max-width: min(92vw, 440px); padding: 13px 18px 13px 16px; border-radius: 18px; color: var(--cream); font: 600 14px/1.35 var(--sans);
+         display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+         background: linear-gradient(180deg, rgba(30, 46, 84, .78), rgba(12, 22, 48, .82)); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4);
+         box-shadow: 0 26px 60px -16px rgba(0, 0, 0, .8), inset 0 1px 0 rgba(255, 255, 255, .22), inset 0 0 0 1px rgba(255, 217, 160, .32), 0 0 34px -10px rgba(255, 180, 100, .55); }
+.toast.show { transform: translateX(-50%); opacity: 1; visibility: visible; filter: none; }
+.toast.show[data-id] { pointer-events: auto; cursor: pointer; }
 
 @media (min-width: 900px) {
   .rail { right: 22px; }
@@ -406,4 +410,7 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 .rv.tilt.tall { --rvx: 0deg; translate: 0 40px; }
 .rv.tall.in:not(.tilt) { transform: none; }
 .rv.tilt.tall.in { translate: 0 0; }
+#radar.settled .radar-li { animation: none; }
+#radar.settled .radar-li.arrive { animation: contact 1.6s var(--ease) both; }
+@keyframes contact { 0% { opacity: 0; transform: translateX(-14px); background: rgba(255, 210, 140, .22); } 40% { opacity: 1; transform: none; background: rgba(255, 210, 140, .16); } 100% { background: transparent; } }
 

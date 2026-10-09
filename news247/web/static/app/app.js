@@ -19,7 +19,12 @@ const seen = new Set();
 
 function setManifest() { $("manifest").href = "/app/manifest.webmanifest" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""); }
 setManifest();
-function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 3200); }
+function toast(msg, id) {
+  // an alert toast is tappable: it opens that alert's dossier (the global [data-id] handler)
+  const t = $("toast"); t.textContent = msg;
+  if (id) t.dataset.id = id; else delete t.dataset.id;
+  t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), id ? 5200 : 3200);
+}
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN, ...(opts.headers || {}) } });
   if (r.status === 401) { showLock(); throw new Error("access key needed"); }
@@ -277,7 +282,9 @@ async function loadRadar() {
     const r = await api("/api/radar");
     const rows = r.rows || [];
     $("radarSub").textContent = r.enabled ? (r.market?.phase === "closed" ? "sleeps until 4:00 ET" : "moving before the news") : "off";
-    const prev = {};
+    const prev = {}, settled = $("radar").dataset.ready === "1";
+    $("radar").classList.toggle("settled", settled);  // only the first paint staggers in
+    $("radar").dataset.ready = "1";
     $("radar").querySelectorAll("[data-sym]").forEach((el) => (prev[el.dataset.sym] = +el.dataset.pct));
     $("radar").innerHTML = rows.length ? rows.slice(0, 25).map((x, i) => radarRow(x, i)).join("")
       : `<div class="li"><span class="muted">${!r.enabled ? "The radar runs with the market feed (smallcap.radar in config)."
@@ -288,11 +295,14 @@ async function loadRadar() {
       const r = rows[i], el = row.querySelector("[data-pct]");
       if (!r || !el) return;
       row.dataset.sym = r.symbol; row.dataset.pct = r.change_pct ?? 0;
+      if (settled && !(r.symbol in prev)) row.classList.add("arrive");  // a new contact on the scope
       el._to = NaN; el._now = prev[r.symbol] ?? 0;  // NaN: "animate from _now", unlike null
       countTo(el, r.change_pct ?? 0, pct);
     });
   } catch (_) { $("radar").innerHTML = `<div class="li"><span class="muted">Radar unavailable.</span></div>`; }
 }
+// the radar board is live: while Watch is on screen it refreshes every 30 s
+setInterval(() => { if (tab === "watch" && !document.hidden && !sheetOpen) loadRadar(); }, 30000);
 async function loadWatch() {
   loadRadar();
   const w = await api("/api/watch");
@@ -333,6 +343,7 @@ function sparkline(series, alertTs) {
     <line x1="0" x2="${W}" y1="${Y(0)}" y2="${Y(0)}" stroke="rgba(255,255,255,.18)"/>${ax}${paths}</svg></div>`;
 }
 async function openSheet(id) {
+  $("toast").classList.remove("show");
   let a;
   try { a = await api("/api/alert/" + encodeURIComponent(id)); } catch (_) { a = alerts.find((x) => x.id === id); }
   if (!a) return;
@@ -436,6 +447,10 @@ function connect() {
     renderTape();
     Scene.pulse?.();
     if (document.hidden || tab !== "tape") { unread++; $("unread").textContent = unread; $("unread").hidden = false; }
+    if (a.edge?.radar && tab === "watch") loadRadar();  // the board updates the moment the radar fires
+    if (!document.hidden && tab !== "tape" && (a.severity === "HIGH" || a.severity === "CRITICAL")) {
+      toast((a.edge?.radar ? "◉ " : a.severity === "CRITICAL" ? "🔴 " : "🟠 ") + a.title.slice(0, 140), a.id);
+    }
   });
   es.addEventListener("edge", (e) => {
     const d = JSON.parse(e.data), a = alerts.find((x) => x.id === d.id);
