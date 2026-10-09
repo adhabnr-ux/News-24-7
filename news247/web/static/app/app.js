@@ -175,6 +175,7 @@ async function load() {
   const lvl = /CRITICAL/.test(app.phone_mode) ? "critical" : /MEDIUM/.test(app.phone_mode) ? "more" : /normal/.test(app.phone_mode) ? "normal" : "";
   document.querySelectorAll("#levels button").forEach((b) => b.classList.toggle("sel", b.dataset.cmd === lvl));
   if (tab === "brief") loadBrief().catch(() => {});
+  loadTicker();
 }
 
 async function loadBrief() {
@@ -219,6 +220,17 @@ async function loadCalendar() {
   $("cal").innerHTML = Object.keys(byDay).length ? Object.entries(byDay).map(([d, evs]) => `<div class="day-head rv"><b>${esc(prettyDate(d))}</b><span>${inDays(evs[0].in_days)}</span></div>
       <div class="panel glass tilt rv">${evs.map((e) => calRow(e, true)).join("")}</div>`).join("") : emptyHTML("Nothing scheduled in the next 60 days.");
   Fx.observe($("cal"));
+}
+async function loadTicker() {
+  try {
+    const w = await api("/api/watch");
+    const top = w.symbols.filter((x) => x.chg_day != null).slice(0, 14);
+    $("ticker").hidden = !top.length;
+    if (!top.length) return;
+    const row = top.map((x) => `<span>${esc(x.symbol)} <small class="${cls(x.chg_day)}">${x.chg_day > 0 ? "▲" : "▼"} ${Math.abs(x.chg_day).toFixed(2)}%</small></span>`).join("");
+    $("belt").innerHTML = row + row;     // doubled, so the loop is seamless
+    $("belt").style.setProperty("--dur", Math.max(24, top.length * 3.6) + "s");
+  } catch (_) { /* the ticker is decoration: never break the page for it */ }
 }
 async function loadWatch() {
   const w = await api("/api/watch");
@@ -562,6 +574,7 @@ function go(name) {
 }
 document.querySelectorAll(".dock button").forEach((b) => (b.onclick = () => go(b.dataset.tab)));
 $("nextCat").onclick = () => go("calendar");
+$("ticker").onclick = () => go("watch");
 setInterval(() => document.querySelectorAll(".ago[data-t]").forEach((el) => (el.textContent = ago(+el.dataset.t))), 15000);
 setInterval(() => { if (!document.hidden && TOKEN && !$("main").hidden) { load().catch(() => {}); if (tab === "watch") loadWatch().catch(() => {}); } }, 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && TOKEN) { navigator.clearAppBadge?.(); load().catch(() => {}); } });

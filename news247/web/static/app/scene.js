@@ -57,14 +57,14 @@ vec3 space(vec2 uv, float amt, float t) {
   float h = hash(g);
   float on = step(0.945, h);
   float tw = 0.6 + 0.4 * sin(t * (1.0 + 3.0 * hash(g + 3.1)) + h * 40.0);
-  float star = on * smoothstep(0.22, 0.0, length(f + (hash(g + 7.7) - 0.5) * 0.5)) * tw;
+  float star = on * (1.0 - smoothstep(0.0, 0.22, length(f + (hash(g + 7.7) - 0.5) * 0.5))) * tw;
   vec2 q = vec2(uv.x * uAspect, uv.y) * 22.0;
   vec2 fq = fract(q) - 0.5;
   float bigOn = step(0.985, hash(floor(q)));
   float core = exp(-dot(fq, fq) * 420.0);                                                    // a hard little core...
   float spikes = (exp(-abs(fq.x) * 90.0) * exp(-abs(fq.y) * 9.0) + exp(-abs(fq.y) * 90.0) * exp(-abs(fq.x) * 9.0)) * 0.32;   // ...with diffraction spikes
   float big = bigOn * (core + spikes) * (0.75 + 0.25 * sin(t * 2.0 + h * 9.0));
-  float band = smoothstep(0.55, 0.0, abs((uv.x * uAspect - uv.y * 0.9) - 0.15 - 0.2 * fbm(uv * 3.0)));
+  float band = 1.0 - smoothstep(0.0, 0.55, abs((uv.x * uAspect - uv.y * 0.9) - 0.15 - 0.2 * fbm(uv * 3.0)));
   vec3 milky = vec3(0.30, 0.38, 0.62) * band * (0.25 + 0.55 * fbm(uv * 14.0)) * 0.55;
   return (vec3(0.85, 0.9, 1.0) * (star * 1.25 + big * 1.1) + milky) * amt;
 }
@@ -83,7 +83,7 @@ void main() {
   float cy = mix(anchor, anchor - 0.30, k1) - 0.75 * k2;
   float hh = hh0 / zoom, hw = hh * sa / uAspect;
   // handheld breathing, big at ignition, barely there afterwards
-  float shake = (0.0012 + 0.012 * pow(1.0 - uIntro, 3.0) + 0.004 * uPulse) * uMotion;
+  float shake = (0.0012 + 0.012 * (1.0 - uIntro) * (1.0 - uIntro) * (1.0 - uIntro) + 0.004 * uPulse) * uMotion;
   vec2 sh = vec2(noise(vec2(t * 3.1, 1.7)) - 0.5, noise(vec2(2.9, t * 3.3)) - 0.5) * shake;
   vec2 c = vec2(0.5, cy) + sh;
   vec2 uv0 = c + (s - 0.5) * 2.0 * vec2(hw, hh);
@@ -101,14 +101,15 @@ void main() {
   float cloudBand = smoothstep(0.24, 0.40, uv.y) * (1.0 - smoothstep(0.64, 0.80, uv.y));
   vec2 fl = vec2(fbm(uv * 5.0 + vec2(t * 0.020, 0.0)), fbm(uv * 5.0 + vec2(7.1, -t * 0.016))) - 0.5;
   uv += fl * 0.0085 * cloudBand * noRocket;
-  float smokeL = smoothstep(0.34, 0.0, uv.x) * smoothstep(0.44, 0.52, uv.y) * (1.0 - smoothstep(0.70, 0.78, uv.y));
+  float smokeL = (1.0 - smoothstep(0.0, 0.34, uv.x)) * smoothstep(0.44, 0.52, uv.y) * (1.0 - smoothstep(0.70, 0.78, uv.y));
   float smokeR = smoothstep(0.62, 1.0, uv.x) * smoothstep(0.40, 0.48, uv.y) * (1.0 - smoothstep(0.72, 0.80, uv.y));
   float smoke = max(smokeL, smokeR) + 0.6 * smoothstep(0.62, 0.66, uv.y) * (1.0 - smoothstep(0.72, 0.76, uv.y)) * noRocket;
   vec2 rise = vec2(fbm(uv * vec2(9.0, 7.0) + vec2(t * 0.05, -t * 0.22)), fbm(uv * vec2(7.0, 9.0) + vec2(-t * 0.04, -t * 0.28))) - 0.5;
   uv += rise * 0.014 * smoke * noRocket;
 
   // ---- heat shimmer above the pad
-  float pad = exp(-pow((uv.x - 0.49) / 0.075, 2.0)) * smoothstep(0.50, 0.62, uv.y) * (1.0 - smoothstep(0.69, 0.74, uv.y));
+  float pdx = (uv.x - 0.49) / 0.075;
+  float pad = exp(-pdx * pdx) * smoothstep(0.50, 0.62, uv.y) * (1.0 - smoothstep(0.69, 0.74, uv.y));
   uv.x += sin(uv.y * 170.0 - t * 9.0 + noise(uv * 40.0) * 5.0) * 0.0011 * pad;
 
   // ---- the photograph, with a touch of lateral chromatic fringing toward the edges
@@ -132,13 +133,15 @@ void main() {
   col += bl * vec3(1.05, 0.78, 0.5) * 0.55;
 
   // ---- plume: white-hot core that flickers, ignition flash
-  float px = exp(-pow((uv.x - 0.488) / 0.0105, 2.0));
+  float pcx = (uv.x - 0.488) / 0.0105;
+  float px = exp(-pcx * pcx);
   float pyy = smoothstep(0.545, 0.60, uv.y) * (1.0 - smoothstep(0.672, 0.700, uv.y));
   float fk = 0.78 + 0.22 * noise(vec2(uv.y * 70.0 - t * 22.0, t * 2.3)) + 0.12 * sin(t * 31.0);
-  vec3 hot = vec3(1.0, 0.82, 0.58) * px * pyy * fk * (0.34 + 0.9 * pow(1.0 - uIntro, 2.0) + 0.8 * uPulse);
+  vec3 hot = vec3(1.0, 0.82, 0.58) * px * pyy * fk * (0.34 + 0.9 * (1.0 - uIntro) * (1.0 - uIntro) + 0.8 * uPulse);
   col += hot;
-  float base = exp(-pow(length((uv - vec2(0.489, 0.676)) * vec2(sa * 0.9, 1.3)) / 0.055, 2.0));
-  col += vec3(1.0, 0.55, 0.22) * base * (0.18 + 0.12 * fk + 0.8 * pow(1.0 - uIntro, 2.0) + 0.7 * uPulse);
+  float bl0 = length((uv - vec2(0.489, 0.676)) * vec2(sa * 0.9, 1.3)) / 0.055;
+  float base = exp(-bl0 * bl0);
+  col += vec3(1.0, 0.55, 0.22) * base * (0.18 + 0.12 * fk + 0.8 * (1.0 - uIntro) * (1.0 - uIntro) + 0.7 * uPulse);
 
   // ---- embers rising from the pad (only evaluated near the pad: the loop is the costliest part)
   if (uv.x > 0.20 && uv.x < 0.78 && uv.y > 0.30 && uv.y < 0.74 && uMotion > 0.0) {
@@ -158,7 +161,7 @@ void main() {
   // ---- sunlit glints on the wet ground
   if (uv.y > 0.72) {
     float wet = smoothstep(0.72, 0.80, uv.y);
-    float gl = pow(noise(uv * vec2(420.0, 260.0) + vec2(t * 0.6, 0.0)), 14.0) * smoothstep(0.35, 0.8, luma(col));
+    float gl = pow(max(noise(uv * vec2(420.0, 260.0) + vec2(t * 0.6, 0.0)), 0.0001), 14.0) * smoothstep(0.35, 0.8, luma(col));
     col += vec3(1.0, 0.8, 0.55) * gl * wet * 0.8;
   }
 
@@ -167,8 +170,8 @@ void main() {
     float over = -uv0.y;
     vec3 topCol = (photo(vec2(0.12, 0.012)) + photo(vec2(0.30, 0.012)) + photo(vec2(0.50, 0.012)) + photo(vec2(0.70, 0.012)) + photo(vec2(0.88, 0.012))) * 0.2;
     float alt = smoothstep(0.0, 0.65, over);
-    vec3 skyAbove = mix(topCol, vec3(0.010, 0.026, 0.080), pow(alt, 0.6));
-    skyAbove += vec3(0.30, 0.20, 0.12) * pow(1.0 - alt, 8.0) * 0.05;
+    vec3 skyAbove = mix(topCol, vec3(0.010, 0.026, 0.080), pow(max(alt, 0.0001), 0.6));
+    skyAbove += vec3(0.30, 0.20, 0.12) * pow(max(1.0 - alt, 0.0001), 8.0) * 0.05;
     vec3 above = skyAbove;
     if (over > 0.05) above += space(uv0, smoothstep(0.05, 0.55, over), t);
     float seam = 1.0 - smoothstep(0.0, 0.16, uv0.y);          // feather the photo's top edge into the sky
@@ -181,11 +184,11 @@ void main() {
   // ---- grade: filmic curve, warm highlights, cool shadows, vignette, grain, ignition fade-in
   col *= 0.35 + 0.65 * smoothstep(0.0, 1.0, uIntro) + 0.0;
   col = col / (1.0 + 0.10 * col);                       // gentle shoulder
-  col = pow(col, vec3(0.97));
+  col = pow(max(col, vec3(0.0001)), vec3(0.97));
   float l = luma(col);
   col = mix(col, col * vec3(1.06, 1.0, 0.93), smoothstep(0.45, 0.95, l) * 0.6);
   col = mix(col, col * vec3(0.92, 1.0, 1.10), (1.0 - smoothstep(0.0, 0.35, l)) * 0.5);
-  float vig = smoothstep(1.15, 0.30, length((s - 0.5) * vec2(1.0, 1.15)));
+  float vig = 1.0 - smoothstep(0.30, 1.15, length((s - 0.5) * vec2(1.0, 1.15)));
   col *= mix(0.62, 1.0, vig);
   col *= mix(0.88, 1.04, uMood);                        // dusk while the market is closed, brighter while it's open
   col = mix(vec3(luma(col)), col, mix(0.92, 1.06, uMood));
