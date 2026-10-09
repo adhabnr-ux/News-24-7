@@ -100,6 +100,7 @@ notify:
     min_severity: ${PUSH_MIN_SEVERITY:-high}
     ttl_s: 1800                         # an alert older than 30 min isn't worth a late push
     vapid_private: ${WEBPUSH_VAPID_PRIVATE:-}   # empty: derived from DASHBOARD_TOKEN (stable)
+    brief_time: "${PUSH_BRIEF_TIME:-08:15}"     # the morning Brief (US/Eastern, weekdays); empty = off
 
   # ---------------------------------------------------------------- texts to your phone
   # Which severities reach your phone: high (default) = important + critical; critical = only the biggest.

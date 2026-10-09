@@ -1,6 +1,6 @@
 # Foretape: News247 on your home screen, with instant push alerts
 
-**Foretape** ("before the tape moves") is News247's own phone app. It's a website you add to your home screen, so it looks and behaves like an app:
+**Foretape** ("before the tape moves") is News247's own phone app, built for the way a trading desk reads news: what happened, which way it cuts, what happened last time, and how far ahead of everyone else you are. It's a website you add to your home screen, so it looks and behaves like an app:
 
 - **Push notifications on your lock screen**, sent the moment News247 decides a story matters.
 - The same alert also appears in the open app instantly, over a live stream.
@@ -32,14 +32,32 @@ That's it. Close the app; alerts still arrive.
 
 ## What you see
 
-| Where | What |
-|---|---|
-| **Lock screen** | 🔴 CRITICAL / 🟠 HIGH headline, then the tickers with ▲/▼, the source, how many seconds after publication it was caught, and why it matters. **Critical alerts stay on screen until you tap them.** Tap to open that alert in the app; **Open source** jumps to the original. |
-| **Alerts tab** | Every alert, newest first: severity, source, tickers, "⚡ caught 3s after it was posted", and a link to the source. The ticker tape at the top scrolls the latest headlines. |
-| **Wire tab** | The latest 60 stories News247 scored as at least MEDIUM, including ones below the alert line. Useful to see what it's watching. |
-| **Control tab** | **Send a test alert**, **Reconnect** (re-registers this phone), alert level (**Critical only / Normal / More**), **Pause 30m / 2h / until resumed**, **Resume**, plus engine health: healthy sources, uptime, alerts in 24 h, and phones subscribed. |
+Foretape opens on a live sky: deep cobalt above, a gold horizon below, the way the market looks at the open. Five tabs:
 
-The app icon shows a badge with the number of alerts you haven't opened yet, where the platform supports it.
+| Tab | What's on it |
+|---|---|
+| **Tape** | The hero line, then three numbers: your **median lead over the news** (7 days), alerts in the last 24 h, and sources live. Then the **next big catalyst** on the calendar. Below that, **Top of the tape** (the strongest alert of the last 6 h, in large type) and every other alert. Tap any alert for its full dossier. |
+| **Brief** | The morning meeting: catalysts **since the last close**, the themes in focus, SPY/QQQ/IWM/DIA and the biggest movers, the week's calendar, and **your edge** (stories you had before the mainstream, median and biggest head start). |
+| **Calendar** | Scheduled catalysts for the next 60 days, with time (ET) and impact: FOMC decisions, jobs reports, elections, option expirations and quad witching, market holidays and early closes, plus one-offs like the end of China's rare-earth suspension. Edit `news247/data/calendar.yaml` to add your own (earnings dates, investor days). |
+| **Watch** | The board: every quoted symbol sorted by today's move, with the 5-minute change. Tickers from fresh alerts are added automatically. |
+| **Desk** | Push status, **Send a test alert**, **Reconnect**, alert level (**Critical only / Normal / More**), **Pause 30m / 2h / until resumed**, **Resume**, the Brief time, and engine health. |
+
+### Every alert comes with an analysis
+
+| Part | What it tells you |
+|---|---|
+| **The play** | **▲ Bullish / ▼ Bearish / ◆ Two-way**, a 5-bar **conviction** meter (Low → Maximum, from the score), the **direct** tickers and the **read-through** names (suppliers, competitors, the sector basket). When the headline itself doesn't say which way it cuts (a Fed hike, a tariff post, a Polymarket jump), the direction comes from how the most similar past events traded, and the app says so. |
+| **Precedents** | The most similar market-moving events on record (150+ since 2016, including every Jun–Oct 2026 mover we traced), matched on the same themes, entities and tickers the scorer found. Each shows what the stocks did then. Example: an FHFA post about VantageScore → *"Last time (Sep 28, 2026): FICO −25 to −27%"*. The top precedent is also on the lock-screen notification. |
+| **The tape since** | Each direct ticker's move since the alert ("FICO −9.76% since alert"), live from the price feed. |
+| **The edge** | How many seconds after publication Foretape caught it, where it was first seen, and when the mainstream caught up: *"Beat CNBC by 6m 52s"*. It's measured live: when CNBC, Yahoo Finance, Google News, MarketWatch, WSJ, Bloomberg, NYT, Fortune or Axios later carries the same story, the gap is recorded. |
+| **Who carried it** | Every source that carried the story, first one first, with the gaps. |
+| **Why Foretape flagged it** | The full score breakdown: every keyword, theme, authority and source signal that counted. |
+
+### The morning Brief
+
+At **08:15 ET on market days**, Foretape sends one notification: *"☀️ The Brief · 3 overnight catalysts"*, with the top two headlines and anything big on the calendar today (*"Today 14:00 ET: FOMC decision"*). On a quiet night with nothing scheduled, it stays silent. Tapping it opens the Brief. Change the time with `PUSH_BRIEF_TIME`, or set it empty to turn it off.
+
+**Lock screen:** 🔴 CRITICAL / 🟠 HIGH headline, then the tickers with ▲/▼, the source, how fast it was caught, and the strongest precedent. **Critical alerts stay on screen until you tap them.** Tapping opens that alert's analysis in the app; **Open source** jumps to the original. The app icon shows how many alerts you haven't opened, where the platform supports badges.
 
 ## Keeping phones subscribed on Render's free plan
 
@@ -65,6 +83,7 @@ News247 then keeps a copy of the subscriptions there and restores them on start.
 | `STATE_DB` | (none) | Optional Postgres URL that keeps phone subscriptions across restarts. |
 | `WEBPUSH_VAPID_PRIVATE` | derived | Optional fixed signing key (base64url, 32 bytes). Only needed if you rotate `DASHBOARD_TOKEN` but want phones to stay subscribed. |
 | `CONTACT_EMAIL` | (none) | Sent to push services as the operator contact; already set for SEC. |
+| `PUSH_BRIEF_TIME` | `08:15` | When the morning Brief is pushed (US/Eastern, market days only). Empty turns it off. |
 
 Quiet hours, the rate limit and the pause/level commands apply to push exactly as they do to the other channels. Several phones can subscribe; each gets every alert.
 

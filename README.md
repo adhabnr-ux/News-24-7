@@ -43,9 +43,19 @@ Alerts arrive as **push notifications from Foretape**, News247's own home-screen
 2. On your iPhone, open `https://<your-app>.onrender.com/app/?token=<DASHBOARD_TOKEN>` in Safari, then **Share → Add to Home Screen**.
 3. Open **Foretape** from the home screen and tap **Turn on alerts**. A test notification arrives in about a second.
 
-Alerts land on your lock screen the moment News247 scores a story HIGH or CRITICAL; critical ones stay on screen until you tap them. The app shows the live feed, every scored headline, and controls (critical-only, pause 2h, resume). It needs no phone number, no Meta/Apple developer account and no app store: it uses standard Web Push (encrypted, iOS 16.4+, Android, desktop). Optional: a free Postgres in `STATE_DB` keeps phones subscribed across Render restarts.
+Alerts land on your lock screen the moment News247 scores a story HIGH or CRITICAL; critical ones stay on screen until you tap them.
 
-<img src="docs/foretape.png" alt="Foretape on iPhone" width="300">
+Every alert comes with an analysis:
+- **The play:** bullish or bearish, a conviction meter, the direct tickers and the read-through names.
+- **Precedents:** the most similar past events and how they traded (*"Last time (Sep 28, 2026): FICO −25 to −27%"*).
+- **The tape since:** each ticker's move since the alert.
+- **Your edge:** *"Beat CNBC by 6m 52s"*, measured live.
+
+There's also a **morning Brief** pushed at 08:15 ET on market days, a **catalyst calendar** (FOMC, jobs, elections, option expiries, holidays) and a live **board** of movers.
+
+It needs no phone number, no Meta/Apple developer account and no app store. It uses standard Web Push (encrypted; iOS 16.4+, Android, desktop). Optional: a free Postgres in `STATE_DB` keeps phones subscribed across Render restarts.
+
+![Foretape: the tape, an alert's analysis, the morning Brief](docs/foretape.png)
 
 ### Option A1: 100% free, alerts on WhatsApp through Meta's test number
 

@@ -143,6 +143,7 @@ class Alert:
     move: PriceMove | None = None
     related: list[dict[str, Any]] = field(default_factory=list)  # correlated news <-> price context
     id: str = ""
+    edge: dict[str, Any] = field(default_factory=dict)  # the play, precedents, lead, refs (edge.py)
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -163,4 +164,5 @@ class Alert:
             "analysis": self.analysis.to_dict() if self.analysis else None,
             "move": self.move.to_dict() if self.move else None,
             "related": self.related,
+            "edge": self.edge,
         }

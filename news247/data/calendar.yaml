@@ -1,0 +1,29 @@
+# Scheduled catalysts shown in Foretape's Calendar and Brief. Times are US/Eastern.
+# Monthly option expirations (3rd Friday; quarterly "quad witching" in Mar/Jun/Sep/Dec) and the
+# NYSE session are generated, so only one-off dates live here.
+#
+# impact: 3 = moves the whole market, 2 = moves a sector, 1 = worth knowing.
+# Add your own (earnings dates, investor days) under the same keys; `note` is optional.
+
+events:
+  # FOMC decisions (statement 14:00, press conference 14:30) - federalreserve.gov 2026 calendar
+  - {date: 2026-01-28, time: "14:00", title: "FOMC decision", kind: fed, impact: 3}
+  - {date: 2026-03-18, time: "14:00", title: "FOMC decision + projections (dot plot)", kind: fed, impact: 3}
+  - {date: 2026-04-29, time: "14:00", title: "FOMC decision", kind: fed, impact: 3}
+  - {date: 2026-06-17, time: "14:00", title: "FOMC decision + projections (dot plot)", kind: fed, impact: 3}
+  - {date: 2026-07-29, time: "14:00", title: "FOMC decision", kind: fed, impact: 3}
+  - {date: 2026-09-16, time: "14:00", title: "FOMC decision + projections (dot plot)", kind: fed, impact: 3}
+  - {date: 2026-10-28, time: "14:00", title: "FOMC decision", kind: fed, impact: 3}
+  - {date: 2026-12-09, time: "14:00", title: "FOMC decision + projections (dot plot)", kind: fed, impact: 3}
+  # Jobs reports (BLS Employment Situation, 08:30). Nov/Dec follow BLS's usual first-Friday
+  # pattern; confirm at bls.gov/schedule/news_release/empsit.htm
+  - {date: 2026-10-02, time: "08:30", title: "Jobs report (September payrolls)", kind: data, impact: 3}
+  - {date: 2026-11-06, time: "08:30", title: "Jobs report (October payrolls)", kind: data, impact: 3, note: "expected date"}
+  - {date: 2026-12-04, time: "08:30", title: "Jobs report (November payrolls)", kind: data, impact: 3, note: "expected date"}
+  # Politics and trade
+  - {date: 2026-11-03, time: "19:00", title: "US midterm elections: first polls close", kind: politics, impact: 3}
+  - {date: 2026-11-10, title: "China's rare-earth export-control suspension expires (renewal or not moves MP, USAR, chips)", kind: trade, impact: 2, note: "single-source report (Global Times)"}
+
+# NYSE closures and early closes (13:00), used for the market-status line and the Brief
+market_holidays: [2026-01-01, 2026-01-19, 2026-02-16, 2026-04-03, 2026-05-25, 2026-06-19, 2026-07-03, 2026-09-07, 2026-11-26, 2026-12-25, 2027-01-01, 2027-01-18, 2027-02-15, 2027-03-26, 2027-05-31, 2027-06-18, 2027-07-05, 2027-09-06, 2027-11-25, 2027-12-24]
+early_closes: [2026-11-27, 2026-12-24, 2027-11-26]

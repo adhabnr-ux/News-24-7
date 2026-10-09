@@ -69,6 +69,10 @@ class WebServer:
         app.router.add_get("/app/{name}", self.app_asset)
         app.router.add_get("/api/app", self.api_app)
         app.router.add_get("/api/foretape", self.api_foretape)
+        app.router.add_get("/api/brief", self.api_brief)
+        app.router.add_get("/api/calendar", self.api_calendar)
+        app.router.add_get("/api/watch", self.api_watch)
+        app.router.add_get("/api/alert/{id}", self.api_alert)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
         app.router.add_post("/api/push/test", self.api_push_test)
@@ -392,8 +396,8 @@ class WebServer:
             "scope": "/app/",
             "display": "standalone",
             "orientation": "portrait",
-            "background_color": "#0B0A0F",
-            "theme_color": "#0B0A0F",
+            "background_color": "#060F24",
+            "theme_color": "#0E2A62",
             "categories": ["finance", "news", "business"],
             "icons": [
                 {"src": "/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
@@ -425,9 +429,13 @@ class WebServer:
     async def api_app(self, request: web.Request) -> web.Response:
         st = self.engine.status()
         wp = self.engine.webpush
+        alerts = self.engine.storage.recent_alerts(60)
+        for a in alerts:
+            a["since"] = self.engine.edge_since(a)
+        leads = sorted(self.engine.storage.leads())
         return _json(
             {
-                "alerts": self.engine.storage.recent_alerts(60),
+                "alerts": alerts,
                 "phone_mode": self.engine.phone_mode(),
                 "sources": len(st["sources"]),
                 "sources_ok": sum(1 for s in st["sources"] if s["status"] in ("ok", "starting")),
@@ -435,8 +443,54 @@ class WebServer:
                 "alerts_24h": st["db"]["alerts_24h"],
                 "devices": len(wp.subs) if wp is not None else 0,  # type: ignore[attr-defined]
                 "durable": bool(wp is not None and wp.state is not None) or not os.environ.get("RENDER"),  # type: ignore[attr-defined]
+                "market": self.engine.calendar.market_status(),
+                "edge": {
+                    "stories": len(leads),
+                    "median_lead_s": leads[len(leads) // 2] if leads else None,
+                },
+                "next": self.engine.calendar.upcoming(days=35)[:6],
+                "brief_time": str(wp.options.get("brief_time", "08:15") or "") if wp is not None else "",
             }
         )
+
+    async def api_brief(self, request: web.Request) -> web.Response:
+        return _json(self.engine.brief())
+
+    async def api_calendar(self, request: web.Request) -> web.Response:
+        days = min(120, max(1, int(request.query.get("days", 45))))
+        return _json(
+            {
+                "events": self.engine.calendar.upcoming(days=days),
+                "market": self.engine.calendar.market_status(),
+            }
+        )
+
+    async def api_watch(self, request: web.Request) -> web.Response:
+        snap = self.engine.detector.snapshot()
+        rows = [
+            {
+                "symbol": sym,
+                "price": v["price"],
+                "chg_day": v["chg_day"],
+                "chg_5m": v["chg_5m"],
+                "ts": v["ts"],
+            }
+            for sym, v in snap.items()
+        ]
+        rows.sort(key=lambda r: abs(r["chg_day"] or 0.0), reverse=True)
+        return _json({"symbols": rows, "market": self.engine.calendar.market_status()})
+
+    async def api_alert(self, request: web.Request) -> web.Response:
+        """Everything about one alert: the analysis, the play, precedents, every source that
+        carried the story (first one first) and the tape since."""
+        alert = self.engine.storage.get_alert(request.match_info["id"])
+        if alert is None:
+            raise web.HTTPNotFound(text="no such alert")
+        alert["since"] = self.engine.edge_since(alert)
+        uid = (alert.get("item") or {}).get("uid")
+        story = self.engine.storage.story_of(uid) if uid else None
+        alert["story_sources"] = self.engine.storage.story_sources(story) if story is not None else []
+        return _json(alert)
 
     async def api_foretape(self, request: web.Request) -> web.Response:
         """For the Setup page: the link (and a QR code) that opens Foretape on a phone."""

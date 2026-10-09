@@ -1,42 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <radialGradient id="bg" cx="28%" cy="22%" r="95%">
-      <stop offset="0" stop-color="#231833"/>
-      <stop offset="0.55" stop-color="#110E18"/>
-      <stop offset="1" stop-color="#08070B"/>
-    </radialGradient>
-    <linearGradient id="tape" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFE08A"/>
-      <stop offset="0.45" stop-color="#FFB22E"/>
-      <stop offset="1" stop-color="#FF7A1A"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A4BA8"/>
+      <stop offset="0.48" stop-color="#0E2A62"/>
+      <stop offset="1" stop-color="#071431"/>
     </linearGradient>
-    <radialGradient id="spark" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="0.35" stop-color="#FF6FA0"/>
-      <stop offset="1" stop-color="#FF2E74"/>
+    <radialGradient id="glow" cx="0.5" cy="0.8" r="0.62">
+      <stop offset="0" stop-color="#FFD08A" stop-opacity="0.95"/>
+      <stop offset="0.3" stop-color="#F59A4F" stop-opacity="0.55"/>
+      <stop offset="0.62" stop-color="#C8643A" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#C8643A" stop-opacity="0"/>
     </radialGradient>
-    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
-      <feGaussianBlur stdDeviation="14"/>
-    </filter>
+    <linearGradient id="plume" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#FFB25C" stop-opacity="0"/>
+      <stop offset="0.28" stop-color="#FFC47A"/>
+      <stop offset="0.8" stop-color="#FFF2DC"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <linearGradient id="trail" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
   </defs>
   <rect width="512" height="512" rx="116" fill="url(#bg)"/>
-  <!-- faint tape track the glyph rides on -->
-  <path d="M96 152 H 470" stroke="#FFB22E" stroke-opacity=".10" stroke-width="64" stroke-linecap="round"/>
-  <!-- the F, cut from ticker tape -->
-  <g fill="url(#tape)">
-    <rect x="132" y="120" width="68" height="282" rx="34"/>
-    <path d="M166 120 H 350 L 398 152 L 350 184 H 166 Z"/>
-    <rect x="132" y="240" width="160" height="58" rx="29"/>
-  </g>
-  <!-- sprocket holes, like a ticker tape -->
-  <g fill="#0E0B14">
-    <circle cx="226" cy="152" r="9"/>
-    <circle cx="266" cy="152" r="9"/>
-    <circle cx="306" cy="152" r="9"/>
-    <circle cx="166" cy="330" r="9"/>
-    <circle cx="166" cy="366" r="9"/>
-  </g>
-  <!-- the signal, ahead of the tape -->
-  <circle cx="446" cy="152" r="30" fill="#FF2E74" opacity=".55" filter="url(#glow)"/>
-  <circle cx="446" cy="152" r="19" fill="url(#spark)"/>
+  <rect width="512" height="512" rx="116" fill="url(#glow)"/>
+  <path d="M58 70 L318 318" stroke="url(#trail)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M244 380 C 248 300, 252 220, 256 150 C 260 220, 264 300, 268 380 Z" fill="url(#plume)"/>
+  <path d="M256 92 C 268 108, 271 122, 271 140 L 271 176 L 241 176 L 241 140 C 241 122, 244 108, 256 92 Z" fill="#F7F2E8"/>
+  <rect x="241" y="150" width="30" height="5" fill="#0E2A62" opacity="0.55"/>
+  <ellipse cx="256" cy="392" rx="132" ry="9" fill="#FFE1AE" opacity="0.9"/>
+  <ellipse cx="256" cy="392" rx="64" ry="16" fill="#FFF4E2" opacity="0.85"/>
 </svg>

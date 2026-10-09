@@ -15,6 +15,7 @@ from .analysis.dedup import Story, StoryClusterer
 from .analysis.llm import LLMClient, apply_verdict
 from .analysis.scorer import Scorer
 from .config import Config
+from .edge import Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
 from .market.prices import PriceMonitor
@@ -56,6 +57,8 @@ class Engine:
         )
         self.storage = storage or Storage(cfg.data_path / "news247.db")
         self.scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
+        self.edge = EdgeDesk(self.scorer)
+        self.calendar = Calendar()
         self.clusterer = StoryClusterer(window_s=cfg.scoring.cluster_window_minutes * 60)
         self.dispatcher = dispatcher or Dispatcher(cfg.notify, self.http)
         self.detector = MoveDetector(cfg.market)
@@ -138,6 +141,7 @@ class Engine:
             f"{self.cfg.llm.model}@{self.cfg.llm.base_url}" if self.llm else "off",
             ", ".join(f"{c.name}≥{c.min_severity.name.lower()}" for c in self.dispatcher.channels) or "none",
         )
+        self._spawn(asyncio.to_thread(self.edge.warm))  # score the history off the event loop
         if self.webpush is not None:
             await self.webpush.restore()  # type: ignore[attr-defined]  # fresh container: phones come back
         snap = getattr(self._wa_channel, "snapshot", None)
@@ -149,6 +153,7 @@ class Engine:
         if self.prices:
             runners.append(asyncio.create_task(self.prices.run(self.on_moves, stop), name="prices"))
         runners.append(asyncio.create_task(self._maintenance(stop), name="maintenance"))
+        runners.append(asyncio.create_task(self._edge_loop(stop), name="edge"))
         if self.whatsapp_cloud is not None:
             runners.append(asyncio.create_task(self.whatsapp_cloud.maintain(stop), name="whatsapp-cloud"))
         if self.cfg.general.keepalive_url:
@@ -199,6 +204,8 @@ class Engine:
         self.stats["items"] += 1
         analysis = self.scorer.score(item)
         story, is_new = self.clusterer.assign(item, analysis.entities)
+        if not is_new and story.alert_id and self.edge.is_mainstream(item.source):
+            self._record_lead(story, item)
         if not is_new and story.unconfirmed and story.alerted is not None and not item.extra.get("relay"):
             await self._confirm(item, story)
         if not is_new and story.confirmations >= 2:
@@ -310,6 +317,10 @@ class Engine:
             analysis=analysis,
             related=self._price_context(analysis.tickers),
         )
+        self.edge.annotate(alert, self.detector.last_price)
+        self._track_symbols(alert.edge.get("play", {}).get("direct", []))
+        if not story.alert_id:
+            story.alert_created = alert.created
         story.alert_id = alert.id
         self.storage.mark_alerted(item.uid)
         await self.publish(alert, push=push)
@@ -686,6 +697,88 @@ class Engine:
                 self.stats["keepalive_ok"] = self.stats.get("keepalive_ok", 0) + 1
             except Exception as exc:  # noqa: BLE001 - next round tries again
                 log.warning("keep-alive request failed: %s", exc)
+
+    # ------------------------------------------------------------------ the edge desk
+
+    def _record_lead(self, story: Story, item: NewsItem) -> None:
+        """A mainstream outlet just carried a story Foretape already alerted on: that's the lead."""
+        alerted_at = getattr(story, "alert_created", 0.0) or 0.0
+        lead = item.detected - alerted_at
+        if not alerted_at or lead < 5 or not self.storage.add_lead(story.alert_id, item.source, lead):
+            return
+        patch = {"lead": {"source": item.source, "lead_s": round(lead, 1), "at": item.detected}}
+        if self.storage.update_alert_edge(story.alert_id, patch) is not None:
+            self._broadcast("edge", {"id": story.alert_id, **patch})
+            log.info(
+                "edge: %s carried story %s %s after Foretape", item.source, story.alert_id, fmt_age(lead)
+            )
+
+    def _track_symbols(self, symbols: list[str]) -> None:
+        """Start quoting an alert's direct tickers so 'since the alert' moves can be shown."""
+        if not self.prices or self.cfg.market.provider != "yahoo":
+            return
+        tracked = self.cfg.market.symbols
+        for sym in symbols[:4]:
+            if sym not in tracked and len(tracked) < 150 and re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", sym):
+                tracked.append(sym)
+
+    def edge_since(self, alert: dict[str, Any]) -> dict[str, float]:
+        return EdgeDesk.since((alert.get("edge") or {}).get("refs") or {}, self.detector.last_price)
+
+    def brief(self, now: float | None = None) -> dict[str, Any]:
+        now = now or time.time()
+        return build_brief(
+            self.storage.recent_alerts(200, since=now - 4 * 86400),
+            self.calendar,
+            self.detector.snapshot(),
+            self.storage.leads(since=now - 7 * 86400),
+            now,
+        )
+
+    def _brief_due(self, now: float) -> bool:
+        from datetime import datetime
+
+        from .edge import ET
+
+        if self.webpush is None or not getattr(self.webpush, "subs", None):
+            return False
+        at = str(self.webpush.options.get("brief_time", "08:15") or "").strip()
+        if not at:
+            return False
+        dt = datetime.fromtimestamp(now, ET)
+        if dt.weekday() >= 5 or dt.date().isoformat() in self.calendar.holidays:
+            return False
+        h, m = (int(x) for x in at.split(":"))
+        if (dt.hour, dt.minute) < (h, m) or dt.hour >= h + 2:  # a missed brief isn't sent hours late
+            return False
+        return self.storage.get_setting("brief_sent") != dt.date().isoformat()
+
+    async def send_brief(self, now: float | None = None) -> bool:
+        from datetime import datetime
+
+        from .edge import ET
+
+        now = now or time.time()
+        self.storage.set_setting("brief_sent", datetime.fromtimestamp(now, ET).date().isoformat())
+        payload = brief_push(self.brief(now))
+        if payload is None or self.webpush is None or self.dispatcher.paused:
+            return False
+        results = await self.webpush.push(payload, urgency="normal")  # type: ignore[attr-defined]
+        return any(r == "ok" for r in results.values())
+
+    async def _edge_loop(self, stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            await _sleep_or_stop(stop, 20)
+            now = time.time()
+            with contextlib.suppress(Exception):
+                for aid, refs in self.edge.fill_refs(self.detector.price_at, now).items():
+                    if self.storage.update_alert_edge(aid, {"refs": refs}) is not None:
+                        self._broadcast("edge", {"id": aid, "refs": refs})
+            if self._brief_due(now):
+                try:
+                    await self.send_brief(now)
+                except Exception as exc:  # noqa: BLE001 - the brief must never stop the engine
+                    log.warning("morning brief failed: %s", exc)
 
     async def _maintenance(self, stop: asyncio.Event) -> None:
         last_prune = 0.0

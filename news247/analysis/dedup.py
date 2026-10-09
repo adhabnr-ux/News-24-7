@@ -228,6 +228,7 @@ class Story:
     max_score: float = 0.0
     alerted: Severity | None = None  # highest severity already pushed for this story
     alert_id: str = ""
+    alert_created: float = 0.0  # when the story was first alerted (for the lead over mainstream)
     unconfirmed: bool = False  # alerted on a single social/squawk relay, awaiting a real source
 
     @property

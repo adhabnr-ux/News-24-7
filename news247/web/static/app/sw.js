@@ -1,13 +1,16 @@
 /* Foretape service worker: shows pushed alerts, opens the app on tap, keeps the app shell
    available offline, and re-subscribes if the browser rotates the push subscription. */
-const SHELL = "foretape-shell-v1";
+const SHELL = "foretape-shell-v2";
 const CONF = "foretape-conf";
 const SHELL_FILES = ["/app/", "/app/logo.svg", "/app/icon-192.png", "/app/badge-96.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).catch(() => {}).then(() => self.skipWaiting()));
 });
-self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener("activate", (e) => e.waitUntil(
+  caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith("foretape-shell-") && k !== SHELL).map((k) => caches.delete(k))))
+    .then(() => self.clients.claim())
+));
 
 // Network first for the app shell (always fresh when online), cache when offline.
 self.addEventListener("fetch", (e) => {

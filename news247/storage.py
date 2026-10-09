@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS relay_outbox (
     payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_relay_created ON relay_outbox(created);
+CREATE TABLE IF NOT EXISTS leads (
+    alert_id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    lead_s REAL NOT NULL,
+    created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     endpoint TEXT PRIMARY KEY,
     data TEXT NOT NULL
@@ -186,6 +192,46 @@ class Storage:
         args.append(limit)
         return [json.loads(r[0]) for r in self.db.execute(q, args)]
 
+    def get_alert(self, alert_id: str) -> dict[str, Any] | None:
+        row = self.db.execute("SELECT payload FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def update_alert_edge(self, alert_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+        """Merge ``patch`` into a stored alert's ``edge`` (lead time, reference prices...)."""
+        alert = self.get_alert(alert_id)
+        if alert is None:
+            return None
+        alert["edge"] = {**(alert.get("edge") or {}), **patch}
+        self.db.execute(
+            "UPDATE alerts SET payload = ? WHERE id = ?", (json.dumps(alert, default=str), alert_id)
+        )
+        return alert
+
+    def add_lead(self, alert_id: str, source: str, lead_s: float) -> bool:
+        """The first mainstream outlet to carry an alerted story, and how much later. Once per alert."""
+        cur = self.db.execute(
+            "INSERT OR IGNORE INTO leads (alert_id, source, lead_s, created) VALUES (?,?,?,?)",
+            (alert_id, source, lead_s, time.time()),
+        )
+        return cur.rowcount > 0
+
+    def leads(self, since: float | None = None) -> list[float]:
+        since = since or time.time() - 7 * 86400
+        return [r[0] for r in self.db.execute("SELECT lead_s FROM leads WHERE created >= ?", (since,))]
+
+    def story_of(self, uid: str) -> int | None:
+        row = self.db.execute("SELECT story_id FROM items WHERE uid = ?", (uid,)).fetchone()
+        return row[0] if row and row[0] is not None else None
+
+    def story_sources(self, story_id: int) -> list[dict[str, Any]]:
+        """Every source that carried a story, first one first."""
+        rows = self.db.execute(
+            "SELECT source, tier, MIN(detected) AS t, title, url FROM items WHERE story_id = ?"
+            " GROUP BY source ORDER BY t",
+            (story_id,),
+        ).fetchall()
+        return [{"source": r[0], "tier": r[1], "detected": r[2], "title": r[3], "url": r[4]} for r in rows]
+
     # ------------------------------------------------------------------ settings
 
     def get_setting(self, key: str, default: str | None = None) -> str | None:
@@ -293,4 +339,5 @@ class Storage:
         n = self.db.execute("DELETE FROM items WHERE detected < ?", (cutoff,)).rowcount
         self.db.execute("DELETE FROM alerts WHERE created < ?", (cutoff,))
         self.db.execute("DELETE FROM relay_outbox WHERE created < ?", (cutoff,))
+        self.db.execute("DELETE FROM leads WHERE created < ?", (cutoff,))
         return n

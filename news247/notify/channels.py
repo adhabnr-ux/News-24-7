@@ -854,12 +854,20 @@ class WebPushNotifier(Notifier):
     # ------------------------------------------------------------------ sending
 
     def payload(self, alert: Alert) -> dict[str, Any]:
+        from ..edge import EdgeDesk
         from .format import push_text
 
+        body = push_text(alert)
+        line = EdgeDesk.push_line(alert)
+        if line:
+            body = f"{body}\n{line}" if body else line
+        play = alert.edge.get("play") or {}
         return {
             "id": alert.id,
             "title": short_title(alert)[:160],
-            "body": push_text(alert)[:600],
+            "body": body[:600],
+            "direction": play.get("direction") or (alert.analysis.direction if alert.analysis else ""),
+            "conviction": play.get("conviction", ""),
             "severity": alert.severity.name,
             "kind": alert.kind,
             "tickers": alert.tickers[:8],
