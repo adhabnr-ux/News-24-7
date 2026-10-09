@@ -105,6 +105,10 @@ On brand-new setups Meta's automated checks often lock the WhatsApp Business Acc
 | Privacy policy (with data-deletion instructions) | `https://<your-app>.onrender.com/privacy` |
 | Terms of service | `https://<your-app>.onrender.com/terms` |
 
+0. **Make sure Render runs the latest code.**
+   - Open `https://<your-app>.onrender.com/health`. Its `"commit"` must match the newest commit on GitHub.
+   - If it doesn't: Render → news247 → **Manual Deploy → Deploy latest commit**.
+   - Then check that `/privacy` opens without asking for a token. Meta's settings won't keep the URLs while that page is unreachable.
 1. **See Meta's exact reason.** The Setup page's WhatsApp section shows **Meta health check: blocked**, plus Meta's own error description and suggested fix for each part (app, business, WhatsApp account, number).
 2. **Complete Business info.** Go to business.facebook.com → **Settings → Business info → Edit**.
    - **Legal business name:** your full name. A personal business portfolio is fine.
@@ -137,5 +141,6 @@ On brand-new setups Meta's automated checks often lock the WhatsApp Business Acc
 | Template `rejected` | Delete it in WhatsApp Manager → Message templates. News247 recreates it on the next restart, or set `WHATSAPP_CLOUD_TEMPLATE` to a new name. |
 | Webhook "nothing received yet" | Check the Callback URL and Verify token in Meta → WhatsApp → Configuration, and that **messages** is subscribed. |
 | Alerts arrive as "Hello World" | The template is still in review. Reply anything to get the alerts in full. |
+| `131047 Re-engagement message` | Expected until you've replied once: open WhatsApp, find Meta's "Hello World" from the test number, and reply "hi". This opens the 24 h window. News247 never sends free-form text unless it has seen your reply through the webhook, so a published app is needed for full-text alerts. |
 | `error 131031 … Business Account locked` | See [If Meta says "Business Account locked"](#if-meta-says-business-account-locked-131031) above. |
 | Meta test webhook works but your real replies don't arrive | The app is unpublished: publish it (step 3 of the section above). |

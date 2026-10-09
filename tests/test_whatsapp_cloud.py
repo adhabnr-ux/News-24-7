@@ -18,7 +18,6 @@ from aiohttp.test_utils import TestServer
 from news247.config import build_config
 from news247.engine import Engine
 from news247.models import Alert, Analysis, NewsItem, Severity, SourceTier
-from news247.notify import Dispatcher
 from news247.storage import Storage
 from news247.web.server import WebServer
 from news247.whatsapp.cloud import REENGAGE, TEMPLATE_BODY, CloudAPI, CloudError, one_line
@@ -241,13 +240,52 @@ async def test_window_closing_soon_counts_as_closed(meta, http):
     assert meta.sent[-1]["type"] == "template"
 
 
-async def test_after_restart_free_form_is_tried_and_a_stale_window_recovers(meta, http):
-    c = make_cloud(meta, http)  # fresh process: knows nothing about the window
-    meta.window_open.add("16235550146")
+async def test_unknown_window_never_risks_free_form(meta, http):
+    """After a restart (or with an unpublished app, whose webhooks never reach us) News247 can't
+    know whether the window is open, so it never bets on free-form text that Meta could silently
+    drop: approved template if there is one, else Meta's hello_world ping + the alert kept."""
+    c = make_cloud(meta, http)  # fresh process: no reply seen
+    meta.window_open.add("16235550146")  # (even if Meta would accept text right now)
     await c.send_alert(ME, FULL, "t")
-    assert meta.sent[-1]["type"] == "text" and c.window_open(ME)
-    # the window actually closed meanwhile: News247 notices (131047) and falls back
-    meta.window_open.clear()
+    assert meta.sent[-1]["type"] == "template" and meta.sent[-1]["template"]["name"] == "hello_world"
+    assert c.status()["pending"] == 1
+    meta.templates["news247_alert"] = {"name": "news247_alert", "language": "en_US", "status": "APPROVED"}
+    await c.ensure_template()
+    await c.send_alert(ME, FULL, "t2")
+    assert meta.sent[-1]["template"]["name"] == "news247_alert"
+
+
+async def test_late_131047_from_webhook_is_resent(meta, http):
+    """Meta may accept a text and report 131047 minutes later through the webhook: the window is
+    marked closed and the same alert is re-sent in a form Meta delivers."""
+    c = make_cloud(meta, http)
+    c.last_inbound["16235550146"] = time.time() - 3600  # we believe the window is open
+    meta.window_open.add("16235550146")  # Meta accepts the request...
+    wamid = await c.send_alert(ME, FULL, "🔴 OPENAI LAUNCHES")
+    assert meta.sent[-1]["type"] == "text"
+    failed = {"id": wamid, "status": "failed", "errors": [{"code": 131047, "title": "Re-engagement message"}]}
+    await c.handle_webhook({"entry": [{"changes": [{"value": {"statuses": [failed]}}]}]})  # ...then fails it
+    for _ in range(50):
+        if meta.sent[-1]["type"] == "template":
+            break
+        await asyncio.sleep(0.01)
+    assert meta.sent[-1]["template"]["name"] == "hello_world" and not c.window_open(ME)
+    assert c.status()["pending"] == 1  # the full text waits for your reply
+    await c.handle_webhook(
+        {"entry": [{"changes": [{"value": {"statuses": [failed]}}]}]}
+    )  # duplicate: no 2nd resend
+    await asyncio.sleep(0.05)
+    assert sum(1 for m in meta.sent if m["type"] == "template") == 1
+
+
+async def test_window_known_open_after_a_reply_then_stale_window_recovers(meta, http):
+    c = make_cloud(meta, http)
+    meta.window_open.add("16235550146")
+    await c.handle_webhook(inbound("hi"))
+    await c.send_alert(ME, FULL, "t")
+    assert meta.sent[-1]["type"] == "text"
+    c.last_inbound["16235550146"] = time.time() - 3600
+    meta.window_open.clear()  # Meta says the window closed (synchronous 131047)
     await c.send_alert(ME, FULL, "t2")
     assert meta.sent[-1]["template"]["name"] == "hello_world" and not c.window_open(ME)
 
@@ -386,6 +424,7 @@ async def test_dispatch_and_send_test_through_cloud(tmp_path, meta):
     await eng.http.start()
     try:
         meta.window_open.add("16235550146")
+        eng.whatsapp_cloud.last_inbound["16235550146"] = time.time()  # type: ignore[union-attr]  # you replied
         res = await eng.send_test()
         assert res == {"whatsapp_cloud": "ok"} and "News247 test" in meta.sent[-1]["text"]["body"]
         item = NewsItem(
@@ -396,7 +435,7 @@ async def test_dispatch_and_send_test_through_cloud(tmp_path, meta):
             published=time.time(),
         )
         an = Analysis(score=90, severity=Severity.CRITICAL, tickers=["CRM"], direction="down")
-        out = await Dispatcher(eng.cfg.notify, eng.http).dispatch(
+        out = await eng.dispatcher.dispatch(
             Alert(
                 kind="news",
                 severity=Severity.CRITICAL,

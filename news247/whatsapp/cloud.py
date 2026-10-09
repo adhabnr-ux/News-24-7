@@ -230,8 +230,15 @@ class CloudAPI:
         while not stop.is_set():
             try:
                 await self.refresh_phone()
-                with contextlib.suppress(CloudError):  # diagnostics only: never blocks sending
+                try:  # diagnostics only: never blocks sending, but say why it's missing
                     await self.refresh_health()
+                except CloudError as exc:
+                    self.health = {
+                        "can_send_message": "",
+                        "problems": [],
+                        "error": str(exc)[:300],
+                        "checked": time.time(),
+                    }
                 await self.ensure_template()
                 self.last_error = ""
             except Exception as exc:  # noqa: BLE001 - shown on the Setup page, retried
@@ -277,7 +284,7 @@ class CloudAPI:
         self.stats[kind] += 1
         return wamid
 
-    async def send_text(self, to: str, text: str, title: str = "") -> str:
+    async def send_text(self, to: str, text: str, title: str = "", full_text: str = "") -> str:
         d = digits(to)
         resp = await self._graph(
             "POST",
@@ -290,7 +297,10 @@ class CloudAPI:
                 "text": {"preview_url": False, "body": text[:4096]},
             },
         )
-        return self._record(resp, d, title or text.split("\n", 1)[0], "text")
+        wamid = self._record(resp, d, title or text.split("\n", 1)[0], "text")
+        if full_text:  # an alert: if Meta later reports 131047, it is re-sent as a template/ping
+            self.messages[wamid]["alert"] = full_text
+        return wamid
 
     async def send_template(
         self, to: str, name: str, param: str | None, title: str, button: bool, kind: str = "template"
@@ -347,12 +357,12 @@ class CloudAPI:
 
     async def _send_alert(self, to: str, full: str, title: str) -> str:
         d = digits(to)
-        if self.window_open(d) or self.template_status != "APPROVED":
-            try:  # free-form: allowed inside the window (and maybe after a restart, when we can't know)
-                wamid = await self.send_text(d, full, title)
-                if not self.window_open(d):  # it was open after all; assume the worst about since when
-                    self.last_inbound[d] = time.time() - WINDOW_S / 2
-                return wamid
+        # Free-form only when we *know* the window is open (we saw your reply through the webhook).
+        # Otherwise Meta often accepts the message and only later reports 131047, so the alert would
+        # silently never arrive; an approved template (or Meta's hello_world ping) always arrives.
+        if self.window_open(d):
+            try:
+                return await self.send_text(d, full, title, full_text=full)
             except CloudError as exc:
                 if exc.code != REENGAGE:
                     raise
@@ -371,6 +381,13 @@ class CloudAPI:
             REENGAGE,
             "outside the 24-hour window and the alert template isn't approved yet: reply anything to the News247 number",
         )
+
+    async def _resend(self, to: str, full: str, title: str) -> None:
+        try:
+            await self._send_alert(to, full, title)
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"re-sending after 131047 failed: {exc}"[:600]
+            log.warning("WhatsApp: %s", self.last_error)
 
     async def deliver_pending(self, to: str) -> bool:
         d = digits(to)
@@ -446,6 +463,13 @@ class CloudAPI:
             )
             self.stats["failed"] += 1
             log.warning("WhatsApp message %s failed: %s", rec["id"], rec["error"])
+            if errs[0].get("code") == REENGAGE:
+                self.last_inbound.pop(rec["to"], None)  # the window was closed after all
+                if rec.get("alert") and not rec.get("resent"):
+                    rec["resent"] = True
+                    task = asyncio.ensure_future(self._resend(rec["to"], rec["alert"], rec["title"]))
+                    self._tasks.add(task)
+                    task.add_done_callback(self._tasks.discard)
 
     async def _on_message(self, m: dict[str, Any]) -> None:
         sender = digits(str(m.get("from", "")))

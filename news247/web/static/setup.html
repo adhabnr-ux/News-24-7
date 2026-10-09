@@ -187,6 +187,8 @@ async function loadCloud() {
       <span class="muted">${st.stats.text + st.stats.template + st.stats.ping} sent${st.stats.delivered ? ` · ${st.stats.delivered} delivered` : ""}${st.stats.read ? ` · ${st.stats.read} read` : ""}</span></div>`];
   if (st.last_error) lines.push(`<div class="bad" style="font-size:13px">${esc(st.last_error)}</div>`);
   const hs = st.health || {};
+  if (hs.error) lines.push(`<div class="warn" style="font-size:13px">Meta health check unavailable: ${esc(hs.error)}</div>`);
+  else if (!hs.can_send_message) lines.push(`<div class="muted" style="font-size:13px">Meta health check: waiting for the first result…</div>`);
   if (hs.can_send_message) {
     const cls = hs.can_send_message === "AVAILABLE" ? "ok" : hs.can_send_message === "LIMITED" ? "warn" : "bad";
     lines.push(`<div class="row" style="font-size:13px"><span>Meta health check${st.account && st.account.account_review_status ? ` · account review: ${esc(st.account.account_review_status.toLowerCase())}` : ""}</span><span class="${cls}">${esc(hs.can_send_message.toLowerCase())}</span></div>`);

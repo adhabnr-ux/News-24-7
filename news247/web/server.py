@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 from aiohttp import web
 
+from .. import __version__
 from ..config import WebConfig
 
 if TYPE_CHECKING:
@@ -317,6 +318,9 @@ class WebServer:
                 "uptime_s": round(st["uptime_s"]),
                 "sources_ok": ok_sources,
                 "sources": len(st["sources"]),
+                "version": __version__,
+                # which code is live (Render sets RENDER_GIT_COMMIT): compare with the latest commit on GitHub
+                "commit": (os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT") or "")[:7],
             }
         )
 
