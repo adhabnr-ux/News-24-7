@@ -56,7 +56,7 @@ Five tabs:
 | **Watch** | The **small-cap radar** first: small caps breaking out right now on real volume (±20% on the day or a fast jump, $2M+ traded), with market cap, dollars traded, relative volume, pre-market/after-hours tag and the headline behind the move, or "No headline yet". It is live: it refreshes every 30 s while on screen and instantly when the radar fires (new names flash gold, moves count to their new value), and tapping a flagged name opens its radar alert. Then the board: every quoted symbol sorted by today's move, with the 5-minute change. Tickers from fresh alerts are added automatically. |
 | **Desk** | Push status, **Send a test alert**, **Reconnect**, motion on/off, alert level (**Critical only / Normal / More**), **Pause 30m / 2h / until resumed**, **Resume**, the Brief time, and engine health. |
 
-A HIGH or CRITICAL alert that arrives while you're on another tab slides up as a glass toast; tap it to open the alert.
+A HIGH or CRITICAL alert that arrives while you're on another tab slides up as a glass toast; tap it to open the alert. Pull down at the top of any tab to refresh it: a ring fills as you pull, the flame lights when you've pulled far enough, and the engine flares as the data reloads.
 
 ### Every alert comes with an analysis
 

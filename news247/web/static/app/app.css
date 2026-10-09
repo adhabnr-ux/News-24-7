@@ -9,6 +9,7 @@
 @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 500 700; font-display: swap; src: url(/app/fonts/jetbrains-mono-normal.woff2) format("woff2"); }
 
 :root {
+  --pull: 0;
   --night: #040b1c;
   --cream: #FFF6E8; --gold: #FFD9A0; --amber: #F6A85C; --ember: #FF7F45; --ice: #BFD9FF;
   --text: #FBF6EE; --muted: rgba(251, 246, 238, .70); --faint: rgba(251, 246, 238, .46);
@@ -419,4 +420,20 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 .alert.radar h3 { font-size: 16.5px; }
 .alert.radar .why { font-size: 13.5px; margin-top: 6px; }
 .alert.radar .cap { margin-top: 10px; padding: 8px 11px; }
+
+/* pull to refresh: a ring that fills with the pull, a flame that lights when armed */
+.pull { position: fixed; z-index: 29; left: 50%; top: calc(62px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 9px;
+  padding: 7px 14px 7px 8px; border-radius: 999px; pointer-events: none; color: var(--cream); font: 600 12.5px var(--sans);
+  background: rgba(8, 18, 40, .55); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: inset 0 0 0 1px rgba(255, 217, 160, .25);
+  opacity: min(1, calc(var(--pull) * 1.6)); transform: translate(-50%, calc(-14px + var(--pull) * 18px)) scale(calc(.86 + var(--pull) * .14)); }
+.pull svg { width: 26px; height: 26px; overflow: visible; }
+.pull .trk { fill: none; stroke: rgba(255, 255, 255, .16); stroke-width: 2.4; }
+.pull .arc { fill: none; stroke: var(--gold); stroke-width: 2.6; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: calc(1 - var(--pull)); filter: drop-shadow(0 0 4px rgba(255, 180, 100, .8));
+  transform: rotate(-90deg); transform-origin: 18px 18px; }
+.pull .flame { fill: rgba(255, 217, 160, .35); transition: fill .3s, filter .3s; }
+.pull.armed .flame, .pull.firing .flame { fill: #FFB25E; filter: drop-shadow(0 0 6px #FF9B4A); }
+.pull.firing { opacity: 1; transform: translate(-50%, 4px); transition: transform .4s var(--ease), opacity .4s; }
+.pull.firing .arc { animation: spin 1s linear infinite; }
+.pull.firing .arc { stroke-dasharray: .3 .7; stroke-dashoffset: 0; }
+@keyframes spin { to { transform: rotate(270deg); } }
 

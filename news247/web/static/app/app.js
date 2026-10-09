@@ -602,6 +602,14 @@ const Fx = {
     // veil: the hero is the raw photograph; content gets a darker sky behind it
     const veil = tab === "tape" ? clamp((y - vh * 0.30) / (vh * 0.55)) * 0.9 : 0.55 + clamp(y / vh) * 0.3;
     Scene.setPull(clamp(-y / 160));   // iOS rubber-band at the top: the camera dips toward the pad
+    // pull to refresh: the ring fills with the pull; past the line, releasing ignites a reload
+    const pull = clamp(-y / PULL_AT);
+    if (pull !== Fx.pull) {
+      Fx.pull = pull;
+      doc.style.setProperty("--pull", pull.toFixed(3));
+      $("pull").classList.toggle("armed", pull >= 1);
+      if (!refreshing) $("pullText").textContent = pull >= 1 ? "Release to refresh" : "Pull to refresh";
+    }
     doc.style.setProperty("--veil", veil.toFixed(3));
     // rack focus: the scene softens behind content so cards and text separate from it, like a lens pulling focus
     Scene.setBlur(sheetOpen ? 3.2 : tab === "tape" ? clamp((y - vh * 0.35) / (vh * 0.9)) * 1.6 : 1.2 + clamp(y / vh) * 0.6);
@@ -674,6 +682,22 @@ addEventListener("scroll", () => {
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
 const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch };
+
+// ------------------------------------------------------------------ pull to refresh (iOS rubber band)
+const PULL_AT = 92;
+let refreshing = false;
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  $("pull").classList.add("firing"); $("pullText").textContent = "Refreshing…";
+  Scene.pulse?.();   // the engine flares as the data reloads
+  try {
+    await Promise.all([load(), Promise.resolve(LOADERS[tab]?.())]);
+    toast("Up to date · " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+  } catch (_) { toast("Couldn't refresh. Check your connection."); }
+  setTimeout(() => { refreshing = false; $("pull").classList.remove("firing"); Fx.pull = -1; Fx.dirty = true; }, 650);
+}
+addEventListener("touchend", () => { if (!sheetOpen && scrollY <= -PULL_AT) refresh(); }, { passive: true });
 const TABS = ["tape", "brief", "calendar", "watch", "desk"];
 function go(name) {
   if (name === tab && !document.querySelector(`.view[data-view="${name}"]`).hidden) { scrollTo({ top: 0, behavior: "smooth" }); return; }
