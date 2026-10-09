@@ -543,12 +543,18 @@ const Fx = {
     if (!this.io) {
       this.io = new IntersectionObserver((ents) => {
         let i = 0;
-        ents.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top).forEach((e) => {
+        // 8% in view, or 90px of it for panels so tall that 8% is more than the screen shows
+        ents.filter((e) => e.isIntersecting && (e.intersectionRatio >= 0.08 || e.intersectionRect.height >= 90)).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top).forEach((e) => {
           e.target.style.setProperty("--d", (i++ * 0.07).toFixed(2) + "s"); e.target.classList.add("in"); this.io.unobserve(e.target);
         });
-      }, { threshold: 0.08, rootMargin: "0px 0px -6% 0px" });
+      }, { threshold: [0, 0.02, 0.04, 0.06, 0.08], rootMargin: "0px 0px -6% 0px" });
     }
-    (root || document).querySelectorAll(".rv:not(.in)").forEach((el) => this.io.observe(el));
+    (root || document).querySelectorAll(".rv:not(.in)").forEach((el) => {
+      // a panel taller than most of the screen would swing out of view while tilted back for
+      // its entrance (and so never trigger it): it rises flat instead
+      el.classList.toggle("tall", el.offsetHeight > innerHeight * 0.6);
+      this.io.observe(el);
+    });
   },
   rest(c) { c.classList.remove("hot"); c.style.removeProperty("--pry"); c.style.removeProperty("--prx"); c.style.removeProperty("--gx"); c.style.removeProperty("--gy"); },
   split() {

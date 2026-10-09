@@ -385,8 +385,8 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 
 /* radar rows arrive one after another; flagged names ping like a contact on the scope */
 .radar-li { animation: sheetIn .8s var(--ease) both; animation-delay: calc(var(--k, 0) * .06s); }
-.radar-li .sym { position: relative; }
-.radar-li .ping { position: absolute; left: -13px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 10px var(--amber); }
+.radar-li .sym { position: relative; padding-left: 14px; flex: none; width: 78px !important; }
+.radar-li .ping { position: absolute; left: 0; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 10px var(--amber); }
 .radar-li .ping::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 1px solid rgba(255, 217, 160, .8); animation: ping 2.2s var(--ease) infinite; }
 .radar-li .chg [data-pct] { font-variant-numeric: tabular-nums; }
 
@@ -401,3 +401,9 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 
 /* over bright cloud the faint captions wash out: a soft dark halo keeps them legible */
 .panel .sub, .glass .sub, .glass .foot { text-shadow: 0 1px 10px rgba(4, 12, 32, .55), 0 0 2px rgba(4, 12, 32, .35); }
+/* tall panels rise flat: tilted back they would swing below the fold and never be revealed */
+.rv.tall:not(.tilt) { transform: translate3d(0, 40px, 0) scale(.985); }
+.rv.tilt.tall { --rvx: 0deg; translate: 0 40px; }
+.rv.tall.in:not(.tilt) { transform: none; }
+.rv.tilt.tall.in { translate: 0 0; }
+
