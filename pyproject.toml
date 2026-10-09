@@ -16,6 +16,7 @@ dependencies = [
   "tzdata>=2024.1",  # time-zone database for slim containers / Windows
   "cryptography>=41",  # Web Push encryption + VAPID signing (Foretape phone alerts)
   "pg8000>=1.31",  # pure-Python Postgres driver: optional STATE_DB keeps phone subscriptions durable
+  "segno>=1.5",  # pure-Python QR codes (Setup page: scan to open Foretape / pair WhatsApp)
 ]
 
 [project.optional-dependencies]

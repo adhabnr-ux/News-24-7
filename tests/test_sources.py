@@ -447,6 +447,8 @@ def test_registry_and_build_sources(caplog):
         "telegram",
         "x_stream",
         "alpaca_news",
+        "federal_register",
+        "polymarket",
     }
     srcs = build_sources(
         [

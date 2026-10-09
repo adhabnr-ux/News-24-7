@@ -2,7 +2,19 @@
 
 News247 runs around the clock and pings your phone within seconds when something breaks that is likely to move stocks. Examples: OpenAI launching an enterprise agent that hits software stocks, an 8-K bankruptcy filing, a "news pending" trading halt, a Fed statement, a tariff post, or a whole sector suddenly dropping 3%.
 
-It watches about 50 sources at once: AI-lab and big-tech newsrooms, newspaper scoop feeds (FT, Bloomberg, The Information), headline squawks, SEC filings, exchange halts, the Fed and White House, press-release wires, financial media, and Bluesky in real time, plus optional push feeds (X, Alpaca/Benzinga). It also watches **prices**, so if software stocks fall together it tells you that, and names the headline that most likely caused it. Alerts arrive on **WhatsApp**, sent by the server itself (a self-hosted linked device, no third-party service), or as **iMessages** from your own Mac relay, or through ntfy, Telegram, Discord, Slack, Pushover, email or SMS.
+It watches about 85 sources at once. **First come the places where 2026's market-moving stories actually appeared first** ([research](docs/research/first-sources-2026.md)):
+- Federal Register public inspection, OFAC, BIS and USTR
+- Supreme Court and federal court opinions
+- SEC 8-Ks, 13D/13Gs and tender offers
+- FHFA, CENTCOM, the Fed, BLS and Truth Social
+- AI leaders' own blogs
+- Polymarket odds jumps
+
+Then come AI-lab and big-tech newsrooms, newspaper scoop feeds (FT, Bloomberg, Axios, NYT, The Information), headline squawks, exchange halts, press-release wires, Asian newsrooms and Bluesky in real time, plus optional push feeds (X, Alpaca/Benzinga).
+
+It also watches **prices**: if software stocks fall together it tells you so, and names the headline that most likely caused it.
+
+Alerts arrive as **push notifications from Foretape**, News247's own home-screen app (free, no phone number or account needed). They can also go to **WhatsApp**, **iMessage** from your own Mac relay, ntfy, Telegram, Discord, Slack, Pushover, email or SMS.
 
 ![dashboard](docs/dashboard.png)
 
@@ -23,7 +35,19 @@ It watches about 50 sources at once: AI-lab and big-tech newsrooms, newspaper sc
 
 ## Quick start: alerts on your phone, running 24/7
 
-### Option A: 100% free, 24/7, alerts on WhatsApp (recommended)
+### Option A: Foretape, the home-screen app with push alerts (recommended, 100% free)
+
+**→ [docs/FORETAPE.md](docs/FORETAPE.md) (about 10 minutes, once).**
+
+1. Click **[Deploy to Render](https://render.com/deploy?repo=https://github.com/adhabnr-ux/News-24-7)** (Free plan, no card). News247 pings itself so the free plan never sleeps.
+2. On your iPhone, open `https://<your-app>.onrender.com/app/?token=<DASHBOARD_TOKEN>` in Safari, then **Share → Add to Home Screen**.
+3. Open **Foretape** from the home screen and tap **Turn on alerts**. A test notification arrives in about a second.
+
+Alerts land on your lock screen the moment News247 scores a story HIGH or CRITICAL; critical ones stay on screen until you tap them. The app shows the live feed, every scored headline, and controls (critical-only, pause 2h, resume). It needs no phone number, no Meta/Apple developer account and no app store: it uses standard Web Push (encrypted, iOS 16.4+, Android, desktop). Optional: a free Postgres in `STATE_DB` keeps phones subscribed across Render restarts.
+
+<img src="docs/foretape.png" alt="Foretape on iPhone" width="300">
+
+### Option A1: 100% free, alerts on WhatsApp through Meta's test number
 
 **→ Follow [docs/FREE-SETUP.md](docs/FREE-SETUP.md) (about 30 minutes, once, no coding, no credit card).**
 
@@ -34,11 +58,11 @@ In short:
 
 Inside Meta's 24-hour window you get full alerts. Outside it you get a short alert with a **Show details** button, and one tap brings everything in full. Reply `PAUSE 2h`, `STOP`, `RESUME`, `CRITICAL`, `NORMAL` or `STATUS` to control it.
 
-### Option A1: your own "CallMeBot", also 100% free
+### Option A2: your own "CallMeBot" on WhatsApp, also 100% free
 
 The server becomes a linked WhatsApp device of a spare number, so you get full messages any time with no Meta app, no templates and no 24-hour rule. The pairing is backed up to a free Postgres, so Render's free plan works: [docs/OWN-CALLMEBOT.md](docs/OWN-CALLMEBOT.md).
 
-### Option A2: iMessage from your own Mac relay
+### Option A3: iMessage from your own Mac relay
 
 The monitor runs in the cloud, and any Mac signed in to Messages sends the iMessages: [docs/SETUP-CLOUD-IMESSAGE.md](docs/SETUP-CLOUD-IMESSAGE.md).
 
@@ -58,6 +82,7 @@ To see the whole pipeline before setting anything up, run `news247 demo` (simula
 
 | Option | Bubble | Cost | Setup |
 |---|---|---|---|
+| **Foretape app** (built in) | lock-screen push notification | **free** | Open `/app/?token=…` on your phone, add it to the home screen, tap **Turn on alerts**. On by default (`WEBPUSH_ENABLED`). See [docs/FORETAPE.md](docs/FORETAPE.md). |
 | **WhatsApp, self-hosted** (built in) | WhatsApp | free (+ a second number for the sender, recommended) | Runs inside the monitor as a linked device. `WHATSAPP_ENABLED=true`, `WHATSAPP_TO`, then scan the QR on the Setup page. Receipts, commands, auto-reconnect. Unofficial client, so see the risk note in [docs/WHATSAPP.md](docs/WHATSAPP.md). |
 | **WhatsApp Cloud API** (Meta, official) | WhatsApp | **free** with Meta's test number | `WHATSAPP_CLOUD_ENABLED`, `WHATSAPP_CLOUD_TOKEN`, `WHATSAPP_CLOUD_PHONE_ID`, `WHATSAPP_CLOUD_WABA_ID`, `WHATSAPP_TO`. Creates its own template, handles the 24-hour window, takes replies through a webhook: [docs/FREE-SETUP.md](docs/FREE-SETUP.md). |
 | **News247 relay** (built in) | blue (iMessage) | free (needs a Mac signed in to Messages) | Monitor runs anywhere. `RELAY_ENABLED=true`, `IMESSAGE_TO`, then the one-line Mac install from the Setup page. Delivery receipts, failover, text commands. See [docs/IMESSAGE-RELAY.md](docs/IMESSAGE-RELAY.md). |
@@ -103,6 +128,7 @@ That exact event is replayed in the test suite (`tests/test_fast_sources.py::tes
 | Source | How | Typical time to your phone | Cost |
 |---|---|---|---|
 | **X stream**: @OpenAI, @sama, @AnthropicAI… (VIP) + @DeItaone, @FirstSquawk, @financialjuice… | **push** (official filtered stream) | ~2–5 s | pay-per-use, ~$0.005/post (~$10–60/mo depending on accounts) |
+| **First places** (2026 research): Federal Register public inspection, OFAC, BIS/USTR, SCOTUS/CAFC/PACER opinions, FHFA, CENTCOM, darioamodei.com, Polymarket odds jumps | poll every 30–60 s, **2–5 s bursts** at release times (08:45/11:15/16:15 ET filings, 10:00 ET opinions) | ~5–60 s | free |
 | **Alpaca news** (Benzinga newsdesk, tickers attached) | **push** (websocket) | seconds–2 min | free (paper-trading keys) |
 | Bluesky newsrooms (Reuters, AP, WSJ, Bloomberg, NYT…) | **push** (Jetstream) | ~1–2 s after they post | free |
 | Telegram squawks (FinancialJuice…) | poll every 5 s | ~5–10 s | free |
@@ -126,7 +152,7 @@ Built-in safeguards: polling uses conditional GETs, so checking every 5–10 s c
 
 ## How it decides what matters
 
-> **Research-backed.** The criteria come from a study of ~100 real market-moving events (2016–2026) and the headline that first reported each one. `news247 backtest` replays them: **94% are caught from the first report, with 0 false alarms on 85 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
+> **Research-backed.** The criteria come from a study of 151 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first) and the headline that first reported each one. `news247 backtest` replays them: **95% are caught from the first report, with 0 false alarms on 103 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
 
 Every item is scored from 0 to 100 by a deterministic rule engine. It takes about 50 µs per item, never goes down, and every score can be explained:
 

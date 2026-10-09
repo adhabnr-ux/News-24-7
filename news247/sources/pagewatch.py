@@ -119,7 +119,12 @@ class PageWatchSource(PollingSource):
         resp = await self.ctx.http.get(self.url, headers=self.headers, conditional=True)
         if resp.not_modified:
             return []
-        return self.parse(resp.text())
+        items = self.parse(resp.text())
+        if not items:
+            # a listing page always shows recent posts: zero matches means the site changed or
+            # link_pattern is wrong, so say so on the dashboard instead of silently finding nothing
+            raise ValueError(f"no links on {self.url} match link_pattern {self.pattern.pattern!r}")
+        return items
 
     def parse(self, html: str) -> list[NewsItem]:
         # A listing page only shows a date, never a precise time, so new posts are emitted

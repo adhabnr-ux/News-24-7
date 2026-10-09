@@ -1,6 +1,8 @@
-# 100% free cloud deploy on Render (https://render.com) — runs 24/7 on the Free plan and sends
-# alerts to your WhatsApp through Meta's official Cloud API with Meta's free test number.
-# Step-by-step: docs/FREE-SETUP.md
+# 100% free cloud deploy on Render (https://render.com): runs 24/7 on the Free plan.
+# Alerts go to Foretape, News247's home-screen app with push notifications (docs/FORETAPE.md):
+# open https://<app>.onrender.com/app/?token=<DASHBOARD_TOKEN> on your phone, Add to Home Screen,
+# tap "Turn on alerts". Optionally also WhatsApp through Meta's free test number (docs/FREE-SETUP.md);
+# leave the WhatsApp fields empty if you don't use it.
 #   1. Click the "Deploy to Render" button in the README (or New > Blueprint > this repo).
 #   2. Render asks for the values marked "sync: false" below (your number, e-mail and the IDs/
 #      token from Meta's developer page). Everything else is generated or preset.
@@ -38,4 +40,6 @@ services:
         generateValue: true  # protects the dashboard/setup page on the public URL
       - key: TIMEZONE
         value: America/New_York
+      - key: STATE_DB
+        sync: false          # optional: free Postgres URL (e.g. Neon) so phones stay subscribed across restarts
       # Optional free push backup: NTFY_ENABLED=true, NTFY_BACKUP=true, NTFY_TOPIC=<secret topic>.

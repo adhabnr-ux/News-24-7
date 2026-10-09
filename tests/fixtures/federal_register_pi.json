@@ -1,0 +1,39 @@
+{
+  "count": 3,
+  "special_filings_updated_at": "2026-10-09T16:15:00.000-04:00",
+  "regular_filings_updated_at": "2026-10-09T08:45:00.000-04:00",
+  "results": [
+    {
+      "document_number": "2026-20111",
+      "title": "Additions to the Entity List",
+      "toc_subject": "Entity List:",
+      "type": "Rule",
+      "agencies": [{"raw_name": "DEPARTMENT OF COMMERCE", "name": "Commerce Department", "slug": "commerce-department"},
+                   {"raw_name": "Bureau of Industry and Security", "name": "Industry and Security Bureau", "slug": "industry-and-security-bureau"}],
+      "filed_at": "2026-10-09T16:15:00.000-04:00",
+      "filing_type": "special",
+      "publication_date": "2026-10-14",
+      "html_url": "https://www.federalregister.gov/public-inspection/2026-20111/additions-to-the-entity-list",
+      "pdf_url": "https://public-inspection.federalregister.gov/2026-20111.pdf",
+      "editorial_note": "Adds 23 entities in China to the Entity List for advanced computing and AI chip diversion."
+    },
+    {
+      "document_number": "2026-20112",
+      "title": "Agency Information Collection Activities; Submission to OMB for Review",
+      "type": "Notice",
+      "agencies": [{"name": "Agriculture Department", "slug": "agriculture-department"}],
+      "filed_at": "2026-10-09T08:45:00.000-04:00",
+      "filing_type": "regular",
+      "html_url": "https://www.federalregister.gov/public-inspection/2026-20112/x"
+    },
+    {
+      "document_number": "2026-20113",
+      "title": "Notice of Request for Public Comments on Section 232 National Security Investigation of Imports of Pharmaceuticals",
+      "type": "Notice",
+      "agencies": [{"name": "Industry and Security Bureau", "slug": "industry-and-security-bureau"}],
+      "filed_at": "2026-10-09T08:45:00.000-04:00",
+      "filing_type": "regular",
+      "html_url": "https://www.federalregister.gov/public-inspection/2026-20113/y"
+    }
+  ]
+}

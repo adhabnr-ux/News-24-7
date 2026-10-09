@@ -9,6 +9,65 @@
 #
 # Run `news247 check` to test every source from your machine.
 
+# ------------------------------------------------------------------ FIRST PLACES (checked first, fastest)
+# Researched 2026-10-09 (docs/research/first-sources-2026.md): for 54 market-moving stories of
+# Jun-Oct 2026 we traced where each was published FIRST. These are those places. They're
+# primary sources polled every 5-60 s, with bursts at the minutes their news usually lands.
+#
+# Federal Register public inspection: rules/notices hours to a day before publication (BIS
+# Entity List, Section 232/301, OFAC, FDA advisory committees). Special filings land ~11:15/16:15 ET.
+- name: federal-register-pi
+  type: federal_register
+  tier: primary
+  interval: 60
+  burst_times: ["08:45", "11:15", "16:15"]
+  burst_interval: 5
+  agencies: [industry-and-security-bureau, trade-representative-office-of-united-states, foreign-assets-control-office, commerce-department, international-trade-administration, food-and-drug-administration, centers-for-medicare-medicaid-services, federal-communications-commission, securities-and-exchange-commission, executive-office-of-the-president, treasury-department, federal-reserve-system, energy-department, federal-housing-finance-agency, defense-department, homeland-security-department, state-department]
+# Sanctions: OFAC retired its RSS feed on 2025-01-31; its "Recent Actions" page is the first public record.
+- {name: ofac-actions, type: pagewatch, url: "https://ofac.treasury.gov/recent-actions", link_pattern: '/recent-actions/\d{8}(_\d+)?$', tier: primary, interval: 30, entities: [OFAC]}
+- {name: bis-news, type: pagewatch, url: "https://www.bis.gov/news-updates", link_pattern: '/press-release/', tier: primary, interval: 60, entities: [Commerce Department]}
+- {name: ustr-press, type: pagewatch, url: "https://ustr.gov/about-us/policy-offices/press-office/press-releases", link_pattern: '/press-releases/\d{4}/[a-z]+/', tier: primary, interval: 60, entities: [Commerce Department]}
+# Courts: tariff and antitrust rulings (SCOTUS IEEPA 2026-02-20, CIT, Federal Circuit, Google remedies).
+# Opinion days: SCOTUS releases at 10:00 ET; big CIT/CAFC rulings often after the close.
+- {name: scotus-slip, type: pagewatch, url: "https://www.supremecourt.gov/opinions/slipopinion/25", link_pattern: '/opinions/\d{2}pdf/[\w-]+\.pdf$', tier: primary, interval: 60, burst_times: ["10:00"], burst_interval: 2, burst_after: 1200, entities: [US courts]}
+- {name: cafc-opinions, type: rss, url: "https://cafc.uscourts.gov/category/opinion-order/feed/", tier: primary, interval: 60, browser_headers: true, entities: [US courts], burst_times: ["16:00", "17:00", "18:00"], burst_interval: 15, burst_after: 3600}
+- {name: pacer-dcd, type: rss, url: "https://ecf.dcd.uscourts.gov/cgi-bin/rss_outside.pl", tier: primary, interval: 60, include: '(?i)opinion|memorandum|order|judgment|remed', entities: [US courts]}
+- {name: pacer-vaed, type: rss, url: "https://ecf.vaed.uscourts.gov/cgi-bin/rss_outside.pl", tier: primary, interval: 120, include: '(?i)opinion|memorandum|order|judgment|remed', entities: [US courts]}
+# Housing finance: FHFA Director Pulte's posts crashed FICO twice (Sep 4, Sep 28); FHFA's own site
+# came later. His X account is a VIP in x-stream below; this is the free fallback.
+- {name: fhfa-news, type: pagewatch, url: "https://www.fhfa.gov/news", link_pattern: '/news/(news-release|statement)s?/', tier: primary, interval: 60, entities: [FHFA]}
+# War / energy: CENTCOM statements came first on the Sep 1 strikes; Pentagon contracts post ~17:00 ET.
+- {name: centcom-press, type: pagewatch, url: "https://www.centcom.mil/MEDIA/PRESS-RELEASES/", link_pattern: '/Press-Release-View/Article/\d+', tier: primary, interval: 60, entities: [CENTCOM]}
+- {name: war-contracts, type: rss, url: "https://www.war.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=400&Site=945&max=10", tier: primary, interval: 600, burst_times: ["17:00"], burst_interval: 30, burst_after: 3600}
+- {name: faa-newsroom, type: pagewatch, url: "https://www.faa.gov/newsroom", link_pattern: 'faa\.gov/newsroom/[a-z0-9-]+$', tier: primary, interval: 120, entities: [FAA]}
+# AI leaders' own pages: the Sep 12 "We Must Pace the Frontier" essay (SOX -5.8%) was on Dario
+# Amodei's personal site on a Saturday; Altman's blog has moved markets before.
+- {name: dario-essays, type: pagewatch, url: "https://www.darioamodei.com/", link_pattern: 'darioamodei\.com/(essay|post)/[a-z0-9-]+', tier: primary, interval: 120, entities: [Anthropic], alert_floor: high}
+- {name: sama-blog, type: rss, url: "https://blog.samaltman.com/posts.atom", tier: primary, interval: 120, entities: [OpenAI], alert_floor: high}
+# Prediction markets: odds moved before the 2026 Iran strike and ceasefire news. A jump of 10+
+# points in 5 minutes on real volume is a heads-up, never a confirmation.
+- name: polymarket
+  type: polymarket
+  interval: 30
+  min_move_pts: 10
+  window_s: 300
+  min_volume_24h: 50000
+  include: '(?i)iran|israel|china|taiwan|russia|ukraine|hormuz|tariff|fed\b|rate (cut|hike)|recession|ceasefire|strike|war\b|trump|shutdown|default|openai|anthropic|nvidia|ipo|supreme court|impeach|resign|bitcoin|opec|oil|treasury|powell|warsh|sanction'
+  exclude: '(?i)\b(vs\.?|nfl|nba|mlb|nhl|ufc|premier league|champions league|world cup|super bowl|grammy|oscar|box office|temperature|tweets?|weather)\b'
+# Central banks abroad: BoJ (release time not fixed on meeting days) and BoE (12:00 UK = 07:00 ET).
+- {name: boj-whatsnew, type: rss, url: "https://www.boj.or.jp/en/rss/whatsnew.xml", tier: primary, interval: 60, entities: [Bank of Japan]}
+- {name: boe-news, type: rss, url: "https://www.bankofengland.co.uk/rss/news", tier: primary, interval: 60, entities: [Bank of England], burst_times: ["07:00"], burst_interval: 2}
+- {name: eu-presscorner, type: rss, url: "https://ec.europa.eu/commission/presscorner/api/rss?language=en", tier: primary, interval: 60}
+- {name: uk-cma, type: rss, url: "https://www.gov.uk/search/news-and-communications.atom?organisations%5B%5D=competition-and-markets-authority", tier: primary, interval: 120}
+- {name: sec-press, type: rss, url: "https://www.sec.gov/news/pressreleases.rss", tier: primary, interval: 120, entities: [SEC]}
+# Index changes: S&P DJI announces adds after the close (Ferguson +8%).
+- {name: gnews-index-changes, type: rss, url: "https://news.google.com/rss/search?q=%22set+to+join+S%26P+500%22+OR+%22join+the+S%26P+500%22+when:1d&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 300}
+# China's commerce ministry (export controls, unreliable-entity list): Chinese text appears before
+# English wires; the English site has no feed, so watch news search for it.
+- {name: gnews-mofcom, type: rss, url: "https://news.google.com/rss/search?q=%22Ministry+of+Commerce%22+China+(export+OR+%22entity+list%22+OR+sanctions+OR+%22rare+earth%22)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 120, entities: [China]}
+# Scoops that broke Jun-Oct 2026 stories: Reuters "Exclusive-", Bloomberg "Said to", WSJ/FT "people familiar".
+- {name: gnews-scoops, type: rss, url: "https://news.google.com/rss/search?q=(%22Exclusive%22+OR+%22sources+say%22+OR+%22people+familiar%22+OR+%22said+to%22)+(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com+OR+site:ft.com)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 60, boost: 5}
+
 # ------------------------------------------------------------------ AI labs & big tech
 - {name: openai-news, type: rss, url: "https://openai.com/news/rss.xml", tier: primary, interval: 10, entities: [OpenAI], browser_headers: true, alert_floor: high}
 - {name: anthropic-news, type: pagewatch, url: "https://www.anthropic.com/news", link_pattern: 'anthropic\.com/news/[a-z0-9-]+$', tier: primary, interval: 10, entities: [Anthropic], alert_floor: high}
@@ -24,7 +83,10 @@
 - {name: meta-newsroom, type: rss, url: "https://about.fb.com/feed/", tier: primary, interval: 60, entities: [Meta Platforms]}
 
 # ------------------------------------------------------------------ Regulators, exchanges, government
-- {name: sec-8k, type: sec_edgar, forms: ["8-K"], interval: 10}
+# EDGAR beat the press in 2026: Generac's 8-K came a day before its press release, Nvidia's 13G
+# on Nebius came after hours and moved the stock the next morning. 6-K = foreign issuers (TSMC,
+# ASML, Novo); 13D/13G = stakes; SC TO-T = tender offers; 425 = merger communications.
+- {name: sec-8k, type: sec_edgar, forms: ["8-K", "6-K", "SCHEDULE 13D", "SCHEDULE 13G", "SC TO-T", "425"], interval: 10}
 - {name: nasdaq-halts, type: halts, interval: 15}
 - {name: fed-press, type: rss, url: "https://www.federalreserve.gov/feeds/press_all.xml", tier: primary, interval: 15, entities: [Federal Reserve], boost: 10, burst_times: ["14:00"]}
 - {name: fed-monetary, type: rss, url: "https://www.federalreserve.gov/feeds/press_monetary.xml", tier: primary, interval: 15, entities: [Federal Reserve], boost: 15, burst_times: ["14:00"]}
@@ -32,7 +94,7 @@
 - {name: treasury-press, type: pagewatch, url: "https://home.treasury.gov/news/press-releases", link_pattern: '/news/press-releases/[a-z]{2}\d+', tier: primary, interval: 60, entities: [US Treasury]}
 - {name: whitehouse-news, type: rss, url: "https://www.whitehouse.gov/news/feed/", tier: primary, interval: 30, entities: [White House]}
 - {name: whitehouse-actions, type: rss, url: "https://www.whitehouse.gov/presidential-actions/feed/", tier: primary, interval: 30, entities: [White House]}
-- {name: trump-truth-mirror, type: rss, url: "https://www.trumpstruth.org/feed", tier: primary, interval: 30, entities: [White House]}
+- {name: trump-truth-mirror, type: rss, url: "https://www.trumpstruth.org/feed", tier: primary, interval: 15, entities: [White House]}
 - {name: truth-social, type: mastodon, enabled: false, instance: "https://truthsocial.com", accounts: ["107780257626128497"], tier: primary, interval: 20, entities: [White House]}
 - {name: fda-press, type: rss, url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml", tier: primary, interval: 60}
 - {name: ftc-press, type: rss, url: "https://www.ftc.gov/feeds/press-release.xml", tier: primary, interval: 120}
@@ -56,6 +118,18 @@
 - {name: ft-markets, type: rss, url: "https://www.ft.com/markets?format=rss", tier: media, interval: 20, boost: 5, browser_headers: true}
 - {name: gnews-reuters, type: rss, url: "https://news.google.com/rss/search?q=site:reuters.com+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 90}
 
+# Squawk RSS: same desks as the Telegram channels below, as a second path (both were live in Oct 2026).
+- {name: financialjuice-rss, type: rss, url: "https://www.financialjuice.com/feed.ashx?xy=rss", tier: media, interval: 5, boost: 5}
+- {name: investinglive, type: rss, url: "https://investinglive.com/feed/news", tier: media, interval: 15, boost: 3}
+# Scoop publishers that broke 2026 movers: Axios (Iran MOU, OpenAI ARR), NYT (OpenAI IPO delay),
+# Semafor (Chipotle), Fortune (Altman: no IPO). Asia-first stories (Kospi crash, SoftBank) via Nikkei/Yonhap/SCMP.
+- {name: nyt-business, type: rss, url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", tier: media, interval: 30}
+- {name: semafor, type: rss, url: "https://www.semafor.com/rss.xml", tier: media, interval: 60}
+- {name: fortune, type: rss, url: "https://fortune.com/feed/", tier: media, interval: 60}
+- {name: nikkei-asia, type: rss, url: "https://asia.nikkei.com/rss/feed/nar", tier: media, interval: 60}
+- {name: yonhap, type: rss, url: "https://en.yna.co.kr/RSS/news.xml", tier: media, interval: 60}
+- {name: scmp-business, type: rss, url: "https://www.scmp.com/rss/91/feed", tier: media, interval: 60}
+
 # Headline squawks relayed to public Telegram channels (no account needed, polled every 5 s)
 - {name: telegram-squawks, type: telegram, channels: [FinancialJuice, DeItaone], tier: media, interval: 5, boost: 5}
 
@@ -77,7 +151,7 @@
   type: bluesky
   tier: media
   # Official and newsroom accounts that exist on Bluesky; unresolvable handles are skipped.
-  accounts: [apnews.com, reuters.com, nytimes.com, wsj.com, bloomberg.com, cnbc.com, washingtonpost.com, theverge.com, techcrunch.com, axios.com, politico.com, ft.com]
+  accounts: [apnews.com, reuters.com, nytimes.com, wsj.com, bloomberg.com, cnbc.com, washingtonpost.com, theverge.com, techcrunch.com, axios.com, politico.com, ft.com, unusualwhales.bsky.social]
 - name: x-stream
   # Real-time X feed (official filtered stream, pay-per-use ~$0.005/post). Set X_BEARER_TOKEN
   # and X_STREAM_ENABLED=true in .env. VIP accounts are texted instantly whatever they say;
@@ -85,8 +159,8 @@
   type: x_stream
   enabled: ${X_STREAM_ENABLED:-false}
   bearer_token: "${X_BEARER_TOKEN:-}"
-  vip_accounts: [OpenAI, OpenAINewsroom, sama, OpenAIDevs, ChatGPTapp, AnthropicAI, claudeai, GoogleDeepMind, sundarpichai, xai, AIatMeta, nvidia, satyanadella]
-  accounts: [DeItaone, FirstSquawk, financialjuice, LiveSquawk, unusual_whales, zerohedge, WSJmarkets, business, Reuters, CNBCnow, FT, theinformation, elonmusk, WhiteHouse]
+  vip_accounts: [OpenAI, OpenAINewsroom, sama, OpenAIDevs, ChatGPTapp, AnthropicAI, claudeai, GoogleDeepMind, sundarpichai, xai, AIatMeta, nvidia, satyanadella, pulte, FHFA, CENTCOM, realDonaldTrump, WhiteHouse, SecScottBessent]
+  accounts: [DeItaone, FirstSquawk, financialjuice, LiveSquawk, unusual_whales, zerohedge, WSJmarkets, business, Reuters, CNBCnow, FT, theinformation, elonmusk, BarakRavid, axios, Newsquawk, zuck, PunchbowlNews]
   vip_floor: high
 - name: alpaca-news
   # Benzinga newsdesk pushed over a websocket; free Alpaca paper-trading keys work.

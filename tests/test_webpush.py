@@ -359,6 +359,11 @@ async def test_manifest_starts_unlocked_only_with_the_right_token(app_server):
     assert any(i["purpose"] == "maskable" for i in m["icons"])
     async with s.get(srv.make_url("/app/manifest.webmanifest?token=guess")) as r:
         assert json.loads(await r.text())["start_url"] == "/app/"
+    # the shell itself already links the token-carrying manifest (iOS reads it at install time)
+    async with s.get(srv.make_url("/app/?token=tok")) as r:
+        assert 'href="/app/manifest.webmanifest?token=tok"' in await r.text()
+    async with s.get(srv.make_url("/app/?token=guess")) as r:
+        assert 'href="/app/manifest.webmanifest"' in await r.text()
 
 
 async def test_subscribe_test_push_and_control_from_the_app(app_server, server):
@@ -433,5 +438,24 @@ async def test_push_can_be_switched_off(tmp_path):
     try:
         async with aiohttp.ClientSession() as s, s.get(srv.make_url("/app/push-key")) as r:
             assert r.status == 404 and "WEBPUSH_ENABLED" in await r.text()
+    finally:
+        await srv.close()
+
+
+async def test_setup_page_offers_the_foretape_link(tmp_path):
+    eng = push_engine(tmp_path, public_url="https://news247.example.com")
+    srv = TestServer(WebServer(eng, eng.cfg.web).app)
+    await srv.start_server()
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(srv.make_url("/api/foretape")) as r:
+                assert r.status == 401
+            async with s.get(srv.make_url("/api/foretape?token=tok")) as r:
+                st = await r.json()
+            assert st["enabled"] and st["url"] == "https://news247.example.com/app/?token=tok"
+            assert st["devices"] == [] and st["durable"] is False
+            assert st["qr_svg"].startswith("<svg")
+            async with s.get(srv.make_url("/setup?token=tok")) as r:
+                assert 'id="ft"' in await r.text()
     finally:
         await srv.close()

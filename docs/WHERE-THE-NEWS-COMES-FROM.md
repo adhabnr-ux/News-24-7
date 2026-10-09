@@ -13,11 +13,26 @@ exchange halts      no individual API)
 NEWSPAPER SCOOPS (FT, WSJ, Bloomberg News, The Information) enter at the wire level within seconds-minutes.
 ```
 
+## The "Axelrod lane": where 2026's movers appeared first
+
+In *Billions*, Axelrod wins by hearing things first. We traced ~58 market-moving stories from June to October 2026 back to their first public appearance ([research/first-sources-2026.md](research/first-sources-2026.md)). After company releases and 8-Ks, the first places were:
+- government documents before announcements (Federal Register public inspection, OFAC, BIS/USTR, CENTCOM, FAA);
+- court opinion pages;
+- officials' own X posts (FHFA's Pulte crashed FICO twice);
+- EDGAR filings a day ahead of the press release (Generac, Nvidia's 13G);
+- founders' personal sites on weekends (Amodei's essay);
+- newspaper scoops with tell-tale wording ("Exclusive-", "Said to", "held talks", "people familiar").
+
+News247 checks those first, every 5–60 s, with bursts at the minutes they usually publish. Polymarket odds jumps are a heads-up only.
+
+**The honest limit:** Trump's posts are now sold "milliseconds" early through the paid Truth API ($60–100K/month), and wire terminals still beat any free feed on scoops by seconds. Free sources can't be first on those. Everything else on the list above is public, free and often hours ahead of the coverage.
+
 ## What's in the box
 
 | Lane | Sources | Cost | Typical delay |
 |---|---|---|---|
 | **AI labs & big tech, first-party** | OpenAI news RSS (10 s), Anthropic newsroom (10 s), OpenAI YouTube, DeepMind, Google, NVIDIA, Apple, Microsoft, Meta newsrooms | free | seconds to the site's own feed lag |
+| **First places** (Oct 2026 research) | Federal Register public inspection (5 s bursts at 08:45/11:15/16:15 ET), OFAC Recent Actions, BIS, USTR, Supreme Court slip opinions (2 s from 10:00 ET), Federal Circuit, PACER (D.D.C., E.D. Va.), FHFA, CENTCOM, Pentagon contracts (17:00 ET), FAA, darioamodei.com, blog.samaltman.com, Polymarket odds jumps, EDGAR 13D/13G/SC TO-T/425/6-K | free | seconds to a minute |
 | **Regulators & exchanges** | SEC 8-K filings (10 s), Nasdaq trading halts (15 s), Fed press/monetary feeds, BLS, Treasury, White House, FDA, FTC, DOJ, ECB. **1 s polling at 08:30, 10:00 and 14:00 ET** release times | free | seconds |
 | **Scoop publishers** | FT technology/companies/markets, Bloomberg markets/technology, The Information, Axios, WSJ markets, CNBC, MarketWatch bulletins | free (headline feeds) | 1–5 min after the article |
 | **Squawk relays** | Telegram (FinancialJuice, every 5 s) | free | seconds |

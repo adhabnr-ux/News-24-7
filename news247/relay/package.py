@@ -20,6 +20,7 @@ DEPENDENCIES = [
     "tzdata>=2024.1",
     "cryptography>=41",
     "pg8000>=1.31",
+    "segno>=1.5",
 ]
 
 PYPROJECT = f"""[build-system]

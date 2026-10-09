@@ -9,8 +9,10 @@ from .alpaca_news import AlpacaNewsSource
 from .apis import FinnhubNewsSource, HackerNewsSource, RedditSource
 from .base import PollingSource, Source, SourceContext
 from .bluesky import BlueskySource
+from .federal_register import FederalRegisterSource
 from .halts import TradingHaltsSource
 from .pagewatch import PageWatchSource
+from .polymarket import PolymarketSource
 from .rss import RSSSource
 from .sec_edgar import SECEdgarSource
 from .social import MastodonSource, XSource
@@ -35,6 +37,8 @@ SOURCE_TYPES: dict[str, type[Source]] = {
         TelegramChannelSource,
         XStreamSource,
         AlpacaNewsSource,
+        FederalRegisterSource,
+        PolymarketSource,
     )
 }
 

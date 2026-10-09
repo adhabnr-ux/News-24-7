@@ -42,6 +42,14 @@
   <h1>Send alerts to my phone</h1>
   <p>Type your number, save it, then send yourself a test message. <a id="back" href="/">← Back to the dashboard</a></p>
 
+  <section id="ft" hidden>
+    <h2 style="margin-top:0">📲 Foretape: alerts as push notifications (free)</h2>
+    <p class="muted" style="margin-top:0">Open this on your phone (or scan the code with the camera), add it to the home screen, then tap <b>Turn on alerts</b>. No phone number needed.</p>
+    <div id="ft-qr" style="background:#fff;border-radius:8px;padding:6px;width:max-content;max-width:100%" hidden></div>
+    <div class="cmd"><code id="ft-url"></code><button id="ft-copy" class="secondary">Copy</button></div>
+    <div id="ft-devices" class="muted"></div>
+  </section>
+
   <section>
     <label for="phone">Your phone number</label>
     <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+1 555 123 4567">
@@ -297,6 +305,26 @@ load();
 loadWhatsApp();
 loadCloud();
 setInterval(() => { if (!document.hidden) { load(); loadCloud(); } }, 10000);
+
+// ------------------------------------------------------------------ Foretape (push app)
+async function loadForetape() {
+  try {
+    const r = await fetch(q("/api/foretape"));
+    if (!r.ok) return;
+    const st = await r.json();
+    if (!st.enabled) return;
+    $("ft").hidden = false;
+    $("ft-url").textContent = st.url;
+    if (st.qr_svg) { $("ft-qr").innerHTML = st.qr_svg; $("ft-qr").hidden = false; }
+    const n = st.devices.length;
+    $("ft-devices").innerHTML = n
+      ? `✅ ${n} phone${n > 1 ? "s" : ""} subscribed: ` + st.devices.map((d) => esc(d.label || d.service)).join(", ")
+      : "No phone has turned on alerts yet.";
+    if (!st.durable && n) $("ft-devices").innerHTML += "<br>Tip: set STATE_DB so phones stay subscribed when the server restarts (or just open Foretape after a redeploy).";
+  } catch (e) { /* the rest of the page still works */ }
+}
+$("ft-copy").onclick = () => navigator.clipboard?.writeText($("ft-url").textContent);
+loadForetape();
 </script>
 </body>
 </html>

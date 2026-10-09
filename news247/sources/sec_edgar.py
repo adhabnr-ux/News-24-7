@@ -47,6 +47,24 @@ ITEM_INFO: dict[str, tuple[str, float]] = {
     "9.01": ("Exhibits", 0),
 }
 
+# Forms where one company files about another (stakes, tender offers, merger communications).
+# EDGAR lists the target as "(Subject)" and the holder/bidder as "(Filed by)" - paired below.
+# Boost: an activist 13D or a tender offer moves the target; passive 13G stakes rarely do.
+PAIRED_FORMS: dict[str, tuple[str, str, float]] = {  # form: (verb with a filer, noun without, boost)
+    "SCHEDULE 13D": ("discloses stake in", "stake disclosure", 15),
+    "SCHEDULE 13D/A": ("updates stake in", "stake update", 6),
+    "SC 13D": ("discloses stake in", "stake disclosure", 15),
+    "SC 13D/A": ("updates stake in", "stake update", 6),
+    "SCHEDULE 13G": ("discloses stake in", "stake disclosure", 4),
+    "SCHEDULE 13G/A": ("updates stake in", "stake update", 0),
+    "SC 13G": ("discloses stake in", "stake disclosure", 4),
+    "SC 13G/A": ("updates stake in", "stake update", 0),
+    "SC TO-T": ("launches tender offer for", "tender offer", 25),
+    "SC TO-T/A": ("amends tender offer for", "tender offer amended", 6),
+    "SC 14D9": ("responds to tender offer for", "response to tender offer", 12),
+    "425": ("files merger communication about", "merger communication", 10),
+}
+
 _TITLE_RE = re.compile(
     r"^(?P<form>[^ ]+(?: [^ ]+)?) - (?P<company>.+?) \((?P<cik>\d{10})\) \((?P<role>[^)]+)\)"
 )
@@ -128,21 +146,31 @@ class SECEdgarSource(PollingSource):
 
     def parse(self, body: bytes) -> list[NewsItem]:
         parsed = parse_feed(body)
+        # who filed each paired form (13D/13G/tender offer): accession -> filer name
+        filed_by: dict[str, str] = {}
+        for e in parsed.entries:
+            m = _TITLE_RE.match(strip_html(e.get("title"), None))
+            acc = _ACC_RE.search(e.get("id", ""))
+            if m and acc and m.group("role").lower() in ("filed by", "reporting"):
+                filed_by.setdefault(acc.group(1), m.group("company").title())
         out: list[NewsItem] = []
         for e in parsed.entries:
-            item = self.entry_to_item(e)
+            item = self.entry_to_item(e, filed_by)
             if item is not None:
                 out.append(item)
         return out
 
-    def entry_to_item(self, e: Any) -> NewsItem | None:
+    def entry_to_item(self, e: Any, filed_by: dict[str, str] | None = None) -> NewsItem | None:
         raw_title = strip_html(e.get("title"), None)
         m = _TITLE_RE.match(raw_title)
         if not m:
             return None
-        if m.group("role").lower() not in ("filer", "subject company"):
+        if m.group("role").lower() not in ("filer", "subject", "subject company"):
             return None
         form, company, cik = m.group("form"), m.group("company").title(), m.group("cik")
+        acc = _ACC_RE.search(e.get("id", ""))
+        if form.upper() in PAIRED_FORMS:
+            return self._paired_item(e, form, company, cik, (filed_by or {}).get(acc.group(1) if acc else ""))
         ticker = self._cik_to_ticker.get(cik, "")
         if self.only_tickers and not ticker:
             return None
@@ -154,7 +182,6 @@ class SECEdgarSource(PollingSource):
         labels = [f"{i} {ITEM_INFO[i][0]}" for i in items if i in ITEM_INFO and ITEM_INFO[i][1] > 0]
         tick = f" ({ticker})" if ticker else ""
         title = f"{company}{tick} files {form}" + (f": {'; '.join(labels)}" if labels else "")
-        acc = _ACC_RE.search(e.get("id", ""))
         item = self.make_item(
             title=title,
             url=e.get("link", ""),
@@ -165,5 +192,28 @@ class SECEdgarSource(PollingSource):
             author=company,
         )
         item.extra.update({"form": form, "cik": cik, "sec_items": items})
+        item.extra["boost"] = item.extra.get("boost", 0) + boost
+        return item
+
+    def _paired_item(self, e: Any, form: str, company: str, cik: str, filer: str | None) -> NewsItem | None:
+        """'SCHEDULE 13G: Nvidia Corp discloses stake in Nebius Group N.V. (NBIS)', or without the
+        filer's row 'Utz Brands, Inc. (UTZ): SC TO-T tender offer'."""
+        ticker = self._cik_to_ticker.get(cik, "")
+        if self.only_tickers and not ticker:
+            return None
+        verb, noun, boost = PAIRED_FORMS[form.upper()]
+        tick = f" ({ticker})" if ticker else ""
+        title = f"{form}: {filer} {verb} {company}{tick}" if filer else f"{company}{tick}: {form} {noun}"
+        acc = _ACC_RE.search(e.get("id", ""))
+        item = self.make_item(
+            title=title,
+            url=e.get("link", ""),
+            summary=strip_html(e.get("summary") or ""),
+            published=struct_to_ts(e.get("updated_parsed")) or struct_to_ts(e.get("published_parsed")),
+            uid=f"sec:{acc.group(1)}" if acc else "",
+            tickers=[ticker] if ticker else [],
+            author=filer or company,
+        )
+        item.extra.update({"form": form, "cik": cik, "filed_by": filer or "", "sec_items": []})
         item.extra["boost"] = item.extra.get("boost", 0) + boost
         return item

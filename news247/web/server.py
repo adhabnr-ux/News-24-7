@@ -68,6 +68,7 @@ class WebServer:
         app.router.add_get("/app/push-key", self.app_push_key)
         app.router.add_get("/app/{name}", self.app_asset)
         app.router.add_get("/api/app", self.api_app)
+        app.router.add_get("/api/foretape", self.api_foretape)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
         app.router.add_post("/api/push/test", self.api_push_test)
@@ -337,8 +338,18 @@ class WebServer:
         raise web.HTTPFound("/app/" + (f"?{request.query_string}" if request.query_string else ""))
 
     async def app_shell(self, request: web.Request) -> web.Response:
+        html = self._app_file("index.html").read_text(encoding="utf-8")
+        token = request.query.get("token")
+        if self._token_ok(token):
+            # iOS gives a home-screen app its own storage, separate from Safari's: the key has to
+            # travel in the manifest's start_url, which iOS reads when you tap "Add to Home Screen"
+            html = html.replace(
+                'href="/app/manifest.webmanifest"',
+                f'href="/app/manifest.webmanifest?token={quote(token)}"',
+                1,
+            )
         return web.Response(
-            text=self._app_file("index.html").read_text(encoding="utf-8"),
+            text=html,
             content_type="text/html",
             headers={"Cache-Control": "no-cache"},
         )
@@ -424,6 +435,27 @@ class WebServer:
                 "alerts_24h": st["db"]["alerts_24h"],
                 "devices": len(wp.subs) if wp is not None else 0,  # type: ignore[attr-defined]
                 "durable": bool(wp is not None and wp.state is not None) or not os.environ.get("RENDER"),  # type: ignore[attr-defined]
+            }
+        )
+
+    async def api_foretape(self, request: web.Request) -> web.Response:
+        """For the Setup page: the link (and a QR code) that opens Foretape on a phone."""
+        wp = self.engine.webpush
+        url = self.public_base(request) + "/app/" + self._token_qs()
+        qr = ""
+        try:
+            import segno  # ships with the WhatsApp extra (the Docker image has it)
+
+            qr = segno.make_qr(url, error="m").svg_inline(scale=4, border=2, dark="#000", light="#fff")
+        except ImportError:
+            pass
+        return _json(
+            {
+                "enabled": wp is not None,
+                "url": url,
+                "qr_svg": qr,
+                "devices": wp.describe()["devices"] if wp is not None else [],  # type: ignore[attr-defined]
+                "durable": bool(wp is not None and wp.state is not None),  # type: ignore[attr-defined]
             }
         )
 
