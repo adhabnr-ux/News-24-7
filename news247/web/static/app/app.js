@@ -140,10 +140,18 @@ function renderTop() {
   const g = hour < 5 ? "Good evening" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   $("greet").textContent = `${g} · ${new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`;
   const m = app.market;
+  // ambient state: lighting follows the market; a CRITICAL alert in the last 15 minutes warms the frame
+  const hot = alerts.some((x) => x.severity === "CRITICAL" && x.kind !== "system" && Date.now() / 1000 - x.created < 900);
+  Scene.setMood(!!m?.open, hot ? 1 : 0);
   $("mkt").lastElementChild.textContent = marketText(m);
   $("mkt").classList.toggle("open", !!m?.open);
   if (app.edge?.median_lead_s != null) countTo($("sLead"), app.edge.median_lead_s, (v) => dur(v).replace(/ 0?0s$/, ""));
   else $("sLead").textContent = "—";
+  Array.from($("hud").querySelectorAll(".co")).forEach((c) => (c._w = 0));  // labels changed: re-measure
+  $("hudA").textContent = app.sources ? `${app.sources_ok} of ${app.sources} live` : "—";
+  const last = alerts.find((x) => x.kind === "news");
+  $("hudB").textContent = last ? `${ago(last.created)} ago · ${(last.edge?.play?.direct?.[0] || last.tickers?.[0] || (last.item?.source || "")).toString().slice(0, 12)}` : "none yet";
+  $("hudC").textContent = app.edge?.median_lead_s != null ? "+" + dur(app.edge.median_lead_s).replace(/ 0?0s$/, "") + " median" : "measuring…";
   if (app.alerts_24h != null) countTo($("sAlerts"), app.alerts_24h, (v) => String(Math.round(v)));
   if (app.sources) countTo($("sSources"), app.sources_ok, (v) => `${Math.round(v)}/${app.sources}`);
   const n = (app.next || []).find((e) => (e.impact || 1) >= 2) || (app.next || [])[0];
@@ -289,6 +297,26 @@ function closeSheet() {
   if (/#a=/.test(location.hash)) history.replaceState(null, "", location.pathname + location.search);
 }
 $("scrim").onclick = closeSheet; $("closeSheet").onclick = closeSheet;
+// swipe down to dismiss: drag from the top of the sheet, with rubber-band resistance and a flick threshold
+(() => {
+  const sh = $("sheet"); let y0 = 0, dy = 0, t0 = 0, active = false;
+  sh.addEventListener("touchstart", (e) => { if (sh.scrollTop <= 0) { y0 = e.touches[0].clientY; t0 = performance.now(); active = true; dy = 0; sh.style.transition = "none"; } }, { passive: true });
+  sh.addEventListener("touchmove", (e) => {
+    if (!active) return;
+    const d = e.touches[0].clientY - y0;
+    if (d <= 0) { dy = 0; sh.style.transform = ""; return; }
+    dy = d; e.preventDefault();
+    sh.style.transform = `translateY(${(d * 0.92).toFixed(1)}px)`;
+    $("scrim").style.opacity = String(Math.max(0, 1 - d / 420));
+  }, { passive: false });
+  const end = () => {
+    if (!active) return; active = false; sh.style.transition = "";
+    const v = dy / Math.max(1, performance.now() - t0);
+    $("scrim").style.opacity = "";
+    if (dy > 120 || (dy > 40 && v > 0.6)) closeSheet(); sh.style.transform = "";
+  };
+  sh.addEventListener("touchend", end); sh.addEventListener("touchcancel", end);
+})();
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-id]");
@@ -341,6 +369,7 @@ async function refreshPushUI() {
   $("install").hidden = !(isIOS && !standalone);
   $("enable").hidden = !(pushCapable && perm === "default" && !(isIOS && !standalone));
   $("denied").hidden = perm !== "denied" || (isIOS && !standalone);
+  Motion.ui();
   $("pushState").textContent = !pushCapable ? (isIOS && !standalone ? "add to home screen first" : "not supported here")
     : perm === "granted" ? "on ✓" : perm === "denied" ? "blocked" : "off";
   if (pushCapable && perm === "granted") { try { await subscribe(false); } catch (e) { $("pushState").textContent = "error: " + e.message; } }
@@ -386,7 +415,8 @@ const Motion = {
   disable() { removeEventListener("deviceorientation", this.handler); this.on = false; this.gx = this.gy = 0; store.set("ft_motion", "0"); this.ui(); },
   ui() {
     $("motionState").textContent = this.on ? "on ✓ (tap to turn off)" : reduced ? "off (reduced motion)" : "off (tap to enable)";
-    $("motionBtn").hidden = !(isIOS && !this.on && store.get("ft_motion") !== "0" && !reduced) || !!$("enable").offsetParent;
+    const card = !!document.querySelector(".hero-dock .dockcard:not([hidden])");
+    $("motionBtn").hidden = !(isIOS && !this.on && store.get("ft_motion") !== "0" && !reduced) || card;
   },
 };
 $("motionBtn").onclick = async () => { if (!(await Motion.enable())) toast("Motion access was declined"); };
@@ -473,12 +503,35 @@ const Fx = {
         el.style.setProperty("--stz", (-Math.abs(c) * 46).toFixed(1) + "px");
       });
     }
+    // callouts ride on the rocket; they belong to the hero, so they fade as the page scrolls away
+    const hud = $("hud");
+    if (hud) {
+      const cardUp = !!document.querySelector(".hero-dock .dockcard:not([hidden])");  // onboarding covers the rocket: callouts step aside
+      const show = tab === "tape" && y < vh * 0.5 && !$("main").hidden && !cardUp;
+      hud.classList.toggle("on", show);
+      if (show) {
+        hud.style.opacity = (1 - clamp(y / (vh * 0.42))).toFixed(3);
+        hud.querySelectorAll(".co").forEach((co) => {
+          const [px, py] = Scene.project(+co.dataset.u, +co.dataset.v);
+          const left = co.classList.contains("l") ? px - (co._w || (co._w = co.offsetWidth || 150)) : px;  // "l" callouts extend leftwards from the anchor
+          co.style.transform = `translate3d(${left.toFixed(1)}px, ${py.toFixed(1)}px, 0)`;
+          if (Scene.intro > 0.7 && !co.classList.contains("show")) { co.style.setProperty("--n", co.dataset.d); co.classList.add("show"); }
+        });
+      }
+    }
     // altitude readout
     const alt = Scene.climb * 38;
     $("railAlt").textContent = "ALT " + (alt < 10 ? alt.toFixed(1) : Math.round(alt)) + " KM";
     $("railDot").style.top = clamp(Scene.climb / 2.4) * 100 + "%";
   },
-  tick() { if (this.dirty || Math.abs(Scene.climb - Scene.climbTarget) > 0.0004 || Motion.on) { this.dirty = false; this.frame(); } requestAnimationFrame(() => this.tick()); },
+  tick() {
+    // the callouts must follow the camera every frame while the hero is on screen (intro zoom, tilt, breathing)
+    const heroLive = tab === "tape" && scrollY < innerHeight * 0.5;
+    const moving = Math.abs(Scene.climb - Scene.climbTarget) > 0.0004 || Scene.intro < 1 || Motion.on
+      || Math.abs(Scene.tilt[0] - Scene.tiltTarget[0]) + Math.abs(Scene.tilt[1] - Scene.tiltTarget[1]) > 0.002;
+    if (this.dirty || moving || heroLive) { this.dirty = false; this.frame(); }
+    requestAnimationFrame(() => this.tick());
+  },
 };
 addEventListener("scroll", () => (Fx.dirty = true), { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));

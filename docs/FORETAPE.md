@@ -32,7 +32,21 @@ That's it. Close the app; alerts still arrive.
 
 ## What you see
 
-Foretape opens on a live sky: deep cobalt above, a gold horizon below, the way the market looks at the open. Five tabs:
+Foretape opens on a **live photograph**: a rocket climbing out of its own smoke at golden hour. It is not a video or a gradient. A real launch photo is rendered by a WebGL shader (`scene.js`) that adds what a still can't have:
+
+- **Depth.** Tilt your phone (or move the mouse) and the near smoke moves more than the far sky.
+- **Life.** Clouds drift and the smoke billows. The plume flickers, heat shimmers above the pad, embers rise, and the wet ground glints. A new alert makes the plume flare.
+- **Altitude.** The camera climbs as you scroll: past the cirrus, off the top of the photo and into a starfield. Each tab sits at its own altitude, so switching tabs flies the camera. An altitude rail on the right edge shows where you are.
+- **Mood.** The light is a little brighter while the market is open and dusky while it's closed. A CRITICAL alert in the last 15 minutes warms the edges of the frame.
+- **Callouts pinned to the rocket** show live data: how many sources are up, the last alert and who it hit, and your median lead over the news. They are projected through the same camera as the shader, so they stay on the rocket.
+
+Everything on top of the photo is glass, lit like the scene: a cold rim on the top edge, a warm bounce on the bottom, a highlight that slides with the tilt of your phone, and film grain. Cards swing up out of depth as they scroll in and curve on a cylinder as they pass eye level. Swipe a detail sheet down to dismiss it.
+
+**Phones that can't take it:** on WebGL-less browsers the plain photo is shown with CSS parallax; with *Reduce Motion* turned on, a still frame; and a slow GPU lowers the render resolution automatically. Add `?scale=0.5` to the address to render fewer pixels yourself.
+
+**iPhone motion permission.** iOS asks before a web page may read the gyroscope. Foretape shows a *"✦ Tilt your phone: enable motion"* chip once, and the Desk tab has a switch. On Android and desktop there's no prompt (mouse movement drives the tilt on desktop).
+
+Five tabs:
 
 | Tab | What's on it |
 |---|---|
@@ -40,7 +54,7 @@ Foretape opens on a live sky: deep cobalt above, a gold horizon below, the way t
 | **Brief** | The morning meeting: catalysts **since the last close**, the themes in focus, SPY/QQQ/IWM/DIA and the biggest movers, the week's calendar, and **your edge** (stories you had before the mainstream, median and biggest head start). |
 | **Calendar** | Scheduled catalysts for the next 60 days, with time (ET) and impact: FOMC decisions, jobs reports, elections, option expirations and quad witching, market holidays and early closes, plus one-offs like the end of China's rare-earth suspension. Edit `news247/data/calendar.yaml` to add your own (earnings dates, investor days). |
 | **Watch** | The board: every quoted symbol sorted by today's move, with the 5-minute change. Tickers from fresh alerts are added automatically. |
-| **Desk** | Push status, **Send a test alert**, **Reconnect**, alert level (**Critical only / Normal / More**), **Pause 30m / 2h / until resumed**, **Resume**, the Brief time, and engine health. |
+| **Desk** | Push status, **Send a test alert**, **Reconnect**, motion on/off, alert level (**Critical only / Normal / More**), **Pause 30m / 2h / until resumed**, **Resume**, the Brief time, and engine health. |
 
 ### Every alert comes with an analysis
 
@@ -58,6 +72,12 @@ Foretape opens on a live sky: deep cobalt above, a gold horizon below, the way t
 At **08:15 ET on market days**, Foretape sends one notification: *"☀️ The Brief · 3 overnight catalysts"*, with the top two headlines and anything big on the calendar today (*"Today 14:00 ET: FOMC decision"*). On a quiet night with nothing scheduled, it stays silent. Tapping it opens the Brief. Change the time with `PUSH_BRIEF_TIME`, or set it empty to turn it off.
 
 **Lock screen:** 🔴 CRITICAL / 🟠 HIGH headline, then the tickers with ▲/▼, the source, how fast it was caught, and the strongest precedent. **Critical alerts stay on screen until you tap them.** Tapping opens that alert's analysis in the app; **Open source** jumps to the original. The app icon shows how many alerts you haven't opened, where the platform supports badges.
+
+## The backdrop photo and fonts
+
+- `news247/web/static/app/launch.webp` is the photo behind everything, and `depth.png` is its painted depth map (white = near). **The photo is the one you supplied. If you publish this repository, make sure you have the right to share it, or swap it for one you do.**
+- To swap it: replace `launch.webp` with any portrait photo (about 1800×3200 looks best) and repaint `depth.png` at the same proportions. The shader's rocket, plume and smoke effects are placed by coordinates near the top of `scene.js` (`0.488` is the plume column; `0.43`–`0.68` is the rocket's height). A photo with different content still works: the parallax, climb into space, grain and glass need no changes.
+- Fonts (Instrument Serif, Inter, JetBrains Mono, all SIL Open Font License) are bundled in `app/fonts/`, so the app makes no third-party requests and works offline once installed.
 
 ## Keeping phones subscribed on Render's free plan
 

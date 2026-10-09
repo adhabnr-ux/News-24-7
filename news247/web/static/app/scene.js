@@ -31,6 +31,8 @@ uniform float uIntro;
 uniform float uAspect;
 uniform float uMotion;
 uniform float uPulse;
+uniform float uMood;
+uniform float uTension;
 
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p) {
@@ -55,7 +57,11 @@ vec3 space(vec2 uv, float amt, float t) {
   float tw = 0.6 + 0.4 * sin(t * (1.0 + 3.0 * hash(g + 3.1)) + h * 40.0);
   float star = on * smoothstep(0.22, 0.0, length(f + (hash(g + 7.7) - 0.5) * 0.5)) * tw;
   vec2 q = vec2(uv.x * uAspect, uv.y) * 22.0;
-  float big = step(0.985, hash(floor(q))) * smoothstep(0.25, 0.0, length(fract(q) - 0.5)) * (0.7 + 0.3 * sin(t * 2.0 + h * 9.0));
+  vec2 fq = fract(q) - 0.5;
+  float bigOn = step(0.985, hash(floor(q)));
+  float core = exp(-dot(fq, fq) * 420.0);                                                    // a hard little core...
+  float spikes = (exp(-abs(fq.x) * 90.0) * exp(-abs(fq.y) * 9.0) + exp(-abs(fq.y) * 90.0) * exp(-abs(fq.x) * 9.0)) * 0.32;   // ...with diffraction spikes
+  float big = bigOn * (core + spikes) * (0.75 + 0.25 * sin(t * 2.0 + h * 9.0));
   float band = smoothstep(0.55, 0.0, abs((uv.x * uAspect - uv.y * 0.9) - 0.15 - 0.2 * fbm(uv * 3.0)));
   vec3 milky = vec3(0.30, 0.38, 0.62) * band * (0.25 + 0.55 * fbm(uv * 14.0)) * 0.55;
   return (vec3(0.85, 0.9, 1.0) * (star * 1.25 + big * 1.1) + milky) * amt;
@@ -71,7 +77,7 @@ void main() {
   float k1 = smoothstep(0.0, 0.55, uClimb);
   float k2 = smoothstep(0.35, 2.2, uClimb);
   float zoom = (1.0 + 0.38 * k1 + 0.30 * k2) * (1.0 + 0.11 * (1.0 - uIntro) * (1.0 - uIntro));
-  float anchor = mix(0.5, 0.565, smoothstep(0.5, 0.2, hh0));   // wide screens frame the whole rocket + plume
+  float anchor = mix(0.5, 0.565, 1.0 - smoothstep(0.2, 0.5, hh0));   // wide screens frame the whole rocket + plume
   float cy = mix(anchor, anchor - 0.30, k1) - 0.75 * k2;
   float hh = hh0 / zoom, hw = hh * sa / uAspect;
   // handheld breathing, big at ignition, barely there afterwards
@@ -109,13 +115,13 @@ void main() {
 
   // ---- bloom from the brightest parts (plume, sunlit cloud tops)
   vec3 bl = vec3(0.0);
-  for (int i = 0; i < 8; i++) {
-    float a = float(i) * 0.7854 + 0.4;
+  for (int i = 0; i < 6; i++) {
+    float a = float(i) * 1.0472 + 0.4;
     vec2 o = vec2(cos(a), sin(a) * uAspect * 0.9) * (0.010 + 0.006 * float(i - (i / 2) * 2));
     vec3 q = photo(uv + o);
     bl += q * smoothstep(0.62, 1.0, luma(q));
   }
-  bl /= 8.0;
+  bl /= 6.0;
   col += bl * vec3(1.05, 0.78, 0.5) * 0.55;
 
   // ---- plume: white-hot core that flickers, ignition flash
@@ -127,33 +133,40 @@ void main() {
   float base = exp(-pow(length((uv - vec2(0.489, 0.676)) * vec2(sa * 0.9, 1.3)) / 0.055, 2.0));
   col += vec3(1.0, 0.55, 0.22) * base * (0.18 + 0.12 * fk + 0.8 * pow(1.0 - uIntro, 2.0) + 0.7 * uPulse);
 
-  // ---- embers rising from the pad
-  for (int i = 0; i < 34; i++) {
-    float id = float(i);
-    float life = fract(t * (0.10 + 0.07 * hash(vec2(id, 9.0))) + hash(vec2(id, 1.0)));
-    vec2 b = vec2(0.488 + (hash(vec2(id, 2.0)) - 0.5) * 0.10, 0.672 - hash(vec2(id, 5.0)) * 0.015);
-    vec2 v = vec2((hash(vec2(id, 3.0)) - 0.5) * 0.34, -0.06 - 0.20 * hash(vec2(id, 4.0)));
-    vec2 p = b + v * life + vec2(sin(life * 7.0 + id) * 0.012 * life, 0.05 * life * life);
-    vec2 dd = (uv - p) * vec2(uAspect, 1.0);
-    float sz = 0.0016 * (1.0 - life) + 0.0004;
-    float g = exp(-dot(dd, dd) / (sz * sz)) * (1.0 - life) * (0.6 + 0.4 * sin(t * 12.0 + id * 3.0));
-    col += vec3(1.0, 0.62 + 0.3 * life, 0.28) * g * 0.9 * uMotion;
+  // ---- embers rising from the pad (only evaluated near the pad: the loop is the costliest part)
+  if (uv.x > 0.20 && uv.x < 0.78 && uv.y > 0.30 && uv.y < 0.74 && uMotion > 0.0) {
+    for (int i = 0; i < 28; i++) {
+      float id = float(i);
+      float life = fract(t * (0.10 + 0.07 * hash(vec2(id, 9.0))) + hash(vec2(id, 1.0)));
+      vec2 b = vec2(0.488 + (hash(vec2(id, 2.0)) - 0.5) * 0.10, 0.672 - hash(vec2(id, 5.0)) * 0.015);
+      vec2 v = vec2((hash(vec2(id, 3.0)) - 0.5) * 0.34, -0.06 - 0.20 * hash(vec2(id, 4.0)));
+      vec2 p = b + v * life + vec2(sin(life * 7.0 + id) * 0.012 * life, 0.05 * life * life);
+      vec2 dd = (uv - p) * vec2(uAspect, 1.0);
+      float sz = 0.0016 * (1.0 - life) + 0.0004;
+      float g = exp(-dot(dd, dd) / (sz * sz)) * (1.0 - life) * (0.6 + 0.4 * sin(t * 12.0 + id * 3.0));
+      col += vec3(1.0, 0.62 + 0.3 * life, 0.28) * g * 0.9;
+    }
   }
 
   // ---- sunlit glints on the wet ground
-  float wet = smoothstep(0.72, 0.80, uv.y);
-  float gl = pow(noise(uv * vec2(420.0, 260.0) + vec2(t * 0.6, 0.0)), 14.0) * smoothstep(0.35, 0.8, luma(col));
-  col += vec3(1.0, 0.8, 0.55) * gl * wet * 0.8;
+  if (uv.y > 0.72) {
+    float wet = smoothstep(0.72, 0.80, uv.y);
+    float gl = pow(noise(uv * vec2(420.0, 260.0) + vec2(t * 0.6, 0.0)), 14.0) * smoothstep(0.35, 0.8, luma(col));
+    col += vec3(1.0, 0.8, 0.55) * gl * wet * 0.8;
+  }
 
   // ---- above the top of the photograph: the sky deepens into space
-  float over = -uv0.y;
-  vec3 topCol = (photo(vec2(0.12, 0.012)) + photo(vec2(0.30, 0.012)) + photo(vec2(0.50, 0.012)) + photo(vec2(0.70, 0.012)) + photo(vec2(0.88, 0.012))) * 0.2;
-  float alt = smoothstep(0.0, 0.65, over);
-  vec3 skyAbove = mix(topCol, vec3(0.010, 0.026, 0.080), pow(alt, 0.6));
-  skyAbove += vec3(0.30, 0.20, 0.12) * pow(1.0 - alt, 8.0) * 0.05;
-  vec3 above = skyAbove + space(uv0, smoothstep(0.05, 0.55, over), t);
-  float seam = 1.0 - smoothstep(0.0, 0.16, uv0.y);          // feather the photo's top edge into the sky
-  col = mix(col, above, clamp(seam * seam * (3.0 - 2.0 * seam) + step(uv0.y, 0.0), 0.0, 1.0));
+  if (uv0.y < 0.18) {
+    float over = -uv0.y;
+    vec3 topCol = (photo(vec2(0.12, 0.012)) + photo(vec2(0.30, 0.012)) + photo(vec2(0.50, 0.012)) + photo(vec2(0.70, 0.012)) + photo(vec2(0.88, 0.012))) * 0.2;
+    float alt = smoothstep(0.0, 0.65, over);
+    vec3 skyAbove = mix(topCol, vec3(0.010, 0.026, 0.080), pow(alt, 0.6));
+    skyAbove += vec3(0.30, 0.20, 0.12) * pow(1.0 - alt, 8.0) * 0.05;
+    vec3 above = skyAbove;
+    if (over > 0.05) above += space(uv0, smoothstep(0.05, 0.55, over), t);
+    float seam = 1.0 - smoothstep(0.0, 0.16, uv0.y);          // feather the photo's top edge into the sky
+    col = mix(col, above, clamp(seam * seam * (3.0 - 2.0 * seam) + step(uv0.y, 0.0), 0.0, 1.0));
+  }
 
   // ---- the lower frame darkens a little as we leave the pad behind
   col *= 1.0 - 0.18 * k1;
@@ -167,6 +180,10 @@ void main() {
   col = mix(col, col * vec3(0.92, 1.0, 1.10), (1.0 - smoothstep(0.0, 0.35, l)) * 0.5);
   float vig = smoothstep(1.15, 0.30, length((s - 0.5) * vec2(1.0, 1.15)));
   col *= mix(0.62, 1.0, vig);
+  col *= mix(0.88, 1.04, uMood);                        // dusk while the market is closed, brighter while it's open
+  col = mix(vec3(luma(col)), col, mix(0.92, 1.06, uMood));
+  float edge = 1.0 - vig;                               // a recent CRITICAL alert warms the edges of the frame
+  col += vec3(0.55, 0.16, 0.04) * edge * edge * uTension * 0.55;
   float gr = hash(s * uRes + fract(uTime * 7.0)) - 0.5;
   col += gr * 0.028 * (1.0 - l * 0.5);
   gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
@@ -224,12 +241,13 @@ void main() {
         tex(0, photo, true); tex(1, depth, false);
         this.gl = gl;
         this.u = {};
-        ["uPhoto", "uDepth", "uRes", "uTime", "uClimb", "uTilt", "uIntro", "uAspect", "uMotion", "uPulse"].forEach((n) => (this.u[n] = gl.getUniformLocation(prog, n)));
+        ["uPhoto", "uDepth", "uRes", "uTime", "uClimb", "uTilt", "uIntro", "uAspect", "uMotion", "uPulse", "uMood", "uTension"].forEach((n) => (this.u[n] = gl.getUniformLocation(prog, n)));
         gl.uniform1i(this.u.uPhoto, 0); gl.uniform1i(this.u.uDepth, 1);
         gl.uniform1f(this.u.uAspect, photo.width / photo.height);
         this.resize();
         addEventListener("resize", () => this.resize());
         document.addEventListener("visibilitychange", () => { this.paused = document.hidden; if (!this.paused) this.loop(performance.now()); });
+        this.aspect = photo.width / photo.height;
         this.ok = true;
         document.documentElement.classList.add("gl");
         this.t0 = performance.now();
@@ -256,8 +274,25 @@ void main() {
       this.gl.uniform2f(this.u.uRes, w, h);
     },
 
+    /* Where a point of the photograph (u, v in 0..1) is on screen right now: the same camera as the
+       shader, so interface callouts can ride on the rocket. depth is the point's painted depth. */
+    project(u, v, depth) {
+      const w = innerWidth, h = innerHeight, sa = w / h, ia = this.aspect || 0.566;
+      const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+      const hh0 = Math.min(0.5, (0.5 * ia) / sa), cl = this.climb;
+      const k1 = sm(0, 0.55, cl), k2 = sm(0.35, 2.2, cl), iv = 1 - this.intro;
+      const zoom = (1 + 0.38 * k1 + 0.3 * k2) * (1 + 0.11 * iv * iv);
+      const anchor = 0.5 + 0.065 * (1 - sm(0.2, 0.5, hh0));
+      const cy = anchor + (anchor - 0.3 - anchor) * k1 - 0.75 * k2;
+      const hh = hh0 / zoom, hw = (hh * sa) / ia, dz = (depth ?? 0.46) - 0.32;
+      const px = -this.tilt[0] * 0.02 * dz, py = -this.tilt[1] * 0.012 * dz - cl * 0.06 * dz;
+      const u0 = u - px, v0 = v - py;
+      return [((u0 - 0.5) / (2 * hw) + 0.5) * w, ((v0 - cy) / (2 * hh) + 0.5) * h];
+    },
+
     ignite() { this.introStart = performance.now(); },
     pulse() { this.pulseAt = performance.now(); },
+    setMood(open, tension) { this.moodTarget = open ? 1 : 0; this.tensionTarget = tension || 0; },
     setClimb(v) { this.climbTarget = v; },
     setTilt(x, y) { this.tiltTarget = [Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y))]; },
 
@@ -283,8 +318,12 @@ void main() {
       gl.uniform2f(this.u.uTilt, this.tilt[0], this.tilt[1]);
       gl.uniform1f(this.u.uIntro, this.reduced ? 1 : this.intro);
       gl.uniform1f(this.u.uMotion, motion);
+      this.mood = (this.mood ?? 0.5) + ((this.moodTarget ?? 0.5) - (this.mood ?? 0.5)) * (1 - Math.exp(-dt * 0.8));
+      this.tension = (this.tension ?? 0) + ((this.tensionTarget ?? 0) - (this.tension ?? 0)) * (1 - Math.exp(-dt * 0.6));
+      gl.uniform1f(this.u.uMood, this.mood); gl.uniform1f(this.u.uTension, this.tension);
       const pk = this.pulseAt ? Math.max(0, 1 - (now - this.pulseAt) / 1800) : 0;
       gl.uniform1f(this.u.uPulse, pk * pk * (this.reduced ? 0 : 1));
+      if (this.climb > 1.1 && (this.frames & 1) && !this.pulseAt) { this.frames++; requestAnimationFrame((n) => this.loop(n)); return; }
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       // adaptive resolution: if the phone struggles, render fewer pixels (the photo stays sharp enough)
       this.frames++;

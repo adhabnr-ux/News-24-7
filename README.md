@@ -55,7 +55,7 @@ There's also a **morning Brief** pushed at 08:15 ET on market days, a **catalyst
 
 It needs no phone number, no Meta/Apple developer account and no app store. It uses standard Web Push (encrypted; iOS 16.4+, Android, desktop). Optional: a free Postgres in `STATE_DB` keeps phones subscribed across Render restarts.
 
-![Foretape: the tape, an alert's analysis, the morning Brief](docs/foretape.png)
+![Foretape: the live launch scene with callouts, the tape, an alert's analysis with its price chart](docs/foretape.png)
 
 ### Option A1: 100% free, alerts on WhatsApp through Meta's test number
 

@@ -46,6 +46,23 @@ html.nogl #scene { display: none; }
         transition: background .3s; }
 .curtain { position: fixed; inset: 0; z-index: 90; background: #02060f; opacity: 1; pointer-events: none; transition: opacity 1.6s ease .15s; }
 .curtain.off { opacity: 0; }
+/* callouts pinned to the rocket (positions come from Scene.project each frame) */
+.hud { position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity .6s; }
+.hud.on { opacity: 1; }
+.co { position: absolute; left: 0; top: 0; display: flex; align-items: center; will-change: transform; opacity: 0; margin-top: -22px; }
+.co.show { animation: coIn 1s var(--ease) forwards; animation-delay: calc(var(--n) * .35s); }
+@keyframes coIn { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: none; } }
+.co .pt { position: relative; flex: none; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--cream); box-shadow: 0 0 0 2px rgba(255, 246, 232, .35), 0 0 16px rgba(255, 200, 130, .95); }
+.co .pt::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 1px solid rgba(255, 246, 232, .6); animation: ping 2.6s var(--ease) infinite; }
+@keyframes ping { 0% { transform: scale(.4); opacity: 1; } 100% { transform: scale(1.7); opacity: 0; } }
+.co .ln { flex: none; width: clamp(34px, 11vw, 70px); height: 1px; background: linear-gradient(90deg, rgba(255, 246, 232, .9), rgba(255, 246, 232, .25)); }
+.co .lb { padding: 6px 10px 7px; border-radius: 12px; white-space: nowrap; background: rgba(6, 16, 40, .46); border: 1px solid rgba(255, 255, 255, .16);
+          -webkit-backdrop-filter: blur(14px) saturate(160%); backdrop-filter: blur(14px) saturate(160%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25); }
+.co .lb small { display: block; font: 600 9px/1 var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--gold); }
+.co .lb b { display: block; margin-top: 4px; font: 600 12px/1.1 var(--mono); color: var(--cream); letter-spacing: .01em; }
+.co.l { flex-direction: row-reverse; }
+.co.l .pt { margin-left: 0; margin-right: -4.5px; }
+.co.l .ln { background: linear-gradient(270deg, rgba(255, 246, 232, .9), rgba(255, 246, 232, .25)); }
 .rail { position: fixed; z-index: 4; right: max(10px, env(safe-area-inset-right)); top: 22vh; bottom: 24vh; width: 14px; pointer-events: none; opacity: .0; transition: opacity .6s; }
 .on-scroll .rail { opacity: 1; }
 .rail::before { content: ""; position: absolute; right: 4px; top: 0; bottom: 0; width: 1px; background: linear-gradient(180deg, transparent, rgba(255, 255, 255, .35) 12%, rgba(255, 255, 255, .35) 88%, transparent);
