@@ -267,6 +267,7 @@ class OptionsConfig:
     spike_min_premium: float = 5000.0  # $ traded in that contract today (volume x price x 100)
     spike_confirm_fraction: float = 0.5  # pushes only if the bid still shows >= half the threshold
     stale_base_ratio: float = 0.3  # previous close below 30% of its model value = stale print
+    spike_0dte_multiple: float = 3.0  # contracts expiring today push only at 3x the threshold (3,000%)
     stale_min_fair: float = 0.05  # ... when that model value is at least $0.05
     # unusual volume: contracts trading far above their open interest, with real money
     flow_min_volume: int = 500  # contracts traded today
@@ -491,6 +492,8 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
     options = _dataclass_from(OptionsConfig, raw.get("options"), "options")
     if options.request_interval_s < 0.2:
         raise ConfigError("[options] request_interval_s must be at least 0.2 (be polite to free endpoints)")
+    if options.spike_0dte_multiple < 1:
+        raise ConfigError("[options] spike_0dte_multiple must be at least 1 (1 = no extra bar)")
     if options.spike_min_pct <= 0 or not 0 < options.spike_confirm_fraction <= 1:
         raise ConfigError("[options] spike_min_pct must be > 0 and spike_confirm_fraction in (0, 1]")
     if options.concurrency < 1 or options.batch_size < 1:

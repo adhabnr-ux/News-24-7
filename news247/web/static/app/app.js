@@ -203,6 +203,7 @@ async function load() {
     ["Alerts (24h)", app.alerts_24h], ["Phones subscribed", app.devices], ["Stories beaten (7d)", app.edge?.stories ?? 0],
     ["Companies sized", app.smallcap?.listings ? `${app.smallcap.listings.toLocaleString()}${app.smallcap.age_s != null ? " · " + dur(app.smallcap.age_s).replace(/ \d+s$/, "") + " old" : ""}` : "loading…"],
     ["Movers radar", !app.smallcap?.radar ? "off" : `${app.smallcap.scans} scans · ${app.smallcap.hits} flagged`],
+    ["Options tape", !app.options?.enabled ? "off" : `${app.options.feed || "?"} · ${app.options.read_today.toLocaleString()}/${app.options.companies.toLocaleString()} chains today · ${app.options.hits} flagged${app.options.fallbacks ? ` · ${app.options.fallbacks} via backup` : ""}${["failing", "degraded"].includes(app.options.status) ? " · " + app.options.status.toUpperCase() : ""}`],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("");
   $("durable").hidden = app.durable;
   $("durable").textContent = app.durable ? "" : "This server forgets subscribed phones when it restarts. Foretape reconnects this phone every time you open it; for zero gaps, set STATE_DB (free Postgres, see docs).";

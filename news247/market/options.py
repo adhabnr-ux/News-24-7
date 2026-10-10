@@ -231,20 +231,19 @@ def _ts(v: Any) -> datetime | None:
     """Cboe's '2026-10-07T11:42:13' (exchange-local, read as Eastern)."""
     if not v or not isinstance(v, str):
         return None
-    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
-        try:
-            return datetime.strptime(v[:26], fmt).replace(tzinfo=ET)
-        except ValueError:
-            continue
-    return None
+    try:  # fromisoformat is C-fast; strptime cost ~0.2 s on an 8,000-contract chain
+        return datetime.fromisoformat(v[:19]).replace(tzinfo=ET)
+    except ValueError:
+        return None
 
 
 def parse_occ(sym: str) -> tuple[str, date, str, float] | None:
     m = OCC_RE.match(sym or "")
     if not m:
         return None
+    ymd = m["ymd"]
     try:
-        exp = datetime.strptime(m["ymd"], "%y%m%d").date()
+        exp = date(2000 + int(ymd[:2]), int(ymd[2:4]), int(ymd[4:]))
     except ValueError:
         return None
     return m["root"], exp, m["cp"], int(m["k"]) / 1000.0
@@ -305,7 +304,8 @@ class SpikeRow:
     fair_prev: float | None  # model value at yesterday's close
     stale_base: bool  # the previous close is far below that model value
     honest_move_pct: float  # last vs the honest base: max(previous close, model value) when stale
-    big_enough: bool = True  # the honest move still clears the threshold
+    big_enough: bool = True  # the honest move still clears the threshold (higher on expiry day)
+    same_day: bool = False  # expires today: 0DTE contracts need spike_0dte_multiple x the threshold to push
 
     @property
     def real(self) -> bool:
@@ -334,6 +334,7 @@ class SpikeRow:
             "fair_prev": round(self.fair_prev, 4) if self.fair_prev is not None else None,
             "stale_base": self.stale_base,
             "honest_move_pct": round(self.honest_move_pct, 1),
+            "same_day": self.same_day,
             "last_trade": c.last_trade.isoformat() if c.last_trade else None,
         }
 
@@ -497,7 +498,9 @@ class OptionsRadar:
         honest = (c.last / base - 1.0) * 100.0 if base > 0 and c.last else move
         bid_move = (c.bid / base - 1.0) * 100.0 if c.bid and base > 0 else None
         confirmed = bid_move is not None and bid_move >= cfg.spike_min_pct * cfg.spike_confirm_fraction
-        return SpikeRow(c, move, bid_move, confirmed, fair, stale, honest, honest >= cfg.spike_min_pct)
+        same_day = c.expiry == today
+        need = cfg.spike_min_pct * (cfg.spike_0dte_multiple if same_day else 1.0)
+        return SpikeRow(c, move, bid_move, confirmed, fair, stale, honest, honest >= need, same_day)
 
     def fair_prev(self, c: Contract, chain: Chain, today: date) -> float | None:
         """Model value of the contract at yesterday's close: yesterday's stock price, the time
@@ -585,6 +588,12 @@ class OptionsRadar:
         top = rows[0]
         reasons: list[str] = []
         if not top.real:
+            if top.same_day and top.confirmed and not top.big_enough and not top.stale_base:
+                need = self.cfg.spike_min_pct * self.cfg.spike_0dte_multiple
+                reasons.append(
+                    f"expires today: same-day contracts routinely multiply on ordinary moves, so they push "
+                    f"from {need:,.0f}%"
+                )
             if top.stale_base and not top.big_enough and top.fair_prev is not None:
                 reasons.append(
                     f"stale base: the previous close (${(top.contract.prev_close or 0):.2f}) is far below "
@@ -690,8 +699,9 @@ class CboeSource:
                 raise NoChain(symbol) from exc
             raise
         raw = resp.body
-        doc = await asyncio.to_thread(json.loads, raw) if len(raw) > 512_000 else json.loads(raw)
-        return parse_chain(doc, symbol)
+        if len(raw) > 256_000:  # a big chain is parsed off the event loop: news must not wait on it
+            return await asyncio.to_thread(lambda: parse_chain(json.loads(raw), symbol))
+        return parse_chain(json.loads(raw), symbol)
 
 
 ALPACA_FEEDS = {
@@ -880,6 +890,8 @@ class AlpacaSource:
         if not snaps:
             raise NoChain(symbol)
         oi = await self.open_interest(symbol, today, pace)
+        if len(snaps) > 1500:  # large chains parse off the event loop
+            return await asyncio.to_thread(parse_alpaca_chain, snaps, symbol, listing, oi, today, self.label)
         return parse_alpaca_chain(snaps, symbol, listing, oi, today, self.label)
 
 

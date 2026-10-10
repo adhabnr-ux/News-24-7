@@ -738,6 +738,10 @@ async def test_api_options(tmp_path: Path):
             async with s.get(srv.make_url("/api/status?token=tok")) as r:
                 st = await r.json()
             assert st["options"]["source"].startswith("Cboe")
+            async with s.get(srv.make_url("/api/app?token=tok")) as r:
+                app = await r.json()
+            opt = app["options"]
+            assert opt["enabled"] and opt["feed"] == "cboe" and opt["companies"] == 2
     finally:
         await srv.close()
         await eng.http.close()
@@ -1018,3 +1022,20 @@ async def test_engine_alert_names_the_alpaca_feed(tmp_path: Path, monkeypatch):
         "Alpaca indicative feed (free: trades ~15 min delayed, quotes adjusted) · quotes as of"
         in eng._options_alert(hit).body
     )
+
+
+def test_expiry_day_contracts_need_a_higher_bar_to_push():
+    today_exp = TODAY.strftime("%y%m%d")
+    occ = f"XYZ{today_exp}C00055000"
+    r = OptionsRadar(ocfg())
+    (hit,) = r.scan(chain_with(row(occ, **SPIKE)), None, NOW)  # +1,233%, expires today
+    assert hit.severity == "MEDIUM" and hit.spikes[0].same_day and "expires today" in hit.reasons[0]
+    assert "3,000%" in hit.reasons[0]
+    (big,) = r.scan(
+        chain_with(row(occ, **{**SPIKE, "last_trade_price": 5.0, "bid": 4.9, "ask": 5.1})), None, NOW + 60
+    )
+    assert big.severity == "HIGH"  # +3,233%: clears 3x
+    (plain,) = OptionsRadar(ocfg(spike_0dte_multiple=1)).scan(chain_with(row(occ, **SPIKE)), None, NOW)
+    assert plain.severity == "HIGH"
+    with pytest.raises(ConfigError):
+        ocfg(spike_0dte_multiple=0.5)

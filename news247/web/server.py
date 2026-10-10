@@ -470,6 +470,7 @@ class WebServer:
                 "next": self.engine.calendar.upcoming(days=35)[:6],
                 "brief_time": str(wp.options.get("brief_time", "08:15") or "") if wp is not None else "",
                 "smallcap": self._smallcap_brief(st.get("smallcap") or {}),
+                "options": self._options_brief(st.get("options") or {}),
             }
         )
 
@@ -499,6 +500,23 @@ class WebServer:
         ]
         rows.sort(key=lambda r: abs(r["chg_day"] or 0.0), reverse=True)
         return _json({"symbols": rows, "market": self.engine.calendar.market_status()})
+
+    @staticmethod
+    def _options_brief(o: dict[str, Any]) -> dict[str, Any]:
+        """For the Desk: is the options tape reading chains, from which feed, and is it healthy?"""
+        if not o.get("enabled"):
+            return {"enabled": False}
+        primary = next(iter((o.get("sources") or {}).keys()), "")
+        return {
+            "enabled": True,
+            "feed": primary,
+            "companies": o.get("companies", 0),
+            "read_today": o.get("read_today", 0),
+            "hits": o.get("hits", 0),
+            "fallbacks": o.get("fallbacks", 0),
+            "status": o.get("status", ""),
+            "last_error": o.get("last_error", ""),
+        }
 
     @staticmethod
     def _smallcap_brief(sc: dict[str, Any]) -> dict[str, Any]:

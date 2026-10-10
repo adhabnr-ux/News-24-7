@@ -47,6 +47,11 @@ $0.32); the % is measured from the model value." A spike that still clears 1,000
 value is real and pushes. One that doesn't is shown in the app as **unconfirmed**, with the
 reason, and is not pushed.
 
+**Expiry day.** Contracts expiring today (0DTE) routinely multiply on ordinary moves, especially
+for large companies on Fridays. They show in the app from 1,000% but push only from 3,000%
+(`spike_0dte_multiple: 3`; set it to 1 to treat them like any other contract). Without this, a
+handful of routine same-day spikes would use up the daily push limit before noon.
+
 Each company fires once per rung per day: 1,000%, 2,000%, 5,000%, 10,000% and 25,000%. An
 unconfirmed spike that later confirms is upgraded to a push. Restarts remember what already
 fired (`data/options_state.json`).

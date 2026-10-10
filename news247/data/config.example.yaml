@@ -111,6 +111,7 @@ options:
   spike_min_premium: 5000         # $ traded in that contract today
   spike_confirm_fraction: 0.5     # push only if the bid still holds >= half the threshold
   stale_base_ratio: 0.3           # previous close < 30% of its model value that day = stale print
+  spike_0dte_multiple: 3          # contracts expiring today push only at 3x the threshold (they show from 1x)
   flow_min_volume: 500            # unusual volume: contracts today ...
   flow_oi_multiple: 3             # ... at least 3x open interest ...
   flow_min_premium: 250000        # ... and $250K+ across the company to show it
