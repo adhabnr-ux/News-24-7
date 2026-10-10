@@ -174,9 +174,8 @@ async def test_commands_only_from_recipients(session):
 
     session.on_inbound = on_inbound
     be.ev.message("16235550146", "pause 2h", "IN1", False)  # type: ignore[union-attr]
-    be.ev.message(
-        "16235550146", "pause 2h", "IN1", False
-    )  # duplicate delivery: ignored  # type: ignore[union-attr]
+    # a duplicate delivery is ignored
+    be.ev.message("16235550146", "pause 2h", "IN1", False)  # type: ignore[union-attr]
     be.ev.message("447700900123", "pause", "IN2", False)  # a stranger  # type: ignore[union-attr]
     be.ev.message(BOT, "note to self", "IN3", True)  # our own message  # type: ignore[union-attr]
     await wait_for(lambda: be.sent)
