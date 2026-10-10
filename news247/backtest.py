@@ -104,6 +104,16 @@ def history_universe(history: dict[str, Any]) -> Universe | None:
     return Universe.stub(entries) if entries else None
 
 
+def _event_universe(history: dict[str, Any], sc: dict[str, Any]) -> Universe:
+    u = history_universe(history) or Universe()
+    entries = {
+        sym: {"name": li.name, "mcap": li.market_cap, "price": li.price, "industry": li.industry}
+        for sym, li in u.by_symbol.items()
+    }
+    entries[str(sc["symbol"]).upper()] = sc
+    return Universe.stub(entries)
+
+
 def history_scorer(cfg: Config, history: dict[str, Any]) -> Scorer:
     scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
     uni = history_universe(history)
@@ -118,7 +128,13 @@ def run_backtest(
     history = history if history is not None else load_history()
     scorer = history_scorer(cfg, history)
     events: list[EventResult] = []
+    base_universe = scorer.smallcap.universe if scorer.smallcap is not None else None
     for ev in history.get("events", []):
+        # each event is scored with the size its company had that morning (SOUN was $0.9B when
+        # NVIDIA's stake surfaced and ~$4.7B when its exit did)
+        sc = ev.get("smallcap")
+        if scorer.smallcap is not None:
+            scorer.smallcap.universe = _event_universe(history, sc) if sc else base_universe
         firsts = [
             headline_item(h, ev.get("tier", "media"))
             for h in ev.get("first_reports", ev.get("headlines", []))
@@ -139,6 +155,8 @@ def run_backtest(
         events.append(
             EventResult(ev, best, title, caught_first, scored_first + scored_later, caught_any, deployed)
         )
+    if scorer.smallcap is not None:
+        scorer.smallcap.universe = base_universe
     noise = []
     for h in history.get("noise", []):
         item = headline_item(h)

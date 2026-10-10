@@ -319,15 +319,24 @@ class Calendar:
     def __init__(self, data: dict[str, Any] | None = None) -> None:
         data = data if data is not None else load_package_yaml("calendar.yaml")
         self.events = [dict(e) for e in data.get("events", [])]
+        # captured at runtime from headlines: readouts, PDUFA dates, FDA panels (analysis/catalyst_dates.py)
+        self.dynamic: dict[str, dict[str, Any]] = {}
         self.holidays = {str(d) for d in data.get("market_holidays", [])}
         self.early = {str(d) for d in data.get("early_closes", [])}
+
+    def add(self, event: dict[str, Any]) -> bool:
+        """Add a dynamic event (id-keyed); False if it was already on the calendar."""
+        if event["id"] in self.dynamic:
+            return False
+        self.dynamic[event["id"]] = dict(event)
+        return True
 
     def upcoming(self, days: int = 45, now: float | None = None) -> list[dict[str, Any]]:
         now_dt = datetime.fromtimestamp(now or time.time(), ET)
         today = now_dt.date()
         end = today + timedelta(days=days)
         out: list[dict[str, Any]] = []
-        for e in self.events:
+        for e in [*self.events, *self.dynamic.values()]:
             d = e["date"] if isinstance(e["date"], date) else date.fromisoformat(str(e["date"]))
             if today <= d <= end:
                 out.append({**e, "date": d.isoformat()})
@@ -494,7 +503,11 @@ def brief_push(brief: dict[str, Any]) -> dict[str, Any] | None:
         )
     today = [e for e in brief["calendar"] if e["in_days"] == 0 and e.get("impact", 1) >= 2]
     for e in today[:2]:
-        lines.append(f"Today {e.get('time', '')} ET: {e['title']}".replace("  ", " "))
+        lines.append(f"Today {e['time']} ET: {e['title']}" if e.get("time") else f"Today: {e['title']}")
+    # binary events tomorrow: the night before is when you position, not the morning of
+    tomorrow = [e for e in brief["calendar"] if e["in_days"] == 1 and e.get("kind") == "binary"]
+    for e in tomorrow[:2]:
+        lines.append(f"Tomorrow {e['time']} ET: {e['title']}" if e.get("time") else f"Tomorrow: {e['title']}")
     if not lines:
         return None
     n = brief["count"]

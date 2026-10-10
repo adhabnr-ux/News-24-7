@@ -123,6 +123,9 @@
 - {name: bw-aerospace, type: rss, url: "https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeGFNZXQ==", tier: wire, interval: 45, browser_headers: true}
 - {name: newsfile-biotech, type: rss, url: "https://feeds.newsfilecorp.com/industry/biotechnology", tier: wire, interval: 60, browser_headers: true}
 - {name: newsfile-mining, type: rss, url: "https://feeds.newsfilecorp.com/industry/mining-metals", tier: wire, interval: 60, browser_headers: true}
+# The giants' quarterly holdings: NVIDIA/Alphabet/Amazon/Berkshire 13F-HR read and diffed, so a
+# new stake in a small cap (SoundHound +67% on NVIDIA's first 13F) is an alert the hour it's filed
+- {name: sec-13f-giants, type: sec_13f, interval: 600}
 - {name: fda-drugs, type: rss, url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/drugs/rss.xml", tier: primary, interval: 120}
 
 # ------------------------------------------------------------------ Scoop publishers

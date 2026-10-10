@@ -1870,6 +1870,27 @@ events:
     first_reports:
       - {text: "Kodiak Sciences Announces Positive Topline Results from DAYBREAK Pivotal Phase 3 Study of Zenkuda and KSI-501 in Wet AMD", tier: wire, tickers: [KOD], approx: true}
 
+  - id: soundhound-nvidia-13f
+    date: 2024-02-15
+    category: smallcap_mega_stake
+    first_source: "SEC EDGAR: NVIDIA's first 13F-HR, filed after the close on Feb 14"
+    move: "SOUN +67% close, up to +80% intraday"
+    tickers: [SOUN]
+    smallcap: {symbol: SOUN, name: "SoundHound AI, Inc.", mcap: 0.9e9, industry: "Computer Software: Prepackaged Software"}
+    first_reports:
+      - {text: "NVIDIA 13F: new stake in SoundHound AI, Inc. (SOUN) — 1.73M shares", tier: primary, tickers: [SOUN], approx: true}
+
+  - id: soundhound-nvidia-exit
+    date: 2025-02-18
+    category: smallcap_mega_stake
+    first_source: "SEC EDGAR: NVIDIA's 13F-HR for Q4 2024 shows the SoundHound position gone"
+    move: "SOUN −28%"
+    tickers: [SOUN]
+    # market cap ≈ $12 × ~390M shares before the filing (approximate)
+    smallcap: {symbol: SOUN, name: "SoundHound AI, Inc.", mcap: 4.7e9, industry: "Computer Software: Prepackaged Software"}
+    first_reports:
+      - {text: "NVIDIA 13F: exited SoundHound AI, Inc. (SOUN) — sold all 1.73M shares", tier: primary, tickers: [SOUN], approx: true}
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"

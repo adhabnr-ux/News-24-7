@@ -303,6 +303,7 @@ class Universe:
         self._ambiguous: set[str] = set()
         self._first: dict[str, list[tuple[tuple[str, ...], str]]] = {}
         self._solo: dict[str, str] = {}
+        self._short: dict[str, str] = {}
         self.loaded_at = loaded_at
         self.source = source
         self.replace(listings, loaded_at=loaded_at, source=source)
@@ -315,12 +316,16 @@ class Universe:
         by_symbol: dict[str, Listing] = {}
         by_name: dict[str, str] = {}
         ambiguous: set[str] = set()
+        short: dict[str, str] = {}
         for li in listings:
             by_symbol[li.symbol] = li
             if not li.common:
                 continue
             key = name_key(li.name)
             if len(key) < 4:
+                # "Arm", "IBM": too short to spot in a headline, fine for an exact full-name lookup
+                if key:
+                    short.setdefault(key, li.symbol)
                 continue
             other = by_name.get(key)
             if other and other != li.symbol:
@@ -337,6 +342,7 @@ class Universe:
         for key in ambiguous:
             by_name.pop(key, None)
         self.by_symbol, self._by_name, self._ambiguous = by_symbol, by_name, ambiguous
+        self._short = short
         # first word -> [(all words, symbol)] for names of 2+ words, to spot companies mid-headline
         first: dict[str, list[tuple[tuple[str, ...], str]]] = {}
         for key, sym in by_name.items():
@@ -430,7 +436,9 @@ class Universe:
         return time.time() - self.loaded_at if self.loaded_at else float("inf")
 
     def lookup_name(self, name: str) -> Listing | None:
-        sym = self._by_name.get(name_key(name))
+        """Exact (normalized) full-name lookup, e.g. a 13F's "SOUNDHOUND AI INC" -> SOUN."""
+        key = name_key(name)
+        sym = self._by_name.get(key) or self._short.get(key)
         return self.by_symbol.get(sym) if sym else None
 
     def find_issuer(self, title: str) -> Listing | None:

@@ -9,13 +9,15 @@ import os
 import re
 import time
 from collections import deque
+from datetime import datetime
 from typing import Any
 
+from .analysis.catalyst_dates import extract_event
 from .analysis.dedup import Story, StoryClusterer
 from .analysis.llm import LLMClient, apply_verdict
 from .analysis.scorer import Scorer
 from .config import Config
-from .edge import Calendar, EdgeDesk, brief_push, build_brief
+from .edge import ET, Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
 from .market.prices import PriceMonitor
@@ -61,6 +63,9 @@ class Engine:
         self.scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
         self.edge = EdgeDesk(self.scorer)
         self.calendar = Calendar()
+        today = datetime.now(ET).date().isoformat()
+        for ev in self.storage.catalysts(today):  # binary events captured before a restart
+            self.calendar.add(ev)
         # the little things: every listed company's size, so small caps are scored by how big
         # the news is for them, plus a radar for small caps moving before any headline
         sc = cfg.smallcap
@@ -90,6 +95,7 @@ class Engine:
             user_agent=cfg.general.user_agent,
             max_item_age_s=cfg.general.max_item_age_minutes * 60,
             data_dir=cfg.data_path,
+            universe=self.universe,
         )
         self.sources = sources if sources is not None else build_sources(cfg.sources, ctx)
         saved_phone = self.storage.get_setting("phone")
@@ -237,6 +243,7 @@ class Engine:
         vip = self._apply_floor(item, analysis)
         self.storage.add_item(item, analysis, story.id)
         self._remember(item, analysis)
+        self._capture_catalyst(item, analysis)
         self._broadcast("item", {"item": item.to_dict(), "analysis": analysis.to_dict(), "story": story.id})
 
         if self.llm and analysis.score >= self.cfg.llm.min_score and not self.llm.busy:
@@ -501,6 +508,32 @@ class Engine:
             move=combined,
             related=catalysts,
         )
+
+    # ------------------------------------------------------------------ binary events, in advance
+
+    def _capture_catalyst(self, item: NewsItem, analysis: Analysis) -> None:
+        """ "…to Present Topline Results on September 28" / "PDUFA date of June 30": put it on the
+        calendar so the Brief says "Tomorrow: KOD Phase 3 readout" the night before."""
+        sc = analysis.smallcap or {}
+        symbol = sc.get("symbol") or (item.tickers[0] if item.tickers else "")
+        if not symbol:
+            return
+        ev = extract_event(item.title, item.summary, symbol)
+        if ev is None:
+            return
+        small = bool(sc)
+        ev.update(
+            {
+                "impact": 2 if small else 1,
+                "note": f"{sc.get('name') or symbol} · {sc['cap']} {sc['band']}" if small else "",
+                "url": item.url,
+                "source": item.source,
+            }
+        )
+        if self.storage.add_catalyst(ev):
+            self.calendar.add(ev)
+            log.info("binary event on the calendar: %s on %s", ev["title"], ev["date"])
+            self._broadcast("calendar", ev)
 
     # ------------------------------------------------------------------ the radar
 

@@ -241,11 +241,12 @@ function moverRow(m) {
   const v = m.chg_day ?? 0;
   return `<div class="li"><span class="sym" style="width:64px">${esc(m.symbol)}</span><span class="grow num faint">${m.price != null ? m.price.toFixed(2) : ""}</span>${barHTML(v)}<span class="chg num ${cls(v)}">${pct(m.chg_day)}</span></div>`;
 }
-const KIND = { fed: "Federal Reserve", data: "Economic data", politics: "Politics", trade: "Trade policy", options: "Options expiry", market: "Market hours", earnings: "Earnings" };
+const KIND = { fed: "Federal Reserve", data: "Economic data", politics: "Politics", trade: "Trade policy", options: "Options expiry", market: "Market hours", earnings: "Earnings", binary: "Binary event" };
 function calRow(e, grouped) {
   const sub = grouped ? [KIND[e.kind] || e.kind, e.note].filter(Boolean).map(esc).join(" · ")
     : `${esc(prettyDate(e.date))} · ${inDays(e.in_days)}${e.note ? " · " + esc(e.note) : ""}`;
-  return `<div class="li"><span class="time">${esc(e.time || "—")}</span><div class="grow"><div style="font-weight:600">${esc(e.title)}</div><div class="sub">${sub}</div></div>
+  const title = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener" class="calink">${esc(e.title)}</a>` : esc(e.title);
+  return `<div class="li${e.kind === "binary" ? " binary" : ""}"><span class="time">${esc(e.time || "—")}</span><div class="grow"><div style="font-weight:600">${e.kind === "binary" ? `<span class="capb bin">Binary</span>` : ""}${title}</div><div class="sub">${sub}</div></div>
     <span class="imp">${[1, 2, 3].map((i) => `<i class="${i <= (e.impact || 1) ? "on" : ""}"></i>`).join("")}</span></div>`;
 }
 async function loadCalendar() {

@@ -317,6 +317,10 @@ GOV_STAKE_RE = _rx(
     r"\b(?:strategic\s+investment|investment\s+by|public-private\s+partnership|equity\s+stake|takes?\s+(?:a\s+)?(?:\d+(?:\.\d+)?%\s+)?stake|stake\s+in|warrants?\s+to\s+(?:buy|purchase)|"
     r"become\s+(?:the\s+)?largest\s+shareholder|preferred\s+(?:equity|stock)\s+investment|price\s+floor|offtake)\b"
 )
+# a giant selling out of a small cap (SOUN −28% when NVIDIA's next 13F showed it had exited)
+MEGA_EXIT_RE = _rx(
+    r"\b(?:exited|exits|sold\s+(?:all|its\s+entire|its\s+whole)|dumps?|dumped|liquidated|sells\s+(?:all|entire))\b"
+)
 CRYPTO_TREASURY_RE = _rx(
     r"\b(?:bitcoin|btc|ethereum|ether|eth|solana|sol|xrp|dogecoin|doge|bnb|hype|tron|trx|ton|sui|avax|litecoin|ltc|"
     r"worldcoin|wld|crypto(?:currency)?|digital\s+asset)\s+(?:\w+\s+){0,2}treasury\b",
@@ -640,7 +644,9 @@ class SmallCapDesk:
                 Catalyst("gov_stake", f"US government stake ({gov.group(1)})", "up", 45.0 * max(bf, 0.8))
             )
         partner = self._partner(li, text)
-        if partner and PARTNER_VERB_RE.search(title) and not PARTNER_FLUFF_RE.search(title):
+        if partner and MEGA_EXIT_RE.search(title):
+            found.append(Catalyst("mega_exit", f"{partner} sold out", "down", 28.0 * max(bf, 0.9)))
+        elif partner and PARTNER_VERB_RE.search(title) and not PARTNER_FLUFF_RE.search(title):
             stake = re.search(r"\bstake\b|\binvest\w*\b|\b13[dg]\b|\bwarrants?\b", title, re.I)
             base = 40.0 if stake else 30.0
             if partner in PHARMA_PARTNERS:

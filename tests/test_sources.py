@@ -436,6 +436,7 @@ def test_registry_and_build_sources(caplog):
     assert set(SOURCE_TYPES) == {
         "rss",
         "sec_edgar",
+        "sec_13f",
         "halts",
         "pagewatch",
         "hackernews",

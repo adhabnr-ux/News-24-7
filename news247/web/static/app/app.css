@@ -436,4 +436,8 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 .pull.firing .arc { animation: spin 1s linear infinite; }
 .pull.firing .arc { stroke-dasharray: .3 .7; stroke-dashoffset: 0; }
 @keyframes spin { to { transform: rotate(270deg); } }
+/* binary events captured from headlines (readouts, PDUFA dates, FDA panels) */
+.li.binary .capb.bin { display: inline-block; margin-right: 8px; vertical-align: 2px; font: 700 8.5px/1 var(--sans); letter-spacing: .2em; text-transform: uppercase;
+  color: #1B1206; padding: 4px 7px; border-radius: 999px; background: linear-gradient(180deg, #FFE2B4, #F6B36A); }
+.calink { color: var(--cream); }
 

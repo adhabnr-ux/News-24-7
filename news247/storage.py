@@ -61,6 +61,12 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     endpoint TEXT PRIMARY KEY,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS catalysts (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -215,6 +221,18 @@ class Storage:
         )
         return cur.rowcount > 0
 
+    def add_catalyst(self, event: dict[str, Any]) -> bool:
+        """A scheduled binary event (readout, PDUFA, panel) captured from a headline. Once per id."""
+        cur = self.db.execute(
+            "INSERT OR IGNORE INTO catalysts (id, date, data, created) VALUES (?,?,?,?)",
+            (event["id"], event["date"], json.dumps(event), time.time()),
+        )
+        return cur.rowcount > 0
+
+    def catalysts(self, from_date: str) -> list[dict[str, Any]]:
+        rows = self.db.execute("SELECT data FROM catalysts WHERE date >= ? ORDER BY date", (from_date,))
+        return [json.loads(r[0]) for r in rows]
+
     def leads(self, since: float | None = None) -> list[float]:
         since = since or time.time() - 7 * 86400
         return [r[0] for r in self.db.execute("SELECT lead_s FROM leads WHERE created >= ?", (since,))]
@@ -340,4 +358,5 @@ class Storage:
         self.db.execute("DELETE FROM alerts WHERE created < ?", (cutoff,))
         self.db.execute("DELETE FROM relay_outbox WHERE created < ?", (cutoff,))
         self.db.execute("DELETE FROM leads WHERE created < ?", (cutoff,))
+        self.db.execute("DELETE FROM catalysts WHERE date < date('now', '-3 days')")
         return n

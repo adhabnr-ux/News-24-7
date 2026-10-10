@@ -134,7 +134,46 @@ The price is the first public trace. `news247/market/radar.py`:
   radar before the news."* When the headline then lands, its alert says *"📡 Radar flagged ACMB
   +45% 12m before this headline."*
 
-## 4. In Foretape
+## 4. Knowing earlier than everyone
+
+The radar and the catalyst desk react within minutes. Two more edges get you there before the
+news itself.
+
+### The date, before the move
+
+Small biotechs announce *when* the coin will be flipped, weeks ahead:
+- "Kodiak Sciences to Present Topline Results on September 28, 2026 from DAYBREAK Pivotal
+  Phase 3 Study…" was published Sep 25. KOD went +178% on the 28th.
+- "…PDUFA target action date of June 30, 2027"
+- "FDA Advisory Committee Meeting Scheduled for July 29 to Review…"
+
+`news247/analysis/catalyst_dates.py` reads these headlines, and their summaries where the date
+often sits. It finds the readout, PDUFA or panel date and the time ("8:30 a.m. ET"), and puts
+the event on the **Calendar** as a gold **BINARY** entry. The entry shows the company, its size
+and a link to the release. Captured events are stored, so a restart keeps them.
+
+The **morning Brief push** says *"Tomorrow 08:30 ET: KOD · Phase 3 trial readout"* the
+morning before, when you position. It says *"Today …"* on the day.
+
+### The giants' new stakes, the hour they're filed
+
+On Feb 14 2024 NVIDIA's first 13F holdings filing listed 1.73M SoundHound shares, and SOUN
+closed +67% the next day. A year later NVIDIA's 13F showed it had sold out, and SOUN fell 28%.
+
+A 13F's title says nothing about what's inside, so the `sec-13f-giants` source reads the
+holdings table itself:
+- **Who it watches:** NVIDIA, Alphabet, Amazon and Berkshire Hathaway by default. Add any CIK
+  under `filers:`.
+- **What it reads:** each new 13F-HR, compared with the previous quarter's.
+- **What it reports:** one alert per **new stake**, **stake raised 2×+** or **exit**, smallest
+  companies first. For example: *"NVIDIA 13F: new stake in SoundHound AI, Inc. (SOUN) — 1.73M
+  shares, $3.7M"*.
+- **How it's sized:** the small-cap desk treats a giant's new stake as a re-rating (bullish)
+  and an exit as the reverse (bearish).
+- **When it polls:** every 10 minutes, and every 2 minutes in the days around the 13F
+  deadlines (about Feb 14, May 15, Aug 14 and Nov 14).
+
+## 5. In Foretape
 
 - **Cards:** news about a small or mid cap carries a gold **MICRO CAP / SMALL CAP / MID CAP** pill
   with the symbol, market cap, catalyst and typical move. Radar alerts carry a **◉ Radar** pill
@@ -147,7 +186,7 @@ The price is the first public trace. `news247/market/radar.py`:
 - **Lock screen:** the push body leads with
   `DRNZ · $70M micro cap · Contract from U.S. Army worth 64% of market cap · +36–96% typical`.
 
-## 5. Sources added for small caps
+## 6. Sources added for small caps
 
 These catalyst feeds are on by default:
 - GlobeNewswire: Mergers and Acquisitions, Business Contracts, Clinical Study, Financing
@@ -161,7 +200,7 @@ They sit alongside the existing firehoses, SEC 8-K/13D/13G and Nasdaq halts. The
 carry about 20 items each, which is only minutes of releases on a busy morning; the
 topic feeds make sure no catalyst slips past.
 
-## 6. Configuration
+## 7. Configuration
 
 ```yaml
 smallcap:
@@ -185,9 +224,9 @@ API:
 - `GET /api/radar?limit=40` returns the radar board, market phase and feed health.
 - `/api/status` gains a `smallcap` block with listing count, universe age and radar scans/hits.
 
-## 7. Does it work? The backtest
+## 8. Does it work? The backtest
 
-`news247/data/history.yaml` now includes 31 small-cap events from 2024 to Oct 2026. Examples:
+`news247/data/history.yaml` now includes 33 small-cap events from 2024 to Oct 2026. Examples:
 - Navitas +164% on "NVIDIA Selects Navitas…"
 - Trilogy Metals +211% on the government stake
 - Spero +244% on "Stopped Early for Efficacy"
@@ -201,10 +240,10 @@ market cap the universe would have known that morning.
 
 ```text
 $ news247 backtest
-  Caught from the FIRST report:    174/182  = 96%
+  Caught from the FIRST report:    176/184  = 96%
   False alarms on noise:           0/119  = 0%
     ✓ smallcap_acquired 6/6   ✓ smallcap_trial 6/6   ✓ smallcap_gov_stake 4/4
-    ✓ smallcap_crypto_treasury 4/4   ✓ smallcap_fda 6/6   ✓ smallcap_mega_partner 1/1 …
+    ✓ smallcap_crypto_treasury 4/4   ✓ smallcap_fda 6/6   ✓ smallcap_mega_stake 3/3 …
     ✗ smallcap_dilution 0/1   (a 12%-of-market-cap offering: shown in the app, not pushed)
 ```
 
@@ -226,7 +265,5 @@ The research behind it (events, venues, moves, patterns, feeds) is in
   it keeps the cached universe when either is unreachable. `news247 universe --refresh` shows
   whether your host can reach Nasdaq.
 - **Not covered:**
-  - a 13F holdings table (Nvidia's quarterly stakes), because it can't be read from a filing's
-    title
   - ACCESS Newswire, which has no public release feed
   - OTC stocks, which are deliberately excluded

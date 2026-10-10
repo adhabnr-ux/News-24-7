@@ -162,7 +162,7 @@ Built-in safeguards: polling uses conditional GETs, so checking every 5–10 s c
 
 ## How it decides what matters
 
-> **Research-backed.** The criteria come from a study of 182 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first and 31 small caps that moved 25–3,000% on one headline) and the headline that first reported each one. `news247 backtest` replays them: **96% are caught from the first report, with 0 false alarms on 119 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
+> **Research-backed.** The criteria come from a study of 184 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first and 33 small caps that moved 25–3,000% on one headline) and the headline that first reported each one. `news247 backtest` replays them: **96% are caught from the first report, with 0 false alarms on 119 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
 
 Every item is scored from 0 to 100 by a deterministic rule engine. It takes about 50 µs per item, never goes down, and every score can be explained:
 
@@ -238,6 +238,10 @@ headline the way a small-cap trader does:
 - **The radar**: every minute from 04:00 to 20:00 ET it scans the whole small-cap market (pre-
   and after-hours included) and flags names breaking out on real volume **before any headline**,
   then tells you when the news lands that the radar had it first.
+- **Earlier than the news**: readout, PDUFA and FDA-panel dates announced weeks ahead go on the
+  Calendar automatically ("Tomorrow 08:30 ET: KOD · Phase 3 trial readout" in the morning Brief), and
+  NVIDIA/Alphabet/Amazon/Berkshire 13F filings are read the hour they're filed, flagging new stakes
+  and exits in small caps (SoundHound: +67% on NVIDIA's stake, −28% on its exit).
 - **In Foretape**: a gold SMALL CAP pill with the catalyst and typical move, an All / Small caps
   tape switch, and a live small-cap radar board on the Watch tab.
 
@@ -247,7 +251,7 @@ $ news247 score --tier wire 'Dronez Systems (NASDAQ: DRNZ) Awarded $45 Million U
   small cap: DRNZ $70M micro cap · Contract from U.S. Army worth 64% of market cap · +36–96% typical
 ```
 
-Backtest: 30 of 31 small-cap events (2024 to Oct 2026) caught from the first report, 0 of 16
+Backtest: 32 of 33 small-cap events (2024 to Oct 2026) caught from the first report, 0 of 16
 small-cap noise releases flagged. Full guide: [docs/SMALLCAPS.md](docs/SMALLCAPS.md).
 
 ---
@@ -336,7 +340,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 | `news247 test-notify [--only imessage]` | Send a test alert through every enabled channel (or just one) |
 | `news247 demo` | Simulated "AI launch → software selloff" through the real pipeline, dashboard and notifications |
 | `news247 stats` | Measured detection latency per source, and which source had each story first |
-| `news247 backtest [-v]` | Replay 182 historical market-moving events and 119 noise headlines through the scoring rules |
+| `news247 backtest [-v]` | Replay 184 historical market-moving events and 119 noise headlines through the scoring rules |
 | `news247 init` | Write a starter `config.yaml` + `.env` |
 
 ### API
