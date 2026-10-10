@@ -694,7 +694,7 @@ class Engine:
         when = ""
         if ch.quote_time is not None:
             when = f" · quotes as of {ch.quote_time:%H:%M} ET"
-        footer = f"Cboe delayed quotes (~15 min){when}. Option prices move fast; check the live bid/ask."
+        footer = f"{ch.source}{when}. Option prices move fast; check the live bid/ask."
         lines: list[str] = []
         if hit.kind == "spike":
             top = hit.spikes[0]

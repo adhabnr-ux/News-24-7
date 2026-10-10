@@ -14,7 +14,7 @@ import json
 import math
 import statistics
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,7 @@ from news247.market.options import (
     OptionsRadar,
     as_vol,
     bs_price,
+    parse_alpaca_chain,
     parse_chain,
     parse_occ,
     prev_session,
@@ -546,7 +547,11 @@ def test_feed_problems_are_reported_once_a_day():
     for _ in range(10):
         f._error(ValueError("bad json"))
     note = f.problem(NOW)
-    assert "failed 10 chain reads in a row" in note and "bad json" in note and "Cboe may be blocking" in note
+    assert (
+        "failed 10 chain reads in a row" in note
+        and "bad json" in note
+        and "Sources: Cboe delayed quotes (~15 min)" in note
+    )
     assert f.problem(NOW + 60) == ""  # once a day
     f.health.consecutive_errors, f._stale_run, f._stale_warned = 0, 25, "XYZ: last quote 09:31 ET"
     assert "skipped 25 chains in a row as stale (XYZ: last quote 09:31 ET)" in f.problem(NOW + 86400)
@@ -755,3 +760,261 @@ async def test_cli_reads_chains_once(server: Recorder, tmp_path: Path, capsys):
     assert "options tape: 1 companies of $1.0B+" in out
     assert "XYZ $60 call (Dec 20)" in out and "+1,233%" in out and "vol 400" in out
     assert "no option chain listed" in out and "failed: HTTPError" in out
+
+
+# --------------------------------------------------------------------------- Alpaca
+
+
+@pytest.fixture(autouse=True)
+def _no_alpaca_env(monkeypatch):
+    """A developer's own Alpaca keys must not switch these tests to Alpaca."""
+    for name in ("ALPACA_KEY", "ALPACA_SECRET", "ALPACA_API_KEY", "ALPACA_SECRET_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def _iso_utc(dt: datetime) -> str:
+    from datetime import timezone
+
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.123456789Z")
+
+
+def alpaca_snap(
+    today: date, *, last: float, prev: float, bid: float, ask: float, vol: int, traded_today: bool = True
+) -> dict:
+    now = datetime.now(ET).replace(microsecond=0)
+    day0 = datetime(today.year, today.month, today.day, tzinfo=ET)
+    bar = {"t": _iso_utc(day0), "o": prev, "h": last, "l": prev, "c": last, "v": vol}
+    prev_bar = {"t": _iso_utc(day0 - timedelta(days=1)), "c": prev, "v": 3}
+    if not traded_today:
+        bar, prev_bar = {**prev_bar, "c": prev}, {"t": _iso_utc(day0 - timedelta(days=2)), "c": 9.9}
+    return {
+        "latestQuote": {"t": _iso_utc(now - timedelta(minutes=1)), "bp": bid, "ap": ask, "bs": 10, "as": 12},
+        "latestTrade": {
+            "t": _iso_utc(now - timedelta(minutes=2) if traded_today else day0 - timedelta(hours=20)),
+            "p": last,
+            "s": 5,
+        },
+        "dailyBar": bar,
+        "prevDailyBar": prev_bar,
+        "impliedVolatility": 0.45,
+        "greeks": {"delta": 0.2},
+    }
+
+
+def occ_for(sym: str, exp: date, cp: str, strike: float) -> str:
+    return f"{sym}{exp:%y%m%d}{cp}{int(round(strike * 1000)):08d}"
+
+
+def test_parse_alpaca_chain_volume_prev_close_oi_and_iv30():
+    today = datetime.now(ET).date()
+    exp = today + timedelta(days=9)
+    a = occ_for("XYZ", exp, "C", 60)
+    b = occ_for("XYZ", exp, "C", 51)  # near the money: feeds the 30-day IV
+    c = occ_for("XYZ", exp, "P", 40)
+    snaps = {
+        a: alpaca_snap(today, last=2.0, prev=0.15, bid=1.9, ask=2.1, vol=400),
+        b: {**alpaca_snap(today, last=3.0, prev=2.0, bid=2.9, ask=3.1, vol=50), "impliedVolatility": 0.30},
+        c: alpaca_snap(today, last=0.5, prev=0.6, bid=0.45, ask=0.55, vol=0, traded_today=False),
+        "XYZ1" + a[3:]: alpaca_snap(today, last=9, prev=1, bid=8, ask=9, vol=9),  # adjusted
+    }
+    listing = Listing("XYZ", "Xylo", market_cap=5e9, price=50.0, change_pct=4.0)
+    ch = parse_alpaca_chain(snaps, "XYZ", listing, {a: 900}, today, "Alpaca test")
+    by = {x.symbol: x for x in ch.contracts}
+    assert ch.skipped == 1 and ch.source == "Alpaca test" and ch.price == 50.0
+    assert ch.stock_prev == pytest.approx(50 / 1.04)
+    x = by[a]
+    assert (x.bid, x.ask, x.last, x.prev_close, x.volume, x.open_interest) == (1.9, 2.1, 2.0, 0.15, 400, 900)
+    assert (
+        x.last_trade is not None
+        and x.last_trade.date() == today
+        and x.move_pct == pytest.approx(1233.33, abs=0.01)
+    )
+    assert by[b].open_interest is None  # not in the open-interest list: unknown, not 0
+    assert (by[c].volume, by[c].prev_close) == (0, 0.6)  # no trade today: yesterday's close is the base
+    assert ch.iv30 == pytest.approx(0.30)  # only the $51 strike is within 5% of the $50 stock
+    assert ch.quote_time is not None and datetime.now(ET) - ch.quote_time < timedelta(minutes=5)
+    assert parse_alpaca_chain(snaps, "XYZ", listing, None, today, "x").contracts[0].open_interest is None
+
+
+def test_utc_timestamps_with_nanoseconds():
+    from news247.market.options import _utc_ts
+
+    t = _utc_ts("2026-10-07T15:42:13.123456789Z")
+    assert t == datetime(2026, 10, 7, 11, 42, 13, 123456, tzinfo=ET)
+    assert _utc_ts("2026-10-07T15:42:13Z").hour == 11 and _utc_ts("junk") is None and _utc_ts(None) is None
+    assert _utc_ts("2026-10-07T15:42:13.5+00:00") == datetime(2026, 10, 7, 11, 42, 13, 500000, tzinfo=ET)
+
+
+def alpaca_cfg(server: Recorder, **kw: Any):
+    base = server.url("/").rstrip("/")
+    return ocfg(
+        provider="alpaca",
+        alpaca_key="PKTEST",
+        alpaca_secret="SECRETTEST",
+        alpaca_data_url=base,
+        alpaca_trading_url=base,
+        alpaca_request_interval_s=0.005,
+        chain_url=base + "/cboe/{symbol}.json",
+        request_interval_s=0.2,
+        **kw,
+    )
+
+
+async def test_alpaca_source_pages_auth_feed_and_daily_open_interest(server: Recorder, http: HttpClient):
+    today = datetime.now(ET).date()
+    exp = today + timedelta(days=9)
+    a, b = occ_for("XYZ", exp, "C", 60), occ_for("XYZ", exp, "C", 55)
+    snap_calls: list[dict] = []
+
+    def snapshots(request):
+        from aiohttp import web
+
+        snap_calls.append(dict(request.query))
+        if request.query.get("page_token") == "p2":
+            return web.json_response(
+                {
+                    "snapshots": {b: alpaca_snap(today, last=3, prev=2, bid=2.9, ask=3.1, vol=6000)},
+                    "next_page_token": None,
+                }
+            )
+        return web.json_response(
+            {
+                "snapshots": {a: alpaca_snap(today, last=2.0, prev=0.15, bid=1.9, ask=2.1, vol=400)},
+                "next_page_token": "p2",
+            }
+        )
+
+    server.on("/v1beta1/options/snapshots/XYZ", snapshots)
+    server.on(
+        "/v2/options/contracts",
+        {
+            "option_contracts": [
+                {"symbol": a, "open_interest": "900"},
+                {"symbol": b, "open_interest": "500"},
+            ],
+            "next_page_token": None,
+        },
+    )
+    cfg = alpaca_cfg(server)
+    f = OptionsFeed(cfg, http, uni(li("XYZ", 5e9, 4.0)), OptionsRadar(cfg))
+    assert [s.name for s in f.sources] == ["alpaca", "cboe"] and f.label.startswith("Alpaca indicative feed")
+    hits = await f.read("XYZ", time.time())
+    assert {h.kind for h in hits} == {"spike", "flow"}
+    spike = next(h for h in hits if h.kind == "spike")
+    assert spike.severity == "HIGH" and spike.to_dict()["source"].startswith("Alpaca indicative feed")
+    flow = next(h for h in hits if h.kind == "flow")
+    assert flow.flow[0].vol_oi == pytest.approx(12.0)
+    req = server.requests[0]
+    assert (
+        req["headers"]["APCA-API-KEY-ID"] == "PKTEST"
+        and req["headers"]["APCA-API-SECRET-KEY"] == "SECRETTEST"
+    )
+    assert (
+        snap_calls[0]["feed"] == "indicative"
+        and snap_calls[0]["limit"] == "1000"
+        and snap_calls[1]["page_token"] == "p2"
+    )
+    contracts = [r for r in server.requests if r["path"] == "/v2/options/contracts"]
+    assert (
+        contracts[0]["query"]["underlying_symbols"] == "XYZ"
+        and contracts[0]["query"]["expiration_date_gte"] == today.isoformat()
+    )
+    await f.read("XYZ", time.time())
+    assert len([r for r in server.requests if r["path"] == "/v2/options/contracts"]) == 1  # once a day
+    assert f.status()["sources"]["alpaca"]["reads"] == 2 and f.fallbacks == 0
+
+
+async def test_alpaca_without_open_interest_judges_spikes_but_not_volume(server: Recorder, http: HttpClient):
+    today = datetime.now(ET).date()
+    a = occ_for("XYZ", today + timedelta(days=9), "C", 60)
+    server.on(
+        "/v1beta1/options/snapshots/XYZ",
+        {
+            "snapshots": {a: alpaca_snap(today, last=2.0, prev=0.15, bid=1.9, ask=2.1, vol=6000)},
+            "next_page_token": None,
+        },
+    )
+    server.on("/v2/options/contracts", (403, "forbidden"))
+    cfg = alpaca_cfg(server)
+    f = OptionsFeed(cfg, http, uni(li("XYZ", 5e9, 4.0)), OptionsRadar(cfg))
+    hits = await f.read("XYZ", time.time())
+    assert [h.kind for h in hits] == ["spike"]  # no open interest: no volume verdict, never a fake one
+    src = f.sources[0]
+    assert src.oi_fail_run == 1 and "403" in f.status()["sources"]["alpaca"]["open_interest_error"]
+    src.oi_fail_run = 25
+    assert "unusual-volume alerts are paused" in f.problem(time.time())
+
+
+async def test_alpaca_failure_falls_back_to_cboe(server: Recorder, http: HttpClient):
+    server.on("/v1beta1/options/snapshots/XYZ", (500, "boom"))
+    server.on("/cboe/XYZ.json", doc("XYZ", 52.0, 50.0, []))
+    cfg = alpaca_cfg(server)
+    f = OptionsFeed(cfg, http, uni(li("XYZ", 5e9)), OptionsRadar(cfg))
+    ch = await f.fetch_chain("XYZ")
+    assert ch is not None and ch.source.startswith("Cboe") and f.fallbacks == 1
+    st = f.status()["sources"]
+    assert st["alpaca"]["errors"] == 1 and "500" in st["alpaca"]["last_error"] and st["cboe"]["last_ok"]
+
+
+async def test_alpaca_empty_chain_means_no_options(server: Recorder, http: HttpClient):
+    server.on("/v1beta1/options/snapshots/NOPT", {"snapshots": {}, "next_page_token": None})
+    cfg = alpaca_cfg(server)
+    f = OptionsFeed(cfg, http, uni(li("NOPT", 2e9)), OptionsRadar(cfg))
+    assert await f.fetch_chain("NOPT") is None and "NOPT" in f.no_chain
+    assert not any(r["path"].startswith("/cboe") for r in server.requests)  # trusted, not retried
+
+
+async def test_a_source_claiming_big_caps_have_no_options_is_treated_as_blocked(
+    server: Recorder, http: HttpClient
+):
+    cfg = ocfg(chain_url=server.url("/") + "{symbol}.json", request_interval_s=0.2)
+    names = [f"BIG{chr(65 + i)}" for i in range(10)]
+    for n in names:
+        server.on(f"/{n}.json", (403, "AccessDenied"))
+    f = OptionsFeed(cfg, http, uni(*(li(n, 50e9) for n in names)), OptionsRadar(cfg))
+    for n in names[:9]:
+        assert await f.read(n, NOW) == []
+    assert len(f.no_chain) == 9 and f.health.errors == 0
+    assert await f.read(names[9], NOW) == []
+    assert f.health.errors == 1 and "may be blocking" in f.health.last_error and f.no_chain == {}
+
+
+def test_source_order_by_provider_and_keys():
+    from news247.market.options import build_sources
+
+    names = lambda **kw: [s.name for s in build_sources(ocfg(**kw), None)]  # type: ignore[arg-type]  # noqa: E731
+    keys = {"alpaca_key": "k", "alpaca_secret": "s"}
+    assert names() == ["cboe"]
+    assert names(**keys) == ["alpaca", "cboe"]
+    assert names(provider="cboe", **keys) == ["cboe", "alpaca"]
+    assert names(fallback=False, **keys) == ["alpaca"]
+    with pytest.raises(ConfigError):
+        ocfg(provider="alpaca")
+    with pytest.raises(ConfigError):
+        ocfg(alpaca_feed="sip")
+
+
+def test_alpaca_keys_come_from_the_environment(monkeypatch):
+    monkeypatch.setenv("ALPACA_KEY", " PKENV ")
+    monkeypatch.setenv("ALPACA_SECRET", "SENV")
+    c = build_config({}).options
+    assert (c.alpaca_key, c.alpaca_secret) == ("PKENV", "SENV")
+    monkeypatch.delenv("ALPACA_KEY")
+    monkeypatch.delenv("ALPACA_SECRET")
+    monkeypatch.setenv("ALPACA_API_KEY", "PKALT")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "SALT")
+    assert build_config({}).options.alpaca_key == "PKALT"
+
+
+async def test_engine_alert_names_the_alpaca_feed(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("ALPACA_KEY", "PKENV")
+    monkeypatch.setenv("ALPACA_SECRET", "SENV")
+    eng, _ = engine(tmp_path)
+    assert eng.options_feed.label.startswith("Alpaca indicative feed")
+    ch = chain_with(row(f"XYZ{EXP}C00060000", **SPIKE))
+    ch.source = eng.options_feed.sources[0].label
+    (hit,) = eng.options_radar.scan(ch, eng.universe.get("XYZ"), NOW)
+    assert (
+        "Alpaca indicative feed (free: trades ~15 min delayed, quotes adjusted) · quotes as of"
+        in eng._options_alert(hit).body
+    )

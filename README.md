@@ -273,6 +273,10 @@ rotate through, largest first.
 - **🐋 Unusual volume**: contracts trading 3×+ their open interest with $100K+ in each, summed
   per company. Pushed at $1M+, with calls vs puts and whether the prints hit the ask.
 
+Chains come from **Alpaca** when its keys are set (free paper account; Cboe as the automatic
+fallback), else Cboe. The repo's `.mcp.json` also gives Claude Code a read-only Alpaca MCP
+server: [docs/ALPACA.md](docs/ALPACA.md).
+
 `news247 options NVDA NWE` reads chains once from your server and shows what the tape sees.
 Full guide: [docs/OPTIONS.md](docs/OPTIONS.md).
 

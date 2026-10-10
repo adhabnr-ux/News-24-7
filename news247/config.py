@@ -232,9 +232,25 @@ class OptionsConfig:
     enabled: bool = True
     # which companies: every listed US company worth at least this much, up to the largest
     min_market_cap: float = 1e9
-    # the data: Cboe's public delayed-quotes JSON (~15 min delayed, every expiry and strike)
+    # where chains come from: "auto" = Alpaca when its keys are set (Cboe as the fallback),
+    # else Cboe; "alpaca" or "cboe" to force one. fallback: try the other when one fails.
+    provider: str = "auto"
+    fallback: bool = True
+    # Cboe's public delayed-quotes JSON (~15 min delayed, every expiry and strike, no key)
     chain_url: str = "https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
-    request_interval_s: float = 0.35  # at most ~3 chain reads a second (be polite to a free feed)
+    request_interval_s: float = 0.35  # at most ~3 Cboe reads a second (be polite to a free feed)
+    # Alpaca options data (keys from app.alpaca.markets; ALPACA_KEY / ALPACA_SECRET in the
+    # environment are picked up automatically). Free accounts get the "indicative" feed
+    # (trades ~15 min delayed, quotes adjusted); the paid options subscription is "opra".
+    alpaca_key: str = ""
+    alpaca_secret: str = ""
+    alpaca_feed: str = "indicative"
+    alpaca_data_url: str = "https://data.alpaca.markets"
+    alpaca_trading_url: str = (
+        "https://paper-api.alpaca.markets"  # open interest; live keys: api.alpaca.markets
+    )
+    alpaca_request_interval_s: float = 0.31  # free plan: 200 requests a minute
+    alpaca_max_pages: int = 20  # 1,000 contracts a page
     concurrency: int = 3  # chains read at once
     batch_size: int = 30  # chains per scheduling round
     max_quote_age_s: float = 1800.0  # a chain whose stock quote is older than this is stale: no alert
@@ -481,6 +497,25 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         raise ConfigError("[options] concurrency and batch_size must be at least 1")
     if "{symbol}" not in options.chain_url:
         raise ConfigError("[options] chain_url must contain {symbol}")
+    options.provider = options.provider.strip().lower()
+    if options.provider not in ("auto", "alpaca", "cboe"):
+        raise ConfigError("[options] provider must be 'auto', 'alpaca' or 'cboe'")
+    options.alpaca_feed = options.alpaca_feed.strip().lower()
+    if options.alpaca_feed not in ("indicative", "opra", ""):
+        raise ConfigError("[options] alpaca_feed must be 'indicative' or 'opra'")
+    if options.alpaca_request_interval_s < 0.005 or options.alpaca_max_pages < 1:
+        raise ConfigError("[options] alpaca_request_interval_s must be >= 0.005 and alpaca_max_pages >= 1")
+    # the same keys the Alpaca news source uses (or the names Alpaca's own tools use)
+    options.alpaca_key = (
+        options.alpaca_key or os.environ.get("ALPACA_KEY", "") or os.environ.get("ALPACA_API_KEY", "")
+    ).strip()
+    options.alpaca_secret = (
+        options.alpaca_secret
+        or os.environ.get("ALPACA_SECRET", "")
+        or os.environ.get("ALPACA_SECRET_KEY", "")
+    ).strip()
+    if options.provider == "alpaca" and not (options.alpaca_key and options.alpaca_secret):
+        raise ConfigError("[options] provider 'alpaca' needs ALPACA_KEY and ALPACA_SECRET")
 
     defaults = (
         expand_env(load_package_yaml("default_sources.yaml"))

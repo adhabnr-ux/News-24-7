@@ -42,4 +42,8 @@ services:
         value: America/New_York
       - key: STATE_DB
         sync: false          # optional: free Postgres URL (e.g. Neon) so phones stay subscribed across restarts
+      - key: ALPACA_KEY
+        sync: false          # optional: Alpaca API key (app.alpaca.markets, paper account is fine): options tape + news
+      - key: ALPACA_SECRET
+        sync: false          # optional: the matching Alpaca secret key
       # Optional free push backup: NTFY_ENABLED=true, NTFY_BACKUP=true, NTFY_TOPIC=<secret topic>.

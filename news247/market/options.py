@@ -132,7 +132,7 @@ class Contract:
     last: float | None = None
     prev_close: float | None = None
     volume: int = 0
-    open_interest: int = 0
+    open_interest: int | None = None  # None: the feed did not say (never read as 0)
     iv: float | None = None
     last_trade: datetime | None = None  # ET
 
@@ -197,6 +197,7 @@ class Chain:
     quote_time: datetime | None = None  # ET, underlying's last trade
     contracts: list[Contract] = field(default_factory=list)
     skipped: int = 0  # adjusted / unparseable contracts
+    source: str = "Cboe delayed quotes (~15 min)"  # shown on every alert
 
     @property
     def stock_prev(self) -> float | None:
@@ -218,6 +219,12 @@ def _num(v: Any) -> float | None:
 def _int(v: Any) -> int:
     x = _num(v)
     return int(x) if x is not None and x > 0 else 0
+
+
+def _oint(v: Any) -> int | None:
+    """An integer the feed reported (0 included), or None when it reported nothing."""
+    x = _num(v)
+    return max(int(x), 0) if x is not None else None
 
 
 def _ts(v: Any) -> datetime | None:
@@ -278,7 +285,7 @@ def parse_chain(doc: dict[str, Any], symbol: str) -> Chain:
                 last=_num(row.get("last_trade_price")),
                 prev_close=_num(row.get("prev_day_close")),
                 volume=_int(row.get("volume")),
-                open_interest=_int(row.get("open_interest")),
+                open_interest=_oint(row.get("open_interest")),
                 iv=as_vol(row.get("iv")),
                 last_trade=_ts(row.get("last_trade_time")),
             )
@@ -399,7 +406,7 @@ class OptionsHit:
             "put_premium": round(self.put_premium),
             "reasons": list(self.reasons),
             "detected": self.detected,
-            "source": "Cboe delayed quotes (~15 min)",
+            "source": self.chain.source,
         }
 
 
@@ -507,6 +514,8 @@ class OptionsRadar:
         if c.volume < cfg.flow_min_volume or c.premium < cfg.flow_min_contract_premium:
             return None
         oi = c.open_interest
+        if oi is None:
+            return None  # unusual against what? without open interest there is no baseline
         if oi > 0 and c.volume < cfg.flow_oi_multiple * oi:
             return None
         return FlowRow(c, c.volume / oi if oi > 0 else None)
@@ -647,6 +656,250 @@ class OptionsRadar:
         return sorted(self.board.values(), key=lambda e: e.get("detected", 0), reverse=True)[:limit]
 
 
+# --------------------------------------------------------------------------- the sources
+
+
+class NoChain(Exception):
+    """The source lists no options for this company."""
+
+
+def _blank_stats() -> dict[str, Any]:
+    return {"reads": 0, "errors": 0, "no_chain": 0, "last_error": "", "last_ok": None}
+
+
+class CboeSource:
+    """Cboe's public delayed-quotes JSON: one request per company, every expiry and strike."""
+
+    name = "cboe"
+    label = "Cboe delayed quotes (~15 min)"
+
+    def __init__(self, cfg: OptionsConfig, http: HttpClient) -> None:
+        self.cfg = cfg
+        self.http = http
+        self.interval_s = cfg.request_interval_s
+
+    def url(self, symbol: str) -> str:
+        return self.cfg.chain_url.replace("{symbol}", symbol.replace("-", ".").upper())
+
+    async def fetch(self, symbol: str, listing: Listing | None, pace: Callable[[float], Any]) -> Chain:
+        await pace(self.interval_s)
+        try:
+            resp = await self.http.get(self.url(symbol), headers=CBOE_HEADERS, timeout_s=30)
+        except HTTPError as exc:
+            if exc.status in (403, 404):  # Cboe's CDN answers 403 for a symbol it has no file for
+                raise NoChain(symbol) from exc
+            raise
+        raw = resp.body
+        doc = await asyncio.to_thread(json.loads, raw) if len(raw) > 512_000 else json.loads(raw)
+        return parse_chain(doc, symbol)
+
+
+ALPACA_FEEDS = {
+    "indicative": "Alpaca indicative feed (free: trades ~15 min delayed, quotes adjusted)",
+    "opra": "Alpaca OPRA feed (real time)",
+}
+
+
+def _utc_ts(v: Any) -> datetime | None:
+    """Alpaca's RFC 3339 UTC time ('2026-10-07T15:42:13.123456789Z') in Eastern time."""
+    if not v or not isinstance(v, str):
+        return None
+    text = v.strip().replace("Z", "+00:00")
+    if "." in text:  # nanoseconds: Python reads at most microseconds
+        head, _, tail = text.partition(".")
+        n = 0
+        while n < len(tail) and tail[n].isdigit():  # the fraction stops where the zone starts
+            n += 1
+        digits, zone = tail[:n], tail[n:]
+        text = f"{head}.{digits[:6].ljust(6, '0')}{zone}"
+    try:
+        return datetime.fromisoformat(text).astimezone(ET)
+    except ValueError:
+        return None
+
+
+def parse_alpaca_chain(
+    snapshots: dict[str, Any],
+    symbol: str,
+    listing: Listing | None,
+    open_interest: dict[str, int] | None,
+    today: date,
+    source: str,
+) -> Chain:
+    """Alpaca option snapshots (keyed by OCC symbol) -> Chain.
+
+    Per contract: ``latestQuote`` {bp, ap, t}, ``latestTrade`` {p, t}, ``dailyBar`` and
+    ``prevDailyBar`` {c, v, t}, ``impliedVolatility``. Today's volume is the daily bar's when
+    that bar is today's; the previous close is the bar before it (else the latest bar's close).
+    The stock's price comes from the universe (Nasdaq, refreshed every 10 minutes in session);
+    the company's 30-day implied vol is the median IV of near-the-money contracts 7-60 days out.
+    """
+    root = symbol.replace("-", "").replace(".", "").replace("/", "").upper()
+    price = listing.price if listing else None
+    change = listing.change_pct if listing else None
+    chain = Chain(symbol=symbol, price=price, change_pct=change, source=source)
+    newest: datetime | None = None
+    near_iv: list[float] = []
+    for occ, snap in (snapshots or {}).items():
+        parsed = parse_occ(str(occ))
+        if parsed is None or parsed[0] != root or not isinstance(snap, dict):
+            chain.skipped += 1
+            continue
+        _, exp, cp, strike = parsed
+        quote = snap.get("latestQuote") or {}
+        trade = snap.get("latestTrade") or {}
+        bar = snap.get("dailyBar") or {}
+        prev_bar = snap.get("prevDailyBar") or {}
+        bar_day = _utc_ts(bar.get("t"))
+        if bar_day is not None and bar_day.date() == today:
+            volume, prev_close = _int(bar.get("v")), _num(prev_bar.get("c"))
+        else:
+            volume, prev_close = 0, _num(bar.get("c"))
+        q_time, t_time = _utc_ts(quote.get("t")), _utc_ts(trade.get("t"))
+        for t in (q_time, t_time):
+            if t is not None and (newest is None or t > newest):
+                newest = t
+        iv = as_vol(snap.get("impliedVolatility"))
+        chain.contracts.append(
+            Contract(
+                symbol=str(occ),
+                underlying=symbol,
+                expiry=exp,
+                cp=cp,
+                strike=strike,
+                bid=_num(quote.get("bp")),
+                ask=_num(quote.get("ap")),
+                last=_num(trade.get("p")),
+                prev_close=prev_close,
+                volume=volume,
+                open_interest=open_interest.get(str(occ)) if open_interest is not None else None,
+                iv=iv,
+                last_trade=t_time,
+            )
+        )
+        if iv and price and 7 <= (exp - today).days <= 60 and abs(strike / price - 1) <= 0.05:
+            near_iv.append(iv)
+    chain.quote_time = newest
+    if near_iv:
+        near_iv.sort()
+        chain.iv30 = near_iv[len(near_iv) // 2]
+    return chain
+
+
+class AlpacaSource:
+    """Alpaca's options market data: the chain snapshot (quotes, trades, daily bars, IV) and,
+    once a day per company, open interest from the option-contracts list. Needs API keys
+    (a free paper-trading account works). Free accounts get the indicative feed."""
+
+    name = "alpaca"
+
+    def __init__(self, cfg: OptionsConfig, http: HttpClient) -> None:
+        self.cfg = cfg
+        self.http = http
+        self.interval_s = cfg.alpaca_request_interval_s
+        self.feed = cfg.alpaca_feed
+        self.label = ALPACA_FEEDS.get(self.feed, "Alpaca")
+        self._oi: dict[str, tuple[str, dict[str, int]]] = {}  # symbol -> (ET date, {occ: OI})
+        self.oi_fail_run = 0  # open-interest reads failed in a row
+        self.oi_last_error = ""
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {
+            "APCA-API-KEY-ID": self.cfg.alpaca_key,
+            "APCA-API-SECRET-KEY": self.cfg.alpaca_secret,
+            "Accept": "application/json",
+        }
+
+    async def _pages(
+        self, url: str, params: dict[str, Any], key: str, pace: Callable[[float], Any]
+    ) -> list[Any]:
+        out: list[Any] = []
+        token: str | None = None
+        for _ in range(self.cfg.alpaca_max_pages):
+            await pace(self.interval_s)
+            q = dict(params, **({"page_token": token} if token else {}))
+            resp = await self.http.get(url, headers=self.headers, params=q, timeout_s=30)
+            doc = resp.json()
+            if not isinstance(doc, dict):
+                raise ValueError("unexpected Alpaca answer")
+            out.append(doc.get(key))
+            token = doc.get("next_page_token")
+            if not token:
+                break
+        return out
+
+    async def open_interest(
+        self, symbol: str, today: date, pace: Callable[[float], Any]
+    ) -> dict[str, int] | None:
+        """Yesterday's open interest per contract (Alpaca updates it once a day), cached for the
+        day. None when it cannot be read: unusual volume is then not judged for this chain."""
+        day = today.isoformat()
+        hit = self._oi.get(symbol)
+        if hit and hit[0] == day:
+            return hit[1]
+        try:
+            pages = await self._pages(
+                self.cfg.alpaca_trading_url.rstrip("/") + "/v2/options/contracts",
+                {"underlying_symbols": symbol.replace("-", "."), "expiration_date_gte": day, "limit": 10000},
+                "option_contracts",
+                pace,
+            )
+        except (HTTPError, aiohttp.ClientError, ValueError, asyncio.TimeoutError, OSError) as exc:
+            log.info("alpaca open interest for %s unavailable: %s", symbol, exc)
+            self.oi_fail_run += 1
+            self.oi_last_error = f"{type(exc).__name__}: {exc}"[:200]
+            return None
+        self.oi_fail_run = 0
+        oi: dict[str, int] = {}
+        for page in pages:
+            for row in page or []:
+                v = _oint(row.get("open_interest")) if isinstance(row, dict) else None
+                if v is not None and row.get("symbol"):
+                    oi[str(row["symbol"])] = v
+        self._oi[symbol] = (day, oi)
+        if len(self._oi) > 5000:
+            self._oi.pop(next(iter(self._oi)))
+        return oi
+
+    async def fetch(self, symbol: str, listing: Listing | None, pace: Callable[[float], Any]) -> Chain:
+        today = datetime.now(ET).date()
+        params: dict[str, Any] = {"limit": 1000}
+        if self.feed:
+            params["feed"] = self.feed
+        pages = await self._pages(
+            self.cfg.alpaca_data_url.rstrip("/") + f"/v1beta1/options/snapshots/{symbol.replace('-', '.')}",
+            params,
+            "snapshots",
+            pace,
+        )
+        snaps: dict[str, Any] = {}
+        for page in pages:
+            if isinstance(page, dict):
+                snaps.update(page)
+        if not snaps:
+            raise NoChain(symbol)
+        oi = await self.open_interest(symbol, today, pace)
+        return parse_alpaca_chain(snaps, symbol, listing, oi, today, self.label)
+
+
+def build_sources(cfg: OptionsConfig, http: HttpClient) -> list[CboeSource | AlpacaSource]:
+    """The primary source first, then the fallback (if ``fallback`` is on). ``auto`` prefers
+    Alpaca when its keys are set (a keyed API with published terms), with Cboe behind it."""
+    alpaca = AlpacaSource(cfg, http) if cfg.alpaca_key and cfg.alpaca_secret else None
+    cboe = CboeSource(cfg, http)
+    order: list[CboeSource | AlpacaSource]
+    if cfg.provider == "cboe":
+        order = [cboe] + ([alpaca] if alpaca else [])
+    elif cfg.provider == "alpaca" and alpaca is None:
+        raise ValueError("options.provider 'alpaca' needs ALPACA_KEY and ALPACA_SECRET")
+    elif alpaca is not None:  # "alpaca", or "auto" with keys
+        order = [alpaca, cboe]
+    else:
+        order = [cboe]
+    return order if cfg.fallback else order[:1]
+
+
 # --------------------------------------------------------------------------- the feed
 
 
@@ -661,8 +914,13 @@ class OptionsFeed:
         radar: OptionsRadar,
         market_phase: Callable[[float], str] | None = None,
         movers: Callable[[], Iterable[str]] | None = None,
+        sources: list[Any] | None = None,
     ) -> None:
         self.cfg = cfg
+        self.sources = sources if sources is not None else build_sources(cfg, http)
+        self.source_stats: dict[str, dict[str, Any]] = {src.name: _blank_stats() for src in self.sources}
+        self.fallbacks = 0  # chains read from the fallback source after the primary failed
+        self._big_nochain = 0  # $10B+ companies in a row a source said have no options
         self.movers = movers  # e.g. the price radar's live board: names moving right now
         self.http = http
         self.universe = universe
@@ -759,26 +1017,66 @@ class OptionsFeed:
 
     # ------------------------------------------------------------------ I/O
 
-    def url(self, symbol: str) -> str:
-        return self.cfg.chain_url.replace("{symbol}", symbol.replace("-", ".").upper())
+    @property
+    def label(self) -> str:
+        return " → ".join(getattr(src, "label", src.name) for src in self.sources)
 
     async def fetch_chain(self, symbol: str) -> Chain | None:
-        """One company's full chain; None when Cboe lists no options for it."""
-        try:
-            resp = await self.http.get(self.url(symbol), headers=CBOE_HEADERS, timeout_s=30)
-        except HTTPError as exc:
-            if exc.status in (403, 404):
+        """One company's full chain from the first source that answers; None when the source
+        lists no options for it. A source that says "no options" for ten $10B+ companies in a
+        row is treated as failing: a blocked server can look exactly like that."""
+        listing = self.universe.get(symbol)
+        big = bool(listing and (listing.market_cap or 0) >= 10e9)
+        last_exc: BaseException | None = None
+        for i, src in enumerate(self.sources):
+            st = self.source_stats.setdefault(src.name, _blank_stats())
+            st["reads"] += 1
+            try:
+                chain = await src.fetch(symbol, listing, self._pace)
+            except NoChain:
+                st["no_chain"] += 1
+                if big:
+                    self._big_nochain += 1
+                    if self._big_nochain >= 10:
+                        last_exc = RuntimeError(
+                            f"{src.name} said 10 companies of $10B+ in a row have no options; "
+                            "it may be blocking this server"
+                        )
+                        st["errors"] += 1
+                        st["last_error"] = str(last_exc)
+                        for sym, ts in list(self.no_chain.items()):  # those were not real answers
+                            if time.time() - ts < 3600:
+                                del self.no_chain[sym]
+                        continue
                 self.no_chain[symbol] = time.time()
                 return None
-            raise
-        raw = resp.body
-        doc = await asyncio.to_thread(json.loads, raw) if len(raw) > 512_000 else json.loads(raw)
-        return parse_chain(doc, symbol)
+            except (
+                HTTPError,
+                aiohttp.ClientError,
+                ValueError,
+                KeyError,
+                TypeError,
+                asyncio.TimeoutError,
+                OSError,
+            ) as exc:
+                st["errors"] += 1
+                st["last_error"] = f"{type(exc).__name__}: {exc}"[:300]
+                last_exc = exc
+                continue
+            st["last_ok"] = time.time()
+            if big:
+                self._big_nochain = 0
+            if i > 0:
+                self.fallbacks += 1
+            return chain
+        if last_exc is None:
+            raise RuntimeError("no options source configured")
+        raise last_exc
 
-    async def _pace(self) -> None:
+    async def _pace(self, interval_s: float) -> None:
         now = time.monotonic()
         wait = self._next_slot - now
-        self._next_slot = max(now, self._next_slot) + self.cfg.request_interval_s
+        self._next_slot = max(now, self._next_slot) + interval_s
         if wait > 0:
             await asyncio.sleep(wait)
 
@@ -796,7 +1094,6 @@ class OptionsFeed:
         return now - q <= self.cfg.max_quote_age_s + 3600
 
     async def read(self, symbol: str, now: float) -> list[OptionsHit]:
-        await self._pace()
         self.health.polls += 1
         t0 = time.monotonic()
         try:
@@ -809,6 +1106,7 @@ class OptionsFeed:
             TypeError,
             asyncio.TimeoutError,
             OSError,
+            RuntimeError,
         ) as exc:
             self._error(exc)
             return []
@@ -862,7 +1160,14 @@ class OptionsFeed:
             msg = (
                 f"The options tape has failed {h.consecutive_errors} chain reads in a row "
                 f"(last error: {h.last_error}). No options alerts until it recovers; it retries "
-                "on its own. If it lasts, Cboe may be blocking this server."
+                f"on its own. Sources: {self.label}."
+            )
+        elif any(getattr(src, "oi_fail_run", 0) >= 25 for src in self.sources):
+            src = next(x for x in self.sources if getattr(x, "oi_fail_run", 0) >= 25)
+            msg = (
+                f"Alpaca open interest has failed {src.oi_fail_run} times in a row ({src.oi_last_error}), "
+                "so unusual-volume alerts are paused; spikes still alert. With live (not paper) keys, "
+                "set ALPACA_TRADING_URL=https://api.alpaca.markets."
             )
         elif self._stale_run >= 25:
             msg = (
@@ -915,7 +1220,20 @@ class OptionsFeed:
         everyone = self.companies()
         return {
             "enabled": True,
-            "source": "Cboe delayed quotes (~15 min)",
+            "source": self.label,
+            "sources": {
+                k: {
+                    **v,
+                    **(
+                        {"open_interest_fail_run": src.oi_fail_run, "open_interest_error": src.oi_last_error}
+                        if (src := next((x for x in self.sources if x.name == k), None)) is not None
+                        and hasattr(src, "oi_fail_run")
+                        else {}
+                    ),
+                }
+                for k, v in self.source_stats.items()
+            },
+            "fallbacks": self.fallbacks,
             "companies": len(everyone),
             "min_market_cap": self.cfg.min_market_cap,
             "read_today": sum(1 for t in self.fetched.values() if time.time() - t < 86400),

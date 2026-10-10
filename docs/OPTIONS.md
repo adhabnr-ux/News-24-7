@@ -106,6 +106,11 @@ company is reported again only when its unusual premium doubles.
 
 ## The data, and its limits
 
+**Two sources, one fallback.** With Alpaca keys set (`ALPACA_KEY`, `ALPACA_SECRET`), chains come
+from **Alpaca** and Cboe takes over any read Alpaca fails. Without them, Cboe alone. Setup,
+feeds, rate limits and the read-only Alpaca MCP server are in [ALPACA.md](ALPACA.md). Every
+alert names the feed it came from. The rest of this section is about Cboe.
+
 **Source:** Cboe's public delayed-quotes JSON, one request per company, every expiry and strike:
 `https://cdn.cboe.com/api/global/delayed_quotes/options/<SYMBOL>.json`
 

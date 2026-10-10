@@ -297,7 +297,9 @@ def cmd_universe(cfg: Config, args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- options
 
 
-async def _options(cfg: Config, symbols: list[str], min_pct: float | None) -> int:
+async def _options(
+    cfg: Config, symbols: list[str], min_pct: float | None, provider: str | None = None
+) -> int:
     """Read option chains once from this machine and show what the options tape sees."""
     import dataclasses
     from datetime import datetime
@@ -308,6 +310,13 @@ async def _options(cfg: Config, symbols: list[str], min_pct: float | None) -> in
     from .market.universe import Universe, fmt_cap
 
     ocfg = cfg.options if min_pct is None else dataclasses.replace(cfg.options, spike_min_pct=min_pct)
+    if provider:
+        ocfg = dataclasses.replace(ocfg, provider=provider, fallback=False)
+        if provider == "alpaca" and not (ocfg.alpaca_key and ocfg.alpaca_secret):
+            print(
+                "  Alpaca needs ALPACA_KEY and ALPACA_SECRET in the environment (or options.alpaca_key/secret)."
+            )
+            return 2
     uni = SmallCapFeed.load_cached(cfg.data_path) or Universe()
     covered = sum(
         1 for li in uni.by_symbol.values() if li.common and (li.market_cap or 0) >= ocfg.min_market_cap
@@ -318,8 +327,9 @@ async def _options(cfg: Config, symbols: list[str], min_pct: float | None) -> in
     worst = 0
     async with HttpClient(cfg.general.user_agent, timeout_s=60) as http:
         feed = OptionsFeed(ocfg, http, uni, OptionsRadar(ocfg))
+        print(f"  source: {feed.label}")
         for sym in [s.upper() for s in symbols]:
-            print(f"\n  {sym}  {feed.url(sym)}")
+            print(f"\n  {sym}")
             try:
                 chain = await feed.fetch_chain(sym)
             except Exception as exc:  # noqa: BLE001 - show any failure to the operator
@@ -340,13 +350,15 @@ async def _options(cfg: Config, symbols: list[str], min_pct: float | None) -> in
                 f"· quotes as of {when}" + (f" · {chain.skipped} adjusted skipped" if chain.skipped else "")
             )
             traded = [c for c in live if c.volume > 0 and c.move_pct is not None]
+            print(f"     source: {chain.source}")
             print(f"     {sum(c.volume for c in live):,} contracts traded today in {len(traded):,} contracts")
             for c in sorted(traded, key=lambda c: c.move_pct or 0, reverse=True)[:5]:
                 bid = f"{c.bid:.2f}" if c.bid is not None else "-"
                 ask = f"{c.ask:.2f}" if c.ask is not None else "-"
                 print(
                     f"       {c.label():<34} {c.move_pct:+9,.0f}%  ${c.prev_close or 0:.2f} -> ${c.last or 0:.2f}"
-                    f"  bid/ask {bid}/{ask}  vol {c.volume:,}  OI {c.open_interest:,}"
+                    f"  bid/ask {bid}/{ask}  vol {c.volume:,}  OI "
+                    + (f"{c.open_interest:,}" if c.open_interest is not None else "-")
                 )
             hits = feed.radar.scan(chain, uni.get(sym))
             if not hits:
@@ -370,7 +382,7 @@ async def _options(cfg: Config, symbols: list[str], min_pct: float | None) -> in
 
 
 def cmd_options(cfg: Config, args: argparse.Namespace) -> int:
-    return asyncio.run(_options(cfg, args.symbols, args.min_pct))
+    return asyncio.run(_options(cfg, args.symbols, args.min_pct, args.provider))
 
 
 # --------------------------------------------------------------------------- test-notify
@@ -666,6 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
     o = sub.add_parser("options", help="read option chains once: biggest movers, unusual volume, alerts")
     o.add_argument("symbols", nargs="+", help="symbols, e.g. NVDA NWE")
     o.add_argument("--min-pct", type=float, help="spike threshold for this run (default from config: 1000)")
+    o.add_argument("--provider", choices=["alpaca", "cboe"], help="read from this source only (no fallback)")
 
     tn = sub.add_parser("test-notify", help="send a test alert to every enabled channel")
     tn.add_argument(

@@ -100,6 +100,10 @@ smallcap:
 # Full guide: docs/OPTIONS.md
 options:
   enabled: ${OPTIONS_ENABLED:-true}
+  # auto: Alpaca when ALPACA_KEY + ALPACA_SECRET are set (Cboe as the fallback), else Cboe
+  provider: ${OPTIONS_PROVIDER:-auto}
+  alpaca_feed: ${ALPACA_OPTIONS_FEED:-indicative}   # indicative (free) | opra (paid options subscription)
+  alpaca_trading_url: ${ALPACA_TRADING_URL:-https://paper-api.alpaca.markets}  # open interest; live keys: https://api.alpaca.markets
   min_market_cap: ${OPTIONS_MIN_CAP:-1000000000}   # every company from $1B up to the largest
   spike_min_pct: ${OPTIONS_SPIKE_PCT:-1000}        # "thousands of percent": 1,000% = 11x the previous close
   spike_min_volume: 25            # contracts traded today
