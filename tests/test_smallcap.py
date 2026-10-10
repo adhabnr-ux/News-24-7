@@ -491,11 +491,16 @@ def test_parse_yahoo_sessions():
     assert qs["EEE"].price == 2.0 and qs["EEE"].change_pct == 30
 
 
-def test_radar_baselines_then_fires_once_per_level():
-    r = MoversRadar(sc_cfg())
+def test_radar_fires_once_per_level_and_survives_a_restart(tmp_path):
+    state = tmp_path / "radar_state.json"
+    r = MoversRadar(sc_cfg(), state_path=state)
     t = 1_800_000_000.0
-    assert r.scan([q(pct_=25)], t, provider="yahoo") == []  # already moving at start: baseline only
-    assert r.snapshot()[0]["symbol"] == "KTRA"  # ...but it is on the board
+    # already moving when Foretape starts: still flagged (a start-up baseline would miss it)
+    assert [h.symbol for h in r.scan([q(pct_=25)], t, provider="yahoo")] == ["KTRA"]
+    assert r.snapshot()[0]["symbol"] == "KTRA"
+    # a restart the same day remembers what already fired: no repeat
+    r = MoversRadar(sc_cfg(), state_path=state)
+    assert r.scan([q(pct_=26)], t + 30, provider="yahoo") == []
     assert r.scan([q("NEW1", 22)], t + 60, provider="yahoo")[0].level == 20
     assert r.scan([q("NEW1", 30)], t + 120, provider="yahoo") == []  # same level: no repeat
     hits = r.scan([q("NEW1", 52)], t + 180, provider="yahoo")
@@ -507,13 +512,11 @@ def test_radar_baselines_then_fires_once_per_level():
 def test_radar_filters_pumps_and_ghost_volume():
     r = MoversRadar(sc_cfg())
     t = 1_800_000_000.0
-    r.scan([], t, provider="yahoo")
     out = r.scan(
         [
             q("NANO", 60, cap=10e6),  # under the market-cap floor
             q("PENY", 60, price=0.5),  # sub-$1
             q("THIN", 60, vol=10_000),  # $50K traded: nobody is trading it
-            q("HUGE", 60, cap=5e9),  # above the radar's range
             q("REAL", 60),
         ],
         t + 60,
@@ -655,7 +658,6 @@ async def test_feed_loop_scans_in_session(server, http, monkeypatch):
     cfg = sc_cfg(radar_seconds=20)
     uni = Universe.stub({"X": {"name": "X", "mcap": 1e8}})  # fresh: no universe download
     radar = MoversRadar(cfg, uni)
-    radar.baselined.add("yahoo")  # pretend the start-up baseline happened
     got: list = []
     stop = asyncio.Event()
 

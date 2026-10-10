@@ -1891,6 +1891,32 @@ events:
     first_reports:
       - {text: "NVIDIA 13F: exited SoundHound AI, Inc. (SOUN) — sold all 1.73M shares", tier: primary, tickers: [SOUN], approx: true}
 
+  # ======================================================================= Moderna, Oct 2026
+  # The miss that prompted the all-size radar, index dates on the calendar and the health-policy
+  # theme: MRNA ($75B) closed +14.2% on Oct 9 ($197 -> $225). Sources: docs/research/mrna-2026-10-09.md
+  - id: moderna-nasdaq-100
+    date: 2026-10-01
+    category: index_inclusion
+    first_source: "Nasdaq release (GlobeNewswire), Oct 1 after the close; effective before the open Oct 9"
+    move: "MRNA +9.2% pre-market on the Oct 9 effective date"
+    tickers: [MRNA]
+    first_reports:
+      - {text: "Nasdaq Announces Moderna to Join Nasdaq-100 Index, Replacing Warner Bros. Discovery", tier: wire}
+      - {text: "Moderna to replace Warner Bros Discovery on Nasdaq 100", tier: media}
+
+  - id: moderna-nih-cancer-vaccines
+    date: 2026-10-09
+    category: health_policy
+    first_source: "The New York Times (Health), ~10:30 ET; secondary coverage from 10:58 ET"
+    move: "MRNA +14.2% close (4-year high), BNTX and NVAX up"
+    tickers: [MRNA, BNTX, NVAX]
+    first_reports:
+      # nyt-health carries boost 5 in default_sources.yaml
+      - {text: "N.I.H. Plans National Push to Speed Development of Cancer Vaccines", tier: media, boost: 5, approx: true}
+    coverage:
+      - "Moderna stock hits 4-year high on planned national cancer vaccine effort"
+      - "BNTX, NVAX, MRNA Lead Vaccine Rally After Report Of An NIH Cancer-Vaccine Push"
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -2016,3 +2042,7 @@ noise:
   - {text: "Juno Crypto Holdings Announces $5 Million Bitcoin Treasury Strategy", tier: wire, tickers: [JUNO9], smallcap: {symbol: JUNO9, name: "Juno Crypto Holdings Inc.", mcap: 20e6}}
   - {text: "Kite Ridge Therapeutics Receives FDA Orphan Drug Designation for KR-101", tier: wire, tickers: [KTRG9], smallcap: {symbol: KTRG9, name: "Kite Ridge Therapeutics, Inc.", mcap: 300e6, industry: "Biotechnology: Pharmaceutical Preparations"}}
   - {text: "Lumen Ridge Energy Announces Reverse Stock Split", tier: wire, tickers: [LMRE9], smallcap: {symbol: LMRE9, name: "Lumen Ridge Energy Inc.", mcap: 35e6}}
+  # routine health-agency news that names vaccines but changes nothing
+  - "NIH funds study of vaccine hesitancy in rural communities"
+  - {text: "NIH launches new website for vaccine trial volunteers", tier: primary}
+  - "CDC updates guidance on flu vaccines for older adults"

@@ -19,6 +19,7 @@ Two feeds, both free and keyless:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections import deque
@@ -33,6 +34,7 @@ import aiohttp
 from ..config import SmallCapConfig
 from ..http import HttpClient, HTTPError
 from ..sources.base import SourceHealth, _sleep_or_stop
+from .prices import SPARK_URL, parse_spark
 from .universe import CACHE_NAME, SCREENER_HEADERS, Listing, Universe, band, fmt_cap
 
 log = logging.getLogger(__name__)
@@ -46,7 +48,9 @@ YAHOO_HEADERS = {
     "Accept": "application/json,text/plain,*/*",
     "Accept-Language": "en-US,en;q=0.9",
 }
-LADDER = (20, 35, 50, 75, 100, 150, 200, 300, 500, 1000)
+# rungs as multiples of the band's threshold: 20% -> 20, 35, 50, 75, 100, 150, 200, 300, 500, 1000
+LADDER = (1.0, 1.75, 2.5, 3.75, 5.0, 7.5, 10.0, 15.0, 25.0, 50.0)
+BIG_CAP = 2e9  # from here up a company is liquid by definition: no dollar-volume test
 JUMP_COOLDOWN_S = 20 * 60
 JUMP_LOOKBACK_S = (45, 6 * 60)  # compare with a price 45 s – 6 min old
 
@@ -219,15 +223,73 @@ class _State:
 class MoversRadar:
     """Turns market snapshots into breakout hits. Pure logic: no I/O, fully testable."""
 
-    def __init__(self, cfg: SmallCapConfig, universe: Universe | None = None) -> None:
+    def __init__(
+        self, cfg: SmallCapConfig, universe: Universe | None = None, state_path: Path | None = None
+    ) -> None:
         self.cfg = cfg
         self.universe = universe
         self.state: dict[str, _State] = {}
         self.board: dict[str, dict[str, Any]] = {}  # what the app's radar list shows
-        self.baselined: set[str] = set()  # providers whose first scan only set the baseline
-        self.pushes: dict[str, int] = {}  # ET date -> radar pushes sent
+        self.pushes: dict[str, int] = {}  # "<ET date>:<small|big>" -> radar pushes sent
         self.scans = 0
         self.hits_total = 0
+        # what already fired today survives a restart, so a restart neither repeats an alert nor
+        # (as a silent start-up baseline would) misses a stock that was already moving
+        self.state_path = state_path
+        self._load()
+
+    # ------------------------------------------------------------------ per-size rules
+
+    def rules(self, cap: float) -> tuple[float, float, float, str]:
+        """(day-move threshold %, fast-jump threshold %, push threshold %, push class) by size.
+        A 20% day is routine for a micro cap and a once-a-year event for a $75B company."""
+        c = self.cfg
+        if cap < c.radar_max_cap:
+            return c.radar_min_pct, c.radar_jump_pct, c.radar_push_pct, "small"
+        if cap < 10e9:
+            m = c.radar_mid_min_pct
+        elif cap < 200e9:
+            m = c.radar_large_min_pct
+        else:
+            m = c.radar_mega_min_pct
+        return m, m / 2, m * 1.5, "big"
+
+    # ------------------------------------------------------------------ persistence
+
+    def _load(self) -> None:
+        if not self.state_path or not self.state_path.is_file():
+            return
+        try:
+            doc = json.loads(self.state_path.read_text())
+        except (OSError, ValueError):
+            return
+        day = doc.get("day", "")
+        for sym, (up, down) in (doc.get("fired") or {}).items():
+            self.state[sym] = _State(day=day, fired_up=float(up), fired_down=float(down))
+        self.pushes = {k: int(v) for k, v in (doc.get("pushes") or {}).items()}
+
+    def save(self, now: float | None = None) -> None:
+        if not self.state_path:
+            return
+        day = self._day(now or time.time())
+        fired = {
+            s: [st.fired_up, st.fired_down]
+            for s, st in self.state.items()
+            if st.day == day and (st.fired_up or st.fired_down)
+        }
+        try:
+            self.state_path.parent.mkdir(parents=True, exist_ok=True)
+            self.state_path.write_text(
+                json.dumps(
+                    {
+                        "day": day,
+                        "fired": fired,
+                        "pushes": {k: v for k, v in self.pushes.items() if k.startswith(day)},
+                    }
+                )
+            )
+        except OSError as exc:
+            log.warning("radar state not saved: %s", exc)
 
     @staticmethod
     def _day(now: float) -> str:
@@ -236,12 +298,12 @@ class MoversRadar:
     def eligible(self, q: Quote, li: Listing | None) -> tuple[bool, list[str]]:
         flags: list[str] = []
         cap = q.market_cap or (li.market_cap if li else None)
-        if cap is None or cap < self.cfg.min_market_cap or cap > self.cfg.radar_max_cap:
+        if cap is None or cap < self.cfg.min_market_cap:
             return False, flags
         if q.price is None or q.price < self.cfg.min_price or q.change_pct is None:
             return False, flags
         dv = q.dollar_volume
-        if dv is None or dv < self.cfg.radar_min_dollar_volume:
+        if cap < BIG_CAP and (dv is None or dv < self.cfg.radar_min_dollar_volume):
             return False, flags
         if li is not None and li.pump_profile:
             flags.append(li.pump_profile)
@@ -253,8 +315,6 @@ class MoversRadar:
         now = now or time.time()
         day = self._day(now)
         self.scans += 1
-        silent = provider not in self.baselined  # never fire on what was already moving at start
-        self.baselined.add(provider)
         hits: list[RadarHit] = []
         for q in quotes:
             li = self.universe.get(q.symbol) if self.universe is not None else None
@@ -274,7 +334,9 @@ class MoversRadar:
             if not ok:
                 continue
             pct = q.change_pct or 0.0
-            level = max((lv for lv in LADDER if abs(pct) >= lv), default=0)
+            cap = q.market_cap or (li.market_cap if li else 0) or 0
+            min_pct, jump_pct, push_pct, klass = self.rules(cap)
+            level = max((min_pct * m for m in LADDER if abs(pct) >= min_pct * m), default=0)
             entry = self.board.get(q.symbol, {})
             self.board[q.symbol] = {
                 **entry,
@@ -283,37 +345,33 @@ class MoversRadar:
                 ).to_dict(),
                 "updated": now,
             }
-            if abs(pct) < self.cfg.radar_min_pct and not (
-                jump is not None and abs(jump) >= self.cfg.radar_jump_pct
-            ):
-                if abs(pct) < self.cfg.radar_min_pct * 0.5:
+            if abs(pct) < min_pct and not (jump is not None and abs(jump) >= jump_pct):
+                if abs(pct) < min_pct * 0.5:
                     self.board.pop(q.symbol, None)  # faded: off the board
                 continue
             hit: RadarHit | None = None
             fired = st.fired_up if pct >= 0 else st.fired_down
-            if level >= self.cfg.radar_min_pct and level > fired:
+            if level >= min_pct and level > fired + 1e-9:
                 if pct >= 0:
                     st.fired_up = level
                 else:
                     st.fired_down = level
                 hit = RadarHit(q, "day", level, ref_price=q.prev_close, listing=li, flags=flags, detected=now)
-            if (
-                jump is not None
-                and abs(jump) >= self.cfg.radar_jump_pct
-                and now - st.last_jump >= JUMP_COOLDOWN_S
-            ):
+            if jump is not None and abs(jump) >= jump_pct and now - st.last_jump >= JUMP_COOLDOWN_S:
                 st.last_jump = now
                 if hit is None:
                     hit = RadarHit(q, "jump", 0, listing=li, flags=flags, detected=now)
                 hit.jump_pct, hit.jump_window_s, hit.ref_price = round(jump, 2), window, ref
-            if hit is None or silent:
+            if hit is None:
                 continue
-            hit.severity = self._severity(hit, day)
+            hit.severity = self._severity(hit, day, push_pct, jump_pct, klass, cap)
             self.board[q.symbol]["flagged"] = now
             self.board[q.symbol]["severity"] = hit.severity
             hits.append(hit)
         self.hits_total += len(hits)
         self._trim(now)
+        if hits:
+            self.save(now)
         return hits
 
     def _jump(self, st: _State, q: Quote, now: float) -> tuple[float | None, float | None, int]:
@@ -326,14 +384,17 @@ class MoversRadar:
                 return (q.price / p - 1.0) * 100.0, p, int(age)
         return None, None, 0
 
-    def _severity(self, hit: RadarHit, day: str) -> str:
+    def _severity(
+        self, hit: RadarHit, day: str, push_pct: float, jump_pct: float, klass: str, cap: float
+    ) -> str:
         q = hit.quote
-        big = abs(q.change_pct or 0) >= self.cfg.radar_push_pct or (
-            hit.jump_pct is not None and abs(hit.jump_pct) >= 2 * self.cfg.radar_jump_pct
+        big = abs(q.change_pct or 0) >= push_pct or (
+            hit.jump_pct is not None and abs(hit.jump_pct) >= 2 * jump_pct
         )
-        liquid = (q.dollar_volume or 0) >= 5e6 or (q.rvol or 0) >= 5
-        if big and liquid and not hit.flags and self.pushes.get(day, 0) < self.cfg.radar_daily_pushes:
-            self.pushes[day] = self.pushes.get(day, 0) + 1
+        liquid = cap >= BIG_CAP or (q.dollar_volume or 0) >= 5e6 or (q.rvol or 0) >= 5
+        key = f"{day}:{klass}"
+        if big and liquid and not hit.flags and self.pushes.get(key, 0) < self.cfg.radar_daily_pushes:
+            self.pushes[key] = self.pushes.get(key, 0) + 1
             return "HIGH"
         return "MEDIUM"
 
@@ -374,6 +435,7 @@ class SmallCapFeed:
         self.health = SourceHealth()
         self.radar_health = SourceHealth()
         self._crumb: str | None = None
+        self._swept = 0.0
         self._saved_at = 0.0
         self._universe_tried = 0.0
 
@@ -487,17 +549,26 @@ class SmallCapFeed:
                         on_hits, self.radar.scan(quotes_from_listings(listings), provider="nasdaq")
                     )
             if active and self.radar is not None and self.cfg.radar and self.cfg.radar_provider == "yahoo":
-                await self._yahoo_scan(on_hits)
+                await self._yahoo_scan(on_hits, phase)
+            sweep_due = self.cfg.sweep_size > 0 and now - self._swept >= self.cfg.sweep_seconds
+            if active and self.radar is not None and self.cfg.radar and sweep_due:
+                self._swept = now
+                await self._sweep(on_hits, phase)
             await _sleep_or_stop(
                 stop, self.cfg.radar_seconds if active else min(900.0, self.cfg.radar_seconds * 10)
             )
 
-    async def _yahoo_scan(self, on_hits: Any) -> None:
+    async def _yahoo_scan(self, on_hits: Any, phase: str = "open") -> None:
+        """Small-cap gainers every scan (pre/after hours included); in the regular session also
+        the all-size day gainers and losers (Yahoo lists those by the regular session only)."""
         assert self.radar is not None
         self.radar_health.polls += 1
         t0 = time.monotonic()
+        screens = ["small_cap_gainers"] + (["day_gainers", "day_losers"] if phase == "open" else [])
+        quotes: list[Quote] = []
         try:
-            quotes = await self.fetch_yahoo("small_cap_gainers")
+            for scr in screens:
+                quotes.extend(await self.fetch_yahoo(scr))
         except (
             HTTPError,
             aiohttp.ClientError,
@@ -514,6 +585,72 @@ class SmallCapFeed:
         self.radar_health.items += len(quotes)
         self.radar_health.last_fetch_ms = (time.monotonic() - t0) * 1000
         await self._emit(on_hits, self.radar.scan(quotes, provider="yahoo"))
+
+    async def sweep_quotes(self, phase: str = "open") -> list[Quote]:
+        """Pre-market, regular and after-hours prices for the largest ``sweep_size`` companies
+        (Yahoo spark, 20 symbols a request). The screeners above only rank the regular session,
+        so this is what sees a $75B company gap up 9% before the open."""
+        big = sorted(
+            (li for li in self.universe.by_symbol.values() if li.common and (li.market_cap or 0) >= BIG_CAP),
+            key=lambda li: -(li.market_cap or 0),
+        )[: self.cfg.sweep_size]
+        session = {"pre-market": "pre", "after-hours": "post"}.get(phase, "regular")
+        out: list[Quote] = []
+        for i in range(0, len(big), 20):
+            chunk = big[i : i + 20]
+            resp = await self.http.get(
+                SPARK_URL,
+                params={
+                    "symbols": ",".join(li.symbol for li in chunk),
+                    "range": "1d",
+                    "interval": "5m",
+                    "includePrePost": "true",
+                },
+                headers=YAHOO_HEADERS,
+            )
+            snaps = parse_spark(resp.json())
+            for li in chunk:
+                snap = snaps.get(li.symbol)
+                if not snap:
+                    continue
+                pts = snap.get("points") or []
+                price = pts[-1][1] if pts else snap.get("price")
+                prev = snap.get("prev_close")
+                if not price or not prev:
+                    continue
+                out.append(
+                    Quote(
+                        li.symbol,
+                        name=li.name,
+                        price=float(price),
+                        prev_close=float(prev),
+                        change_pct=(float(price) / float(prev) - 1.0) * 100.0,
+                        market_cap=li.market_cap,
+                        session=session,
+                        source="sweep",
+                    )
+                )
+        return out
+
+    async def _sweep(self, on_hits: Any, phase: str) -> None:
+        assert self.radar is not None
+        try:
+            quotes = await self.sweep_quotes(phase)
+        except (
+            HTTPError,
+            aiohttp.ClientError,
+            ValueError,
+            KeyError,
+            TypeError,
+            asyncio.TimeoutError,
+            OSError,
+        ) as exc:
+            self._error(self.radar_health, exc)
+            return
+        if not quotes:
+            return  # no large caps known yet (universe still loading)
+        self.radar_health.items += len(quotes)
+        await self._emit(on_hits, self.radar.scan(quotes, provider="sweep"))
 
     @staticmethod
     async def _emit(on_hits: Any, hits: list[RadarHit]) -> None:

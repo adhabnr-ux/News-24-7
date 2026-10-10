@@ -109,7 +109,7 @@ Routine small-cap traffic is penalized:
 Large caps are never touched: above `max_market_cap` (default $10B) the big-cap scorer is in
 charge.
 
-## 3. The radar: moving before the news
+## 3. The radar: moving before the news, at every size
 
 Small-cap news often reaches the tape before any feed:
 - an 8-K accepted at 16:01
@@ -118,18 +118,34 @@ Small-cap news often reaches the tape before any feed:
 
 The price is the first public trace. `news247/market/radar.py`:
 
-- **Scans every minute from 04:00 to 20:00 ET on trading days.** It uses Yahoo's
-  small-cap-gainers screener, including pre-market and after-hours prices. Every 10 minutes
-  in session it also scans the full Nasdaq screener snapshot, which covers losers.
-- **Flags a name when it crosses ±20% on the day, or moves ±8% within a few minutes.**
-  It flags again at each higher rung (35, 50, 75, 100, 150, 200, 300%), never twice at the same
-  one.
-- **Requires real money.** At least $2M must have traded, and the company must be between $30M
-  and $2B with a price of $1 or more. Relative volume vs. the 3-month average is shown.
-- **Pushes the big ones.** Moves of ±35% or more with $5M+ traded (or 5× normal volume) are
-  pushed, capped at 8 a day. The rest show in the app.
-- **Ignores what was already moving at start-up.** Those names are on the board but never
-  alerted.
+- **Scans every minute from 04:00 to 20:00 ET on trading days.**
+  - Every minute: Yahoo's small-cap gainers (with pre-market and after-hours prices) and, in the
+    regular session, its all-size day gainers and losers.
+  - Every minute, pre-market and after hours included: a sweep of the **400 largest companies**.
+    Yahoo's screeners only rank the regular session, and this is what caught MRNA's 9% gap up
+    before the open on Oct 9 2026.
+  - Every 10 minutes in session: the full Nasdaq screener snapshot.
+- **Thresholds scale with size.** A 20% day is routine for a micro cap and a once-a-year event
+  for a $75B company:
+
+  | Size | Flags at (day / fast jump) | Pushes at |
+  |---|---|---|
+  | under $2B | ±20% / ±8% | ±35% with $5M+ traded or 5× volume |
+  | $2–10B | ±10% / ±5% | ±15% |
+  | $10–200B | ±6% / ±3% | ±9% |
+  | $200B+ | ±4% / ±2% | ±6% |
+
+  A stock flags again at each higher rung (1×, 1.75×, 2.5×, 3.75×… the threshold), never twice
+  at the same one. Pushes are capped at 8 a day for small caps and 8 for larger ones. The rest
+  show in the app.
+- **Small caps must have real trading.** Under $2B, at least $2M must have traded and the price
+  must be $1 or more. Relative volume vs. the 3-month average is shown. From $2B up a company is
+  liquid by definition.
+- **Survives restarts.** What already fired today is saved to `data/radar_state.json`. A restart
+  doesn't repeat an alert, and a stock that was already moving when the server started is still
+  flagged. There is no silent start-up baseline.
+- **Cites the calendar.** When the stock is on today's calendar, the alert says *"On the calendar
+  today: MRNA joins the Nasdaq-100 (effective at the open)"* instead of "No headline yet".
 - **Links the headline if one exists.** If not, the alert says so: *"No headline yet — on the
   radar before the news."* When the headline then lands, its alert says *"📡 Radar flagged ACMB
   +45% 12m before this headline."*
@@ -141,11 +157,19 @@ news itself.
 
 ### The date, before the move
 
-Small biotechs announce *when* the coin will be flipped, weeks ahead:
+Companies announce *when* the coin will be flipped, weeks ahead:
 - "Kodiak Sciences to Present Topline Results on September 28, 2026 from DAYBREAK Pivotal
   Phase 3 Study…" was published Sep 25. KOD went +178% on the 28th.
 - "…PDUFA target action date of June 30, 2027"
 - "FDA Advisory Committee Meeting Scheduled for July 29 to Review…"
+- "Moderna and Merck to Present Phase 3 … Data at ESMO 2026 Presidential Symposium" (Oct 24)
+- **Index entries:** "Nasdaq Announces Moderna to Join Nasdaq-100 Index … prior to market open on
+  Friday, October 9". This becomes "MRNA joins the Nasdaq-100 (effective at the open)" at 09:30.
+  Index funds must buy, and MRNA was +9% before the open.
+
+These are captured for companies of **any size**. The subject is found from the wire's ticker
+tag, "(Nasdaq: MRNA)" or the company name. The index provider (Nasdaq, S&P) is never mistaken for
+the subject.
 
 `news247/analysis/catalyst_dates.py` reads these headlines, and their summaries where the date
 often sits. It finds the readout, PDUFA or panel date and the time ("8:30 a.m. ET"), and puts
@@ -217,7 +241,12 @@ smallcap:
   radar_jump_pct: 8
   radar_min_dollar_volume: 2000000
   radar_push_pct: 35            # SMALLCAP_RADAR_PUSH_PCT
-  radar_daily_pushes: 8         # SMALLCAP_RADAR_DAILY_PUSHES
+  radar_daily_pushes: 8         # per class (small / big); SMALLCAP_RADAR_DAILY_PUSHES
+  radar_mid_min_pct: 10         # $2-10B   (jump = half, push = 1.5x)
+  radar_large_min_pct: 6        # $10-200B
+  radar_mega_min_pct: 4         # $200B+
+  sweep_size: 400               # largest companies swept for pre/after-hours moves
+  sweep_seconds: 60
 ```
 
 API:
@@ -240,8 +269,8 @@ market cap the universe would have known that morning.
 
 ```text
 $ news247 backtest
-  Caught from the FIRST report:    176/184  = 96%
-  False alarms on noise:           0/119  = 0%
+  Caught from the FIRST report:    178/186  = 96%
+  False alarms on noise:           0/122  = 0%
     ✓ smallcap_acquired 6/6   ✓ smallcap_trial 6/6   ✓ smallcap_gov_stake 4/4
     ✓ smallcap_crypto_treasury 4/4   ✓ smallcap_fda 6/6   ✓ smallcap_mega_stake 3/3 …
     ✗ smallcap_dilution 0/1   (a 12%-of-market-cap offering: shown in the app, not pushed)

@@ -122,7 +122,7 @@ function footRow(a) {
 }
 function alertHTML(a, opts = {}) {
   const an = a.analysis || {}, it = a.item || {};
-  const src = a.edge?.radar ? "SMALL-CAP RADAR" : a.kind === "price" ? "PRICE ACTION" : a.kind === "system" ? "FORETAPE" : (it.source || a.kind).toUpperCase();
+  const src = a.edge?.radar ? "RADAR" : a.kind === "price" ? "PRICE ACTION" : a.kind === "system" ? "FORETAPE" : (it.source || a.kind).toUpperCase();
   const why = an.summary || (a.kind !== "news" && a.body ? a.body.split("\n")[0] : "");
   const known = seen.has(a.id);
   const state = a._new ? "new in" : known ? "in" : "";
@@ -202,7 +202,7 @@ async function load() {
     ["Sources healthy", `${app.sources_ok}/${app.sources}`], ["Running for", dur(app.uptime_s).replace(/ \d+s$/, "")],
     ["Alerts (24h)", app.alerts_24h], ["Phones subscribed", app.devices], ["Stories beaten (7d)", app.edge?.stories ?? 0],
     ["Companies sized", app.smallcap?.listings ? `${app.smallcap.listings.toLocaleString()}${app.smallcap.age_s != null ? " · " + dur(app.smallcap.age_s).replace(/ \d+s$/, "") + " old" : ""}` : "loading…"],
-    ["Small-cap radar", !app.smallcap?.radar ? "off" : `${app.smallcap.scans} scans · ${app.smallcap.hits} flagged`],
+    ["Movers radar", !app.smallcap?.radar ? "off" : `${app.smallcap.scans} scans · ${app.smallcap.hits} flagged`],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("");
   $("durable").hidden = app.durable;
   $("durable").textContent = app.durable ? "" : "This server forgets subscribed phones when it restarts. Foretape reconnects this phone every time you open it; for zero gaps, set STATE_DB (free Postgres, see docs).";
@@ -368,7 +368,7 @@ async function openSheet(id) {
       ${sc.blocked ? `<div class="sub" style="padding:10px 0 4px">Not boosted: ${esc(sc.blocked)}</div>` : ""}
       ${sc.move_text ? `<div class="sub" style="padding:10px 0 4px">Typical moves are rules of thumb from 2024–26 small-cap history, not a forecast.</div>` : ""}</div>` : "";
   const blocks = [
-    `<div class="meta" style="--sev:${SEV[a.severity]}"><span class="sev">${esc(a.severity)}</span><span>${esc(e.radar ? "SMALL-CAP RADAR" : (it.source || a.kind).toUpperCase())}</span><span class="ago">${ago(a.created)} ago</span></div>`,
+    `<div class="meta" style="--sev:${SEV[a.severity]}"><span class="sev">${esc(a.severity)}</span><span>${esc(e.radar ? "RADAR" : (it.source || a.kind).toUpperCase())}</span><span class="ago">${ago(a.created)} ago</span></div>`,
     `<h2>${esc(a.title)}</h2>`,
     an.summary ? `<p class="muted" style="font-size:15.5px">${esc(an.summary)}</p>` : a.body ? `<p class="muted" style="white-space:pre-line">${esc(a.body)}</p>` : "",
     capBlock,

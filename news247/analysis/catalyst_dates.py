@@ -64,6 +64,27 @@ KINDS: tuple[tuple[str, re.Pattern[str], str], ...] = (
         "FDA advisory committee",
     ),
     (
+        # index entry/exit: funds that track it must trade at the close before the effective date
+        "index",
+        re.compile(
+            r"\b(?:to\s+join|joins?|will\s+join|set\s+to\s+join|to\s+be\s+added\s+to|will\s+be\s+added\s+to|added\s+to|"
+            r"to\s+replace\b.{0,60}\b(?:on|in)|replac\w+\b.{0,60}\bin|to\s+be\s+removed\s+from|removed\s+from)\s+(?:the\s+)?"
+            r"(?:s&p\s*(?:500|midcap\s*400|smallcap\s*600)|nasdaq[-\s]?100|russell\s*(?:1000|2000|3000)|dow\s+jones\s+industrial)",
+            re.I,
+        ),
+        "index change",
+    ),
+    (
+        # medical meetings: "data at ESMO 2026 Presidential Symposium", "late-breaking oral presentation"
+        "conference",
+        re.compile(
+            r"\b(?:presidential\s+symposium|late[-\s]breaking|plenary\s+session|oral\s+presentation)\b.{0,80}"
+            r"|\bto\s+present\b.{0,60}\b(?:phase\s*(?:2b?|3|iii)|pivotal)\b.{0,40}\b(?:at|during)\s+(?:the\s+)?[A-Z]",
+            re.I,
+        ),
+        "data at a medical meeting",
+    ),
+    (
         "readout",
         re.compile(
             r"\bto\s+(?:present|report|announce|host|release|share|unveil)\b.{0,60}\b(?:topline|top-line|"
@@ -75,6 +96,23 @@ KINDS: tuple[tuple[str, re.Pattern[str], str], ...] = (
 )
 _PHASE_RE = re.compile(r"\b(phase\s*(?:1/2|i/ii|2b|2|3|iii|ii))\b", re.I)
 _PIVOTAL_RE = re.compile(r"\b(pivotal|registrational)\b", re.I)
+
+
+_INDEX_NAME_RE = re.compile(
+    r"\b(s&p\s*(?:500|midcap\s*400|smallcap\s*600)|nasdaq[-\s]?100|russell\s*(?:1000|2000|3000)|dow\s+jones\s+industrial)",
+    re.I,
+)
+_INDEX_NAMES = {
+    "s&p500": "S&P 500",
+    "s&pmidcap400": "S&P MidCap 400",
+    "s&psmallcap600": "S&P SmallCap 600",
+    "nasdaq100": "Nasdaq-100",
+    "russell1000": "Russell 1000",
+    "russell2000": "Russell 2000",
+    "russell3000": "Russell 3000",
+    "dowjonesindustrial": "Dow Jones Industrial Average",
+}
+_AT_OPEN_RE = re.compile(r"\b(?:prior\s+to|before)\s+(?:the\s+)?(?:market\s+open|open(?:ing)?\b)", re.I)
 
 
 def _parse_dates(text: str, today: date) -> list[date]:
@@ -130,17 +168,24 @@ def extract_event(
         return None
     when = min(dates)
     phase = _PHASE_RE.search(title) or _PIVOTAL_RE.search(title)  # "Phase 3" says more than "pivotal"
-    what = (
-        label
-        if kind != "readout" or not phase
-        else f"{phase.group(1).title()} {label}".replace("Phase", "Phase ")
-    )
-    what = re.sub(r"\s+", " ", what)
+    what = label
+    if kind in ("readout", "conference") and phase:
+        what = f"{phase.group(1).title()} {'trial readout' if kind == 'readout' else 'data at a medical meeting'}"
+    what = re.sub(r"\s+", " ", what.replace("Phase", "Phase "))
+    clock = _parse_time(text)
+    if kind == "index":
+        idx = _INDEX_NAME_RE.search(text)
+        name = _INDEX_NAMES.get(re.sub(r"[\s-]+", "", idx.group(1).lower()), idx.group(1)) if idx else "index"
+        leaving = bool(re.search(r"\bremov|\bdelet|\bdrop", title, re.I))
+        what = f"{'leaves' if leaving else 'joins'} the {name}" + (
+            " (effective at the open)" if _AT_OPEN_RE.search(text) else ""
+        )
+        clock = clock or ("09:30" if _AT_OPEN_RE.search(text) else "")
     return {
         "id": f"{symbol}:{when.isoformat()}:{kind}",
         "date": when.isoformat(),
-        "time": _parse_time(text),
-        "title": f"{symbol} · {what}",
+        "time": clock,
+        "title": f"{symbol} {what}" if kind == "index" else f"{symbol} · {what}",
         "kind": "binary",
         "event": kind,
         "symbol": symbol,

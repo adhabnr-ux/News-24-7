@@ -104,6 +104,14 @@ companies:
   - {name: White House, aliases: [white house, president trump, trump, executive order, truth social, realdonaldtrump], exposure: [SPY, QQQ], authority: true}
   - {name: US Treasury, aliases: [treasury secretary, bessent, us treasury, u.s. treasury, treasury department], exposure: [TLT, SPY], authority: true}
   - {name: SEC, aliases: [securities and exchange commission, sec chair], cased: [SEC], exposure: []}
+  # health agencies: their programs and pullbacks move whole drug classes (Oct 9 2026: an NIH
+  # cancer-vaccine push, reported by the NYT, sent MRNA +14%, BNTX and NVAX up with it)
+  - {name: NIH, aliases: [national institutes of health, n.i.h., foundation for the nih], cased: [NIH], exposure: []}
+  - {name: National Cancer Institute, aliases: [national cancer institute, n.c.i.], cased: [NCI], exposure: []}
+  - {name: HHS, aliases: [health and human services, h.h.s., rfk jr, robert f. kennedy jr, kennedy jr.], cased: [HHS], exposure: []}
+  - {name: CDC, aliases: [centers for disease control, c.d.c., acip], cased: [CDC], exposure: []}
+  - {name: BARDA, aliases: [biomedical advanced research and development authority], cased: [BARDA], exposure: []}
+  - {name: CMS, aliases: [centers for medicare, medicare and medicaid services], cased: [CMS], exposure: []}
   - {name: Bureau of Labor Statistics, aliases: [bls, bureau of labor statistics, nonfarm payrolls, payrolls], exposure: [SPY, QQQ, TLT]}
   - {name: FDIC, aliases: [fdic, federal deposit insurance], exposure: [KRE, XLF], authority: true}
   - {name: OPEC, aliases: [opec, opec+, saudi aramco, aramco], exposure: [USO, XOM, CVX], authority: true}
@@ -587,6 +595,15 @@ keywords:
   "set to join s&p": 30
   join the s&p 500: 25
   added to the s&p 500: 25
+  # the Nasdaq-100 is tracked by 200+ products with $800B+ (Moderna's Oct 2026 entry): same forced buying
+  to join nasdaq-100: 30
+  to join the nasdaq-100: 30
+  to join nasdaq 100: 30
+  join the nasdaq-100: 25
+  added to the nasdaq-100: 25
+  to replace * on nasdaq 100: 25
+  to replace * on nasdaq-100: 25
+  to replace * in the nasdaq-100: 25
   hostilities: 15
   is over: 6
   memorandum of understanding: 18
@@ -1021,6 +1038,25 @@ themes:
     weight: 18
     direction: mixed
     tickers: [COIN, MSTR, HOOD, IBIT]
+
+  vaccine_policy_push:
+    description: The government backs vaccines / mRNA / cancer vaccines (NIH national cancer-vaccine push, Oct 9 2026 -> MRNA +14%)
+    all:
+      - [nih, n.i.h., national institutes of health, national cancer institute, nci, hhs, h.h.s., cdc, barda, fda, white house, administration, government, federal, medicare, cms]
+      - [vaccine, vaccines, mrna, cancer vaccine, cancer vaccines, immunotherap*]
+      - [plans, plan to, push, pushes, national effort, initiative, campaign, public-private partnership, fast-track*, speed up, speed development, accelerat*, expedit*, moonshot, priority review voucher]
+    weight: 35
+    direction: up
+    tickers: [MRNA, BNTX, NVAX, PFE]
+  vaccine_policy_pullback:
+    description: The government cuts or restricts vaccines / mRNA (Aug 2025 HHS cancelled $500M of BARDA mRNA projects)
+    all:
+      - [nih, n.i.h., national institutes of health, hhs, h.h.s., cdc, acip, barda, fda, white house, administration, government, federal, kennedy, rfk]
+      - [vaccine, vaccines, mrna, covid shot, covid shots, covid vaccine]
+      - [cancel*, terminat*, halt*, wind down, winds down, pulls, pulled, cut*, revok*, restrict*, ban, bans, banned, ends, end the, pause*, rescind*, scrap*, drops, removes, limits]
+    weight: 35
+    direction: down
+    tickers: [MRNA, BNTX, NVAX, PFE]
 
 # Price-move baskets ("groups"): a group alert fires when the group's average move
 # over `window` seconds reaches `pct` and at least `min_members` members moved >= pct/2

@@ -202,12 +202,19 @@ class SmallCapConfig:
     radar: bool = True
     radar_provider: str = "yahoo"  # "yahoo" (small-cap gainers/losers screeners) or "nasdaq"
     radar_seconds: float = 60.0
-    radar_max_cap: float = 2e9
+    radar_max_cap: float = 2e9  # small-cap thresholds below this; size-scaled ones above
     radar_min_pct: float = 20.0  # day move that puts a name on the radar
     radar_jump_pct: float = 8.0  # move between two scans (~1 min) that flags it at once
     radar_min_dollar_volume: float = 2e6  # a move nobody trades is not a move
     radar_push_pct: float = 35.0  # at/above this (with real volume) the radar pushes (HIGH)
-    radar_daily_pushes: int = 8  # most radar pushes per day; the rest show in the app
+    radar_daily_pushes: int = 8  # most radar pushes per day per class (small / big); the rest show in the app
+    # bigger companies move less: their own day-move thresholds (jump = half, push = 1.5x)
+    radar_mid_min_pct: float = 10.0  # $2B-$10B
+    radar_large_min_pct: float = 6.0  # $10B-$200B (MRNA, $75B: +9% pre-market on Oct 9 2026)
+    radar_mega_min_pct: float = 4.0  # $200B+
+    # pre/after-hours sweep of the largest companies (Yahoo's screeners only rank the regular session)
+    sweep_size: int = 400
+    sweep_seconds: float = 60.0
 
     def filters(self) -> dict[str, float]:
         return {

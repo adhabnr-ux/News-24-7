@@ -224,6 +224,13 @@ class Scorer:
         self.smallcap = SmallCapDesk(universe, **filters)
         return self.smallcap
 
+    def _listed_big(self, ticker: str) -> bool:
+        """A listed company worth $2B+ (per the universe) is a real stock, never "untracked"."""
+        if self.smallcap is None:
+            return False
+        li = self.smallcap.universe.get(ticker)
+        return li is not None and (li.market_cap or 0) >= 2e9
+
     def score(self, item: NewsItem) -> Analysis:
         return self.explain(item)
 
@@ -365,7 +372,7 @@ class Scorer:
             and not companies
             and not relevant_theme
             and not material
-            and not any(t in self.tracked for t in explicit)
+            and not any(t in self.tracked or self._listed_big(t) for t in explicit)
         ):
             score *= UNKNOWN_TICKER_FACTOR
             reasons.append(f"×{UNKNOWN_TICKER_FACTOR} untracked ticker(s) {', '.join(explicit[:3])}")

@@ -76,7 +76,11 @@ class Engine:
         if sc.enabled:
             self.scorer.attach_universe(self.universe, **sc.filters())
             if cfg.market.enabled:
-                self.radar = MoversRadar(sc, self.universe) if sc.radar else None
+                self.radar = (
+                    MoversRadar(sc, self.universe, state_path=cfg.data_path / "radar_state.json")
+                    if sc.radar
+                    else None
+                )
                 self.smallcap_feed = SmallCapFeed(
                     sc,
                     self.http,
@@ -515,17 +519,18 @@ class Engine:
         """ "…to Present Topline Results on September 28" / "PDUFA date of June 30": put it on the
         calendar so the Brief says "Tomorrow: KOD Phase 3 readout" the night before."""
         sc = analysis.smallcap or {}
-        symbol = sc.get("symbol") or (item.tickers[0] if item.tickers else "")
+        symbol = sc.get("symbol") or self._subject_symbol(item)
         if not symbol:
             return
         ev = extract_event(item.title, item.summary, symbol)
         if ev is None:
             return
-        small = bool(sc)
+        li = self.universe.get(symbol)
         ev.update(
             {
-                "impact": 2 if small else 1,
-                "note": f"{sc.get('name') or symbol} · {sc['cap']} {sc['band']}" if small else "",
+                # any binary event or index entry is worth the morning Brief, whatever the size
+                "impact": 2,
+                "note": f"{li.name} · {li.cap_label} {li.band}" if li is not None and li.market_cap else "",
                 "url": item.url,
                 "source": item.source,
             }
@@ -534,6 +539,34 @@ class Engine:
             self.calendar.add(ev)
             log.info("binary event on the calendar: %s on %s", ev["title"], ev["date"])
             self._broadcast("calendar", ev)
+
+    # index providers announce additions; they are never the subject of one
+    _ANNOUNCERS = frozenset({"NDAQ", "SPGI", "ICE", "CBOE", "LNSTY", "MSCI"})
+
+    def _subject_symbol(self, item: NewsItem) -> str:
+        """The listed company a release is about, at any size: the ticker the wire attached,
+        "(Nasdaq: MRNA)" in the text, the company the headline starts with or names."""
+        text = f"{item.title} {item.summary[:700]}"
+        cands = [*item.tickers, *self.scorer.entities.find_tickers(text, item.title)]
+        if len(self.universe):
+            lead = self.universe.find_issuer(item.title)
+            cands += ([lead.symbol] if lead else []) + [
+                li.symbol for li in self.universe.find_named(item.title)
+            ]
+        for c in self.scorer.entities.find_companies(item.title):
+            if c.ticker:
+                cands.append(c.ticker)
+        for sym in dict.fromkeys(c.upper() for c in cands):
+            if sym not in self._ANNOUNCERS:
+                return sym
+        return ""
+
+    def _calendar_today(self, symbol: str, now: float) -> list[dict[str, Any]]:
+        return [
+            e
+            for e in self.calendar.upcoming(days=1, now=now)
+            if e.get("symbol") == symbol and e.get("in_days") == 0
+        ]
 
     # ------------------------------------------------------------------ the radar
 
@@ -575,7 +608,10 @@ class Engine:
         if hit.flags:
             body += "\n⚠ " + "; ".join(hit.flags)
         catalysts = self.find_catalysts([hit.symbol], hit.detected)
-        if not catalysts:
+        today = self._calendar_today(hit.symbol, hit.detected)
+        for e in today:  # e.g. "MRNA joins the Nasdaq-100 (effective at the open)"
+            body += f"\nOn the calendar today: {e['title']}"
+        if not catalysts and not today:
             body += "\nNo headline yet — on the radar before the news. Watch halts, 8-Ks and the wires."
         move = PriceMove(
             hit.symbol,
@@ -602,7 +638,11 @@ class Engine:
             "cap": d["cap"],
             "band": d["band"],
             "market_cap": d["market_cap"],
-            "label": "Radar: moving before the news" if not catalysts else "Radar: moving on the news",
+            "label": "Radar: moving on the news"
+            if catalysts
+            else "Radar: on the calendar today"
+            if today
+            else "Radar: moving before the news",
             "direction": hit.direction,
             "radar": True,
         }

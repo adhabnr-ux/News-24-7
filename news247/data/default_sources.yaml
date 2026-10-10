@@ -61,12 +61,12 @@
 - {name: uk-cma, type: rss, url: "https://www.gov.uk/search/news-and-communications.atom?organisations%5B%5D=competition-and-markets-authority", tier: primary, interval: 120}
 - {name: sec-press, type: rss, url: "https://www.sec.gov/news/pressreleases.rss", tier: primary, interval: 120, entities: [SEC]}
 # Index changes: S&P DJI announces adds after the close (Ferguson +8%).
-- {name: gnews-index-changes, type: rss, url: "https://news.google.com/rss/search?q=%22set+to+join+S%26P+500%22+OR+%22join+the+S%26P+500%22+when:1d&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 300}
+- {name: gnews-index-changes, type: rss, url: "https://news.google.com/rss/search?q=%22set+to+join+S%26P+500%22+OR+%22join+the+S%26P+500%22+OR+%22join+the+Nasdaq-100%22+OR+%22to+join+Nasdaq-100%22+OR+%22Nasdaq-100+Index%22+when:1d&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 300}
 # China's commerce ministry (export controls, unreliable-entity list): Chinese text appears before
 # English wires; the English site has no feed, so watch news search for it.
 - {name: gnews-mofcom, type: rss, url: "https://news.google.com/rss/search?q=%22Ministry+of+Commerce%22+China+(export+OR+%22entity+list%22+OR+sanctions+OR+%22rare+earth%22)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 120, entities: [China]}
 # Scoops that broke Jun-Oct 2026 stories: Reuters "Exclusive-", Bloomberg "Said to", WSJ/FT "people familiar".
-- {name: gnews-scoops, type: rss, url: "https://news.google.com/rss/search?q=(%22Exclusive%22+OR+%22sources+say%22+OR+%22people+familiar%22+OR+%22said+to%22)+(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com+OR+site:ft.com)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 60, boost: 5}
+- {name: gnews-scoops, type: rss, url: "https://news.google.com/rss/search?q=(%22Exclusive%22+OR+%22sources+say%22+OR+%22people+familiar%22+OR+%22said+to%22)+(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com+OR+site:ft.com+OR+site:nytimes.com+OR+site:statnews.com+OR+site:axios.com)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 60, boost: 5}
 
 # ------------------------------------------------------------------ AI labs & big tech
 - {name: openai-news, type: rss, url: "https://openai.com/news/rss.xml", tier: primary, interval: 10, entities: [OpenAI], browser_headers: true, alert_floor: high}
@@ -146,6 +146,14 @@
 # Scoop publishers that broke 2026 movers: Axios (Iran MOU, OpenAI ARR), NYT (OpenAI IPO delay),
 # Semafor (Chipotle), Fortune (Altman: no IPO). Asia-first stories (Kospi crash, SoftBank) via Nikkei/Yonhap/SCMP.
 - {name: nyt-business, type: rss, url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", tier: media, interval: 30}
+# Health policy and biotech scoops. Oct 9 2026: the NYT's report of an NIH national cancer-vaccine
+# push sent MRNA +14% (BNTX, NVAX with it); it ran in Health, not Business.
+- {name: nyt-health, type: rss, url: "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml", tier: media, interval: 30, boost: 5}
+- {name: statnews, type: rss, url: "https://www.statnews.com/feed/", tier: media, interval: 45, boost: 5}
+- {name: endpoints-news, type: rss, url: "https://endpts.com/feed/", tier: media, interval: 60}
+- {name: fierce-biotech, type: rss, url: "https://www.fiercebiotech.com/rss/xml", tier: media, interval: 60}
+- {name: biopharma-dive, type: rss, url: "https://www.biopharmadive.com/feeds/news/", tier: media, interval: 60}
+- {name: gnews-health-policy, type: rss, url: "https://news.google.com/rss/search?q=(NIH+OR+HHS+OR+FDA+OR+CDC+OR+Medicare+OR+%22National+Cancer+Institute%22)+(vaccine+OR+mRNA+OR+%22cancer+vaccine%22+OR+%22drug+pricing%22+OR+GLP-1)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 120}
 - {name: semafor, type: rss, url: "https://www.semafor.com/rss.xml", tier: media, interval: 60}
 - {name: fortune, type: rss, url: "https://fortune.com/feed/", tier: media, interval: 60}
 - {name: nikkei-asia, type: rss, url: "https://asia.nikkei.com/rss/feed/nar", tier: media, interval: 60}
