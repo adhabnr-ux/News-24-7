@@ -66,6 +66,11 @@ daily bars (`tests/fixtures/options_nwe_2026-10-07.json`):
 - **Bid:** daily bars carry none, so the replay can only show the spike as unconfirmed. The
   live feed has the bid.
 - **Black-Scholes check:** it matches the study's numbers ($0.00 at 16% vol, $0.03 at 26%).
+- **Open interest (Alpha Vantage):** the 75 call traded **36×** its open interest, so only 8
+  contracts were open before the day. The 80 call traded 157.5×. That is real unusual activity,
+  but only about $32K changed hands in the 75 call. That is under the $100K-per-contract floor,
+  so it raises no volume alert; the spike rule is what flags it. Lower
+  `flow_min_contract_premium` if you want mid-cap volume this small to count.
 
 ## Unusual volume
 

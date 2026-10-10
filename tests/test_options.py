@@ -458,6 +458,21 @@ def test_replay_nwe_oct_7_from_real_bars():
     assert at(opt["2026-10-07"]["close"]) == []  # at the close: +633%, under the 1,000% line
 
 
+def test_replay_nwe_unusual_volume_from_real_open_interest():
+    """Alpha Vantage: the 75C traded 36x its open interest on Oct 7. With OPRA's 288 contracts
+    that is 8 open beforehand. Real unusual activity, but ~$32K at the $1.10 close: under the
+    default $100K-per-contract floor, so it is not a volume alert (the spike rule covers it)."""
+    d = nwe()
+    vol = next(b["volume"] for b in d["option"] if b["date"] == "2026-10-07")
+    oi = round(vol / d["vol_oi_2026-10-07"][d["contract"]])
+    assert (vol, oi) == (288, 8)
+    c = Contract(d["contract"], "NWE", date(2026, 10, 16), "C", 75.0, last=1.10, volume=vol, open_interest=oi)
+    assert OptionsRadar(ocfg()).flow_row(c) is None  # $31,680 < $100K
+    loose = OptionsRadar(ocfg(flow_min_volume=200, flow_min_contract_premium=25_000))
+    row_ = loose.flow_row(c)
+    assert row_ is not None and row_.vol_oi == pytest.approx(36.0)
+
+
 # --------------------------------------------------------------------------- the feed
 
 

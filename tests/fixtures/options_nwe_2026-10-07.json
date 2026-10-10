@@ -1,5 +1,5 @@
 {
- "_source": "TradingView daily bars (OPRA for the option, Nasdaq for the stock), fetched 2026-10-10 via the TradingView connector. Daily bars carry no bid/ask, no open interest and no intraday volume.",
+ "_source": "TradingView daily bars (OPRA for the option, Nasdaq for the stock), fetched 2026-10-10 via the TradingView connector. Daily bars carry no bid/ask, no open interest and no intraday volume. Alpha Vantage HISTORICAL_VOLUME_OPEN_INTEREST_RATIO (fetched 2026-10-10): on 2026-10-07 the NWE 75C (Oct 16) traded 36.0x its open interest and the 80C 157.5x.",
  "symbol": "NWE",
  "name": "NorthWestern Energy Group, Inc.",
  "market_cap": 4561548615.75,
@@ -236,5 +236,9 @@
    "close": 1,
    "volume": 1
   }
- ]
+ ],
+ "vol_oi_2026-10-07": {
+  "NWE261016C00075000": 36.0,
+  "NWE261016C00080000": 157.5
+ }
 }
