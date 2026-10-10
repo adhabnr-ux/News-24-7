@@ -28,6 +28,26 @@ log = logging.getLogger(__name__)
 PUBLIC_PATHS = {"/health", "/relay/ws", "/webhooks/whatsapp", "/about", "/privacy", "/terms"}
 
 
+def _key_page(path: str, wrong: bool) -> web.Response:
+    """A browser opening a protected page without the key gets a form to enter it, not a dead end."""
+    note = "That key didn't work. " if wrong else ""
+    page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>News247: access key</title>
+<style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#05070a;color:#e8edf2;
+font:16px/1.5 -apple-system,system-ui,sans-serif;padding:16px;box-sizing:border-box}}
+form{{max-width:360px;width:100%}}h1{{font-size:22px;margin:0 0 8px}}p{{color:#9aa6b2;margin:0 0 16px}}
+input,button{{width:100%;box-sizing:border-box;font:inherit;padding:12px 14px;border-radius:12px}}
+input{{background:#0e131a;color:inherit;border:1px solid #233040;margin-bottom:10px}}
+button{{background:#e8edf2;color:#05070a;border:0;font-weight:600}}a{{color:#9ecbff}}</style></head>
+<body><form method="get" action="{quote(path)}"><h1>Access key</h1>
+<p>{note}Enter the DASHBOARD_TOKEN from your server's settings (Render: your service, then
+Environment). On your phone, use <a href="/app/">Foretape</a>: it remembers the key.</p>
+<input name="token" type="password" autocomplete="current-password" autocapitalize="off"
+spellcheck="false" placeholder="access key" required autofocus>
+<button type="submit">Open</button></form></body></html>"""
+    return web.Response(status=401, text=page, content_type="text/html")
+
+
 def _json(data: Any) -> web.Response:
     return web.json_response(data, dumps=lambda d: json.dumps(d, default=str))
 
@@ -97,6 +117,11 @@ class WebServer:
                 "Bearer "
             )
             if not hmac.compare_digest(supplied.encode(), self.cfg.token.encode()):
+                wants_page = request.method == "GET" and "text/html" in request.headers.get("Accept", "")
+                if wants_page and request.path == "/":
+                    raise web.HTTPFound("/app/")  # Foretape asks for the key and remembers it
+                if wants_page:
+                    return _key_page(request.path, bool(supplied))
                 raise web.HTTPUnauthorized(text="token required")
         return await handler(request)
 

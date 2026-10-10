@@ -260,6 +260,28 @@ async def test_full_run_with_fake_source_and_stop(cfg, tmp_path):
     )
 
 
+async def test_browser_without_the_key_gets_a_way_in(cfg):
+    """Opening the server's address on a phone must not dead-end on "token required"."""
+    cfg.web.token = "s3cret"
+    eng, _ = make_engine(cfg)
+    web = WebServer(eng, cfg.web)
+    html = {"Accept": "text/html,application/xhtml+xml"}
+    async with TestClient(TestServer(web.app)) as client:
+        root = await client.get("/", headers=html, allow_redirects=False)
+        assert root.status == 302 and root.headers["Location"] == "/app/"  # Foretape asks for the key
+        app = await client.get("/app/", headers=html)
+        assert app.status == 200 and 'id="key"' in await app.text()
+        setup = await client.get("/setup", headers=html)
+        body = await setup.text()
+        assert setup.status == 401 and 'name="token"' in body and 'action="/setup"' in body
+        assert "didn't work" not in body
+        wrong = await client.get("/setup?token=nope", headers=html)
+        assert "That key didn't work" in await wrong.text()
+        assert (await client.get("/setup?token=s3cret", headers=html)).status == 200
+        api = await client.get("/api/status")  # scripts and the app still get a plain 401
+        assert api.status == 401 and await api.text() == "token required"
+
+
 async def test_web_api_and_sse(cfg):
     cfg.web.token = "s3cret"
     eng, cap = make_engine(cfg)
