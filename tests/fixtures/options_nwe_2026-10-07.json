@@ -1,0 +1,240 @@
+{
+ "_source": "TradingView daily bars (OPRA for the option, Nasdaq for the stock), fetched 2026-10-10 via the TradingView connector. Daily bars carry no bid/ask, no open interest and no intraday volume.",
+ "symbol": "NWE",
+ "name": "NorthWestern Energy Group, Inc.",
+ "market_cap": 4561548615.75,
+ "contract": "NWE261016C00075000",
+ "opra": "OPRA:NWE261016C75.0",
+ "stock": [
+  {
+   "date": "2026-08-28",
+   "close": 70.32,
+   "high": 71.6,
+   "volume": 286788
+  },
+  {
+   "date": "2026-08-31",
+   "close": 69.16,
+   "high": 69.92,
+   "volume": 351944
+  },
+  {
+   "date": "2026-09-01",
+   "close": 69.91,
+   "high": 70.12,
+   "volume": 337212
+  },
+  {
+   "date": "2026-09-02",
+   "close": 70.19,
+   "high": 70.83,
+   "volume": 479019
+  },
+  {
+   "date": "2026-09-03",
+   "close": 70.9,
+   "high": 71.24,
+   "volume": 483028
+  },
+  {
+   "date": "2026-09-04",
+   "close": 70.78,
+   "high": 71.225,
+   "volume": 403795
+  },
+  {
+   "date": "2026-09-08",
+   "close": 71.78,
+   "high": 72.35,
+   "volume": 230818
+  },
+  {
+   "date": "2026-09-09",
+   "close": 70.57,
+   "high": 71.84,
+   "volume": 243669
+  },
+  {
+   "date": "2026-09-10",
+   "close": 70.01,
+   "high": 71.06,
+   "volume": 495372
+  },
+  {
+   "date": "2026-09-11",
+   "close": 69.24,
+   "high": 70.99,
+   "volume": 291094
+  },
+  {
+   "date": "2026-09-14",
+   "close": 68.65,
+   "high": 69.415,
+   "volume": 415629
+  },
+  {
+   "date": "2026-09-15",
+   "close": 67.98,
+   "high": 68.8,
+   "volume": 577840
+  },
+  {
+   "date": "2026-09-16",
+   "close": 68.52,
+   "high": 69.14,
+   "volume": 408392
+  },
+  {
+   "date": "2026-09-17",
+   "close": 69.3,
+   "high": 69.88,
+   "volume": 441939
+  },
+  {
+   "date": "2026-09-18",
+   "close": 68.47,
+   "high": 69.23,
+   "volume": 770244
+  },
+  {
+   "date": "2026-09-21",
+   "close": 69.83,
+   "high": 71.255,
+   "volume": 605649
+  },
+  {
+   "date": "2026-09-22",
+   "close": 69.87,
+   "high": 71.42,
+   "volume": 466896
+  },
+  {
+   "date": "2026-09-23",
+   "close": 68.7,
+   "high": 69.83,
+   "volume": 416323
+  },
+  {
+   "date": "2026-09-24",
+   "close": 68.07,
+   "high": 69,
+   "volume": 450610
+  },
+  {
+   "date": "2026-09-25",
+   "close": 68.84,
+   "high": 69.22,
+   "volume": 883020
+  },
+  {
+   "date": "2026-09-28",
+   "close": 68.06,
+   "high": 68.69,
+   "volume": 565832
+  },
+  {
+   "date": "2026-09-29",
+   "close": 68.69,
+   "high": 68.885,
+   "volume": 444755
+  },
+  {
+   "date": "2026-09-30",
+   "close": 68.38,
+   "high": 69.12,
+   "volume": 615419
+  },
+  {
+   "date": "2026-10-01",
+   "close": 68.53,
+   "high": 68.74,
+   "volume": 458417
+  },
+  {
+   "date": "2026-10-02",
+   "close": 69.27,
+   "high": 70.29,
+   "volume": 472843
+  },
+  {
+   "date": "2026-10-05",
+   "close": 68.76,
+   "high": 69.46,
+   "volume": 856950
+  },
+  {
+   "date": "2026-10-06",
+   "close": 68.92,
+   "high": 69.535,
+   "volume": 449124
+  },
+  {
+   "date": "2026-10-07",
+   "close": 73.97,
+   "high": 76,
+   "volume": 1793447
+  },
+  {
+   "date": "2026-10-08",
+   "close": 74.63,
+   "high": 74.78,
+   "volume": 856899
+  },
+  {
+   "date": "2026-10-09",
+   "close": 74.15,
+   "high": 74.97,
+   "volume": 568649
+  }
+ ],
+ "option": [
+  {
+   "date": "2026-09-09",
+   "open": 0.85,
+   "high": 0.85,
+   "low": 0.85,
+   "close": 0.85,
+   "volume": 5
+  },
+  {
+   "date": "2026-09-14",
+   "open": 0.25,
+   "high": 0.25,
+   "low": 0.25,
+   "close": 0.25,
+   "volume": 3
+  },
+  {
+   "date": "2026-09-25",
+   "open": 0.15,
+   "high": 0.15,
+   "low": 0.15,
+   "close": 0.15,
+   "volume": 3
+  },
+  {
+   "date": "2026-10-07",
+   "open": 0.4,
+   "high": 3.4,
+   "low": 0.2,
+   "close": 1.1,
+   "volume": 288
+  },
+  {
+   "date": "2026-10-08",
+   "open": 1.1,
+   "high": 1.1,
+   "low": 0.3,
+   "close": 1,
+   "volume": 41
+  },
+  {
+   "date": "2026-10-09",
+   "open": 1,
+   "high": 1,
+   "low": 1,
+   "close": 1,
+   "volume": 1
+  }
+ ]
+}

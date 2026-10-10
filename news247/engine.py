@@ -20,6 +20,7 @@ from .config import Config
 from .edge import ET, Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
+from .market.options import OptionsFeed, OptionsHit, OptionsRadar
 from .market.prices import PriceMonitor
 from .market.radar import MoversRadar, RadarHit, SmallCapFeed
 from .market.universe import Universe, fmt_cap
@@ -89,6 +90,20 @@ class Engine:
                     self.radar,
                     market_phase=lambda now: self.calendar.market_status(now)["phase"],
                 )
+        # the options tape: unusual volume and contracts up thousands of percent on every $1B+
+        # company (needs the universe the small-cap feed keeps fresh)
+        self.options_radar: OptionsRadar | None = None
+        self.options_feed: OptionsFeed | None = None
+        if cfg.options.enabled and self.smallcap_feed is not None:
+            self.options_radar = OptionsRadar(cfg.options, state_path=cfg.data_path / "options_state.json")
+            self.options_feed = OptionsFeed(
+                cfg.options,
+                self.http,
+                self.universe,
+                self.options_radar,
+                market_phase=lambda now: self.calendar.market_status(now)["phase"],
+                movers=lambda: list(self.radar.board) if self.radar is not None else [],
+            )
         self.clusterer = StoryClusterer(window_s=cfg.scoring.cluster_window_minutes * 60)
         self.dispatcher = dispatcher or Dispatcher(cfg.notify, self.http)
         self.detector = MoveDetector(cfg.market)
@@ -187,6 +202,12 @@ class Engine:
         runners.append(asyncio.create_task(self._edge_loop(stop), name="edge"))
         if self.smallcap_feed is not None:
             runners.append(asyncio.create_task(self.smallcap_feed.run(self.on_radar, stop), name="smallcap"))
+        if self.options_feed is not None:
+            runners.append(
+                asyncio.create_task(
+                    self.options_feed.run(self.on_options, stop, self.on_options_problem), name="options"
+                )
+            )
         if self.whatsapp_cloud is not None:
             runners.append(asyncio.create_task(self.whatsapp_cloud.maintain(stop), name="whatsapp-cloud"))
         if self.cfg.general.keepalive_url:
@@ -649,6 +670,113 @@ class Engine:
         self._track_symbols([hit.symbol])
         return alert
 
+    # ------------------------------------------------------------------ the options tape
+
+    async def on_options(self, hits: list[OptionsHit]) -> None:
+        for hit in hits:
+            await self.publish(self._options_alert(hit))
+
+    async def on_options_problem(self, note: str) -> None:
+        await self.publish(
+            Alert(kind="system", severity=Severity.HIGH, title="Options tape: feed problem", body=note)
+        )
+
+    def _options_alert(self, hit: OptionsHit) -> Alert:
+        d = hit.to_dict()
+        ch = hit.chain
+        name = (d["name"] or hit.symbol)[:40]
+        who = f"{name} · {d['cap']} {d['band']}"
+        stock = ""
+        if ch.price:
+            stock = f"{hit.symbol} ${ch.price:,.2f}" + (
+                f" ({fmt_pct(ch.change_pct)})" if ch.change_pct is not None else ""
+            )
+        when = ""
+        if ch.quote_time is not None:
+            when = f" · quotes as of {ch.quote_time:%H:%M} ET"
+        footer = f"Cboe delayed quotes (~15 min){when}. Option prices move fast; check the live bid/ask."
+        lines: list[str] = []
+        if hit.kind == "spike":
+            top = hit.spikes[0]
+            c = top.contract
+            pct = top.honest_move_pct if top.stale_base else top.move_pct
+            title = (
+                f"🔥 {c.label()} {pct:+,.0f}% today" + ("" if top.real else " (unconfirmed)") + f" · {who}"
+            )
+            quote = f"bid ${c.bid:.2f} / ask ${c.ask:.2f}" if c.bid is not None and c.ask else "no live quote"
+            first = (
+                f"${(c.prev_close or 0):.2f} → ${(c.last or 0):.2f} ({quote}) · {c.volume:,} contracts "
+                f"({fmt_cap(c.premium)})"
+            )
+            lines.append(first + (f" · {stock}" if stock else ""))
+            if ch.price and c.strike:
+                otm = (c.strike / ch.price - 1) * 100 if c.cp == "C" else (1 - c.strike / ch.price) * 100
+                where = f"{abs(otm):.1f}% {'out of' if otm > 0 else 'in'} the money"
+                lines.append(
+                    f"{c.dte(datetime.fromtimestamp(hit.detected, ET).date())} days to expiry · strike {where}"
+                )
+            for r in hit.spikes[1:3]:
+                rc = r.contract
+                lines.append(
+                    f"Also: {rc.label()} {r.move_pct:+,.0f}% (${(rc.prev_close or 0):.2f} → ${(rc.last or 0):.2f}, "
+                    f"{rc.volume:,} contracts)"
+                )
+            if top.stale_base and top.real and top.fair_prev is not None:
+                lines.append(
+                    f"The ${(c.prev_close or 0):.2f} previous close looks stale (model value that day "
+                    f"${top.fair_prev:.2f}); the % is measured from the model value."
+                )
+            for reason in hit.reasons:
+                lines.append(f"⚠ {reason}")
+        else:
+            top = hit.flow[0]
+            c = top.contract
+            ratio = (
+                f"{top.vol_oi:,.0f}× open interest"
+                if top.vol_oi is not None
+                else "no open interest before today"
+            )
+            title = (
+                f"🐋 Unusual options: {hit.symbol} {fmt_cap(hit.flow_premium)} · {c.label()} "
+                f"{c.volume:,} contracts, {ratio} · {who}"
+            )
+            mix = f"calls {fmt_cap(hit.call_premium)} / puts {fmt_cap(hit.put_premium)}"
+            lines.append(
+                f"{fmt_cap(hit.flow_premium)} in unusual contracts ({mix})" + (f" · {stock}" if stock else "")
+            )
+            for r in hit.flow[:3]:
+                rc = r.contract
+                side = f", {rc.side()}" if rc.side() else ""
+                lines.append(
+                    f"{rc.label()}: {rc.volume:,} contracts vs {rc.open_interest:,} open · "
+                    f"{fmt_cap(rc.premium)} at ${rc.price:.2f}{side}"
+                )
+            lines.append("Side is estimated from where the last print sat in the bid/ask spread.")
+        news = self.find_catalysts([hit.symbol], hit.detected)
+        if not news:
+            lines.append("No headline yet.")
+        lines.append(footer)
+        alert = Alert(
+            kind="options",
+            severity=Severity.parse(hit.severity),
+            title=title,
+            body="\n".join(lines),
+            url=f"https://www.cboe.com/delayed_quotes/{hit.symbol.lower()}/quote_table",
+            tickers=[hit.symbol],
+            related=news,
+        )
+        alert.edge["options"] = d
+        self._track_symbols([hit.symbol])
+        return alert
+
+    def options_board(self, limit: int = 40) -> dict[str, Any]:
+        return {
+            "enabled": self.options_feed is not None,
+            "market": self.calendar.market_status(time.time()),
+            "rows": self.options_radar.snapshot(limit) if self.options_radar is not None else [],
+            "status": self.options_feed.status() if self.options_feed is not None else None,
+        }
+
     def _radar_note(self, tickers: list[str], now: float) -> str:
         for t in tickers:
             seen = self.radar_seen.get(t)
@@ -674,6 +802,8 @@ class Engine:
 
     async def publish(self, alert: Alert, push: bool = True) -> None:
         self.stats["alerts"] += 1
+        if self.options_feed is not None and alert.kind in ("news", "price"):
+            self.options_feed.prioritize(alert.tickers[:4])  # read their option chains next
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:
@@ -875,6 +1005,7 @@ class Engine:
                 if self.smallcap_feed is not None
                 else {"listings": len(self.universe), "radar": {"enabled": False}}
             ),
+            "options": self.options_feed.status() if self.options_feed is not None else {"enabled": False},
             "channels": self.dispatcher.describe(),
             "phone_mode": self.phone_mode(),
             "relay": self.relay_hub.status() if self.relay_hub is not None else None,

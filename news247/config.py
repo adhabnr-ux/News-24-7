@@ -225,6 +225,47 @@ class SmallCapConfig:
 
 
 @dataclass
+class OptionsConfig:
+    """The options tape: unusual volume and contracts up thousands of percent (market/options.py).
+    Every threshold below can be set under ``options:`` in config.yaml."""
+
+    enabled: bool = True
+    # which companies: every listed US company worth at least this much, up to the largest
+    min_market_cap: float = 1e9
+    # the data: Cboe's public delayed-quotes JSON (~15 min delayed, every expiry and strike)
+    chain_url: str = "https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
+    request_interval_s: float = 0.35  # at most ~3 chain reads a second (be polite to a free feed)
+    concurrency: int = 3  # chains read at once
+    batch_size: int = 30  # chains per scheduling round
+    max_quote_age_s: float = 1800.0  # a chain whose stock quote is older than this is stale: no alert
+    # who is read most often: today's movers (|move| >= hot_move_pct) plus radar / news names,
+    # up to hot_size of them every hot_seconds; everyone else rotates through, largest first
+    hot_move_pct: float = 3.0
+    hot_size: int = 40
+    hot_seconds: float = 180.0
+    min_refetch_seconds: float = 300.0  # the rotation never re-reads a chain sooner than this
+    # spikes: a contract trading at spike_min_pct+ above its previous close
+    spike_min_pct: float = 1000.0  # "thousands of percent": 1,000% = 11x the previous close
+    spike_min_volume: int = 25  # contracts traded today
+    spike_min_price: float = 0.10  # last price, $ per share (a $0.01 -> $0.11 print is noise)
+    spike_min_premium: float = 5000.0  # $ traded in that contract today (volume x price x 100)
+    spike_confirm_fraction: float = 0.5  # pushes only if the bid still shows >= half the threshold
+    stale_base_ratio: float = 0.3  # previous close below 30% of its model value = stale print
+    stale_min_fair: float = 0.05  # ... when that model value is at least $0.05
+    # unusual volume: contracts trading far above their open interest, with real money
+    flow_min_volume: int = 500  # contracts traded today
+    flow_oi_multiple: float = 3.0  # volume >= 3x open interest (any volume when OI is 0)
+    flow_min_contract_premium: float = 100_000.0  # $ in that contract today
+    flow_min_premium: float = 250_000.0  # $ across a company's unusual contracts before an alert
+    flow_push_premium: float = 1_000_000.0  # pushes at/above this ...
+    flow_push_oi_multiple: float = 5.0  # ... when the biggest contract is >= 5x its open interest
+    flow_refire_multiple: float = 2.0  # speaks again about a company when its unusual premium doubles
+    # noise control
+    daily_pushes: int = 12  # most options pushes per day; the rest show in the app
+    max_rows: int = 5  # contracts listed per alert
+
+
+@dataclass
 class ChannelConfig:
     name: str
     enabled: bool = False
@@ -262,6 +303,7 @@ class Config:
     knowledge: dict[str, Any]
     path: Path | None = None
     smallcap: SmallCapConfig = field(default_factory=SmallCapConfig)
+    options: OptionsConfig = field(default_factory=OptionsConfig)
 
     @property
     def data_path(self) -> Path:
@@ -359,6 +401,7 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         "notify",
         "web",
         "smallcap",
+        "options",
         "sources",
         "include_default_sources",
     }
@@ -429,6 +472,16 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
     if smallcap.radar_seconds < 20:
         raise ConfigError("[smallcap] radar_seconds must be at least 20 (be polite to free endpoints)")
 
+    options = _dataclass_from(OptionsConfig, raw.get("options"), "options")
+    if options.request_interval_s < 0.2:
+        raise ConfigError("[options] request_interval_s must be at least 0.2 (be polite to free endpoints)")
+    if options.spike_min_pct <= 0 or not 0 < options.spike_confirm_fraction <= 1:
+        raise ConfigError("[options] spike_min_pct must be > 0 and spike_confirm_fraction in (0, 1]")
+    if options.concurrency < 1 or options.batch_size < 1:
+        raise ConfigError("[options] concurrency and batch_size must be at least 1")
+    if "{symbol}" not in options.chain_url:
+        raise ConfigError("[options] chain_url must contain {symbol}")
+
     defaults = (
         expand_env(load_package_yaml("default_sources.yaml"))
         if as_bool(raw.get("include_default_sources", True))
@@ -440,7 +493,7 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
             raise ConfigError(f"source '{s['name']}' needs a 'type'")
         s["enabled"] = as_bool(s.get("enabled", True))
 
-    return Config(general, scoring, llm, market, notify, web, sources, knowledge, path, smallcap)
+    return Config(general, scoring, llm, market, notify, web, sources, knowledge, path, smallcap, options)
 
 
 def load_config(path: str | Path | None = None) -> Config:

@@ -258,6 +258,26 @@ small-cap noise releases flagged. Full guide: [docs/SMALLCAPS.md](docs/SMALLCAPS
 
 ---
 
+## The options tape: unusual volume and contracts up thousands of percent
+
+Every listed US company worth **$1B or more** (up to the largest) has its full option chain read
+in the regular session (Cboe's free delayed quotes, ~15 min): every expiry, every strike, calls
+and puts. Names moving today, on the radar or in the news are re-read every 3 minutes; the rest
+rotate through, largest first.
+
+- **🔥 Spikes**: a contract trading **1,000%+** above its previous close pings you. It must be
+  real first: the bid has to confirm it (not one print in an empty book), and the previous close
+  must not be a stale $0.01 print. If it is, the move is re-measured from the contract's model
+  value that day, which is how most "+5,000%" screenshots fall apart. Unconfirmed spikes show in
+  the app with the reason.
+- **🐋 Unusual volume**: contracts trading 3×+ their open interest with $100K+ in each, summed
+  per company. Pushed at $1M+, with calls vs puts and whether the prints hit the ask.
+
+`news247 options NVDA NWE` reads chains once from your server and shows what the tape sees.
+Full guide: [docs/OPTIONS.md](docs/OPTIONS.md).
+
+---
+
 ## Price-move detection: "all the stocks are crashing"
 
 - **Single stocks**: ±1.5 % in 1 min, ±3 % in 5 min, ±5 % in 15 min (index ETFs have tighter built-in limits, e.g. SPY ±0.8 % in 5 min). Also one alert per day for a ±7 % move from the previous close.
@@ -327,6 +347,7 @@ Everything lives in `config.yaml` (from `news247 init`). Every option is documen
 - `market`: provider, symbols, move `rules`, per-symbol `overrides`, sector `groups`
 - `sources`: override built-ins by name (`enabled: false`, `interval: 10`, …) or add new ones. The built-ins are in [`news247/data/default_sources.yaml`](news247/data/default_sources.yaml).
 - `notify`: channels, `min_severity` per channel, `quiet_hours`, `rate_limit_per_minute`
+- `smallcap`, `options`: the small-cap lane and radar; the options tape
 - `llm`, `web`, `general`
 
 Secrets go in `.env` and are referenced from the config as `${NAME}`.
@@ -339,6 +360,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 | `news247 check [names…]` | Fetch every source once from this machine; shows status, newest item and errors |
 | `news247 score "headline"` | Explain a score (`--tier primary --entity OpenAI --ticker ACMB --summary …`) |
 | `news247 universe [--refresh] [SYM…]` | Load every listed company's market cap; look companies up |
+| `news247 options SYM… [--min-pct 200]` | Read option chains once: biggest movers today, unusual volume, the alert it would raise |
 | `news247 test-notify [--only imessage]` | Send a test alert through every enabled channel (or just one) |
 | `news247 demo` | Simulated "AI launch → software selloff" through the real pipeline, dashboard and notifications |
 | `news247 stats` | Measured detection latency per source, and which source had each story first |
@@ -347,7 +369,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 
 ### API
 
-`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
+`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
 
 ---
 
@@ -368,6 +390,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
                             cooldowns)          sector move)
  Nasdaq screener ─► universe (market caps) ─► small-cap sizing in the scorer
  Yahoo small-cap gainers ─► radar (ladder, volume, pump guards) ─► "moving before the news" alert
+Cboe option chains ($1B+) ─► spikes (bid-confirmed, stale-base check) + unusual volume ─► options alert
 ```
 
 ```
@@ -376,7 +399,7 @@ news247/
                 apis (hn, reddit, finnhub)
   analysis/     scorer, smallcap (catalyst sizing vs. market cap), entities, dedup (story clustering), llm
   market/       detector (move rules, baskets), prices (yahoo, finnhub), universe (every listing's size),
-                radar (small caps breaking out before the news)
+                radar (small caps breaking out before the news), options (chains, spikes, unusual volume)
   notify/       channels (relay, iMessage, BlueBubbles, Sendblue, Blooio, SMS, ntfy, Telegram, …) + dispatcher
                 (severity routing, quiet hours, pause/text commands, backup channels)
   whatsapp/     WhatsApp: Cloud API client (templates, 24-hour window, webhook) and the self-hosted
@@ -392,10 +415,11 @@ news247/
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 230 tests: parsers on real feed formats, scoring calibration, move detection,
+pytest -q          # 420+ tests: parsers on real feed formats, scoring calibration, move detection,
                    # every notification channel's wire format, LLM client, engine end-to-end, web API,
                    # the iMessage relay over a real WebSocket (auth, queueing, failover, receipts, commands),
-                   # WhatsApp pairing/sending/receipts/commands (+ booting the real engine when installed)
+                   # WhatsApp pairing/sending/receipts/commands (+ booting the real engine when installed),
+                   # the options tape (Black-Scholes, every spike and volume rule, a real NWE replay)
 ruff check . && ruff format --check .
 ```
 

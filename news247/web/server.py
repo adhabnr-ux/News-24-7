@@ -74,6 +74,7 @@ class WebServer:
         app.router.add_get("/api/calendar", self.api_calendar)
         app.router.add_get("/api/watch", self.api_watch)
         app.router.add_get("/api/radar", self.api_radar)
+        app.router.add_get("/api/options", self.api_options)
         app.router.add_get("/api/alert/{id}", self.api_alert)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
@@ -520,6 +521,15 @@ class WebServer:
         except ValueError:
             limit = 40
         return _json(self.engine.radar_board(limit))
+
+    async def api_options(self, request: web.Request) -> web.Response:
+        """The options tape: the latest spike / unusual-volume hit per company, and the feed's
+        health (companies covered, chains read, rotation progress, stale or failed reads)."""
+        try:
+            limit = max(1, min(100, int(request.query.get("limit", "40"))))
+        except ValueError:
+            limit = 40
+        return _json(self.engine.options_board(limit))
 
     async def api_alert(self, request: web.Request) -> web.Response:
         """Everything about one alert: the analysis, the play, precedents, every source that

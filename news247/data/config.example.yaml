@@ -93,6 +93,28 @@ smallcap:
   radar_mega_min_pct: 4         # $200B+
   sweep_size: ${SMALLCAP_SWEEP_SIZE:-400}   # largest companies swept every minute, pre/after hours included
 
+# The options tape (needs `smallcap` on: it reads the same company list). Every $1B+ company's
+# full option chain (Cboe's free delayed quotes, ~15 min), in the regular session. Pushes when a
+# contract trades 1,000%+ above its previous close with the bid confirming it and a real (not
+# stale) base, and when unusual volume (far above open interest, $1M+) hits a company.
+# Full guide: docs/OPTIONS.md
+options:
+  enabled: ${OPTIONS_ENABLED:-true}
+  min_market_cap: ${OPTIONS_MIN_CAP:-1000000000}   # every company from $1B up to the largest
+  spike_min_pct: ${OPTIONS_SPIKE_PCT:-1000}        # "thousands of percent": 1,000% = 11x the previous close
+  spike_min_volume: 25            # contracts traded today
+  spike_min_price: 0.10           # last price ($/share): a $0.01 -> $0.11 print is noise
+  spike_min_premium: 5000         # $ traded in that contract today
+  spike_confirm_fraction: 0.5     # push only if the bid still holds >= half the threshold
+  stale_base_ratio: 0.3           # previous close < 30% of its model value that day = stale print
+  flow_min_volume: 500            # unusual volume: contracts today ...
+  flow_oi_multiple: 3             # ... at least 3x open interest ...
+  flow_min_premium: 250000        # ... and $250K+ across the company to show it
+  flow_push_premium: ${OPTIONS_FLOW_PUSH:-1000000}  # pushed at $1M+ (biggest contract >= 5x OI)
+  daily_pushes: ${OPTIONS_DAILY_PUSHES:-12}         # most options pushes per day; the rest show in the app
+  hot_move_pct: 3                 # companies moving this much today are re-read every 3 minutes
+  request_interval_s: 0.35        # ~3 chain reads a second, everyone else rotates (largest first)
+
 # Sources: ~50 built-ins are on by default (`news247 check` lists them). Override one by
 # repeating its name here (e.g. {name: hackernews, enabled: false}) or add your own:
 #   - {name: my-feed, type: rss, url: "https://example.com/feed.xml", tier: media, interval: 60}

@@ -294,6 +294,85 @@ def cmd_universe(cfg: Config, args: argparse.Namespace) -> int:
     return asyncio.run(_universe(cfg, args.symbols, args.refresh))
 
 
+# --------------------------------------------------------------------------- options
+
+
+async def _options(cfg: Config, symbols: list[str], min_pct: float | None) -> int:
+    """Read option chains once from this machine and show what the options tape sees."""
+    import dataclasses
+    from datetime import datetime
+
+    from .http import HttpClient
+    from .market.options import ET, OptionsFeed, OptionsRadar
+    from .market.radar import SmallCapFeed
+    from .market.universe import Universe, fmt_cap
+
+    ocfg = cfg.options if min_pct is None else dataclasses.replace(cfg.options, spike_min_pct=min_pct)
+    uni = SmallCapFeed.load_cached(cfg.data_path) or Universe()
+    covered = sum(
+        1 for li in uni.by_symbol.values() if li.common and (li.market_cap or 0) >= ocfg.min_market_cap
+    )
+    print(f"\n  options tape: {covered} companies of {fmt_cap(ocfg.min_market_cap)}+ in the cached universe")
+    if not len(uni):
+        print("  (no cached universe yet: run `news247 universe --refresh`)")
+    worst = 0
+    async with HttpClient(cfg.general.user_agent, timeout_s=60) as http:
+        feed = OptionsFeed(ocfg, http, uni, OptionsRadar(ocfg))
+        for sym in [s.upper() for s in symbols]:
+            print(f"\n  {sym}  {feed.url(sym)}")
+            try:
+                chain = await feed.fetch_chain(sym)
+            except Exception as exc:  # noqa: BLE001 - show any failure to the operator
+                print(f"     failed: {type(exc).__name__}: {exc}")
+                worst = 1
+                continue
+            if chain is None:
+                print("     no option chain listed for this symbol")
+                continue
+            today = datetime.now(ET).date()
+            live = [c for c in chain.contracts if c.expiry >= today]
+            expiries = sorted({c.expiry for c in live})
+            when = f"{chain.quote_time:%Y-%m-%d %H:%M} ET" if chain.quote_time else "no timestamp"
+            stock = f"${chain.price:,.2f}" if chain.price else "?"
+            chg = f" ({chain.change_pct:+.2f}%)" if chain.change_pct is not None else ""
+            print(
+                f"     stock {stock}{chg} · {len(live):,} live contracts over {len(expiries)} expiries "
+                f"· quotes as of {when}" + (f" · {chain.skipped} adjusted skipped" if chain.skipped else "")
+            )
+            traded = [c for c in live if c.volume > 0 and c.move_pct is not None]
+            print(f"     {sum(c.volume for c in live):,} contracts traded today in {len(traded):,} contracts")
+            for c in sorted(traded, key=lambda c: c.move_pct or 0, reverse=True)[:5]:
+                bid = f"{c.bid:.2f}" if c.bid is not None else "-"
+                ask = f"{c.ask:.2f}" if c.ask is not None else "-"
+                print(
+                    f"       {c.label():<34} {c.move_pct:+9,.0f}%  ${c.prev_close or 0:.2f} -> ${c.last or 0:.2f}"
+                    f"  bid/ask {bid}/{ask}  vol {c.volume:,}  OI {c.open_interest:,}"
+                )
+            hits = feed.radar.scan(chain, uni.get(sym))
+            if not hits:
+                print(f"     no alert: nothing at {ocfg.spike_min_pct:,.0f}%+ or unusual volume right now")
+            for h in hits:
+                d = h.to_dict()
+                if h.kind == "spike":
+                    top = h.spikes[0]
+                    print(
+                        f"     ALERT {h.severity}: spike {top.contract.label()} {top.honest_move_pct:+,.0f}% "
+                        f"(confirmed={top.confirmed}, stale_base={top.stale_base})"
+                    )
+                else:
+                    print(
+                        f"     ALERT {h.severity}: unusual volume {fmt_cap(d['flow_premium'])} in {len(h.flow)} contracts"
+                    )
+                for r in h.reasons:
+                    print(f"       ⚠ {r}")
+    print()
+    return worst
+
+
+def cmd_options(cfg: Config, args: argparse.Namespace) -> int:
+    return asyncio.run(_options(cfg, args.symbols, args.min_pct))
+
+
 # --------------------------------------------------------------------------- test-notify
 
 
@@ -584,6 +663,10 @@ def build_parser() -> argparse.ArgumentParser:
     u.add_argument("symbols", nargs="*", help="symbols or company names to show")
     u.add_argument("--refresh", action="store_true", help="download a fresh copy now")
 
+    o = sub.add_parser("options", help="read option chains once: biggest movers, unusual volume, alerts")
+    o.add_argument("symbols", nargs="+", help="symbols, e.g. NVDA NWE")
+    o.add_argument("--min-pct", type=float, help="spike threshold for this run (default from config: 1000)")
+
     tn = sub.add_parser("test-notify", help="send a test alert to every enabled channel")
     tn.add_argument(
         "--only", action="append", help="test just this channel (repeatable), e.g. --only imessage"
@@ -620,6 +703,7 @@ COMMANDS = {
     "stats": cmd_stats,
     "backtest": cmd_backtest,
     "universe": cmd_universe,
+    "options": cmd_options,
 }
 
 
