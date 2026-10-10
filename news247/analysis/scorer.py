@@ -40,6 +40,7 @@ _DOWN_WORDS = re.compile(
     r"lower than|below|short of|scales? back|slash\w*)\b",
     re.I,
 )
+_DEAL_WORDS = re.compile(r"\b(to acquire|takeover|buyout)\b", re.I)
 _UP_WORDS = re.compile(
     r"\b(soar\w*|surge\w*|jump\w*|rall(y|ies|ied)|rocket\w*|beats?|raises? guidance|record|approv\w*|"
     r"upgrade\w*|buyback|repurchase|to acquire|takeover|buyout|wins?|awarded|partnership)\b",
@@ -362,6 +363,13 @@ class Scorer:
                     reasons.append(f"+{floor - score:.0f} small-cap floor (a {cat.expected:.0f}% mover)")
                     score = floor
 
+        # --- big listed companies named in the headline ("Crown Castle stock jumping as SpaceX ..."):
+        # tagged so the alert, the Brief and the radar's "moving on the news" link can name them
+        if self.smallcap is not None:
+            for li in self.smallcap.universe.find_named(title, limit=6):
+                if (li.market_cap or 0) >= 2e9 and li.symbol not in explicit:
+                    explicit.append(li.symbol)
+
         # --- relevance: news about tickers nobody tracks is scaled down. Themes that name their
         # own tickers (sector baskets) make it relevant; generic ones (FDA, deal talk) don't —
         # unless the catalyst is material for a small/mid cap.
@@ -409,6 +417,11 @@ class Scorer:
     def _direction(title: str, themes: list[_Theme]) -> str:
         down = len(_DOWN_WORDS.findall(title))
         up = len(_UP_WORDS.findall(title))
+        dirs = {t.direction for t in themes if t.direction in ("up", "down")}
+        if dirs and up and not down and up == len(_DEAL_WORDS.findall(title)):
+            # "SpaceX to acquire spectrum": the deal words are about the buyer, while the theme's
+            # tickers are third parties (carriers down, towers up), so the theme decides
+            return dirs.pop() if len(dirs) == 1 else "mixed"
         if down > up:
             return "down"
         if up > down:

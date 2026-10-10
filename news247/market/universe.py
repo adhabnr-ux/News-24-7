@@ -117,6 +117,7 @@ def display_name(raw: str) -> str:
 def name_key(name: str) -> str:
     """Normalize a company name for matching: lower-case words without corporate suffixes."""
     key = display_name(name).lower().replace("&", " and ")
+    key = re.sub(r"\([^)]*\)", " ", key)  # "American Tower Corporation (REIT)" -> "american tower"
     key = re.sub(r"[^\w\s-]", " ", key)
     key = re.sub(r"\s+", " ", key).strip()
     for _ in range(4):
@@ -360,7 +361,7 @@ class Universe:
         self._solo = {
             w: next(iter(syms))
             for w, syms in owners.items()
-            if len(syms) == 1 and len(w) >= 6 and w.isalpha() and w not in COMMON_WORDS
+            if len(syms) == 1 and len(w) >= 6 and w.replace("-", "").isalpha() and w not in COMMON_WORDS
         }
         self.loaded_at = time.time() if loaded_at is None else loaded_at
         if source:

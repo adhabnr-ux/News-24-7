@@ -1057,6 +1057,29 @@ themes:
     weight: 35
     direction: down
     tickers: [MRNA, BNTX, NVAX, PFE]
+  satellite_carrier_threat:
+    description: >-
+      SpaceX / Starlink buys spectrum or moves into mobile service: the US carriers fall (Oct 8 2026,
+      SpaceX buys Grain's 800 MHz for ~$8B -> VZ -10%, T -11%, TMUS -13% the next day; Sep 2025,
+      SpaceX buys EchoStar spectrum for ~$17B -> SATS up sharply, carriers lower)
+    all:
+      - [spacex, space x, starlink]
+      - [spectrum, airwaves, mhz, wireless licen*, direct-to-cell, direct to cell, mobile carrier, wireless carrier, cellular, mobile service*, phone service, wireless service*]
+      - [acquir*, buy, buys, buying, bought, purchas*, pay, pays, paying, sell*, sale, deal, agree*, pact, licen*, fcc, approv*, standalone, take aim, takes aim, challeng*, rival*, threat*, compet*]
+    weight: 35
+    direction: down
+    tickers: [VZ, T, TMUS]
+  satellite_tower_readthrough:
+    description: >-
+      The same spectrum deals as a read-through for tower owners, who would rent SpaceX the ground
+      sites (Oct 9 2026: CCI +15.6%, AMT +9.3%, SBAC +7.3% on 3-4x volume)
+    all:
+      - [spacex, space x, starlink]
+      - [spectrum, airwaves, mhz, wireless licen*, mobile carrier, wireless carrier]
+      - [acquir*, buy, buys, buying, bought, purchas*, pay, pays, paying, sell*, sale, deal, agree*, pact, licen*, standalone, tower*]
+    weight: 5
+    direction: up
+    tickers: [CCI, AMT, SBAC]
 
 # Price-move baskets ("groups"): a group alert fires when the group's average move
 # over `window` seconds reaches `pct` and at least `min_members` members moved >= pct/2

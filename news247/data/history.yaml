@@ -1917,6 +1917,29 @@ events:
       - "Moderna stock hits 4-year high on planned national cancer vaccine effort"
       - "BNTX, NVAX, MRNA Lead Vaccine Rally After Report Of An NIH Cancer-Vaccine Push"
 
+  - id: spacex-grain-800mhz
+    date: 2026-10-08
+    category: telecom_spectrum
+    first_source: "SpaceX/Grain announcement and Reuters, Oct 8 after the close; WSJ put the price at ~$8B"
+    move: "Oct 9: VZ -10.1%, T -10.8%, TMUS -13.3%; CCI +15.6%, AMT +9.3%, SBAC +7.3% (3-5x volume)"
+    tickers: [VZ, T, TMUS, CCI, AMT, SBAC]
+    first_reports:
+      - {text: "SpaceX to acquire spectrum that enables Starlink Mobile services", tier: media}
+      - {text: "SpaceX to Pay About $8 Billion for Grain Management's 800 MHz Spectrum", tier: media, approx: true}
+    coverage:
+      - "SpaceX takes aim at US wireless carriers with spectrum acquisition"
+      - "Crown Castle Stock Jumping as SpaceX Acquires 800 MHz Spectrum"
+      - "Telecom tower REIT stocks jump after SpaceX-Grain Management spectrum deal"
+
+  - id: spacex-echostar-spectrum
+    date: 2025-09-08
+    category: telecom_spectrum
+    first_source: "EchoStar / SpaceX announcement and Reuters, Sep 8 2025"
+    move: "SATS jumped ~20%; US carriers lower"
+    tickers: [SATS, VZ, T, TMUS]
+    first_reports:
+      - {text: "EchoStar to sell spectrum licenses to SpaceX for about $17 billion", tier: media}
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -2044,5 +2067,9 @@ noise:
   - {text: "Lumen Ridge Energy Announces Reverse Stock Split", tier: wire, tickers: [LMRE9], smallcap: {symbol: LMRE9, name: "Lumen Ridge Energy Inc.", mcap: 35e6}}
   # routine health-agency news that names vaccines but changes nothing
   - "NIH funds study of vaccine hesitancy in rural communities"
+  - "SpaceX launches 24 more Starlink satellites from Cape Canaveral"
+  - "Starlink launches direct-to-cell texting in Chile with Entel"
+  - "T-Mobile expands T-Satellite with Starlink to more phones"
+  - "Starlink adds 1 million subscribers in three months, SpaceX says"
   - {text: "NIH launches new website for vaccine trial volunteers", tier: primary}
   - "CDC updates guidance on flu vaccines for older adults"

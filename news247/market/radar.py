@@ -336,7 +336,10 @@ class MoversRadar:
             pct = q.change_pct or 0.0
             cap = q.market_cap or (li.market_cap if li else 0) or 0
             min_pct, jump_pct, push_pct, klass = self.rules(cap)
-            level = max((min_pct * m for m in LADDER if abs(pct) >= min_pct * m), default=0)
+            # the push threshold is a rung too: bigger companies push at 1.5x, between the 1x and
+            # 1.75x rungs, so a stock that climbs to +9.3% (AMT, Oct 9 2026) would otherwise never push
+            rungs = sorted({min_pct * m for m in LADDER} | {push_pct})
+            level = max((r for r in rungs if abs(pct) >= r), default=0)
             entry = self.board.get(q.symbol, {})
             self.board[q.symbol] = {
                 **entry,
