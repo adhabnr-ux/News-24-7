@@ -296,7 +296,11 @@ def test_spike_ladder_fires_once_per_rung_and_survives_restart(tmp_path: Path):
     (hit,) = r2.scan(
         chain_with(row(occ, **{**SPIKE, "last_trade_price": 3.5, "bid": 3.3, "ask": 3.7})), None, NOW + 180
     )
-    assert hit.rung == 2000.0 and hit.severity == "HIGH"
+    assert hit.rung == 2000.0 and hit.severity == "MEDIUM"  # one push per company, until 10x
+    assert "pushes again from 10,000%" in hit.reasons[0]
+    big = {**SPIKE, "last_trade_price": 16.5, "bid": 16.0, "ask": 17.0}  # +10,900%
+    (ten,) = r2.scan(chain_with(row(occ, **big)), None, NOW + 240)
+    assert ten.rung == 10000.0 and ten.severity == "HIGH"
     nxt = datetime(2026, 10, 8, 10, 0, tzinfo=ET).timestamp()  # a new day starts over
     assert (
         len(r2.scan(chain_with(row(occ, **{**SPIKE, "last_trade_time": "2026-10-08T09:59:00"})), None, nxt))
@@ -903,7 +907,8 @@ async def test_alpaca_source_pages_auth_feed_and_daily_open_interest(server: Rec
     f = OptionsFeed(cfg, http, uni(li("XYZ", 5e9, 4.0)), OptionsRadar(cfg))
     assert [s.name for s in f.sources] == ["alpaca", "cboe"] and f.label.startswith("Alpaca indicative feed")
     hits = await f.read("XYZ", time.time())
-    assert {h.kind for h in hits} == {"spike", "flow"}
+    assert {h.kind for h in hits} == {"spike", "flow", "surge"}  # 6,400 contracts vs 6 yesterday
+    assert [h.severity for h in hits].count("HIGH") == 1  # one push per company per scan
     spike = next(h for h in hits if h.kind == "spike")
     assert spike.severity == "HIGH" and spike.to_dict()["source"].startswith("Alpaca indicative feed")
     flow = next(h for h in hits if h.kind == "flow")
@@ -942,7 +947,9 @@ async def test_alpaca_without_open_interest_judges_spikes_but_not_volume(server:
     cfg = alpaca_cfg(server)
     f = OptionsFeed(cfg, http, uni(li("XYZ", 5e9, 4.0)), OptionsRadar(cfg))
     hits = await f.read("XYZ", time.time())
-    assert [h.kind for h in hits] == ["spike"]  # no open interest: no volume verdict, never a fake one
+    # no open interest: no per-contract volume verdict (never a fake one); the company-wide
+    # surge compares with yesterday's volume, so it still works
+    assert [h.kind for h in hits] == ["spike", "surge"]
     src = f.sources[0]
     assert src.oi_fail_run == 1 and "403" in f.status()["sources"]["alpaca"]["open_interest_error"]
     src.oi_fail_run = 25

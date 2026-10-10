@@ -95,6 +95,32 @@ A company is reported when its unusual contracts add up to **$250K or more**. Th
 It pushes at **$1M or more** when the biggest contract is at least 5× its open interest. A
 company is reported again only when its unusual premium doubles.
 
+## Company-wide surges
+
+The per-contract rule above misses the most common "unusual options activity": a whole chain
+lighting up while each contract stays near its own open interest. On Friday Oct 9 2026, CCI's
+$77.5 and $75 calls traded only 1.7× and 0.2× their open interest, yet the chain was on fire.
+
+**🌊 Surge:** the company's total option volume today against the previous session.
+- **Shows:** 4× or more, with at least 2,000 contracts.
+- **Pushes:** 6× or more, with $1M+ traded across the company.
+- **Says:** the multiple, the dollars, the call share, and the top contracts with their moves.
+- **Baseline:** Alpaca's previous daily bars when Alpaca is the feed, else what this server saw
+  in the previous session.
+
+## Pushes on a big day
+
+- **Spikes:** a company pushes once a day for a spike, and again only if it goes 10× further
+  (1,000% → 10,000%). A single name climbing through every step can't spend the day's budget.
+- **One per scan:** if one scan finds a spike, unusual volume and a surge on the same company,
+  only one of them pushes. The others show in the app.
+- **Never traded before:** a contract with no previous close is measured from its model value
+  at yesterday's close (at least $0.01), and the alert says so. Brokers measure these from a
+  ~$0.01 closing mark, which is why their "% today" can read +12,400%.
+- **Overnight news:** a company named in news after the close stays on the fast-read list until
+  two hours into the next session. Its morning options and radar alerts cite that news,
+  instead of "No headline yet".
+
 ## Coverage and speed
 
 - **Which companies:** every common stock in the universe (Nasdaq's screener, the same one the

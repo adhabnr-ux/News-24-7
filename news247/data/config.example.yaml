@@ -116,6 +116,8 @@ options:
   flow_oi_multiple: 3             # ... at least 3x open interest ...
   flow_min_premium: 250000        # ... and $250K+ across the company to show it
   flow_push_premium: ${OPTIONS_FLOW_PUSH:-1000000}  # pushed at $1M+ (biggest contract >= 5x OI)
+  surge_multiple: 4               # a company's whole option volume at 4x+ the previous session ...
+  surge_min_volume: 2000          # ... and 2,000+ contracts shows; 6x with $1M+ traded pushes
   daily_pushes: ${OPTIONS_DAILY_PUSHES:-12}         # most options pushes per day; the rest show in the app
   hot_move_pct: 3                 # companies moving this much today are re-read every 3 minutes
   request_interval_s: 0.35        # ~3 chain reads a second, everyone else rotates (largest first)

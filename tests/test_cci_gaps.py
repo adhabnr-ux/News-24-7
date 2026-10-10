@@ -166,3 +166,164 @@ def test_carriers_after_hours_on_the_announcement():
     assert {h.symbol for h in hits} == {"VZ", "T", "TMUS"} and all(h.direction == "down" for h in hits)
     next_day = r.scan([q("TMUS", -13.3)], et(2026, 10, 9, 11, 0), provider="sweep")
     assert next_day and next_day[0].severity == "HIGH"
+
+
+# --------------------------------------------------------------------------- the options tape
+
+
+def cci_data() -> dict:
+    import json
+
+    from .conftest import FIXTURES
+
+    return json.loads((FIXTURES / "options_cci_2026-10-09.json").read_text())
+
+
+def replay_chain(sym: str, data: dict, *, with_oi: bool = False):
+    """Friday's closing prints as a chain: last = Friday's close, previous close = the contract's
+    last trade before Friday, volume = Friday's. Daily bars carry no bid, so none is invented."""
+    import math
+    import statistics
+    from datetime import date
+
+    from news247.market.options import Chain, Contract, parse_occ
+
+    closes = data["stocks"][sym]["closes"]
+    days = sorted(closes)
+    hist = [closes[k] for k in days if k <= "2026-10-08"][-21:]
+    rets = [math.log(hist[i] / hist[i - 1]) for i in range(1, len(hist))]
+    rv = statistics.pstdev(rets) * math.sqrt(252)
+    prev, now = closes["2026-10-08"], closes["2026-10-09"]
+    chain = Chain(sym, price=now, prev_close=prev, change_pct=(now / prev - 1) * 100, iv30=rv + 0.10)
+    ratios = data["vol_oi_2026-10-09"]
+    for occ, bars in data["options"].items():
+        root, exp, cp, strike = parse_occ(occ)
+        if root != sym:
+            continue
+        fri = bars[-1]
+        before = [b for b in bars if b["date"] < "2026-10-09"][-1]
+        oi = round(fri["volume"] / ratios[occ]) if with_oi and occ in ratios else None
+        chain.contracts.append(
+            Contract(
+                occ,
+                sym,
+                exp,
+                cp,
+                strike,
+                last=fri["close"],
+                prev_close=before["close"],
+                volume=fri["volume"],
+                open_interest=oi,
+                last_trade=datetime(2026, 10, 9, 15, 50, tzinfo=ET),
+            )  # fmt: skip
+        )
+    assert date(2026, 10, 9) > exp.replace(day=1)  # sanity: Oct 16 expiry, live on Oct 9
+    return chain
+
+
+def options_radar():
+    from news247.market.options import OptionsRadar
+
+    return OptionsRadar(build_config({}).options)
+
+
+@pytest.mark.parametrize("sym,expected", [("CCI", {80.0, 77.5, 75.0}), ("AMT", {185.0, 190.0})])
+def test_friday_tower_calls_are_real_thousand_percent_spikes(sym, expected):
+    """CCI $80 call: $0.05 -> $1.25 on 1,666 contracts (+2,400%); $77.5: $0.10 -> $2.95;
+    $75: $0.05 -> $4.90. AMT $185: $0.10 -> $2.00; $190: $0.03 -> $0.87. All real bases."""
+    data = cci_data()
+    r = options_radar()
+    chain = replay_chain(sym, data)
+    rows = [x for x in (r.spike_row(c, chain, datetime(2026, 10, 9).date()) for c in chain.contracts) if x]
+    assert {x.contract.strike for x in rows} == expected  # CCI $85 (+540%) stays out
+    for x in rows:
+        assert x.big_enough and not x.stale_base and x.move_pct >= 1000
+    (hit,) = [h for h in r.scan(chain, None, et(2026, 10, 9, 15, 50)) if h.kind == "spike"]
+    # daily bars have no bid, so the replay cannot confirm; the live feed carries the bid
+    assert hit.severity == "MEDIUM" and "no bid in the data" in hit.reasons[0]
+
+
+def test_friday_spike_pushes_once_the_bid_is_there():
+    data = cci_data()
+    chain = replay_chain("CCI", data)
+    for c in chain.contracts:
+        c.bid, c.ask = round(c.last * 0.92, 2), round(c.last * 1.08, 2)  # a normal 16% spread
+    r = options_radar()
+    (hit,) = [h for h in r.scan(chain, None, et(2026, 10, 9, 15, 50)) if h.kind == "spike"]
+    assert hit.severity == "HIGH" and hit.spikes[0].contract.strike in (75.0, 77.5, 80.0)
+
+
+def test_friday_unusual_volume_on_the_80_call():
+    """Alpha Vantage: the $80 call traded 3.0x its open interest (1,666 vs ~554 open), $208K."""
+    data = cci_data()
+    r = options_radar()
+    chain = replay_chain("CCI", data, with_oi=True)
+    rows = {c.strike: r.flow_row(c) for c in chain.contracts}
+    assert rows[80.0] is not None and rows[80.0].vol_oi == pytest.approx(3.0, abs=0.05)
+    assert rows[77.5] is None and rows[75.0] is None  # those strikes already had open positions
+
+
+def test_a_contract_with_no_previous_close_is_measured_from_its_model_value():
+    data = cci_data()
+    chain = replay_chain("CCI", data)
+    c = next(x for x in chain.contracts if x.strike == 80.0)
+    c.prev_close = None  # never traded before Friday
+    row = options_radar().spike_row(c, chain, datetime(2026, 10, 9).date())
+    assert row is not None and row.no_prior and c.prev_close == 0.01 and row.move_pct > 10000
+
+
+# --------------------------------------------------------------------------- the links
+
+
+def cci_engine(tmp_path):
+    from news247.engine import Engine
+    from news247.notify import Dispatcher
+    from news247.storage import Storage
+
+    from .conftest import CaptureNotifier
+
+    cfg = build_config({"general": {"data_dir": str(tmp_path)}, "notify": {"console": {"enabled": False}}})
+    Universe.stub(UNI).save(tmp_path / "universe.json.gz")
+    disp = Dispatcher(cfg.notify, None)  # type: ignore[arg-type]
+    disp.channels = [CaptureNotifier()]
+    eng = Engine(cfg, storage=Storage(tmp_path / "e.db"), dispatcher=disp, sources=[])
+    eng.scorer.attach_universe(eng.universe, **cfg.smallcap.filters())
+    return eng
+
+
+def test_morning_options_alert_cites_last_nights_deal(tmp_path):
+    eng = cci_engine(tmp_path)
+    t_news = et(2026, 10, 8, 18, 5)
+    item = NewsItem(
+        source="reuters", title="SpaceX to acquire spectrum that enables Starlink Mobile services",
+        url="https://example.com/r", tier=T.MEDIA, published=t_news, detected=t_news,
+    )  # fmt: skip
+    an = eng.scorer.score(item)
+    assert "CCI" in an.tickers
+    eng._remember(item, an)
+    chain = replay_chain("CCI", cci_data())
+    for c in chain.contracts:
+        c.bid, c.ask = round(c.last * 0.92, 2), round(c.last * 1.08, 2)
+    (hit,) = [
+        h
+        for h in eng.options_radar.scan(chain, eng.universe.get("CCI"), et(2026, 10, 9, 9, 50))
+        if h.kind == "spike"
+    ]
+    alert = eng._options_alert(hit)
+    assert alert.related and alert.related[0]["title"].startswith("SpaceX to acquire spectrum")
+    assert "No headline yet" not in alert.body
+    assert eng.find_catalysts(["CCI"], et(2026, 10, 9, 9, 50)) == []  # fast price moves keep 45 minutes
+
+
+def test_overnight_news_keeps_its_names_hot_into_the_next_session(tmp_path):
+    import asyncio
+
+    from news247.models import Alert, Severity
+
+    eng = cci_engine(tmp_path)
+    eng.calendar.market_status = lambda now=None: {"open": False, "phase": "closed", "until_s": 15.5 * 3600}
+    asyncio.run(
+        eng.publish(Alert(kind="news", severity=Severity.HIGH, title="t", body="", tickers=["CCI", "VZ"]))
+    )
+    left = eng.options_feed.priority["CCI"] - time.time()
+    assert 17 * 3600 < left <= 17.5 * 3600 + 5  # until 2 hours after the next open

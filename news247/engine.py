@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 BACKFILL_PUSH_MAX_AGE = 300.0  # at start-up, only push items published in the last 5 minutes
 CONFIRM_BONUS, CONFIRM_CAP = 6.0, 18.0
 CATALYST_MIN_SCORE = 25.0
+OVERNIGHT_MIN_SCORE = 35.0  # MEDIUM and up: kept back to the previous session for the radar/options
 MULTI_MOVE_MIN = 3
 HIJACK_RE = re.compile(
     r"\b(airdrop|presale|pre-sale|token (launch|sale)|claim (your|now)|connect (your )?wallet|giveaway|"
@@ -152,6 +153,9 @@ class Engine:
             self.webpush.attach(self.storage, secret=cfg.web.token, state=self.state_store, subject=subject)  # type: ignore[attr-defined]
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
+        # meaningful news kept back to the previous session, so a move at 09:45 can cite the
+        # deal announced at 18:00 the evening before (CCI, Oct 8-9 2026)
+        self.recent_long: deque[tuple[NewsItem, Analysis]] = deque(maxlen=3000)
         self.subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._tasks: set[asyncio.Task[Any]] = set()
         self.started = time.time()
@@ -401,6 +405,11 @@ class Engine:
         cutoff = time.time() - self.cfg.market.correlate_minutes * 60
         while self.recent and self.recent[0][0].detected < cutoff:
             self.recent.popleft()
+        if analysis.score >= OVERNIGHT_MIN_SCORE and analysis.tickers:
+            self.recent_long.append((item, analysis))
+            old = time.time() - 4 * 86400  # a long weekend at most
+            while self.recent_long and self.recent_long[0][0].detected < old:
+                self.recent_long.popleft()
 
     def _price_context(self, tickers: list[str]) -> list[dict[str, Any]]:
         parts = []
@@ -414,18 +423,30 @@ class Engine:
 
     # ------------------------------------------------------------------ price pipeline
 
-    def find_catalysts(self, symbols: list[str], now: float | None = None) -> list[dict[str, Any]]:
+    def find_catalysts(
+        self, symbols: list[str], now: float | None = None, overnight: bool = False
+    ) -> list[dict[str, Any]]:
+        """Recent headlines naming these symbols. ``overnight``: for the radar and the options
+        tape, also news since the middle of the previous session (a deal announced after the
+        close is the reason for the next morning's move)."""
         now = now or time.time()
         wanted = set(symbols)
         hits: list[tuple[float, NewsItem, Analysis]] = []
-        cutoff = now - self.cfg.market.correlate_minutes * 60
-        for item, an in self.recent:
-            if item.detected < cutoff or an.score < CATALYST_MIN_SCORE:
+        window = self.cfg.market.correlate_minutes * 60
+        cutoff = now - window
+        pool: list[tuple[NewsItem, Analysis]] = list(self.recent)
+        if overnight:
+            window = max(window, now - (Calendar.last_close(now, self.calendar.holidays) - 6 * 3600))
+            cutoff = now - window
+            seen = {id(it) for it, _ in pool}
+            pool += [(it, an) for it, an in self.recent_long if id(it) not in seen]
+        for item, an in pool:
+            if item.detected < cutoff or item.detected > now + 60 or an.score < CATALYST_MIN_SCORE:
                 continue
             overlap = wanted & set(an.tickers)
             if not overlap:
                 continue
-            recency = 1.0 - (now - item.detected) / (self.cfg.market.correlate_minutes * 60)
+            recency = 1.0 - (now - item.detected) / window
             hits.append((an.score * (0.5 + 0.5 * recency) + 3 * len(overlap), item, an))
         hits.sort(key=lambda h: h[0], reverse=True)
         return [
@@ -628,7 +649,7 @@ class Engine:
         body = " · ".join(parts)
         if hit.flags:
             body += "\n⚠ " + "; ".join(hit.flags)
-        catalysts = self.find_catalysts([hit.symbol], hit.detected)
+        catalysts = self.find_catalysts([hit.symbol], hit.detected, overnight=True)
         today = self._calendar_today(hit.symbol, hit.detected)
         for e in today:  # e.g. "MRNA joins the Nasdaq-100 (effective at the open)"
             body += f"\nOn the calendar today: {e['title']}"
@@ -721,13 +742,39 @@ class Engine:
                     f"Also: {rc.label()} {r.move_pct:+,.0f}% (${(rc.prev_close or 0):.2f} → ${(rc.last or 0):.2f}, "
                     f"{rc.volume:,} contracts)"
                 )
-            if top.stale_base and top.real and top.fair_prev is not None:
+            if top.no_prior:
+                lines.append(
+                    f"No trade before today: the % is measured from its model value at yesterday's close "
+                    f"(${(c.prev_close or 0):.2f})."
+                )
+            elif top.stale_base and top.real and top.fair_prev is not None:
                 lines.append(
                     f"The ${(c.prev_close or 0):.2f} previous close looks stale (model value that day "
                     f"${top.fair_prev:.2f}); the % is measured from the model value."
                 )
             for reason in hit.reasons:
                 lines.append(f"⚠ {reason}")
+        elif hit.kind == "surge":
+            mult = hit.volume_today / max(hit.volume_prev, self.cfg.options.surge_floor_volume)
+            share = hit.call_premium / hit.flow_premium * 100 if hit.flow_premium else 0
+            title = (
+                f"🌊 Options volume {mult:,.0f}× yesterday: {hit.symbol} {hit.volume_today:,} contracts "
+                f"vs {hit.volume_prev:,} · {fmt_cap(hit.flow_premium)} traded · {who}"
+            )
+            lines.append(
+                f"{fmt_cap(hit.flow_premium)} across the company's options ({share:.0f}% in calls)"
+                + (f" · {stock}" if stock else "")
+            )
+            for r in hit.flow[:3]:
+                rc = r.contract
+                oi = f" vs {rc.open_interest:,} open" if rc.open_interest is not None else ""
+                side = f", {rc.side()}" if rc.side() else ""
+                move = f" ({rc.move_pct:+,.0f}%)" if rc.move_pct is not None else ""
+                lines.append(
+                    f"{rc.label()}: {rc.volume:,} contracts{oi} · {fmt_cap(rc.premium)} at ${rc.price:.2f}{move}{side}"
+                )
+            for reason in hit.reasons:
+                lines.append(f"ⓘ {reason}")
         else:
             top = hit.flow[0]
             c = top.contract
@@ -752,7 +799,7 @@ class Engine:
                     f"{fmt_cap(rc.premium)} at ${rc.price:.2f}{side}"
                 )
             lines.append("Side is estimated from where the last print sat in the bid/ask spread.")
-        news = self.find_catalysts([hit.symbol], hit.detected)
+        news = self.find_catalysts([hit.symbol], hit.detected, overnight=True)
         if not news:
             lines.append("No headline yet.")
         lines.append(footer)
@@ -790,7 +837,7 @@ class Engine:
         rows = self.radar.snapshot(limit) if self.radar is not None else []
         now = time.time()
         for r in rows:
-            r["news"] = self.find_catalysts([r["symbol"]], now)[:1]
+            r["news"] = self.find_catalysts([r["symbol"]], now, overnight=True)[:1]
         return {
             "enabled": self.radar is not None,
             "market": self.calendar.market_status(now),
@@ -803,7 +850,11 @@ class Engine:
     async def publish(self, alert: Alert, push: bool = True) -> None:
         self.stats["alerts"] += 1
         if self.options_feed is not None and alert.kind in ("news", "price"):
-            self.options_feed.prioritize(alert.tickers[:4])  # read their option chains next
+            # read their option chains next; news that lands overnight stays hot until two hours
+            # into the next session (a 2-hour hold from 18:00 would expire before the open)
+            mk = self.calendar.market_status(time.time())
+            until_open = 0.0 if mk.get("open") else float(mk.get("until_s") or 0.0)
+            self.options_feed.prioritize(alert.tickers[:6], hold_s=2 * 3600.0 + until_open)
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:

@@ -277,6 +277,13 @@ class OptionsConfig:
     flow_push_premium: float = 1_000_000.0  # pushes at/above this ...
     flow_push_oi_multiple: float = 5.0  # ... when the biggest contract is >= 5x its open interest
     flow_refire_multiple: float = 2.0  # speaks again about a company when its unusual premium doubles
+    # surge: the whole company's option volume against the previous session (Friday Oct 9 2026:
+    # CCI's options lit up on the SpaceX spectrum deal while each contract stayed near its OI)
+    surge_min_volume: int = 2000  # contracts today across the company
+    surge_multiple: float = 4.0  # at least 4x the previous session ...
+    surge_floor_volume: int = 200  # ... counting a quieter previous session as this many contracts
+    surge_push_multiple: float = 6.0  # pushes at 6x+ ...
+    surge_push_premium: float = 1_000_000.0  # ... with $1M+ traded across the company
     # noise control
     daily_pushes: int = 12  # most options pushes per day; the rest show in the app
     max_rows: int = 5  # contracts listed per alert

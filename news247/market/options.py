@@ -198,6 +198,7 @@ class Chain:
     contracts: list[Contract] = field(default_factory=list)
     skipped: int = 0  # adjusted / unparseable contracts
     source: str = "Cboe delayed quotes (~15 min)"  # shown on every alert
+    prev_total_volume: int | None = None  # all contracts, previous session (when the source says)
 
     @property
     def stock_prev(self) -> float | None:
@@ -306,6 +307,7 @@ class SpikeRow:
     honest_move_pct: float  # last vs the honest base: max(previous close, model value) when stale
     big_enough: bool = True  # the honest move still clears the threshold (higher on expiry day)
     same_day: bool = False  # expires today: 0DTE contracts need spike_0dte_multiple x the threshold to push
+    no_prior: bool = False  # no previous close: measured from the model value (min $0.01)
 
     @property
     def real(self) -> bool:
@@ -335,6 +337,7 @@ class SpikeRow:
             "stale_base": self.stale_base,
             "honest_move_pct": round(self.honest_move_pct, 1),
             "same_day": self.same_day,
+            "no_prior": self.no_prior,
             "last_trade": c.last_trade.isoformat() if c.last_trade else None,
         }
 
@@ -379,6 +382,8 @@ class OptionsHit:
     put_premium: float = 0.0
     reasons: list[str] = field(default_factory=list)  # why a spike did not push
     detected: float = field(default_factory=time.time)
+    volume_today: int = 0  # surge: all contracts today
+    volume_prev: int = 0  # surge: all contracts in the previous session
 
     @property
     def market_cap(self) -> float | None:
@@ -406,6 +411,8 @@ class OptionsHit:
             "call_premium": round(self.call_premium),
             "put_premium": round(self.put_premium),
             "reasons": list(self.reasons),
+            "volume_today": self.volume_today,
+            "volume_prev": self.volume_prev,
             "detected": self.detected,
             "source": self.chain.source,
         }
@@ -417,6 +424,8 @@ class _DayState:
     spike_any: float = 0.0  # highest rung shown today
     spike_real: float = 0.0  # highest bid-confirmed, real-base rung shown today
     flow_premium: float = 0.0  # unusual premium at the last flow alert
+    spike_pushed: float = 0.0  # rung of the last spike push today (the next needs 10x that)
+    surge_volume: float = 0.0  # company option volume at the last surge alert
 
 
 class OptionsRadar:
@@ -427,6 +436,8 @@ class OptionsRadar:
         self.state: dict[str, _DayState] = {}
         self.pushes: dict[str, int] = {}  # ET date -> options pushes sent
         self.board: dict[str, dict[str, Any]] = {}  # latest hit per company, for /api/options
+        self.totals: dict[str, tuple[str, int]] = {}  # symbol -> (ET day, most option volume seen)
+        self.totals_prev: dict[str, tuple[str, int]] = {}  # the same for the session before
         self.chains_scanned = 0
         self.contracts_scanned = 0
         self.hits_total = 0
@@ -449,7 +460,7 @@ class OptionsRadar:
         day = str(doc.get("day", ""))
         for sym, v in (doc.get("fired") or {}).items():
             try:
-                self.state[sym] = _DayState(day, float(v[0]), float(v[1]), float(v[2]))
+                self.state[sym] = _DayState(day, *(float(x) for x in list(v)[:5]))
             except (TypeError, ValueError, IndexError):
                 continue
         self.pushes = {k: int(v) for k, v in (doc.get("pushes") or {}).items() if k == day}
@@ -459,9 +470,9 @@ class OptionsRadar:
             return
         day = self._day(now or time.time())
         fired = {
-            s: [st.spike_any, st.spike_real, st.flow_premium]
+            s: [st.spike_any, st.spike_real, st.flow_premium, st.spike_pushed, st.surge_volume]
             for s, st in self.state.items()
-            if st.day == day and (st.spike_any or st.flow_premium)
+            if st.day == day and (st.spike_any or st.flow_premium or st.surge_volume)
         }
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -483,6 +494,15 @@ class OptionsRadar:
         """A contract up ``spike_min_pct``+ on today's prints, with real volume behind it."""
         cfg = self.cfg
         move = c.move_pct
+        no_prior = False
+        if move is None and c.last and not c.prev_close:
+            # never traded before today: brokers show "% today" from a ~$0.01 closing mark; we
+            # measure from the contract's model value at yesterday's close (at least $0.01)
+            fair0 = self.fair_prev(c, chain, today)
+            if fair0 is None:
+                return None
+            c.prev_close = max(round(fair0, 2), 0.01)
+            move, no_prior = c.move_pct, True
         if move is None or move < cfg.spike_min_pct:
             return None
         if c.last_trade is not None and c.last_trade.date() != today:
@@ -500,7 +520,7 @@ class OptionsRadar:
         confirmed = bid_move is not None and bid_move >= cfg.spike_min_pct * cfg.spike_confirm_fraction
         same_day = c.expiry == today
         need = cfg.spike_min_pct * (cfg.spike_0dte_multiple if same_day else 1.0)
-        return SpikeRow(c, move, bid_move, confirmed, fair, stale, honest, honest >= need, same_day)
+        return SpikeRow(c, move, bid_move, confirmed, fair, stale, honest, honest >= need, same_day, no_prior)
 
     def fair_prev(self, c: Contract, chain: Chain, today: date) -> float | None:
         """Model value of the contract at yesterday's close: yesterday's stock price, the time
@@ -551,6 +571,21 @@ class OptionsRadar:
             if hit is not None:
                 hits.append(hit)
 
+        surge = self._surge_hit(chain, listing, live, st, day, now)
+        if surge is not None:
+            hits.append(surge)
+
+        # one push per company per scan: the first HIGH (spike, then flow, then surge) carries
+        # it; the others still show in the app, and their push is handed back to the budget
+        pushed = False
+        for h in hits:
+            if h.severity == "HIGH":
+                if pushed:
+                    h.severity = "MEDIUM"
+                    h.reasons.append("pushed together with this company's other options alert")
+                    self.pushes[day] = max(0, self.pushes.get(day, 0) - 1)
+                pushed = True
+
         for h in hits:
             self.board[chain.symbol] = h.to_dict()
         if hits and len(self.board) > 500:  # the app shows today's hits; keep memory bounded
@@ -560,6 +595,69 @@ class OptionsRadar:
         if hits:
             self.save(now)
         return hits
+
+    def prev_total(self, chain: Chain, today: date) -> int | None:
+        """The company's option volume in the previous session: from the source when it says
+        (Alpaca's previous daily bars), else what this process saw on its last session day."""
+        if chain.prev_total_volume is not None:
+            return chain.prev_total_volume
+        seen = self.totals.get(chain.symbol)
+        if seen and seen[0] == prev_session(today).isoformat():
+            return seen[1]
+        return None
+
+    def _surge_hit(
+        self,
+        chain: Chain,
+        listing: Listing | None,
+        live: list[Contract],
+        st: _DayState,
+        day: str,
+        now: float,
+    ) -> OptionsHit | None:
+        """The whole company's options lighting up: today's volume a multiple of yesterday's,
+        with real money in it. This is the "unusual options activity" a scanner shows."""
+        cfg = self.cfg
+        today = datetime.fromtimestamp(now, ET).date()
+        total = sum(c.volume for c in live)
+        seen = self.totals.get(chain.symbol)
+        if seen is None or seen[0] != day or total > seen[1]:
+            if seen is not None and seen[0] != day:
+                self.totals_prev[chain.symbol] = seen
+            self.totals[chain.symbol] = (day, total)
+        prev = self.prev_total(chain, today)
+        if prev is None:
+            back = self.totals_prev.get(chain.symbol)
+            prev = back[1] if back and back[0] == prev_session(today).isoformat() else None
+        if prev is None or total < cfg.surge_min_volume:
+            return None
+        ratio = total / max(prev, cfg.surge_floor_volume)
+        if ratio < cfg.surge_multiple:
+            return None
+        if st.surge_volume and total < cfg.flow_refire_multiple * st.surge_volume:
+            return None
+        traded = [c for c in live if c.volume]
+        premium = sum(c.premium for c in traded)
+        calls = sum(c.premium for c in traded if c.cp == "C")
+        big = ratio >= cfg.surge_push_multiple and premium >= cfg.surge_push_premium
+        severity = "HIGH" if big and not st.surge_volume and self._push_ok(day) else "MEDIUM"
+        st.surge_volume = total
+        rows = [FlowRow(c, c.volume / c.open_interest if c.open_interest else None) for c in traded]
+        rows.sort(key=lambda r: r.contract.premium, reverse=True)
+        hit = OptionsHit(
+            chain.symbol,
+            "surge",
+            severity,
+            chain,
+            listing,
+            flow=rows[: cfg.max_rows],
+            flow_premium=premium,
+            call_premium=calls,
+            put_premium=premium - calls,
+            detected=now,
+        )
+        hit.volume_today, hit.volume_prev = total, prev
+        return hit
 
     def _rung(self, pct: float) -> float:
         base = self.cfg.spike_min_pct
@@ -581,8 +679,15 @@ class OptionsRadar:
         if rung_real <= st.spike_real and rung_any <= st.spike_any:
             return None  # nothing bigger than what was already shown today
         severity = "MEDIUM"
-        if rung_real > st.spike_real and self._push_ok(day):
-            severity = "HIGH"
+        held = False
+        if rung_real > st.spike_real:
+            # one push per company per day, and again only at 10x that rung, so a single name
+            # climbing 1,000 -> 2,000 -> 5,000% can't spend the whole day's push budget
+            if st.spike_pushed and rung_real < 10 * st.spike_pushed:
+                held = True
+            elif self._push_ok(day):
+                severity = "HIGH"
+                st.spike_pushed = rung_real
         st.spike_real = max(st.spike_real, rung_real)
         st.spike_any = max(st.spike_any, rung_any)
         top = rows[0]
@@ -611,6 +716,11 @@ class OptionsRadar:
                         f"unconfirmed: the bid (${bid:.2f}) is only {top.bid_move_pct or 0:+,.0f}% above the "
                         "base, so most of the move is the last print"
                     )
+        elif held:
+            reasons.append(
+                f"already pushed today at {st.spike_pushed:,.0f}%; this company pushes again from "
+                f"{10 * st.spike_pushed:,.0f}%"
+            )
         elif severity == "MEDIUM":
             reasons.append("today's push limit for options alerts is reached")
         return OptionsHit(
@@ -750,6 +860,8 @@ def parse_alpaca_chain(
     chain = Chain(symbol=symbol, price=price, change_pct=change, source=source)
     newest: datetime | None = None
     near_iv: list[float] = []
+    yday = prev_session(today)
+    prev_total, prev_seen = 0, False
     for occ, snap in (snapshots or {}).items():
         parsed = parse_occ(str(occ))
         if parsed is None or parsed[0] != root or not isinstance(snap, dict):
@@ -761,10 +873,16 @@ def parse_alpaca_chain(
         bar = snap.get("dailyBar") or {}
         prev_bar = snap.get("prevDailyBar") or {}
         bar_day = _utc_ts(bar.get("t"))
+        prev_day = _utc_ts(prev_bar.get("t"))
         if bar_day is not None and bar_day.date() == today:
             volume, prev_close = _int(bar.get("v")), _num(prev_bar.get("c"))
+            if prev_day is not None and prev_day.date() == yday:
+                prev_total += _int(prev_bar.get("v"))
         else:
             volume, prev_close = 0, _num(bar.get("c"))
+            if bar_day is not None and bar_day.date() == yday:
+                prev_total += _int(bar.get("v"))
+        prev_seen = prev_seen or bar_day is not None
         q_time, t_time = _utc_ts(quote.get("t")), _utc_ts(trade.get("t"))
         for t in (q_time, t_time):
             if t is not None and (newest is None or t > newest):
@@ -790,6 +908,7 @@ def parse_alpaca_chain(
         if iv and price and 7 <= (exp - today).days <= 60 and abs(strike / price - 1) <= 0.05:
             near_iv.append(iv)
     chain.quote_time = newest
+    chain.prev_total_volume = prev_total if prev_seen else None
     if near_iv:
         near_iv.sort()
         chain.iv30 = near_iv[len(near_iv) // 2]
