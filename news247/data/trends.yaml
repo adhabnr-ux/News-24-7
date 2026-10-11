@@ -1,0 +1,66 @@
+# The trend lane's brand map (news247/trends.py): consumer brands -> the listed company whose
+# revenue they move. Chris Camillo's rule: a real change in what people do, at a company small
+# enough for it to matter, before the stock reflects it.
+#
+# weight (a rule anyone can check, not an estimated revenue share):
+#   core  - the brand IS the company (Chipotle, Duolingo, Celsius)
+#   major - one of the company's few headline brands (Burger King at Restaurant Brands)
+# wiki:  English Wikipedia article titles (spaces as underscores); `news247 trends --check`
+#        reports any title that doesn't resolve.
+# apps:  words that identify the brand's app in the App Store charts (app name or developer).
+#        Apps not listed here are still matched by developer name to the listed universe.
+# terms: how news headlines name the brand (for alt-data and sell-out reports).
+brands:
+  # ---- restaurants
+  - {brand: Burger King, ticker: QSR, weight: major, wiki: [Burger_King], apps: [Burger King], terms: [burger king, whopper]}
+  - {brand: Tim Hortons, ticker: QSR, weight: major, wiki: [Tim_Hortons], apps: [Tim Hortons], terms: [tim hortons]}
+  - {brand: Popeyes, ticker: QSR, weight: major, wiki: [Popeyes], apps: [Popeyes], terms: [popeyes]}
+  - {brand: Taco Bell, ticker: YUM, weight: major, wiki: [Taco_Bell], apps: [Taco Bell], terms: [taco bell]}
+  - {brand: KFC, ticker: YUM, weight: major, wiki: [KFC], apps: [KFC], terms: [kfc, kentucky fried chicken]}
+  - {brand: Pizza Hut, ticker: YUM, weight: major, wiki: [Pizza_Hut], apps: [Pizza Hut], terms: [pizza hut]}
+  - {brand: McDonald's, ticker: MCD, weight: core, wiki: ["McDonald's"], apps: ["McDonald's"], terms: ["mcdonald's", mcdonalds]}
+  - {brand: Chipotle, ticker: CMG, weight: core, wiki: [Chipotle_Mexican_Grill], apps: [Chipotle], terms: [chipotle]}
+  - {brand: Wingstop, ticker: WING, weight: core, wiki: [Wingstop], apps: [Wingstop], terms: [wingstop]}
+  - {brand: Shake Shack, ticker: SHAK, weight: core, wiki: [Shake_Shack], apps: [Shake Shack], terms: [shake shack]}
+  - {brand: "Domino's", ticker: DPZ, weight: core, wiki: ["Domino's"], apps: ["Domino's"], terms: ["domino's pizza", "domino's"]}
+  - {brand: "Papa John's", ticker: PZZA, weight: core, wiki: ["Papa_John's"], apps: ["Papa John's"], terms: ["papa john's"]}
+  - {brand: Starbucks, ticker: SBUX, weight: core, wiki: [Starbucks], apps: [Starbucks], terms: [starbucks]}
+  - {brand: Sweetgreen, ticker: SG, weight: core, wiki: [Sweetgreen], apps: [Sweetgreen], terms: [sweetgreen]}
+  - {brand: Cava, ticker: CAVA, weight: core, wiki: [Cava_Group], apps: [CAVA], terms: [cava]}
+  - {brand: Texas Roadhouse, ticker: TXRH, weight: core, wiki: [Texas_Roadhouse], apps: [Texas Roadhouse], terms: [texas roadhouse]}
+  - {brand: Dutch Bros, ticker: BROS, weight: core, wiki: [Dutch_Bros], apps: [Dutch Bros], terms: [dutch bros]}
+  # ---- beverages, beauty, apparel, footwear
+  - {brand: Celsius, ticker: CELH, weight: core, wiki: [Celsius_Holdings], apps: [], terms: [celsius energy, celsius drink]}
+  - {brand: e.l.f. Cosmetics, ticker: ELF, weight: core, wiki: [E.l.f._Cosmetics], apps: [e.l.f.], terms: [e.l.f. cosmetics, elf cosmetics]}
+  - {brand: On, ticker: ONON, weight: core, wiki: [On_(company)], apps: [], terms: [on running, on cloud]}
+  - {brand: Hoka, ticker: DECK, weight: major, wiki: [Hoka], apps: [Hoka], terms: [hoka]}
+  - {brand: UGG, ticker: DECK, weight: major, wiki: [UGG_(brand)], apps: [UGG], terms: [ugg boots, uggs]}
+  - {brand: Crocs, ticker: CROX, weight: major, wiki: [Crocs], apps: [Crocs], terms: [crocs]}
+  - {brand: Lululemon, ticker: LULU, weight: core, wiki: [Lululemon], apps: [lululemon], terms: [lululemon]}
+  - {brand: Birkenstock, ticker: BIRK, weight: core, wiki: [Birkenstock], apps: [], terms: [birkenstock]}
+  - {brand: YETI, ticker: YETI, weight: core, wiki: [Yeti_(company)], apps: [], terms: [yeti cooler, yeti tumbler]}
+  - {brand: Abercrombie & Fitch, ticker: ANF, weight: major, wiki: [Abercrombie_&_Fitch], apps: [Abercrombie], terms: [abercrombie]}
+  - {brand: Hollister, ticker: ANF, weight: major, wiki: [Hollister_Co.], apps: [Hollister], terms: [hollister]}
+  # ---- retail, toys, collectibles
+  - {brand: Pokémon TCG at GameStop, ticker: GME, weight: major, wiki: [Pokémon_Trading_Card_Game], apps: [], terms: [pokemon cards, pokémon cards, pokemon tcg, pokémon tcg]}
+  - {brand: Five Below, ticker: FIVE, weight: core, wiki: [Five_Below], apps: [Five Below], terms: [five below]}
+  - {brand: Build-A-Bear, ticker: BBW, weight: core, wiki: [Build-A-Bear_Workshop], apps: [], terms: [build-a-bear]}
+  - {brand: Ulta Beauty, ticker: ULTA, weight: core, wiki: [Ulta_Beauty], apps: [Ulta], terms: [ulta]}
+  # ---- apps and platforms (the App Store chart is the ground truth)
+  - {brand: Robinhood, ticker: HOOD, weight: core, wiki: [Robinhood_Markets], apps: [Robinhood], terms: [robinhood]}
+  - {brand: DraftKings, ticker: DKNG, weight: core, wiki: [DraftKings], apps: [DraftKings], terms: [draftkings]}
+  - {brand: Duolingo, ticker: DUOL, weight: core, wiki: [Duolingo], apps: [Duolingo], terms: [duolingo]}
+  - {brand: Hims & Hers, ticker: HIMS, weight: core, wiki: [Hims_&_Hers_Health], apps: [Hims], terms: [hims & hers, hims and hers]}
+  - {brand: Coinbase, ticker: COIN, weight: core, wiki: [Coinbase], apps: [Coinbase], terms: [coinbase]}
+  - {brand: Roblox, ticker: RBLX, weight: core, wiki: [Roblox], apps: [Roblox], terms: [roblox]}
+  - {brand: Reddit, ticker: RDDT, weight: core, wiki: [Reddit], apps: [Reddit], terms: [reddit app]}
+  - {brand: Pinterest, ticker: PINS, weight: core, wiki: [Pinterest], apps: [Pinterest], terms: [pinterest]}
+  - {brand: Snapchat, ticker: SNAP, weight: core, wiki: [Snapchat], apps: [Snapchat], terms: [snapchat]}
+  - {brand: Peloton, ticker: PTON, weight: core, wiki: [Peloton_Interactive], apps: [Peloton], terms: [peloton]}
+  - {brand: Bumble, ticker: BMBL, weight: core, wiki: [Bumble_(app)], apps: [Bumble], terms: [bumble]}
+  - {brand: Tinder, ticker: MTCH, weight: major, wiki: [Tinder_(app)], apps: [Tinder], terms: [tinder]}
+  - {brand: Hinge, ticker: MTCH, weight: major, wiki: [Hinge_(app)], apps: [Hinge], terms: [hinge dating]}
+  - {brand: Lyft, ticker: LYFT, weight: core, wiki: [Lyft], apps: [Lyft], terms: [lyft]}
+  - {brand: Etsy, ticker: ETSY, weight: core, wiki: [Etsy], apps: [Etsy], terms: [etsy]}
+  - {brand: Chewy, ticker: CHWY, weight: core, wiki: [Chewy_(company)], apps: [Chewy], terms: [chewy]}
+  - {brand: IMAX, ticker: IMAX, weight: core, wiki: [IMAX], apps: [], terms: [imax]}

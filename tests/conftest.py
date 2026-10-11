@@ -40,6 +40,7 @@ def cfg(tmp_path: Path) -> Config:
             "smallcap": {
                 "why_lookup": False
             },  # no live EDGAR/news lookups from tests (test_why.py enables it)
+            "trends": {"scan": False},  # no live Wikipedia/App Store polling (test_trends.py drives it)
         }
     )
     return c

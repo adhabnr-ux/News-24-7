@@ -230,6 +230,31 @@ class SmallCapConfig:
 
 
 @dataclass
+class TrendsConfig:
+    """The trend lane (trends.py): consumer behavior changing before earnings show it, mapped
+    to the listed company it matters to, and filtered so only material, unpriced trends ping."""
+
+    enabled: bool = True
+    scan: bool = True  # poll Wikipedia and the App Store chart (off: news evidence only)
+    # Wikipedia attention: 7-day average vs the 8 weeks before
+    wiki_min_views: float = 1500.0  # a 7-day average below this is too small to mean anything
+    wiki_ratio: float = 2.0  # at least 2x the usual daily views
+    wiki_z: float = 4.0  # and 4 robust standard deviations above it
+    wiki_sustained_days: int = 4  # on at least 4 of the last 7 days: not a one-day news spike
+    # App Store top-free chart (US): a climb into the top N from outside the top M
+    app_top: int = 50
+    app_from: int = 150
+    app_hold_snapshots: int = 3  # held for 3 snapshots (6-hourly) so a one-off blip doesn't count
+    # filters
+    window_days: float = 14.0  # evidence older than this no longer combines
+    priced_in_pct: float = 15.0  # the stock already moved this much in the trend's direction
+    cooldown_days: float = 30.0  # one signal per company per month unless it gets stronger
+    core_max_cap: float = 150e9  # the brand IS the company: material up to this size
+    major_max_cap: float = 60e9  # one of a few headline brands
+    auto_max_cap: float = 20e9  # matched by name only (unmapped app developers, news)
+
+
+@dataclass
 class OptionsConfig:
     """The options tape: unusual volume and contracts up thousands of percent (market/options.py).
     Every threshold below can be set under ``options:`` in config.yaml."""
@@ -333,6 +358,7 @@ class Config:
     path: Path | None = None
     smallcap: SmallCapConfig = field(default_factory=SmallCapConfig)
     options: OptionsConfig = field(default_factory=OptionsConfig)
+    trends: TrendsConfig = field(default_factory=TrendsConfig)
 
     @property
     def data_path(self) -> Path:
@@ -456,6 +482,7 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         "web",
         "smallcap",
         "options",
+        "trends",
         "sources",
         "include_default_sources",
     }
@@ -527,6 +554,13 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         raise ConfigError("[smallcap] radar_seconds must be at least 20 (be polite to free endpoints)")
 
     options = _dataclass_from(OptionsConfig, raw.get("options"), "options")
+    trends = _dataclass_from(TrendsConfig, raw.get("trends"), "trends")
+    if not 1 <= trends.wiki_sustained_days <= 7:
+        raise ConfigError("[trends] wiki_sustained_days must be 1-7 (days of the last week)")
+    if trends.app_hold_snapshots < 1 or not 1 <= trends.app_top < trends.app_from <= 200:
+        raise ConfigError("[trends] need app_hold_snapshots >= 1 and 1 <= app_top < app_from <= 200")
+    if trends.window_days <= 0 or trends.priced_in_pct <= 0 or trends.cooldown_days < 0:
+        raise ConfigError("[trends] window_days and priced_in_pct must be positive")
     if options.request_interval_s < 0.2:
         raise ConfigError("[options] request_interval_s must be at least 0.2 (be polite to free endpoints)")
     if options.spike_0dte_multiple < 1:
@@ -568,7 +602,9 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
             raise ConfigError(f"source '{s['name']}' needs a 'type'")
         s["enabled"] = as_bool(s.get("enabled", True))
 
-    return Config(general, scoring, llm, market, notify, web, sources, knowledge, path, smallcap, options)
+    return Config(
+        general, scoring, llm, market, notify, web, sources, knowledge, path, smallcap, options, trends
+    )
 
 
 def load_config(path: str | Path | None = None) -> Config:

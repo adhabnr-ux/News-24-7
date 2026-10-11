@@ -9,7 +9,7 @@ Bobby Axelrod doesn't win because he reads faster. He wins because:
 News247 and Foretape are built in that order. This page is the map: every kind of big move,
 where it first becomes public, what reads it, how fast, and what is still out of reach.
 
-## The five layers
+## The six layers
 
 | Layer | What it does | Where it lives |
 |---|---|---|
@@ -18,6 +18,7 @@ where it first becomes public, what reads it, how fast, and what is still out of
 | **3. Explain any move at once** | A move with no headline sets off an instant lookup of the company's EDGAR filings and a news search. The best explanation is attached to the alert as **Why**. | `market/why.py` |
 | **4. Know what's scheduled** | FOMC, CPI, jobs, PDUFA dates, trial readouts, index rebalances, option expiries. Binary events are captured from headlines weeks ahead. | `edge.py` (Calendar), `analysis/catalyst_dates.py` |
 | **5. Audit every move** | After each big move: did we have it before the price? If not, was the headline read but scored too low, or never read? The answer goes in the morning Brief. | `scorecard.py` |
+| **6. See the customer first** | Consumer trends (Wikipedia attention, App Store climbs, tracker numbers, sell-outs) tied to the listed owner before its earnings report, filtered for materiality and whether the price has already moved, and scored at 30/60/90 days. See [TRENDS.md](TRENDS.md) | `trends.py`, `data/trends.yaml` |
 
 ## The map: every kind of big move
 
@@ -43,6 +44,7 @@ where it first becomes public, what reads it, how fast, and what is still out of
 | Odds shifts | Polymarket | `polymarket` | 1 min |
 | Weekend and overnight shocks | Bitcoin, Ether, Solana (24/7); S&P, Nasdaq, Russell and Dow futures; WTI and Brent (nearly 24/5) | `crypto_24h`, `futures` and `oil` baskets, with their own thresholds; alerts name the stocks to watch (Bitcoin → COIN, MSTR, IBIT…). Futures stay quiet in the cash session, when SPY/QQQ say it first | 15 s |
 | Outbreak scares, emerging-market elections | Health agencies and foreign press; Sunday-night election counts | `gnews-outbreaks`, `gnews-em-elections`, with rules that tag the vaccine makers and the Brazilian/Argentine ADRs | 2–5 min |
+| Earnings surprises built by customers (traffic, downloads, sell-outs) | Weeks earlier, in what people do: Wikipedia attention, the App Store chart, tracker numbers in trade press | The trend lane: two independent kinds agreeing on a material, not-yet-priced company is pushed | Daily (Wikipedia), 6 h (App Store), as fast as the source (news) |
 | **No headline at all** | The tape | Radar: small caps every minute; outside the session, the 400 largest every minute and every other $2B+ company within ~6 min. Then the options tape and the **Why** lookup | 1–6 min (radar); seconds for the lookup |
 
 ## The daily loop
@@ -109,4 +111,6 @@ news247 scorecard --date 2026-10-09  # any day still in the database
 news247 backtest                     # the 195-event replay
 news247 score 'headline'             # why a headline scores what it does
 news247 check                        # every source once: up, empty or failing
+news247 trends                       # consumer-trend signals and how past ones did vs SPY
+news247 trends --check               # read Wikipedia and the App Store chart once, from the server
 ```

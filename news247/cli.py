@@ -21,6 +21,7 @@ import sys
 import time
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from . import __version__
 from .config import Config, ConfigError, load_config
@@ -631,6 +632,82 @@ def cmd_scorecard(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_trends(cfg: Config, args: argparse.Namespace) -> int:
+    """The trend lane: its board and scorecard, or (--check) one live scan of every feed."""
+    import json as _json
+
+    from .market.radar import SmallCapFeed
+    from .storage import Storage
+    from .trends import TrendDesk, format_board
+
+    universe = SmallCapFeed.load_cached(cfg.data_path)
+    if args.check:
+        return asyncio.run(_trends_check(cfg, universe, args.json))
+    db = Path(args.db) if args.db else cfg.data_path / "news247.db"
+    if not db.exists():
+        print(f"No database yet at {db}. Run `news247 run` first (or pass --db).")
+        return 1
+    desk = TrendDesk(cfg.trends, None, universe, Storage(db))
+    wanted = {t.upper() for t in args.tickers}
+    rows = [r for r in desk.board(args.days) if not wanted or r["ticker"] in wanted]
+    card = desk.scorecard()
+    print(_json.dumps({"rows": rows, "scorecard": card}, indent=2) if args.json else format_board(rows, card))
+    return 0
+
+
+async def _trends_check(cfg: Config, universe: Any, as_json: bool) -> int:
+    """Read every mapped Wikipedia article and the App Store chart once: titles that don't
+    resolve, the brands drawing unusual attention, and which listed companies' apps chart."""
+    import json as _json
+    import tempfile
+
+    from .http import HttpClient
+    from .storage import Storage
+    from .trends import TrendDesk
+
+    with tempfile.TemporaryDirectory() as tmp:
+        async with HttpClient(cfg.general.user_agent) as http:
+            desk = TrendDesk(cfg.trends, http, universe, Storage(Path(tmp) / "check.db"))
+            await desk.scan_wiki()
+            await desk.scan_apps()
+    articles = sum(len(b.wiki) for b in desk.brands)
+    out = {
+        "articles": articles,
+        "read": desk.stats["wiki_reads"],
+        "failed": desk.stats["wiki_errors"],
+        "missing_articles": sorted(desk.missing_articles),
+        "redirected_titles": desk.redirected(),
+        "quiet_articles": sorted(desk.quiet_articles),
+        "spikes": [e.__dict__ for evs in desk.evidence.values() for e in evs],
+        "heating_up": desk.heating_up(10),
+        "chart_apps": len(desk.last_chart),
+        "mapped_apps": desk.mapped_apps(),
+        "universe": len(universe) if universe is not None else 0,
+    }
+    if as_json:
+        print(_json.dumps(out, indent=2, default=str))
+        return 0 if out["read"] and out["chart_apps"] else 1
+    print(f"Wikipedia: {out['read']}/{articles} articles read, {out['failed']} failed")
+    for art in out["missing_articles"]:
+        print(f"  ✗ no such article: {art} (fix its title in news247/data/trends.yaml)")
+    for art, real in out["redirected_titles"].items():
+        print(f"  → {art} redirects to {real} (read from there; worth correcting in trends.yaml)")
+    for art in out["quiet_articles"]:
+        print(f"  ? {art} averages under 50 views a day: probably not the brand's main article")
+    print("Attention vs each brand's own 8-week baseline (a signal needs 2x, 4 robust SDs, 4 of 7 days):")
+    for r in out["heating_up"]:
+        print(f"  {r['ratio']:>5.2f}x  {r['brand']} ({r['ticker']})  {r['avg7']:,}/day vs {r['baseline']:,}")
+    for e in out["spikes"]:
+        print(f"  ▲ spike: {e['brand']} ({e['ticker']}): {e['detail']}")
+    print(f"\nApp Store top free (US): {out['chart_apps']} apps read")
+    if not out["universe"]:
+        print("  (no company list cached: run `news247 universe --refresh` so apps map by developer name)")
+    for a in out["mapped_apps"]:
+        print(f"  #{a['rank']:<4} {a['app'][:40]:<40} {a['ticker']:<6} {a['weight']}")
+    print("\nA climb needs two weeks of 6-hourly snapshots, so `news247 run` keeps the history.")
+    return 0 if out["read"] and out["chart_apps"] else 1
+
+
 def cmd_backtest(cfg: Config, args: argparse.Namespace) -> int:
     from .backtest import format_report, run_backtest
 
@@ -717,6 +794,15 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--db", default=None, help="database file (default: data/news247.db)")
     sc.add_argument("--json", action="store_true", help="print the raw scorecard")
 
+    tr = sub.add_parser(
+        "trends", help="the trend lane: consumer trends mapped to listed companies, and how they did"
+    )
+    tr.add_argument("tickers", nargs="*", help="only these companies")
+    tr.add_argument("--days", type=float, default=30, help="signals from the last N days (default 30)")
+    tr.add_argument("--check", action="store_true", help="read every feed once now (Wikipedia, App Store)")
+    tr.add_argument("--db", default=None, help="database file (default: data/news247.db)")
+    tr.add_argument("--json", action="store_true", help="print raw JSON")
+
     st = sub.add_parser("stats", help="latency per source")
     st.add_argument("--days", type=float, default=7)
 
@@ -741,6 +827,7 @@ COMMANDS = {
     "stats": cmd_stats,
     "backtest": cmd_backtest,
     "scorecard": cmd_scorecard,
+    "trends": cmd_trends,
     "universe": cmd_universe,
     "options": cmd_options,
 }

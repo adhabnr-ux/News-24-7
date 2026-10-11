@@ -17,6 +17,7 @@ It also watches **prices**: if software stocks fall together it tells you so, an
 **The whole system on one page:** [docs/AXELROD-SYSTEM.md](docs/AXELROD-SYSTEM.md) maps every kind of big move to where it shows up first, what reads it and how fast. It also covers the two newest layers:
 - **Why:** a move with no headline sets off an instant lookup of the company's EDGAR filings and the news, and the alert shows what it found.
 - **The scorecard:** after every big move it records whether you had it before the price, and if not, which rule or source would have caught it.
+- **The trend lane** (Chris Camillo's method): consumer trends tied to the listed company before its earnings report shows them, with written filters and a 30/60/90-day scorecard. See [docs/TRENDS.md](docs/TRENDS.md).
 
 Alerts arrive as **push notifications from Foretape**, News247's own home-screen app (free, no phone number or account needed). They can also go to **WhatsApp**, **iMessage** from your own Mac relay, ntfy, Telegram, Discord, Slack, Pushover, email or SMS.
 
@@ -289,6 +290,37 @@ Full guide: [docs/OPTIONS.md](docs/OPTIONS.md).
 
 ---
 
+## The trend lane: what people are doing, before the earnings report says it
+
+Chris Camillo's edge was noticing what people were buying before Wall Street did. The trend lane
+collects four kinds of evidence, ties them to the listed company that owns the brand
+(`news247/data/trends.yaml`, about 50 brands), and filters them by written rules.
+
+**Evidence:**
+- **Wikipedia attention:** 2x+ normal for 4 of 7 days.
+- **App Store climbs:** into the top 50 from outside the top 150.
+- **Tracker numbers in the news:** Placer.ai, Sensor Tower, Circana…, or "Taco Bell's traffic
+  still down double digits".
+- **Sell-outs and waitlists.**
+
+**Filters:**
+- **Material:** the brand is big enough to move the company.
+- **Not priced in:** the stock hasn't already moved 15% the trend's way.
+- **Fresh:** one signal per company a month, unless a new one is stronger.
+
+**Severity:**
+- **HIGH (pushed):** two independent kinds agree.
+- **MEDIUM (in the app):** one kind.
+- **LOW (board only):** everything that fails a filter.
+
+Every signal is scored against SPY at 30, 60 and 90 days, so the edge is measured, not assumed.
+
+- `news247 trends` shows the board and the scorecard.
+- `news247 trends --check` reads every feed once from your server.
+- Full guide, including what edge is realistically left: [docs/TRENDS.md](docs/TRENDS.md).
+
+---
+
 ## Price-move detection: "all the stocks are crashing"
 
 - **Single stocks**: ±1.5 % in 1 min, ±3 % in 5 min, ±5 % in 15 min (index ETFs have tighter built-in limits, e.g. SPY ±0.8 % in 5 min). Also one alert per day for a ±7 % move from the previous close.
@@ -359,7 +391,7 @@ Everything lives in `config.yaml` (from `news247 init`). Every option is documen
 - `market`: provider, symbols, move `rules`, per-symbol `overrides`, sector `groups`
 - `sources`: override built-ins by name (`enabled: false`, `interval: 10`, …) or add new ones. The built-ins are in [`news247/data/default_sources.yaml`](news247/data/default_sources.yaml).
 - `notify`: channels, `min_severity` per channel, `quiet_hours`, `rate_limit_per_minute`
-- `smallcap`, `options`: the small-cap lane and radar; the options tape
+- `smallcap`, `options`, `trends`: the small-cap lane and radar; the options tape; the trend lane
 - `llm`, `web`, `general`
 
 Secrets go in `.env` and are referenced from the config as `${NAME}`.
@@ -378,11 +410,12 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 | `news247 stats` | Measured detection latency per source, and which source had each story first |
 | `news247 backtest [-v]` | Replay 195 historical market-moving events and 140 noise headlines through the scoring rules |
 | `news247 scorecard [--date YYYY-MM-DD]` | Who knew first: each big move of a day, whether you had it before the price, and what to fix |
+| `news247 trends [SYM…] [--check]` | The trend lane: consumer-trend signals, their evidence and filters, and how past signals did vs SPY; `--check` reads every feed once |
 | `news247 init` | Write a starter `config.yaml` + `.env` |
 
 ### API
 
-`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/scorecard?date=YYYY-MM-DD&days=30`, `/api/brief`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
+`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/scorecard?date=YYYY-MM-DD&days=30`, `/api/trends?days=30`, `/api/brief`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
 
 ---
 
@@ -406,6 +439,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
  Nasdaq screener ─► universe (market caps) ─► small-cap sizing in the scorer
  Yahoo small-cap gainers ─► radar (ladder, volume, pump guards) ─► "moving before the news" alert
 Cboe option chains ($1B+) ─► spikes (bid-confirmed, stale-base check) + unusual volume ─► options alert
+Wikipedia views · App Store chart · tracker/sell-out headlines ─► brand map ─► filters ─► trend alert ─► 30/60/90-day scorecard
 ```
 
 ```

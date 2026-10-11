@@ -1186,6 +1186,30 @@ themes:
     weight: 5
     direction: up
     tickers: [CCI, AMT, SBAC]
+  # ---- the trend lane (trends.py): what consumers are doing, before the earnings report says it.
+  # Kept light here (the trend lane, not the news score, decides whether these reach you).
+  consumer_data_signal:
+    description: >-
+      A tracker's numbers on a brand: foot traffic, app downloads, card spending (Oct 2026: Placer.ai had
+      Burger King visits +7.1% year on year while QSR fell 9% in a month; Taco Bell visits -12.2% while
+      Yum called the trend "improving"). Read by the trend lane as alt-data evidence for the brand's owner.
+    all:
+      - [placer.ai, placer ai, sensor tower, appfigures, app figures, circana, second measure, yipitdata, yipit data, numerator, similarweb, earnest analytics, consumer edge, bloomberg second measure, foot traffic, card data, credit card data, app downloads]
+      - [visit*, traffic, download*, install*, sales, spending, spend, users, foot traffic, footfall, transactions, market share]
+    weight: 8
+    direction: mixed
+    tickers: []
+  demand_signal:
+    description: >-
+      A product selling out, a waitlist, a shortage of something people want (Pokémon cards selling out at
+      GameStop, the Stanley cup and Owala bottle frenzies, Labubu). Read by the trend lane as demand
+      evidence for the brand's owner.
+    all:
+      - [sold out, sells out, selling out, sell out, sellout*, waitlist*, wait list*, out of stock, restock*, shortage*, backorder*, back-order*, flying off shelves, flying off the shelves, lines around the block, can't keep * in stock, cannot keep * in stock]
+      - [shoppers, fans, customers, consumers, stores, store, launch*, drop, drops, demand, frenzy, craze, viral, online, retailers, collectors, buyers, line*]
+    weight: 5
+    direction: mixed
+    tickers: []
 
 # Price-move baskets ("groups"): a group alert fires when the group's average move
 # over `window` seconds reaches `pct` and at least `min_members` members moved >= pct/2

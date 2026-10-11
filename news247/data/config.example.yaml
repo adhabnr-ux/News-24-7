@@ -126,6 +126,26 @@ options:
   hot_move_pct: 3                 # companies moving this much today are re-read every 3 minutes
   request_interval_s: 0.35        # ~3 chain reads a second, everyone else rotates (largest first)
 
+# The trend lane (docs/TRENDS.md): consumer behavior changing before the earnings report shows it.
+# Brands -> companies live in news247/data/trends.yaml. `news247 trends` shows the board and how
+# past signals did; `news247 trends --check` reads every feed once.
+trends:
+  enabled: true
+  scan: true                      # Wikipedia daily + App Store chart every 6 h (false: news evidence only)
+  wiki_ratio: 2.0                 # 7-day average views at 2x the 8 weeks before...
+  wiki_z: 4.0                     # ...4 robust standard deviations up...
+  wiki_sustained_days: 4          # ...on 4 of the last 7 days (a one-day news spike doesn't count)
+  wiki_min_views: 1500            # and at least this many views a day
+  app_top: 50                     # an app climbing into the top 50 free apps...
+  app_from: 150                   # ...from outside the top 150 two weeks earlier...
+  app_hold_snapshots: 3           # ...and holding there for 3 snapshots (18 hours)
+  window_days: 14                 # evidence combines inside this window
+  priced_in_pct: 15               # dropped to LOW if the stock already moved this much the trend's way
+  cooldown_days: 30               # one signal per company a month unless it gets stronger
+  core_max_cap: 150e9             # material: the brand is the company, up to $150B...
+  major_max_cap: 60e9             # ...one of its few headline brands, up to $60B...
+  auto_max_cap: 20e9              # ...matched by name only, up to $20B
+
 # Sources: ~50 built-ins are on by default (`news247 check` lists them). Override one by
 # repeating its name here (e.g. {name: hackernews, enabled: false}) or add your own:
 #   - {name: my-feed, type: rss, url: "https://example.com/feed.xml", tier: media, interval: 60}

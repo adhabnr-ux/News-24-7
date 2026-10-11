@@ -33,6 +33,7 @@ from .scorecard import Scorecard, scorecard_line
 from .sources import Source, SourceContext, build_sources
 from .sources.base import _sleep_or_stop
 from .storage import Storage
+from .trends import TrendDesk, TrendSignal, signal_alert_text
 from .util import fmt_age, fmt_pct
 
 log = logging.getLogger(__name__)
@@ -110,6 +111,17 @@ class Engine:
                 self.options_radar,
                 market_phase=lambda now: self.calendar.market_status(now)["phase"],
                 movers=lambda: list(self.radar.board) if self.radar is not None else [],
+            )
+        # the trend lane: what consumers are doing (Wikipedia attention, App Store climbs, tracker
+        # data, sell-outs), tied to the listed company before its earnings report says it (trends.py)
+        self.trends: TrendDesk | None = None
+        if cfg.trends.enabled:
+            self.trends = TrendDesk(
+                cfg.trends,
+                self.http,
+                self.universe,
+                self.storage,
+                state_path=cfg.data_path / "trends_state.json",
             )
         self.clusterer = StoryClusterer(window_s=cfg.scoring.cluster_window_minutes * 60)
         self.dispatcher = dispatcher or Dispatcher(cfg.notify, self.http)
@@ -218,6 +230,8 @@ class Engine:
                     self.options_feed.run(self.on_options, stop, self.on_options_problem), name="options"
                 )
             )
+        if self.trends is not None and self.cfg.trends.scan:
+            runners.append(asyncio.create_task(self.trends.run(self.on_trends, stop), name="trends"))
         if self.whatsapp_cloud is not None:
             runners.append(asyncio.create_task(self.whatsapp_cloud.maintain(stop), name="whatsapp-cloud"))
         if self.cfg.general.keepalive_url:
@@ -279,6 +293,10 @@ class Engine:
         self.storage.add_item(item, analysis, story.id)
         self._remember(item, analysis)
         self._capture_catalyst(item, analysis)
+        if self.trends is not None:
+            touched = self.trends.from_news(item, analysis)
+            if touched:
+                self._spawn(self._trend_check(touched))
         self._broadcast("item", {"item": item.to_dict(), "analysis": analysis.to_dict(), "story": story.id})
 
         if self.llm and analysis.score >= self.cfg.llm.min_score and not self.llm.busy:
@@ -714,6 +732,44 @@ class Engine:
             await self.publish(alert)
             self._maybe_hunt(alert, hit.to_dict().get("name") or "")
 
+    # ------------------------------------------------------------------ the trend lane
+
+    async def _trend_check(self, tickers: list[str]) -> None:
+        assert self.trends is not None
+        signals = [s for s in [await self.trends.evaluate(t) for t in dict.fromkeys(tickers)] if s]
+        if signals:
+            await self.on_trends(signals)
+
+    async def on_trends(self, signals: list[TrendSignal]) -> None:
+        """MEDIUM and HIGH trend signals become alerts (HIGH is pushed by the usual channel rules).
+        LOW ones (too big to matter, already priced in, mixed) stay on the trend board only."""
+        for sig in signals:
+            if sig.severity == "LOW":
+                continue
+            title, body = signal_alert_text(sig)
+            urls = [e.get("url") for e in sig.evidence if e.get("url")]
+            alert = Alert(
+                kind="trend",
+                severity=Severity.parse(sig.severity),
+                title=title,
+                body=body,
+                url=urls[0] if urls else f"https://finance.yahoo.com/quote/{sig.ticker}",
+                tickers=[sig.ticker],
+                related=self.find_catalysts([sig.ticker], sig.created, overnight=True),
+            )
+            alert.edge["trend"] = sig.to_dict()
+            await self.publish(alert)
+
+    def trends_board(self, days: float = 30) -> dict[str, Any]:
+        if self.trends is None:
+            return {"enabled": False, "rows": [], "scorecard": None, "status": None}
+        return {
+            "enabled": True,
+            "rows": self.trends.board(days),
+            "scorecard": self.trends.scorecard(),
+            "status": self.trends.status(),
+        }
+
     # ------------------------------------------------------------------ why is it moving?
 
     def _maybe_hunt(self, alert: Alert, name: str = "") -> None:
@@ -1123,6 +1179,7 @@ class Engine:
             ),
             "options": self.options_feed.status() if self.options_feed is not None else {"enabled": False},
             "why": {"enabled": True, **self.why.stats} if self.why is not None else {"enabled": False},
+            "trends": self.trends.status() if self.trends is not None else {"enabled": False},
             "channels": self.dispatcher.describe(),
             "phone_mode": self.phone_mode(),
             "relay": self.relay_hub.status() if self.relay_hub is not None else None,
@@ -1199,6 +1256,18 @@ class Engine:
             now,
         )
         brief["scorecard"] = self.last_session_scorecard(now)
+        brief["trends"] = (
+            [
+                {
+                    k: r[k]
+                    for k in ("ticker", "brands", "severity", "direction", "kinds", "move_pct", "created")
+                }
+                for r in self.trends.board(7, now)
+                if r["severity"] != "LOW"
+            ][:5]
+            if self.trends is not None
+            else []
+        )
         return brief
 
     def scorecard_for(self, day: str | None = None, now: float | None = None) -> dict[str, Any]:

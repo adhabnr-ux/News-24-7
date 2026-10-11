@@ -96,6 +96,7 @@ class WebServer:
         app.router.add_get("/api/watch", self.api_watch)
         app.router.add_get("/api/radar", self.api_radar)
         app.router.add_get("/api/options", self.api_options)
+        app.router.add_get("/api/trends", self.api_trends)
         app.router.add_get("/api/alert/{id}", self.api_alert)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
@@ -586,6 +587,16 @@ class WebServer:
         except ValueError:
             limit = 40
         return _json(self.engine.options_board(limit))
+
+    async def api_trends(self, request: web.Request) -> web.Response:
+        """The trend lane: the latest signal per company (``?days=30``), strongest first, with
+        every piece of evidence and the filters' reasons; the scorecard (hit rate and excess
+        return vs SPY at 30/60/90 days, by severity); and the scanners' health."""
+        try:
+            days = max(1.0, min(365.0, float(request.query.get("days", "30"))))
+        except ValueError:
+            days = 30.0
+        return _json(self.engine.trends_board(days))
 
     async def api_alert(self, request: web.Request) -> web.Response:
         """Everything about one alert: the analysis, the play, precedents, every source that
