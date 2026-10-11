@@ -76,10 +76,9 @@ Every big single-catalyst move of that week was replayed at its real timestamps
 ([research/week-2026-10-05.md](research/week-2026-10-05.md), `tests/test_week_replay.py`).
 - **Before the fixes:** 1 of 7 first headlines would have pushed, and three takeover targets
   were never even tagged.
-- **After the fixes:** ahead of the price on 3 of the 6 pushed moves (PCVX, RXO, OPCH) and in
-  the app ahead on HUM. The radar was first on PTC, where the price moved before any public
-  headline. XP (Brazil's Sunday vote) has a rule now, but this data can't prove it would have
-  been first. No move went unseen.
+- **After the fixes:** pushed ahead of the price on PCVX, RXO and OPCH, and in the app ahead on
+  HUM and XP (Brazil's Sunday vote). The radar was first on PTC, where the price moved before
+  any public headline. No move went unseen.
 
 ## What "first" means here, honestly
 

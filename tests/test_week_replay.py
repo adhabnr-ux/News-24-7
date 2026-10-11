@@ -128,6 +128,6 @@ def test_the_scorecard_for_the_week(replay):
     assert verdicts["HUM"]["lead_s"] == pytest.approx(47 * 60, abs=60)
     # the price moved first: PTC 10 minutes before the first headline
     assert verdicts["PTC"]["lag_s"] == pytest.approx(10 * 60, abs=60)
-    # XP moved on Brazil's Sunday vote; no headline naming XP until 7 hours after the pre-market move
-    assert "No headline" in verdicts["XP"]["hint"]
+    # XP moved on Brazil's Sunday vote: in the app (MEDIUM, tagging XP) 9+ hours before the pre-market move
+    assert verdicts["XP"]["lead_s"] > 9 * 3600
     assert "NVAX" not in verdicts  # its radar alert was MEDIUM (shown, not pushed)

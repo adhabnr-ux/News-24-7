@@ -1,5 +1,5 @@
 {
-  "about": "The biggest single-catalyst moves of Oct 5-9 2026 among US-listed $2B+ companies, with the first public headlines and their timestamps as TradingView's news feed recorded them (unix seconds, UTC). 'lag' is how long after publication News247 reads that kind of source: its polling interval (wires 20 s, Reuters/FT headline feeds 60-180 s). Move times: the first minute the radar could see the move (pre-market and after-hours sweeps run every 60 s; companies outside the top 400 are reached within the rotation, at most 6 min). Prices from TradingView daily bars. NVAX's radar alert is MEDIUM (in the app, not pushed), so the scorecard, which audits pushed moves, leaves it out. XP: the cause was Brazil's Sunday first-round vote, but the first headline in the feed naming XP came 7 hours after the pre-market move, past the scorecard's 6-hour window, so it stays 'unexplained' here; the Brazil-election rule and the gnews-em-elections source are for the Sunday-night reports themselves.",
+  "about": "The biggest single-catalyst moves of Oct 5-9 2026 among US-listed $2B+ companies, with the first public headlines and their timestamps as TradingView's news feed recorded them (unix seconds, UTC). 'lag' is how long after publication News247 reads that kind of source: its polling interval (wires 20 s, Reuters/FT headline feeds 60-180 s). Move times: the first minute the radar could see the move (pre-market and after-hours sweeps run every 60 s; companies outside the top 400 are reached within the rotation, at most 6 min). Prices from TradingView daily bars. NVAX's radar alert is MEDIUM (in the app, not pushed), so the scorecard, which audits pushed moves, leaves it out. XP: the first-round result (Sunday Oct 4) is timed at the latest its UK publication date allows; the Brazil-election rule shows it in the app (MEDIUM), tagging XP, hours before the pre-market move.",
   "universe": {
     "PCVX": {
       "name": "Vaxcyte, Inc. Common Stock",
@@ -173,6 +173,15 @@
     },
     {
       "symbol": "XP",
+      "published": 1791154740,
+      "lag": 300,
+      "tier": "media",
+      "source": "gnews-em-elections",
+      "title": "Bolsonaro and Lula head to a runoff in Brazil's presidential election",
+      "evidence": "ITV, URL dated 2026-10-04 (itv.com/news/2026-10-04/brazil-heads-to-runoff-as-bolsonaro-and-lula-fall-short-of-majority); timestamp = the latest that UK date allows, 23:59 BST"
+    },
+    {
+      "symbol": "XP",
       "published": 1791213363,
       "lag": 120,
       "tier": "media",
@@ -194,6 +203,6 @@
     "OPCH": "pushed",
     "HUM": "app",
     "PTC": "radar",
-    "XP": "unexplained"
+    "XP": "app"
   }
 }
