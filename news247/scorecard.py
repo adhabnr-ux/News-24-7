@@ -112,6 +112,8 @@ def big_moves(alerts: list[dict[str, Any]], min_severity: str = "HIGH") -> list[
         if len(tickers) != 1:  # a sector-wide multi-ticker move has no single "who knew"
             continue
         sym = tickers[0]
+        if "=" in sym or sym.endswith("-USD"):  # futures and crypto: no company to have news about
+            continue
         if sym in seen:
             continue
         seen.add(sym)

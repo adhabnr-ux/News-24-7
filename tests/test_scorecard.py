@@ -151,6 +151,8 @@ def test_big_moves_rules():
         {"kind": "news", "severity": "HIGH", "tickers": ["C"], "created": 1},
         {"kind": "price", "severity": "MEDIUM", "tickers": ["D"], "created": 1},
         {"kind": "price", "severity": "HIGH", "tickers": ["E", "F"], "created": 1},
+        {"kind": "price", "severity": "HIGH", "tickers": ["BTC-USD"], "created": 1},
+        {"kind": "price", "severity": "HIGH", "tickers": ["ES=F"], "created": 1},
     ]
     assert [(a["tickers"][0], a["created"]) for a in big_moves(alerts)] == [("B", 1), ("A", 2)]
 

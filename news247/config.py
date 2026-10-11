@@ -358,7 +358,32 @@ DEFAULT_OVERRIDES = {
     "XLE": _ETF_RULES,
     "GLD": _ETF_RULES,
     "USO": _ETF_RULES,
+    # around-the-clock markets (the crypto_24h, futures and oil baskets in knowledge.yaml)
+    "BTC-USD": [MoveRule(300, 2.0), MoveRule(900, 3.0), MoveRule(3600, 4.5)],
+    "ETH-USD": [MoveRule(300, 3.0), MoveRule(900, 4.5), MoveRule(3600, 6.5)],
+    "SOL-USD": [MoveRule(300, 4.0), MoveRule(900, 6.0), MoveRule(3600, 9.0)],
+    "ES=F": [MoveRule(60, 0.5), MoveRule(300, 0.8), MoveRule(900, 1.2)],
+    "YM=F": [MoveRule(60, 0.5), MoveRule(300, 0.8), MoveRule(900, 1.2)],
+    "NQ=F": [MoveRule(60, 0.6), MoveRule(300, 1.0), MoveRule(900, 1.5)],
+    "RTY=F": [MoveRule(60, 0.7), MoveRule(300, 1.1), MoveRule(900, 1.6)],
+    "CL=F": [MoveRule(300, 1.5), MoveRule(900, 2.5), MoveRule(3600, 4.0)],
+    "BZ=F": [MoveRule(300, 1.5), MoveRule(900, 2.5), MoveRule(3600, 4.0)],
 }
+# What a move in a 24-hour market means for stocks: its news is matched through these, and the
+# alert names them ("BTC -6% in 1h · watch COIN MSTR IBIT").
+PROXIES = {
+    "BTC-USD": ["COIN", "MSTR", "IBIT", "HOOD", "MARA", "RIOT"],
+    "ETH-USD": ["COIN", "ETHA", "BMNR"],
+    "SOL-USD": ["COIN"],
+    "ES=F": ["SPY"],
+    "YM=F": ["DIA"],
+    "NQ=F": ["QQQ"],
+    "RTY=F": ["IWM"],
+    "CL=F": ["USO", "XLE", "XOM", "CVX"],
+    "BZ=F": ["USO", "XLE", "XOM", "CVX"],
+}
+# Index futures duplicate SPY/QQQ/IWM/DIA while the cash market is open: only alert outside it.
+CASH_HOURS_ONLY_QUIET = ("ES=F", "YM=F", "NQ=F", "RTY=F", "GROUP:futures")
 CHANNEL_NAMES = (
     "console",
     "desktop",

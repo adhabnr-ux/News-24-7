@@ -293,6 +293,7 @@ Full guide: [docs/OPTIONS.md](docs/OPTIONS.md).
 
 - **Single stocks**: ±1.5 % in 1 min, ±3 % in 5 min, ±5 % in 15 min (index ETFs have tighter built-in limits, e.g. SPY ±0.8 % in 5 min). Also one alert per day for a ±7 % move from the previous close.
 - **Sector baskets**: software, semis, megacap, ai_infra, crypto and index. An alert fires when the *average* move crosses the threshold **and** enough members move together, so one stock crashing doesn't count as a sector move.
+- **Around the clock**: Bitcoin, Ether and Solana all weekend; S&P, Nasdaq, Russell and Dow futures and WTI/Brent overnight. Each has its own thresholds, and the alert names the stocks to watch ("▼ Bitcoin -4.80% in 1h · Watch: COIN MSTR IBIT"). Futures stay quiet during the cash session, when SPY and QQQ already say it.
 - **Coalescing**: if 15 software stocks drop at once you get **one** alert, not 15.
 - **Correlation**: every price alert lists the recent headlines (within 45 min) that mention the stocks that moved: *"Possible catalyst (2m earlier): …"*. News alerts show the current move of the affected tickers.
 - Cooldowns stop repeat alerts. A move that becomes 1.5× worse alerts again.

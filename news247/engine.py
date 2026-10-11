@@ -17,7 +17,7 @@ from .analysis.catalyst_dates import extract_event
 from .analysis.dedup import Story, StoryClusterer
 from .analysis.llm import LLMClient, apply_verdict
 from .analysis.scorer import Scorer
-from .config import Config
+from .config import CASH_HOURS_ONLY_QUIET, PROXIES, Config
 from .edge import ET, Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
@@ -486,6 +486,11 @@ class Engine:
         # evaluate baskets right now so they land in the same batch as their members
         known = {m.symbol for m in moves}
         moves += [g for g in self.detector.check_groups() if g.symbol not in known]
+        if self.calendar.market_status(time.time())["phase"] == "open":
+            # in the session SPY/QQQ/IWM/DIA say it first; futures are for the other 17 hours
+            moves = [m for m in moves if m.symbol not in CASH_HOURS_ONLY_QUIET]
+            if not moves:
+                return
         groups = [m for m in moves if m.is_group]
         covered = {(sym, g.direction) for g in groups for sym in g.members}
         singles = [m for m in moves if not m.is_group and (m.symbol, m.direction) not in covered]
@@ -504,7 +509,8 @@ class Engine:
     def _move_alert(self, mv: PriceMove) -> Alert:
         severity = self.detector.severity(mv)
         syms = list(mv.members) if mv.is_group else [mv.symbol]
-        catalysts = self.find_catalysts(syms, mv.detected)
+        proxies = list(dict.fromkeys(p for s in syms for p in PROXIES.get(s, [])))
+        catalysts = self.find_catalysts(syms + proxies, mv.detected, overnight=bool(proxies))
         if mv.is_group:
             body = ", ".join(f"{s} {fmt_pct(c)}" for s, c in list(mv.members.items())[:10])
         elif mv.window_s >= 86400:
@@ -513,6 +519,8 @@ class Engine:
             body = f"{mv.price:.2f} (from {mv.ref_price:.2f} {window_label(mv.window_s)} ago)"
             if mv.relative_pct is not None:
                 body += f" · vs {self.cfg.market.benchmark} {fmt_pct(mv.relative_pct)} relative"
+        if proxies:
+            body += f"\nWatch: {' '.join(proxies[:6])}"
         if not catalysts:
             body += "\nNo matching headline yet — the news may not have hit public feeds."
         url = (

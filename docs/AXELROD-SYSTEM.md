@@ -40,6 +40,7 @@ where it first becomes public, what reads it, how fast, and what is still out of
 | Squawk headlines | FinancialJuice, DeItaone | Telegram relays; the X stream (paid) | 5 s; 2–5 s |
 | Breaking posts | X, Bluesky | X filtered stream (paid, optional); Bluesky firehose | 1–5 s |
 | Odds shifts | Polymarket | `polymarket` | 1 min |
+| Weekend and overnight shocks | Bitcoin, Ether, Solana (24/7); S&P, Nasdaq, Russell and Dow futures; WTI and Brent (nearly 24/5) | `crypto_24h`, `futures` and `oil` baskets, with their own thresholds; alerts name the stocks to watch (Bitcoin → COIN, MSTR, IBIT…). Futures stay quiet in the cash session, when SPY/QQQ say it first | 15 s |
 | **No headline at all** | The tape | Radar (every company, pre-market and after hours), options tape, then the **Why** lookup | 1 min (radar); seconds for the lookup |
 
 ## The daily loop

@@ -70,7 +70,7 @@ market:
   day_move_pct: 7               # one alert per day when a stock is this far from yesterday's close
   cooldown_minutes: 20          # per symbol; a move 1.5x bigger still re-alerts
   correlate_minutes: 45         # how far back to look for a headline explaining a move
-  # groups: replaces the built-in baskets (software, semis, megacap, ai_infra, crypto, index)
+  # groups: replaces the built-in baskets (software, semis, megacap, ai_infra, crypto, index, crypto_24h, futures, oil)
 
 # The little things (docs/SMALLCAPS.md): every listed company's market cap, so a $40M contract,
 # an FDA decision or a buyout premium is scored by how big it is for THAT company, plus a radar

@@ -20,16 +20,35 @@ def window_label(seconds: int) -> str:
     return f"{seconds}s"
 
 
+# around-the-clock markets read better by name than by Yahoo symbol
+SYMBOL_NAMES = {
+    "BTC-USD": "Bitcoin",
+    "ETH-USD": "Ether",
+    "SOL-USD": "Solana",
+    "ES=F": "S&P 500 futures",
+    "NQ=F": "Nasdaq-100 futures",
+    "RTY=F": "Russell 2000 futures",
+    "YM=F": "Dow futures",
+    "CL=F": "WTI crude",
+    "BZ=F": "Brent crude",
+}
+GROUP_NAMES = {"crypto_24h": "CRYPTO", "futures": "INDEX FUTURES", "oil": "OIL"}
+
+
 def move_headline(move: PriceMove) -> str:
     arrow = ARROW[move.direction]
     w = window_label(move.window_s)
     if move.is_group:
-        name = move.symbol.split(":", 1)[1].upper()
+        key = move.symbol.split(":", 1)[1]
+        name = GROUP_NAMES.get(key) or f"{key.upper()} stocks"
         movers = sum(1 for c in move.members.values() if (c > 0) == (move.change_pct > 0))
-        return f"{arrow} {name} stocks {fmt_pct(move.change_pct)} in {w} ({movers}/{len(move.members)} moving together)"
+        return (
+            f"{arrow} {name} {fmt_pct(move.change_pct)} in {w} ({movers}/{len(move.members)} moving together)"
+        )
+    sym = SYMBOL_NAMES.get(move.symbol, move.symbol)
     if move.window_s >= 86400:
-        return f"{arrow} {move.symbol} {fmt_pct(move.change_pct)} vs. previous close"
-    return f"{arrow} {move.symbol} {fmt_pct(move.change_pct)} in {w}"
+        return f"{arrow} {sym} {fmt_pct(move.change_pct)} vs. previous close"
+    return f"{arrow} {sym} {fmt_pct(move.change_pct)} in {w}"
 
 
 def short_title(alert: Alert) -> str:

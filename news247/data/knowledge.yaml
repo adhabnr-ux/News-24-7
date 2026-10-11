@@ -1180,3 +1180,20 @@ baskets:
     pct: 0.8
     window: 600
     min_members: 3
+  # Markets that trade while US stocks don't: Bitcoin all weekend, index futures and oil overnight.
+  # Their move is the first trace of Monday's (or tomorrow morning's) gap in COIN, MSTR, XOM...
+  crypto_24h:
+    symbols: [BTC-USD, ETH-USD, SOL-USD]
+    pct: 3.0
+    window: 900
+    min_members: 2
+  futures:
+    symbols: [ES=F, NQ=F, RTY=F, YM=F]
+    pct: 0.8
+    window: 600
+    min_members: 3
+  oil:
+    symbols: [CL=F, BZ=F]
+    pct: 2.5
+    window: 900
+    min_members: 2
