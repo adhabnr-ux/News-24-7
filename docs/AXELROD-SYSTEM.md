@@ -23,6 +23,7 @@ where it first becomes public, what reads it, how fast, and what is still out of
 
 | Big move | Where it is public first | What reads it | How fast |
 |---|---|---|---|
+| Takeovers of any listed company ("C.H. Robinson to buy RXO") | The deal release, or a newspaper scoop ("near a deal") | Every source above, read by the deal reader: the target is tagged first and scores up, the buyer stays mixed | as fast as the source |
 | Company news: deals, guidance, results, FDA | The 8-K on EDGAR, the company's wire release | SEC 8-K feed; PR Newswire, GlobeNewswire, Business Wire and their topic feeds; Alpaca/Benzinga | 10 s (8-K), 20–45 s (wires) |
 | "News pending" halts | Nasdaq's halt list | `nasdaq-halts` | 15 s |
 | Activist stakes, tender offers, merger filings | EDGAR 13D/13G, SC TO-T, SC 14D-9, 425 | `sec-8k` (paired forms) | 10 s |
@@ -41,7 +42,8 @@ where it first becomes public, what reads it, how fast, and what is still out of
 | Breaking posts | X, Bluesky | X filtered stream (paid, optional); Bluesky firehose | 1–5 s |
 | Odds shifts | Polymarket | `polymarket` | 1 min |
 | Weekend and overnight shocks | Bitcoin, Ether, Solana (24/7); S&P, Nasdaq, Russell and Dow futures; WTI and Brent (nearly 24/5) | `crypto_24h`, `futures` and `oil` baskets, with their own thresholds; alerts name the stocks to watch (Bitcoin → COIN, MSTR, IBIT…). Futures stay quiet in the cash session, when SPY/QQQ say it first | 15 s |
-| **No headline at all** | The tape | Radar (every company, pre-market and after hours), options tape, then the **Why** lookup | 1 min (radar); seconds for the lookup |
+| Outbreak scares, emerging-market elections | Health agencies and foreign press; Sunday-night election counts | `gnews-outbreaks`, `gnews-em-elections`, with rules that tag the vaccine makers and the Brazilian/Argentine ADRs | 2–5 min |
+| **No headline at all** | The tape | Radar: small caps every minute; outside the session, the 400 largest every minute and every other $2B+ company within ~6 min. Then the options tape and the **Why** lookup | 1–6 min (radar); seconds for the lookup |
 
 ## The daily loop
 
@@ -68,6 +70,17 @@ where it first becomes public, what reads it, how fast, and what is still out of
 This is how the CCI miss of Oct 9 2026 was closed ([research/cci-2026-10-09.md](research/cci-2026-10-09.md)).
 The same loop is now automatic.
 
+## Proof on real data: the week of Oct 5 2026
+
+Every big single-catalyst move of that week was replayed at its real timestamps
+([research/week-2026-10-05.md](research/week-2026-10-05.md), `tests/test_week_replay.py`).
+- **Before the fixes:** 1 of 7 first headlines would have pushed, and three takeover targets
+  were never even tagged.
+- **After the fixes:** ahead of the price on 3 of the 6 pushed moves (PCVX, RXO, OPCH) and in
+  the app ahead on HUM. The radar was first on PTC, where the price moved before any public
+  headline. XP (Brazil's Sunday vote) has a rule now, but this data can't prove it would have
+  been first. No move went unseen.
+
 ## What "first" means here, honestly
 
 - **Ahead of the price** is the goal: the scorecard counts how often an alert reached you before
@@ -75,8 +88,8 @@ The same loop is now automatic.
   only be caught *at* the move; the radar does that, and the Why lookup explains it in seconds.
 - **Ahead of the mainstream** is measured story by story ("Your edge" on each alert, and the
   Brief's median head start).
-- **Proof on history:** `news247 backtest` replays 190 real market-moving events from 2016 to
-  Oct 2026. 96% are caught from the first report, with 0 false alarms on 133 "sounds big but
+- **Proof on history:** `news247 backtest` replays 195 real market-moving events from 2016 to
+  Oct 2026. 96% are caught from the first report, with 0 false alarms on 140 "sounds big but
   isn't" headlines.
 
 ## Still out of reach (and what it would cost)
@@ -94,7 +107,7 @@ The same loop is now automatic.
 ```bash
 news247 scorecard                    # today's big moves: who knew first
 news247 scorecard --date 2026-10-09  # any day still in the database
-news247 backtest                     # the 190-event replay
+news247 backtest                     # the 195-event replay
 news247 score 'headline'             # why a headline scores what it does
 news247 check                        # every source once: up, empty or failing
 ```

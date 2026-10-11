@@ -24,6 +24,7 @@ from typing import Any
 
 from ..config import ScoringConfig
 from ..models import Analysis, NewsItem, SourceTier
+from .deals import acquirer_side, read_deal
 from .entities import EntityMatcher
 from .smallcap import SmallCapDesk
 
@@ -40,6 +41,7 @@ _DOWN_WORDS = re.compile(
     r"lower than|below|short of|scales? back|slash\w*)\b",
     re.I,
 )
+_DEAL_KEYWORD = re.compile(r"acqui|to buy|buyout|takeover|merge|tender", re.I)
 _DEAL_WORDS = re.compile(r"\b(to acquire|takeover|buyout)\b", re.I)
 _UP_WORDS = re.compile(
     r"\b(soar\w*|surge\w*|jump\w*|rall(y|ies|ied)|rocket\w*|beats?|raises? guidance|record|approv\w*|"
@@ -254,10 +256,13 @@ class Scorer:
             elif summary and rx.search(summary):
                 hits.append((w * 0.5, f"{term} (summary)"))
         hits.sort(reverse=True)
+        deal_kw = 0.0  # points from deal words ("to acquire"), which describe the target's day
         for factor, (w, term) in zip((1.0, 0.5, 0.25), hits[:3]):
             contrib = w * factor if w > 0 else w
             score += contrib
             reasons.append(f"{contrib:+.0f} keyword '{term}'")
+            if contrib > 0 and _DEAL_KEYWORD.search(term):
+                deal_kw += contrib
 
         # --- penalties
         pen_total = 0.0
@@ -363,6 +368,51 @@ class Scorer:
                     reasons.append(f"+{floor - score:.0f} small-cap floor (a {cat.expected:.0f}% mover)")
                     score = floor
 
+        # --- takeovers of listed companies of any size: "C.H. Robinson to buy RXO for $5.8 billion"
+        deal = (
+            read_deal(title, self.smallcap.universe)
+            if self.smallcap is not None
+            and not item.extra.get("insider_buy")  # a Form 4 buy is not a takeover
+            else None
+        )
+        if deal is not None:
+            sym = deal.target.symbol
+            explicit = [sym, *[t for t in explicit if t != sym]]
+            if deal.buyer is not None and deal.buyer.symbol not in explicit:
+                explicit.append(deal.buyer.symbol)
+            # the small-cap lane may already have credited this takeover (scaled down for mid
+            # caps); a takeover premium doesn't shrink with size, so top it up to the deal's level
+            credited = (
+                small.points
+                if small is not None
+                and small.listing.symbol == sym
+                and small.catalyst is not None
+                and small.catalyst.kind in ("acquired", "takeover_interest")
+                else 0.0
+            )
+            pts = 40.0 if deal.stage == "definitive" else 30.0
+            prem = deal.premium
+            if prem is not None and prem >= 20:
+                pts += 5
+            pts -= credited
+            if pts > 0:
+                score += pts
+                who = f"by {deal.buyer.symbol}" if deal.buyer is not None else f"by {deal.buyer_name[:30]}"
+                what = "takeover agreed" if deal.stage == "definitive" else "takeover talks"
+                extra = f", {prem:+.0f}% premium" if prem is not None else ""
+                reasons.append(f"+{pts:.0f} {what}: {sym} {who}{extra}")
+
+        # --- a listed buyer paying a sliver of its own value: the deal words don't apply to it
+        if deal is None and deal_kw > 0 and self.smallcap is not None:
+            side = acquirer_side(title, self.smallcap.universe)
+            if side is not None and side[0].market_cap and side[1] < 0.02 * side[0].market_cap:
+                buyer, value = side
+                score -= deal_kw
+                reasons.append(
+                    f"-{deal_kw:.0f} {buyer.symbol} is the buyer; ${value / 1e9:,.1f}B is "
+                    f"{value / buyer.market_cap:.2%} of its value"
+                )
+
         # --- big listed companies named in the headline ("Crown Castle stock jumping as SpaceX ..."):
         # tagged so the alert, the Brief and the radar's "moving on the news" link can name them
         if self.smallcap is not None:
@@ -374,7 +424,7 @@ class Scorer:
         # own tickers (sector baskets) make it relevant; generic ones (FDA, deal talk) don't —
         # unless the catalyst is material for a small/mid cap.
         relevant_theme = any(t.tickers for t in themes)
-        material = small is not None and small.material
+        material = (small is not None and small.material) or deal is not None
         if (
             explicit
             and not companies
@@ -395,6 +445,8 @@ class Scorer:
             and small.catalyst.direction in ("up", "down")
         ):
             direction = small.catalyst.direction  # "to be acquired at $X" is up whatever the verbs say
+        if deal is not None:
+            direction = "up"  # for the target, which is tagged first; the buyer usually dips
         return Analysis(
             score=round(score, 1),
             severity=self.cfg.severity_for(score),
@@ -404,6 +456,7 @@ class Scorer:
             reasons=reasons,
             direction=direction,
             smallcap=small.to_dict() if small is not None and small.catalyst is not None else {},
+            deal=deal.to_dict() if deal is not None else {},
         )
 
     def rescore(self, analysis: Analysis, delta: float, reason: str) -> Analysis:

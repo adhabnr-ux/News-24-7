@@ -92,6 +92,7 @@ smallcap:
   radar_large_min_pct: 6        # $10-200B
   radar_mega_min_pct: 4         # $200B+
   sweep_size: ${SMALLCAP_SWEEP_SIZE:-400}   # largest companies swept every minute, pre/after hours included
+  sweep_rotate: 200             # plus this many of the other $2B+ companies in turn (all within ~6 min)
   # a big move with no known headline: read the company's EDGAR filings and a news search at once
   why_lookup: ${WHY_LOOKUP:-true}
   why_per_hour: ${WHY_PER_HOUR:-30}   # most lookups an hour (each is 1 SEC + 1 Google News request)

@@ -214,6 +214,7 @@ class SmallCapConfig:
     radar_mega_min_pct: float = 4.0  # $200B+
     # pre/after-hours sweep of the largest companies (Yahoo's screeners only rank the regular session)
     sweep_size: int = 400
+    sweep_rotate: int = 200  # plus this many of the other $2B+ companies in turn each sweep
     sweep_seconds: float = 60.0
     # a big move with no known headline: look up the company's EDGAR filings and a news search
     # at once (market/why.py), at most this many lookups an hour

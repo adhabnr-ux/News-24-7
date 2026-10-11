@@ -1,0 +1,199 @@
+{
+  "about": "The biggest single-catalyst moves of Oct 5-9 2026 among US-listed $2B+ companies, with the first public headlines and their timestamps as TradingView's news feed recorded them (unix seconds, UTC). 'lag' is how long after publication News247 reads that kind of source: its polling interval (wires 20 s, Reuters/FT headline feeds 60-180 s). Move times: the first minute the radar could see the move (pre-market and after-hours sweeps run every 60 s; companies outside the top 400 are reached within the rotation, at most 6 min). Prices from TradingView daily bars. NVAX's radar alert is MEDIUM (in the app, not pushed), so the scorecard, which audits pushed moves, leaves it out. XP: the cause was Brazil's Sunday first-round vote, but the first headline in the feed naming XP came 7 hours after the pre-market move, past the scorecard's 6-hour window, so it stays 'unexplained' here; the Brazil-election rule and the gnews-em-elections source are for the Sunday-night reports themselves.",
+  "universe": {
+    "PCVX": {
+      "name": "Vaxcyte, Inc. Common Stock",
+      "mcap": 7300000000.0,
+      "price": 56.48
+    },
+    "RXO": {
+      "name": "RXO, Inc. Common Stock",
+      "mcap": 3900000000.0,
+      "price": 23.38
+    },
+    "PTC": {
+      "name": "PTC Inc. Common Stock",
+      "mcap": 17200000000.0,
+      "price": 144.03
+    },
+    "OPCH": {
+      "name": "Option Care Health, Inc. Common Stock",
+      "mcap": 3600000000.0,
+      "price": 23.37
+    },
+    "HUM": {
+      "name": "Humana Inc. Common Stock",
+      "mcap": 46500000000.0,
+      "price": 387.12
+    },
+    "XP": {
+      "name": "XP Inc. Class A Common Stock",
+      "mcap": 11300000000.0,
+      "price": 21.5
+    },
+    "NVAX": {
+      "name": "Novavax, Inc. Common Stock",
+      "mcap": 1700000000.0,
+      "price": 10.46
+    },
+    "MCK": {
+      "name": "McKesson Corporation Common Stock",
+      "mcap": 90000000000.0,
+      "price": 700
+    },
+    "CHRW": {
+      "name": "C.H. Robinson Worldwide, Inc. Common Stock",
+      "mcap": 14000000000.0,
+      "price": 120
+    }
+  },
+  "moves": [
+    {
+      "symbol": "PCVX",
+      "at": 1791194640,
+      "pct": 54.5,
+      "note": "opened $87.21 vs $56.48 (+54%), closed +31%; VAX-31 Phase 3 topline 06:00 ET",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "RXO",
+      "at": 1791198700,
+      "pct": 22.5,
+      "note": "C.H. Robinson deal before the open; closed +22.5%",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "PTC",
+      "at": 1791187560,
+      "pct": 33.5,
+      "note": "Schneider Electric deal; already 'rallying premarket' at 04:11 ET; closed +33.5%",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "OPCH",
+      "at": 1791231000,
+      "pct": 22.0,
+      "note": "FT scoop 16:03 ET; +22% after hours, +32.6% on the Oct 6 deal",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "HUM",
+      "at": 1791495667,
+      "pct": 11.6,
+      "note": "2027 star ratings after the Oct 8 close; 'surges post-market' by 17:41 ET; +11.6% Oct 9 (move time = that first evidence; the after-hours start may be earlier)",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "XP",
+      "at": 1791187560,
+      "pct": 30.9,
+      "note": "Brazil's first-round election (Sunday Oct 4); +21% at the open, +31% close",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "NVAX",
+      "at": 1791224400,
+      "pct": 20.2,
+      "note": "Russia plague scare: +10% by 13:35 ET, crossed the small-cap radar's 20% line at 14:20 ET (shown, not pushed: small caps push from 35%), high +28%; no headline named Novavax until 16:32 ET",
+      "severity": "MEDIUM"
+    }
+  ],
+  "headlines": [
+    {
+      "symbol": "PCVX",
+      "published": 1791194400,
+      "lag": 20,
+      "tier": "wire",
+      "source": "globenewswire",
+      "title": "Vaxcyte Reports Positive Topline Data from OPUS-1, the Pivotal Adult Phase 3 Trial of VAX-31, the Company’s 31-Valent Pneumococcal Conjugate Vaccine Candidate"
+    },
+    {
+      "symbol": "RXO",
+      "published": 1791198382,
+      "lag": 60,
+      "tier": "media",
+      "source": "gnews-reuters",
+      "title": "C.H. Robinson to buy RXO for $5.8 billion"
+    },
+    {
+      "symbol": "RXO",
+      "published": 1791202980,
+      "lag": 60,
+      "tier": "media",
+      "source": "alpaca-news",
+      "title": "RXO to Merge With C.H. Robinson; Holders May Elect $30.25 Cash or Stock Mix"
+    },
+    {
+      "symbol": "PTC",
+      "published": 1791188140,
+      "lag": 60,
+      "tier": "media",
+      "source": "gnews-scoops",
+      "title": "Schneider Electric to buy PTC for $22.6bn in cash"
+    },
+    {
+      "symbol": "PTC",
+      "published": 1791199980,
+      "lag": 60,
+      "tier": "media",
+      "source": "alpaca-news",
+      "title": "PTC to Be Acquired by Schneider Electric for $205 Per Share in All-Cash Merger"
+    },
+    {
+      "symbol": "OPCH",
+      "published": 1791230629,
+      "lag": 180,
+      "tier": "media",
+      "source": "ft-companies",
+      "title": "Mckesson And CD&R Near $5Bn-Plus Deal To Buy Infusion Services Provider Option Care Health - FT"
+    },
+    {
+      "symbol": "OPCH",
+      "published": 1791288000,
+      "lag": 20,
+      "tier": "wire",
+      "source": "businesswire",
+      "title": "CD&R and McKesson Corporation Sign Agreement to Acquire Option Care Health"
+    },
+    {
+      "symbol": "HUM",
+      "published": 1791492786,
+      "lag": 60,
+      "tier": "media",
+      "source": "gnews-reuters",
+      "title": "CMS says 71% of Medicare Advantage prescription drug enrollees in 4-star or higher plans for 2027"
+    },
+    {
+      "symbol": "HUM",
+      "published": 1791540600,
+      "lag": 20,
+      "tier": "wire",
+      "source": "businesswire",
+      "title": "Humana Announces Improved CMS Star Ratings with 95 Percent of Medicare Advantage Members in 4-Star or Above Plans for 2027"
+    },
+    {
+      "symbol": "XP",
+      "published": 1791213363,
+      "lag": 120,
+      "tier": "media",
+      "source": "gnews-market-movers",
+      "title": "Brazilian fintech stocks surge as Bolsonaro's lead puts Brazil on track to shift right"
+    },
+    {
+      "symbol": "NVAX",
+      "published": 1791232341,
+      "lag": 60,
+      "tier": "media",
+      "source": "alpaca-news",
+      "title": "Novavax Shorts on Edge as Russia Plague Fears Spread"
+    }
+  ],
+  "expected": {
+    "PCVX": "pushed",
+    "RXO": "pushed",
+    "OPCH": "pushed",
+    "HUM": "app",
+    "PTC": "radar",
+    "XP": "unexplained"
+  }
+}

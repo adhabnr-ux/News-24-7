@@ -439,6 +439,7 @@ class SmallCapFeed:
         self.radar_health = SourceHealth()
         self._crumb: str | None = None
         self._swept = 0.0
+        self._sweep_cursor = 0
         self._saved_at = 0.0
         self._universe_tried = 0.0
 
@@ -589,14 +590,28 @@ class SmallCapFeed:
         self.radar_health.last_fetch_ms = (time.monotonic() - t0) * 1000
         await self._emit(on_hits, self.radar.scan(quotes, provider="yahoo"))
 
-    async def sweep_quotes(self, phase: str = "open") -> list[Quote]:
-        """Pre-market, regular and after-hours prices for the largest ``sweep_size`` companies
-        (Yahoo spark, 20 symbols a request). The screeners above only rank the regular session,
-        so this is what sees a $75B company gap up 9% before the open."""
-        big = sorted(
+    def sweep_batch(self) -> list[Listing]:
+        """The largest ``sweep_size`` companies every sweep, plus the next ``sweep_rotate`` of
+        every other $2B+ company in turn, so all of them are seen within a few minutes. (Week of
+        Oct 5 2026: RXO +22% and XP +21% before the open, OPCH +22% after hours, all below the
+        top 400.)"""
+        ranked = sorted(
             (li for li in self.universe.by_symbol.values() if li.common and (li.market_cap or 0) >= BIG_CAP),
             key=lambda li: -(li.market_cap or 0),
-        )[: self.cfg.sweep_size]
+        )
+        head, rest = ranked[: self.cfg.sweep_size], ranked[self.cfg.sweep_size :]
+        n = min(self.cfg.sweep_rotate, len(rest))
+        if n <= 0:
+            return head
+        start = self._sweep_cursor % len(rest)
+        self._sweep_cursor = (start + n) % len(rest)
+        return head + (rest + rest)[start : start + n]
+
+    async def sweep_quotes(self, phase: str = "open") -> list[Quote]:
+        """Pre-market, regular and after-hours prices for the sweep batch (Yahoo spark, 20
+        symbols a request). The screeners above only rank the regular session, so this is what
+        sees a $75B company gap up 9% before the open."""
+        big = self.sweep_batch()
         session = {"pre-market": "pre", "after-hours": "post"}.get(phase, "regular")
         out: list[Quote] = []
         for i in range(0, len(big), 20):

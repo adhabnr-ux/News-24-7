@@ -645,6 +645,13 @@ keywords:
 # Phrases that make an item LESS likely to be market-moving (subtracted from score).
 penalties:
   stocks to buy: 35
+  # previews and crowd-behavior pieces are not results ("Investors rush to buy Nvidia ahead of earnings")
+  ahead of earnings: 30
+  into earnings: 25
+  before earnings: 25
+  earnings preview: 30
+  what to expect: 25
+  rush to buy: 20
   should you buy: 35
   should you: 20
   here's why: 25
@@ -839,13 +846,36 @@ themes:
     direction: down
     tickers: [KRE, XLF, SPY, TLT]
   pandemic_shock:
-    description: Pandemic / public-health shock or breakthrough
+    description: >-
+      Pandemic / outbreak scare or breakthrough. Vaccine and biodefense names move first (Oct 5 2026: a
+      suspected pneumonic-plague death in Russia sent NVAX +28% intraday, EBS and ARCT up, hours before
+      any headline named them)
     all:
-      - [coronavirus, covid, pandemic, outbreak, virus, variant, vaccine, who]
-      - [declares, lockdown*, travel, emergency, variant of concern, effective, cases jump, spreads, interim analysis]
-    weight: 20
+      - [coronavirus, covid, pandemic, outbreak, virus, variant, vaccine, who, plague, pneumonic, bubonic, ebola, marburg, h5n1, bird flu, avian flu, mpox, monkeypox, smallpox, anthrax, disease x, nipah]
+      - [declares, lockdown*, travel, emergency, variant of concern, effective, cases jump, spreads, spread, spreading, interim analysis, death, deaths, dies, died, suspected, confirmed, quarantine*, cluster, human-to-human, fears, scare]
+    weight: 25
     direction: mixed
-    tickers: [SPY, JETS, PFE]
+    tickers: [MRNA, NVAX, BNTX, EBS, SIGA, PFE, JETS]
+  brazil_election:
+    description: >-
+      Brazil's presidential election and runoff polls move every Brazilian ADR together (Oct 5 2026,
+      after the first round: XP +31%, INTR +6%, STNE +7%, NU +5% on the day)
+    all:
+      - [brazil, brazilian, bolsonaro, lula, tarcisio, ibovespa]
+      - [election, elections, runoff, first round, second round, poll, polls, vote, voters, presidential race, ballot, wins, lead, leads]
+    weight: 30
+    direction: mixed
+    tickers: [EWZ, XP, NU, STNE, PAGS, INTR, ITUB, BBD, PBR, VALE]
+  argentina_election:
+    description: >-
+      Argentina's elections swing its ADRs 20-40% in a day (Oct 27 2025, after Milei's midterm win:
+      GGAL, BMA, YPF and SUPV up 20-40%)
+    all:
+      - [argentina, argentine, milei, peronist*, kirchner*, merval]
+      - [election, elections, midterm*, runoff, poll, polls, vote, voters, ballot, wins, lead, leads, defeat*]
+    weight: 30
+    direction: mixed
+    tickers: [ARGT, YPF, GGAL, BMA, SUPV, PAM, TGS, CEPU]
   election_shock:
     description: Election or referendum outcome
     all:
@@ -1111,6 +1141,17 @@ themes:
     weight: 25
     direction: up
     tickers: [OKLO, SMR, NNE, LEU, BWXT, CCJ]
+  medicare_star_ratings:
+    description: >-
+      CMS publishes Medicare Advantage star ratings each October; 4-star plans earn bonus payments, so the
+      ratings reprice the managed-care stocks overnight (Oct 8 2026 after the close: HUM +12% the next day,
+      ALHC down)
+    all:
+      - [cms, medicare, centers for medicare]
+      - [star rating*, stars, 4-star, 5-star, four-star, five-star, 4 stars, high-quality plans, quality rating*, quality bonus*]
+    weight: 35
+    direction: mixed
+    tickers: [HUM, UNH, CVS, ELV, CNC, ALHC, CLOV]
   nrc_licensing:
     description: >-
       The Nuclear Regulatory Commission approves, licenses or permits a reactor or fuel facility. NRC

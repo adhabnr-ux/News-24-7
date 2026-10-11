@@ -126,13 +126,34 @@ async def test_sweep_reads_premarket_prices_for_the_largest(server, http, monkey
     server.on("/v8/finance/spark", spark)
     monkeypatch.setattr(radar_mod, "SPARK_URL", server.url("/v8/finance/spark"))
     uni = Universe.stub(UNI)
-    feed = SmallCapFeed(sc_cfg(sweep_size=3), http, uni, None, MoversRadar(sc_cfg(), uni))
+    feed = SmallCapFeed(sc_cfg(sweep_size=3, sweep_rotate=0), http, uni, None, MoversRadar(sc_cfg(), uni))
     quotes = await feed.sweep_quotes("pre-market")
     assert [q.symbol for q in quotes] == ["AAPL", "MRNA", "NDAQ"]  # the 3 largest, NVAX ($1.5B) not swept
     mrna = next(q for q in quotes if q.symbol == "MRNA")
     assert (
         mrna.change_pct == pytest.approx(9.24, abs=0.01) and mrna.session == "pre" and mrna.market_cap == 75e9
     )
+
+
+def test_sweep_rotates_through_every_2b_company():
+    """Week of Oct 5 2026: RXO ($3.9B) +22% and XP ($11B) +21% before the open, OPCH ($3.6B) +22%
+    after hours. All sat below the 400 largest, so only a rotation through every $2B+ company
+    sees them outside the regular session."""
+    uni = Universe.stub(
+        {f"B{i:02d}": {"name": f"Big {i} Corp", "mcap": (100 - i) * 1e9, "price": 10.0} for i in range(10)}
+        | {"TINY": {"name": "Tiny Corp", "mcap": 1e9, "price": 2.0}}
+    )
+    feed = SmallCapFeed(sc_cfg(sweep_size=3, sweep_rotate=3), None, uni, None, MoversRadar(sc_cfg(), uni))
+    seen: set[str] = set()
+    batches = [[li.symbol for li in feed.sweep_batch()] for _ in range(3)]
+    assert batches[0] == ["B00", "B01", "B02", "B03", "B04", "B05"]  # the top 3 always, then 3 more
+    assert batches[1][3:] == ["B06", "B07", "B08"] and batches[2][3:] == ["B09", "B03", "B04"]
+    for b in batches:
+        seen.update(b)
+    assert seen == {f"B{i:02d}" for i in range(10)}  # every $2B+ company within 3 sweeps
+    assert "TINY" not in seen  # under $2B: the small-cap screeners cover those
+    off = SmallCapFeed(sc_cfg(sweep_size=3, sweep_rotate=0), None, uni, None, MoversRadar(sc_cfg(), uni))
+    assert [li.symbol for li in off.sweep_batch()] == ["B00", "B01", "B02"]
 
 
 # --------------------------------------------------------------------------- the calendar: index entry

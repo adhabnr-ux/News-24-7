@@ -1964,6 +1964,64 @@ events:
     coverage:
       - "Health insurer stocks surge after Medicare Advantage rate hike tops expectations"
 
+  # ---- the week of Oct 5 2026, replayed with TradingView's timestamps (docs/research/week-2026-10-05.md)
+  - id: chrw-rxo-2026
+    date: 2026-10-05
+    category: takeover_target
+    first_source: "Reuters, 07:06 ET, before the open"
+    move: "RXO +22.5% (CHRW, the buyer, the S&P 500's worst performer that day)"
+    tickers: [RXO, CHRW]
+    smallcap: {symbol: RXO, name: "RXO, Inc. Common Stock", mcap: 3.9e9, price: 23.38}
+    first_reports:
+      - {text: "C.H. Robinson to buy RXO for $5.8 billion", tier: media}
+    coverage:
+      - "RXO to Merge With C.H. Robinson; Holders May Elect $30.25 Cash or Stock Mix"
+
+  - id: schneider-ptc-2026
+    date: 2026-10-05
+    category: takeover_target
+    first_source: "Schneider Electric's announcement overnight; ShareCast 04:15 ET; PTC already rallying pre-market at 04:11"
+    move: "PTC +33.5% ($205 a share in cash, a 42% premium)"
+    tickers: [PTC]
+    smallcap: {symbol: PTC, name: "PTC Inc. Common Stock", mcap: 17.2e9, price: 144.03}
+    first_reports:
+      - {text: "Schneider Electric to buy PTC for $22.6bn in cash", tier: media}
+    coverage:
+      - "PTC to Be Acquired by Schneider Electric for $205 Per Share in All-Cash Merger"
+
+  - id: mckesson-opch-2026
+    date: 2026-10-05
+    category: takeover_target
+    first_source: "Financial Times scoop via Reuters, 16:03 ET; the deal was signed the next morning"
+    move: "OPCH +22% after hours, +32.6% on Oct 6 ($32.05 a share)"
+    tickers: [OPCH, MCK]
+    smallcap: {symbol: OPCH, name: "Option Care Health, Inc. Common Stock", mcap: 3.6e9, price: 23.37}
+    first_reports:
+      - {text: "Mckesson And CD&R Near $5Bn-Plus Deal To Buy Infusion Services Provider Option Care Health - FT", tier: media}
+    coverage:
+      - "CD&R and McKesson Corporation Sign Agreement to Acquire Option Care Health"
+
+  - id: vaxcyte-opus1-2026
+    date: 2026-10-05
+    category: trial_readout
+    first_source: "Vaxcyte's GlobeNewswire release, 06:00 ET"
+    move: "PCVX opened +54%, closed +31%"
+    tickers: [PCVX]
+    smallcap: {symbol: PCVX, name: "Vaxcyte, Inc. Common Stock", mcap: 7.3e9, price: 56.48, industry: "Biotechnology: Biological Products"}
+    first_reports:
+      - {text: "Vaxcyte Reports Positive Topline Data from OPUS-1, the Pivotal Adult Phase 3 Trial of VAX-31, the Company’s 31-Valent Pneumococcal Conjugate Vaccine Candidate", tier: wire}
+
+  - id: medicare-stars-2027
+    date: 2026-10-08
+    category: managed_care_rates
+    first_source: "CMS's 2027 star ratings after the close (Reuters 16:53 ET); Humana's release 06:10 ET the next day"
+    move: "HUM +11.6% on Oct 9 (surging after hours by 17:41 ET); ALHC lower"
+    tickers: [HUM, ALHC, CVS]
+    smallcap: {symbol: HUM, name: "Humana Inc. Common Stock", mcap: 46.5e9, price: 387.12}
+    first_reports:
+      - {text: "Humana Announces Improved CMS Star Ratings with 95 Percent of Medicare Advantage Members in 4-Star or Above Plans for 2027", tier: wire}
+      - {text: "CMS says 71% of Medicare Advantage prescription drug enrollees in 4-star or higher plans for 2027", tier: media}
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -2105,3 +2163,11 @@ noise:
   - {text: "Energy Secretary visits national lab to tour supercomputer", tier: primary, entities: [Department of Energy]}
   - {text: "FCC Announces Agenda for October Open Meeting", tier: primary, entities: [FCC]}
   - {text: "NRC Commissioner to speak at industry conference", tier: primary, entities: [NRC]}
+  # deal-shaped headlines that are not takeovers of a listed company
+  - "Investors rush to buy Nvidia ahead of earnings"
+  - "3 reasons to buy Apple stock now"
+  - "Apple to buy back $110 billion of stock"
+  - {text: "Microsoft to acquire gaming studio for $1 billion", smallcap: {symbol: MSFT, name: "Microsoft Corporation Common Stock", mcap: 3.5e12, price: 500}}
+  - "Intel nears deal to buy chip startup SambaNova"
+  - "Berkshire buys more Occidental shares"
+  - "Hedge funds buy Tesla calls ahead of deliveries"

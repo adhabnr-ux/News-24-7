@@ -166,7 +166,7 @@ Built-in safeguards: polling uses conditional GETs, so checking every 5–10 s c
 
 ## How it decides what matters
 
-> **Research-backed.** The criteria come from a study of 190 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first and 33 small caps that moved 25–3,000% on one headline) and the headline that first reported each one. `news247 backtest` replays them: **96% are caught from the first report, with 0 false alarms on 133 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
+> **Research-backed.** The criteria come from a study of 195 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first and 33 small caps that moved 25–3,000% on one headline) and the headline that first reported each one. `news247 backtest` replays them: **96% are caught from the first report, with 0 false alarms on 140 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
 
 Every item is scored from 0 to 100 by a deterministic rule engine. It takes about 50 µs per item, never goes down, and every score can be explained:
 
@@ -376,7 +376,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 | `news247 test-notify [--only imessage]` | Send a test alert through every enabled channel (or just one) |
 | `news247 demo` | Simulated "AI launch → software selloff" through the real pipeline, dashboard and notifications |
 | `news247 stats` | Measured detection latency per source, and which source had each story first |
-| `news247 backtest [-v]` | Replay 190 historical market-moving events and 133 noise headlines through the scoring rules |
+| `news247 backtest [-v]` | Replay 195 historical market-moving events and 140 noise headlines through the scoring rules |
 | `news247 scorecard [--date YYYY-MM-DD]` | Who knew first: each big move of a day, whether you had it before the price, and what to fix |
 | `news247 init` | Write a starter `config.yaml` + `.env` |
 

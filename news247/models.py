@@ -96,6 +96,7 @@ class Analysis:
     summary: str = ""  # optional one-liner (LLM)
     llm_used: bool = False
     smallcap: dict[str, Any] = field(default_factory=dict)  # small/mid-cap catalyst read, if any
+    deal: dict[str, Any] = field(default_factory=dict)  # takeover target/buyer, if the headline is one
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
