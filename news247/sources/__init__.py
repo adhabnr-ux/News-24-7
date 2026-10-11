@@ -16,6 +16,7 @@ from .polymarket import PolymarketSource
 from .rss import RSSSource
 from .sec_13f import SEC13FSource
 from .sec_edgar import SECEdgarSource
+from .sec_insider import SECInsiderSource
 from .social import MastodonSource, XSource
 from .telegram import TelegramChannelSource
 from .x_stream import XStreamSource
@@ -27,6 +28,7 @@ SOURCE_TYPES: dict[str, type[Source]] = {
     for cls in (
         RSSSource,
         SECEdgarSource,
+        SECInsiderSource,
         SEC13FSource,
         TradingHaltsSource,
         PageWatchSource,

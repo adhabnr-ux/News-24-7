@@ -33,6 +33,7 @@ News247 checks those first, every 5–60 s, with bursts at the minutes they usua
 |---|---|---|---|
 | **AI labs & big tech, first-party** | OpenAI news RSS (10 s), Anthropic newsroom (10 s), OpenAI YouTube, DeepMind, Google, NVIDIA, Apple, Microsoft, Meta newsrooms | free | seconds to the site's own feed lag |
 | **First places** (Oct 2026 research) | Federal Register public inspection (5 s bursts at 08:45/11:15/16:15 ET), OFAC Recent Actions, BIS, USTR, Supreme Court slip opinions (2 s from 10:00 ET), Federal Circuit, PACER (D.D.C., E.D. Va.), FHFA, CENTCOM, Pentagon contracts (17:00 ET), FAA, darioamodei.com, blog.samaltman.com, Polymarket odds jumps, EDGAR 13D/13G/SC TO-T/425/6-K | free | seconds to a minute |
+| **Ahead of the wires** (Oct 11 2026) | SEC Form 4 insider purchases (30 s), 15 activist short sellers' own sites (2 min), FCC headlines, CMS newsroom, DOE newsroom, NRC news (1–2 min), S&P Dow Jones Indices press (1 min), SC 14D-9 tender responses; Google News for SpaceX/Starlink/xAI deals (90 s) and short reports (2 min) | free | seconds to 2 min |
 | **Regulators & exchanges** | SEC 8-K filings (10 s), Nasdaq trading halts (15 s), Fed press/monetary feeds, BLS, Treasury, White House, FDA, FTC, DOJ, ECB. **1 s polling at 08:30, 10:00 and 14:00 ET** release times | free | seconds |
 | **Scoop publishers** | FT technology/companies/markets, Bloomberg markets/technology, The Information, Axios, WSJ markets, CNBC, MarketWatch bulletins | free (headline feeds) | 1–5 min after the article |
 | **Squawk relays** | Telegram (FinancialJuice, every 5 s) | free | seconds |
@@ -40,6 +41,47 @@ News247 checks those first, every 5–60 s, with bursts at the minutes they usua
 | | **Alpaca news** (Benzinga newsdesk with tickers) | free (paper-trading keys) | seconds–2 min |
 | | **Bluesky** newsrooms (Reuters, AP, NYT, WSJ…) | free | ~1–2 s after they post |
 | **Prices** | Yahoo (15 s) or Finnhub websocket (real time) | free | 1–30 s |
+
+## Ahead of the wires: who knows first, and where they post it
+
+*Billions* rule: the edge is knowing what the people closest to the money are doing, before it is
+a headline. Six places publish that first, for free:
+
+| Source | What it catches | How fast | Example |
+|---|---|---|---|
+| **SEC Form 4, open-market buys** (`sec-insider-buys`) | A CEO, CFO, director or 10% owner buying their own stock with their own cash | EDGAR lists the filing the minute it is accepted (it must be filed within 2 business days of the trade); polled every 30 s | "CEO Jane A Smith buys $2.5M of Acme Biotech (ACMB) stock at $3.10-$3.30" |
+| **Activist short sellers' own sites** (`short-*`, 15 firms) | A new short report: Muddy Waters, Spruce Point, Culper, Blue Orca, Kerrisdale, Fuzzy Panda, Wolfpack, Grizzly, Morpheus, Iceberg, Viceroy, J Capital, Bleecker Street, Scorpion, Citron | Every 2 min. The report is on their site before the wires and often before the open | Hindenburg on Icahn Enterprises, May 2 2023: IEP −20% that day |
+| **FCC headlines** (`fcc-headlines`) | Spectrum sales, satellite-to-phone approvals, auctions | Every minute | SpaceX/EchoStar, SpaceX/Grain 800 MHz: carriers −10–13%, towers +7–16% |
+| **CMS newsroom** (`cms-newsroom`) | Medicare Advantage rate notices and star ratings | Every minute; the April rate notice lands after the close | Apr 7 2025: +5.06% vs +2.23% proposed; HUM, UNH, CVS sharply higher the next day |
+| **DOE newsroom, NRC news** (`doe-newsroom`, `nrc-news`) | Nuclear selections, fuel awards, loans, construction permits and licenses | Every 2 min | OKLO, SMR, NNE and LEU move 10–30% on these |
+| **S&P Dow Jones Indices press** (`spdji-press`) | S&P 500 additions and replacements ("Set to Join", "Replace", "Rebalance") | Every minute; quarterly changes come after the close (~17:15 ET) on the first Friday of March, June, September and December, replacements any day | Added companies usually gap up the next morning (HOOD and APP, Sep 2025) |
+
+**How insider buys are scored.** Sales are ignored (executives sell for taxes, houses and
+diversification); so are grants, option exercises, gifts and tax withholding. Only purchases
+(transaction code P) worth $250K or more count. Each one is weighed by:
+
+- **Who:** the CEO, CFO, President or Chair adds more than a director.
+- **How much:** $1M or more adds more.
+- **Against the company's size:** 1% or more of the market value counts most, then 0.2% and 0.05%.
+- **Clusters:** a second insider buying the same stock within 7 days adds more.
+
+A CEO putting 1.7% of a $150M company into its stock is HIGH and pushes. A director's $550K buy in
+a $30B company is shown in the app but not pushed.
+The small-cap lane labels it "Insider buying", never a takeover.
+
+**How short reports are filtered.** Each short seller's page is watched only for report-shaped
+links: multi-word slugs or PDFs. Navigation pages (about, contact, team, category, privacy,
+terms…) are excluded. The firm's name plus a report word ("short", "report", "alleges",
+"fraud", "targets"…) is what triggers the `short_seller_report` rule, so "the Hindenburg
+disaster" and "muddy waters for the Fed" don't.
+
+**Status.** These pages could not be fetched from the build environment (government sites
+are blocked there). If a site's markup differs from the pattern, that source shows "no links
+match link_pattern" on the dashboard and in `news247 check`. It is never silently empty.
+Hindenburg Research closed in January 2025, so it is recognized in news but not watched.
+
+**Still not free:** SpaceX, Elon Musk and Truth Social posts reach you in real time only through
+the paid X stream above. The free path for SpaceX deals is Google News every 90 s.
 
 ## Which events each budget would have caught in time
 

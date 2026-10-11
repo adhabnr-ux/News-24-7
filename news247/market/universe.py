@@ -53,17 +53,20 @@ _NAME_TAIL = re.compile(
     r"\s+(?:(?:class|series)\s+[a-z0-9]+\s+)?"
     r"(?:common\s+stock|ordinary\s+shares?|common\s+shares?|subordinate\s+voting\s+shares|"
     r"american\s+depositary\s+(?:shares|receipts?)|ads|shares\s+of\s+beneficial\s+interest|"
-    r"units?|warrants?|rights?|depositary\s+shares?|capital\s+stock)\b.*$",
+    r"(?:common\s+|depositary\s+|limited\s+partnership\s+)?units?|warrants?|rights?|depositary\s+shares?|"
+    r"capital\s+stock)\b.*$",
     re.I,
 )
+# "Units" is a SPAC unit (share + warrant), but an MLP's "Common Units" / "Depositary Units"
+# (Energy Transfer, Enterprise Products, Icahn Enterprises) trade like common stock
 _NOT_COMMON = re.compile(
-    r"\b(warrants?|units?|rights?|preferred|preference|notes\s+due|debentures?|"
+    r"\b(warrants?|(?<!common )(?<!depositary )(?<!partnership )units?|rights?|preferred|preference|notes\s+due|debentures?|"
     r"depositary\s+shares?\s+(?:each\s+)?representing|perpetual|senior\s+notes|trust\s+preferred)\b",
     re.I,
 )
 # corporate suffixes dropped when matching a headline's subject against listing names
 _SUFFIX = re.compile(
-    r"[,.]?\s+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|llc|lp|l\.p|n\.v|nv|s\.a|sa|"
+    r"[,.]?\s+(?:inc|incorporated|corp|corporation|co|company|ltd|limited|plc|llc|lp|l\.p|l p|n\.v|n v|nv|s\.a|s a|sa|"
     r"ag|se|holdings?|group|hldgs|international|intl|technologies|technology|the)\.?$",
     re.I,
 )

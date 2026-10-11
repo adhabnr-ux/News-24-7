@@ -21,6 +21,27 @@ companies:
   - {name: DeepSeek, aliases: [deepseek], exposure: [NVDA, AVGO, TSM, MU]}
   - {name: Perplexity, aliases: [perplexity ai, perplexity], exposure: [GOOGL]}
   - {name: SpaceX, aliases: [spacex, starlink, starship], exposure: [TSLA, RKLB, ASTS]}
+  # activist short sellers: a report from one of them is the first public trace of a -20% day
+  - {name: Hindenburg Research, aliases: [hindenburg research], cased: [Hindenburg]}
+  - {name: Muddy Waters, aliases: [muddy waters research, muddy waters capital, muddy waters]}
+  - {name: Spruce Point, aliases: [spruce point capital, spruce point]}
+  - {name: Culper Research, aliases: [culper research, culper]}
+  - {name: Blue Orca, aliases: [blue orca capital, blue orca]}
+  - {name: Kerrisdale Capital, aliases: [kerrisdale capital, kerrisdale]}
+  - {name: Fuzzy Panda, aliases: [fuzzy panda research, fuzzy panda]}
+  - {name: Wolfpack Research, aliases: [wolfpack research]}
+  - {name: Grizzly Research, aliases: [grizzly research, grizzly reports]}
+  - {name: Morpheus Research, aliases: [morpheus research]}
+  - {name: Iceberg Research, aliases: [iceberg research]}
+  - {name: Viceroy Research, aliases: [viceroy research]}
+  - {name: J Capital Research, aliases: [j capital research]}
+  - {name: Bleecker Street Research, aliases: [bleecker street research]}
+  - {name: Scorpion Capital, aliases: [scorpion capital]}
+  - {name: Citron Research, aliases: [citron research, andrew left]}
+  # regulators whose decisions move whole groups (their themes name the tickers)
+  - {name: FCC, aliases: [federal communications commission, fcc]}
+  - {name: Department of Energy, aliases: [department of energy, energy department, energy secretary], cased: [DOE]}
+  - {name: NRC, aliases: [nuclear regulatory commission], cased: [NRC]}
   - {name: Databricks, aliases: [databricks], exposure: [SNOW, MDB]}
   - {name: Moonshot AI, aliases: [moonshot ai, kimi k2, kimi k3, kimi], exposure: [NVDA, SMH]}
   - {name: Alibaba Qwen, aliases: [qwen], exposure: [BABA, NVDA]}
@@ -111,7 +132,7 @@ companies:
   - {name: HHS, aliases: [health and human services, h.h.s., rfk jr, robert f. kennedy jr, kennedy jr.], cased: [HHS], exposure: []}
   - {name: CDC, aliases: [centers for disease control, c.d.c., acip], cased: [CDC], exposure: []}
   - {name: BARDA, aliases: [biomedical advanced research and development authority], cased: [BARDA], exposure: []}
-  - {name: CMS, aliases: [centers for medicare, medicare and medicaid services], cased: [CMS], exposure: []}
+  - {name: CMS, aliases: [centers for medicare, medicare and medicaid services, cms administrator], cased: [CMS], exposure: []}
   - {name: Bureau of Labor Statistics, aliases: [bls, bureau of labor statistics, nonfarm payrolls, payrolls], exposure: [SPY, QQQ, TLT]}
   - {name: FDIC, aliases: [fdic, federal deposit insurance], exposure: [KRE, XLF], authority: true}
   - {name: OPEC, aliases: [opec, opec+, saudi aramco, aramco], exposure: [USO, XOM, CVX], authority: true}
@@ -1057,6 +1078,50 @@ themes:
     weight: 35
     direction: down
     tickers: [MRNA, BNTX, NVAX, PFE]
+  short_seller_report:
+    description: >-
+      An activist short seller publishes a report (Hindenburg on Icahn Enterprises, May 2 2023: IEP -20%;
+      on Adani, Jan 2023). The target usually falls 10-30% the same day.
+    all:
+      - [hindenburg, muddy waters, spruce point, culper research, blue orca, kerrisdale, fuzzy panda, wolfpack research, grizzly research, grizzly reports, morpheus research, iceberg research, viceroy research, j capital research, bleecker street research, scorpion capital, citron research]
+      - [short*, report*, announc*, alleg*, fraud*, position, bet against, target*, accus*, expos*]
+    weight: 30
+    direction: down
+    tickers: []
+  medicare_advantage_rates:
+    description: >-
+      CMS sets Medicare Advantage payment rates (advance notice ~January, final notice ~April) and star
+      ratings (~October); the managed-care stocks move together (Apr 7 2025: a 5.06% final increase vs
+      2.2% proposed sent HUM, UNH and CVS sharply higher the next day)
+    all:
+      - [cms, medicare, centers for medicare]
+      - [medicare advantage, star rating*, rate notice, advance notice, payment rate*, payment increase, capitation, risk adjustment, ma plans, ma rates]
+      - [final*, announc*, propos*, rais*, increas*, hike*, cut*, boost*, releas*, notice, sets, set]
+    weight: 30
+    direction: mixed
+    tickers: [HUM, UNH, CVS, ELV, CNC, ALHC]
+  nuclear_policy_award:
+    description: >-
+      The DOE or NRC selects, funds, licenses or fast-tracks nuclear projects; small nuclear names
+      (OKLO, SMR, NNE, LEU) routinely move 10-30% on these
+    all:
+      - [department of energy, energy department, energy secretary, nuclear regulatory commission, nrc]
+      - [nuclear, reactor*, smr, small modular, microreactor*, haleu, uranium, fuel cycle, fusion]
+      - [award*, select*, grant*, approv*, licens*, permit*, loan*, fund*, contract*, pilot program, fast-track*, construction permit]
+    weight: 25
+    direction: up
+    tickers: [OKLO, SMR, NNE, LEU, BWXT, CCJ]
+  nrc_licensing:
+    description: >-
+      The Nuclear Regulatory Commission approves, licenses or permits a reactor or fuel facility. NRC
+      decisions gate every new-nuclear business plan, so OKLO, SMR, NNE and LEU trade on them even when the
+      headline never says "nuclear" ("NRC approves construction permit for TerraPower's Kemmerer plant").
+    all:
+      - [nuclear regulatory commission, nrc]
+      - [approv*, licens*, permit*, authoriz*, accept*, docket*, certif*, design approval]
+    weight: 30
+    direction: up
+    tickers: [OKLO, SMR, NNE, LEU, BWXT, CCJ]
   satellite_carrier_threat:
     description: >-
       SpaceX / Starlink buys spectrum or moves into mobile service: the US carriers fall (Oct 8 2026,

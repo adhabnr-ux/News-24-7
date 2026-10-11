@@ -600,7 +600,9 @@ class SmallCapDesk:
             read.notes.append("⚠ nano cap: extreme volatility, frequent reversals")
         read.points = points_for(cat.expected)
         read.floor = floor_for(cat.expected)
-        read.material = read.points >= 12
+        # an insider putting 0.2%+ of the company's value into its stock matters for that
+        # company even though the expected move is modest
+        read.material = read.points >= 12 or (cat.kind == "insider_buy" and (cat.relative or 0) >= 0.002)
         return read
 
     # ------------------------------------------------------------------ classification
@@ -614,6 +616,21 @@ class SmallCapDesk:
         bf = BAND_FACTOR.get(li.band, 0.8)
         bio = 1.0 if li.biotech else 0.6
         cap = li.market_cap
+
+        # --- an insider's own open-market buy (SEC Form 4): "CEO buys $2.5M of Acme stock" is
+        # not a takeover, whatever the verb says. The move scales with the buy's share of the
+        # company, and is larger when the CEO or several insiders are buying.
+        ib = extra.get("insider_buy")
+        if isinstance(ib, dict):
+            share = ib.get("share_of_cap") or 0.0
+            exp = 5.0 if share >= 0.01 else 3.0 if share >= 0.002 else 1.5
+            if ib.get("role") in ("CEO", "CFO", "President", "Chair"):
+                exp *= 1.25
+            if ib.get("cluster"):
+                exp *= 1.25
+            size = f" ({share:.2%} of the company)" if share else ""
+            label = f"Insider buying: {ib.get('role', 'insider')}{size}"
+            return Catalyst("insider_buy", label, "up", exp, relative=share or None)
 
         # --- deals: the target trades to the offer
         role = self._deal_role(li, title)

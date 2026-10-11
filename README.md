@@ -162,7 +162,7 @@ Built-in safeguards: polling uses conditional GETs, so checking every 5–10 s c
 
 ## How it decides what matters
 
-> **Research-backed.** The criteria come from a study of 186 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first and 33 small caps that moved 25–3,000% on one headline) and the headline that first reported each one. `news247 backtest` replays them: **96% are caught from the first report, with 0 false alarms on 122 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
+> **Research-backed.** The criteria come from a study of 190 real market-moving events (2016 to Oct 2026, including 54 from Jun–Oct 2026 traced to where each broke first and 33 small caps that moved 25–3,000% on one headline) and the headline that first reported each one. `news247 backtest` replays them: **96% are caught from the first report, with 0 false alarms on 133 "sounds big but isn't" headlines.** Full write-up: [docs/WHAT-MOVES-MARKETS.md](docs/WHAT-MOVES-MARKETS.md). Where the news comes from (Bloomberg vs. social media, and what each costs): [docs/WHERE-THE-NEWS-COMES-FROM.md](docs/WHERE-THE-NEWS-COMES-FROM.md).
 
 Every item is scored from 0 to 100 by a deterministic rule engine. It takes about 50 µs per item, never goes down, and every score can be explained:
 
@@ -243,7 +243,10 @@ headline the way a small-cap trader does:
 - **Earlier than the news**: readout, PDUFA and FDA-panel dates announced weeks ahead go on the
   Calendar automatically ("Tomorrow 08:30 ET: KOD · Phase 3 trial readout" in the morning Brief), and
   NVIDIA/Alphabet/Amazon/Berkshire 13F filings are read the hour they're filed, flagging new stakes
-  and exits in small caps (SoundHound: +67% on NVIDIA's stake, −28% on its exit).
+  and exits in small caps (SoundHound: +67% on NVIDIA's stake, −28% on its exit). Insiders' own
+  open-market buys (SEC Form 4) are read within 30 s of filing and sized against the company,
+  and 15 activist short sellers' sites are watched for new reports
+  ([where each comes from](docs/WHERE-THE-NEWS-COMES-FROM.md#ahead-of-the-wires-who-knows-first-and-where-they-post-it)).
 - **In Foretape**: a gold SMALL CAP pill with the catalyst and typical move, an All / Small caps
   tape switch, and a live small-cap radar board on the Watch tab.
 
@@ -368,7 +371,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 | `news247 test-notify [--only imessage]` | Send a test alert through every enabled channel (or just one) |
 | `news247 demo` | Simulated "AI launch → software selloff" through the real pipeline, dashboard and notifications |
 | `news247 stats` | Measured detection latency per source, and which source had each story first |
-| `news247 backtest [-v]` | Replay 186 historical market-moving events and 122 noise headlines through the scoring rules |
+| `news247 backtest [-v]` | Replay 190 historical market-moving events and 133 noise headlines through the scoring rules |
 | `news247 init` | Write a starter `config.yaml` + `.env` |
 
 ### API
@@ -399,7 +402,7 @@ Cboe option chains ($1B+) ─► spikes (bid-confirmed, stale-base check) + unus
 
 ```
 news247/
-  sources/      rss, sec_edgar, halts, pagewatch, bluesky, x_stream, alpaca_news, telegram, social (x, mastodon),
+  sources/      rss, sec_edgar, sec_insider, sec_13f, halts, pagewatch, bluesky, x_stream, alpaca_news, telegram, social (x, mastodon),
                 apis (hn, reddit, finnhub)
   analysis/     scorer, smallcap (catalyst sizing vs. market cap), entities, dedup (story clustering), llm
   market/       detector (move rules, baskets), prices (yahoo, finnhub), universe (every listing's size),

@@ -1940,6 +1940,30 @@ events:
     first_reports:
       - {text: "EchoStar to sell spectrum licenses to SpaceX for about $17 billion", tier: media}
 
+  - id: hindenburg-iep
+    date: 2023-05-02
+    category: short_seller_report
+    first_source: "Hindenburg Research's own site, before the open; Carl Icahn's response came hours later"
+    move: "IEP -20% that day"
+    tickers: [IEP]
+    first_reports:
+      - {text: "Icahn Enterprises: The Corporate Raider Throwing Stones From His Glass House", tier: primary, entities: [Hindenburg Research], boost: 15}
+    coverage:
+      - "Icahn Enterprises shares plunge 20% after Hindenburg short report"
+      - "Hindenburg Research takes short position in Icahn Enterprises, alleging ponzi-like structure"
+
+  - id: cms-ma-2026-final-rate
+    date: 2025-04-07
+    category: managed_care_rates
+    first_source: "CMS rate announcement, Apr 7 2025 after the close: +5.06% vs +2.23% in the January advance notice"
+    move: "Apr 8: HUM, UNH and CVS sharply higher (approx: HUM ~+10%, UNH ~+8%, CVS ~+6%)"
+    tickers: [HUM, UNH, CVS, ELV, CNC]
+    first_reports:
+      - {text: "CY 2026 Medicare Advantage and Part D Rate Announcement", tier: primary, entities: [CMS], approx: true}
+      - {text: "CMS finalizes 5.06% Medicare Advantage payment increase for 2026, above its proposal", tier: media, approx: true}
+    coverage:
+      - "Health insurer stocks surge after Medicare Advantage rate hike tops expectations"
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -2073,3 +2097,11 @@ noise:
   - "Starlink adds 1 million subscribers in three months, SpaceX says"
   - {text: "NIH launches new website for vaccine trial volunteers", tier: primary}
   - "CDC updates guidance on flu vaccines for older adults"
+  # short-seller and regulator names in ordinary news
+  - "The Hindenburg disaster: 88 years later, new footage emerges"
+  - "Muddy waters for the Fed as officials split on the path of rates"
+  - "Blue orca sightings off the coast of Washington delight whale watchers"
+  - {text: "CMS releases new data on hospital price transparency compliance", tier: primary, entities: [CMS]}
+  - {text: "Energy Secretary visits national lab to tour supercomputer", tier: primary, entities: [Department of Energy]}
+  - {text: "FCC Announces Agenda for October Open Meeting", tier: primary, entities: [FCC]}
+  - {text: "NRC Commissioner to speak at industry conference", tier: primary, entities: [NRC]}
