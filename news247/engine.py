@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import re
@@ -24,9 +25,11 @@ from .market.options import OptionsFeed, OptionsHit, OptionsRadar
 from .market.prices import PriceMonitor
 from .market.radar import MoversRadar, RadarHit, SmallCapFeed
 from .market.universe import Universe, fmt_cap
+from .market.why import WhyHunter
 from .models import Alert, Analysis, NewsItem, PriceMove, Severity, SourceTier
 from .notify import Dispatcher
 from .notify.format import move_headline, window_label
+from .scorecard import Scorecard, scorecard_line
 from .sources import Source, SourceContext, build_sources
 from .sources.base import _sleep_or_stop
 from .storage import Storage
@@ -72,6 +75,9 @@ class Engine:
         # the news is for them, plus a radar for small caps moving before any headline
         sc = cfg.smallcap
         self.universe = SmallCapFeed.load_cached(cfg.data_path) or Universe()
+        # after every big move: did we have it first? (scorecard.py)
+        self.scorecard = Scorecard(self.storage, self.universe, self.calendar.holidays)
+        self.why = WhyHunter(self.http, cfg.general.user_agent, sc.why_per_hour) if sc.why_lookup else None
         self.radar: MoversRadar | None = None
         self.smallcap_feed: SmallCapFeed | None = None
         self.radar_seen: dict[str, tuple[float, float]] = {}  # symbol -> (flagged at, % move)
@@ -617,6 +623,7 @@ class Engine:
             self.radar_seen[hit.symbol] = (hit.detected, hit.quote.change_pct or 0.0)
             alert = self._radar_alert(hit)
             await self.publish(alert)
+            self._maybe_hunt(alert, hit.quote.name or "")
             if self.radar is not None and hit.symbol in self.radar.board:
                 self.radar.board[hit.symbol]["alert_id"] = alert.id  # the board row opens this alert
         cutoff = time.time() - 12 * 3600
@@ -695,7 +702,57 @@ class Engine:
 
     async def on_options(self, hits: list[OptionsHit]) -> None:
         for hit in hits:
-            await self.publish(self._options_alert(hit))
+            alert = self._options_alert(hit)
+            await self.publish(alert)
+            self._maybe_hunt(alert, hit.to_dict().get("name") or "")
+
+    # ------------------------------------------------------------------ why is it moving?
+
+    def _maybe_hunt(self, alert: Alert, name: str = "") -> None:
+        """A move with no known headline: look up the company's filings and news right away."""
+        if self.why is None or len(alert.tickers) != 1 or alert.severity < Severity.MEDIUM:
+            return
+        if any(r.get("kind") == "news" for r in alert.related) or alert.edge.get("smallcap", {}).get(
+            "label", ""
+        ).endswith("on the calendar today"):
+            return
+        sym = alert.tickers[0]
+        if not self.why.allow(sym):
+            return
+        li = self.universe.get(sym)
+        self._spawn(self._hunt(alert, sym, (li.name if li is not None else "") or name))
+
+    async def _hunt(self, alert: Alert, symbol: str, name: str) -> dict[str, Any] | None:
+        assert self.why is not None
+        since = Calendar.last_close(alert.created, self.calendar.holidays) - 6 * 3600
+        started = time.time()
+        found = await self.why.hunt(symbol, name, since)
+        best: tuple[float, NewsItem, Analysis] | None = None
+        for item in found:
+            an = await self.on_item(item)  # scored, stored and alerted like any other item
+            if an is None:  # already seen through a regular source
+                an = self.scorer.score(item)
+            if best is None or an.score > best[0]:
+                best = (an.score, item, an)
+        took = round(time.time() - started, 1)
+        if best is None:
+            why = {"found": False, "searched": ["EDGAR filings", "news search"], "took_s": took}
+        else:
+            _, item, an = best
+            why = {
+                "found": True,
+                "title": item.title,
+                "source": item.source,
+                "url": item.url,
+                "score": an.score,
+                "severity": an.severity.name,
+                "published": item.published,
+                "took_s": took,
+                "others": len(found) - 1,
+            }
+        if self.storage.update_alert_edge(alert.id, {"why": why}) is not None:
+            self._broadcast("edge", {"id": alert.id, "why": why})
+        return why
 
     async def on_options_problem(self, note: str) -> None:
         await self.publish(
@@ -1057,6 +1114,7 @@ class Engine:
                 else {"listings": len(self.universe), "radar": {"enabled": False}}
             ),
             "options": self.options_feed.status() if self.options_feed is not None else {"enabled": False},
+            "why": {"enabled": True, **self.why.stats} if self.why is not None else {"enabled": False},
             "channels": self.dispatcher.describe(),
             "phone_mode": self.phone_mode(),
             "relay": self.relay_hub.status() if self.relay_hub is not None else None,
@@ -1125,13 +1183,67 @@ class Engine:
 
     def brief(self, now: float | None = None) -> dict[str, Any]:
         now = now or time.time()
-        return build_brief(
+        brief = build_brief(
             self.storage.recent_alerts(200, since=now - 4 * 86400),
             self.calendar,
             self.detector.snapshot(),
             self.storage.leads(since=now - 7 * 86400),
             now,
         )
+        brief["scorecard"] = self.last_session_scorecard(now)
+        return brief
+
+    def scorecard_for(self, day: str | None = None, now: float | None = None) -> dict[str, Any]:
+        return self.scorecard.build(day, now)
+
+    def last_session_scorecard(self, now: float | None = None) -> dict[str, Any] | None:
+        """The previous session's scorecard, trimmed for the Brief: the line, the counts and the
+        three gaps worth fixing first."""
+        now = now or time.time()
+        day = datetime.fromtimestamp(Calendar.last_close(now, self.calendar.holidays), ET).date()
+        try:
+            card = self.scorecard.build(day.isoformat(), now)
+        except Exception as exc:  # noqa: BLE001 - the Brief must render without it
+            log.warning("scorecard failed: %s", exc)
+            return None
+        if not card["moves"]:
+            return None
+        gaps = [v for v in card["verdicts"] if v["verdict"] in ("scored_low", "app", "unexplained")]
+        return {
+            "date": card["date"],
+            "line": scorecard_line(card),
+            "counts": card["counts"],
+            "moves": card["moves"],
+            "ahead_rate": card["ahead_rate"],
+            "median_lead_s": card["median_lead_s"],
+            "gaps": [
+                {"symbol": v["symbol"], "verdict": v["verdict"], "hint": v["hint"], "headline": v["headline"]}
+                for v in gaps[:3]
+            ],
+        }
+
+    def save_scorecard(self, now: float | None = None) -> dict[str, Any] | None:
+        """After 20:00 ET, keep the day's summary for the long-run record (items are pruned)."""
+        now = now or time.time()
+        dt = datetime.fromtimestamp(now, ET)
+        if dt.hour < 20 or dt.weekday() >= 5:
+            return None
+        key = f"scorecard:{dt.date().isoformat()}"
+        if self.storage.get_setting(key):
+            return None
+        card = self.scorecard.build(dt.date(), now)
+        summary = {
+            k: card[k] for k in ("date", "moves", "counts", "ahead_rate", "pushed_rate", "median_lead_s")
+        }
+        summary["line"] = scorecard_line(card)
+        self.storage.set_setting(key, json.dumps(summary))
+        return summary
+
+    def scorecard_history(self, days: int = 30) -> list[dict[str, Any]]:
+        rows = self.storage.db.execute(
+            "SELECT value FROM settings WHERE key LIKE 'scorecard:%' ORDER BY key DESC LIMIT ?", (days,)
+        )
+        return [json.loads(r[0]) for r in rows]
 
     def _brief_due(self, now: float) -> bool:
         from datetime import datetime
@@ -1190,6 +1302,8 @@ class Engine:
                     if n:
                         log.info("pruned %d old items", n)
             await self._check_connectivity(now)
+            with contextlib.suppress(Exception):
+                self.save_scorecard(now)
 
     async def _check_connectivity(self, now: float) -> None:
         """Warn (once) if *no* source has succeeded for 5 minutes — usually a dead network."""

@@ -613,6 +613,24 @@ def cmd_stats(cfg: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scorecard(cfg: Config, args: argparse.Namespace) -> int:
+    """Who knew first: every big move of a day, and whether Foretape had it before the price."""
+    import json as _json
+
+    from .market.radar import SmallCapFeed
+    from .scorecard import Scorecard, format_scorecard
+    from .storage import Storage
+
+    db = Path(args.db) if args.db else cfg.data_path / "news247.db"
+    if not db.exists():
+        print(f"No database yet at {db}. Run `news247 run` first (or pass --db).")
+        return 1
+    universe = SmallCapFeed.load_cached(cfg.data_path)
+    card = Scorecard(Storage(db), universe).build(args.date)
+    print(_json.dumps(card, indent=2, default=str) if args.json else format_scorecard(card))
+    return 0
+
+
 def cmd_backtest(cfg: Config, args: argparse.Namespace) -> int:
     from .backtest import format_report, run_backtest
 
@@ -692,6 +710,13 @@ def build_parser() -> argparse.ArgumentParser:
     bt.add_argument("--threshold", default="high", choices=["medium", "high", "critical"])
     bt.add_argument("-v", "--verbose", action="store_true", help="show scoring reasons")
 
+    sc = sub.add_parser(
+        "scorecard", help="who knew first: each big move of a day and whether we had it before"
+    )
+    sc.add_argument("--date", default=None, help="YYYY-MM-DD (default: today, Eastern time)")
+    sc.add_argument("--db", default=None, help="database file (default: data/news247.db)")
+    sc.add_argument("--json", action="store_true", help="print the raw scorecard")
+
     st = sub.add_parser("stats", help="latency per source")
     st.add_argument("--days", type=float, default=7)
 
@@ -715,6 +740,7 @@ COMMANDS = {
     "demo": cmd_demo,
     "stats": cmd_stats,
     "backtest": cmd_backtest,
+    "scorecard": cmd_scorecard,
     "universe": cmd_universe,
     "options": cmd_options,
 }

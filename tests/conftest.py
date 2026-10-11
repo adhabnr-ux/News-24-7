@@ -33,7 +33,15 @@ def fixture_text(name: str, **subs: str) -> str:
 
 @pytest.fixture
 def cfg(tmp_path: Path) -> Config:
-    c = build_config({"general": {"data_dir": str(tmp_path)}, "notify": {"console": {"enabled": False}}})
+    c = build_config(
+        {
+            "general": {"data_dir": str(tmp_path)},
+            "notify": {"console": {"enabled": False}},
+            "smallcap": {
+                "why_lookup": False
+            },  # no live EDGAR/news lookups from tests (test_why.py enables it)
+        }
+    )
     return c
 
 

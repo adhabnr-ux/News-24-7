@@ -110,6 +110,13 @@ function capRow(a) {
   return `<div class="cap ${d}"><span class="capb">${esc(s.band)}</span><b class="sym">${esc(s.symbol)}</b><span class="capm">${esc(s.cap)}</span>
     <span class="capl">${esc(s.label)}</span>${s.move_text ? `<span class="capx">${esc(s.move_text)}</span>` : ""}</div>`;
 }
+// a move with no headline: what the instant EDGAR + news lookup found (market/why.py)
+function whyRow(a) {
+  const w = a.edge?.why;
+  if (!w) return "";
+  if (!w.found) return `<div class="sub" style="margin-top:4px">Why: nothing in today's filings or news yet (checked in ${esc(w.took_s)}s).</div>`;
+  return `<div class="sub" style="margin-top:4px">Why: <b>${esc(w.title)}</b> · ${esc(w.source === "why-edgar" ? "EDGAR" : "news search")}${w.score != null ? ` · score ${Math.round(w.score)}` : ""}</div>`;
+}
 const isSmall = (a) => !!(a.edge?.smallcap && (a.edge.smallcap.material || a.edge.smallcap.radar));
 function footRow(a) {
   const it = a.item || {}, e = a.edge || {}, parts = [];
@@ -132,7 +139,7 @@ function alertHTML(a, opts = {}) {
       <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span><span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
-      ${capRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${footRow(a)}
+      ${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${footRow(a)}
     </div>
   </article>`;
 }
@@ -234,8 +241,17 @@ async function loadBrief() {
   $("bEdge").innerHTML = [
     ["Stories you had before the mainstream", e.stories], ["Median head start", e.median_lead_s != null ? dur(e.median_lead_s) : "—"],
     ["Biggest head start", e.best_lead_s != null ? dur(e.best_lead_s) : "—"],
-  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("");
+  ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("") + scoreRows(b.scorecard);
   Fx.observe($("main"));
+}
+// the scorecard: last session's big moves, and whether we had each one before the price
+function scoreRows(c) {
+  if (!c) return "";
+  const n = c.counts || {}, rate = c.ahead_rate != null ? ` (${Math.round(c.ahead_rate * 100)}%)` : "";
+  const rows = [["Last session's big moves", c.moves], ["Had it before the price", `${(n.pushed || 0) + (n.app || 0)}${rate}`],
+    ["Radar first", n.radar || 0], ["Gaps to fix", (n.scored_low || 0) + (n.app || 0) + (n.unexplained || 0)]]
+    .map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("");
+  return rows + (c.gaps || []).map((g) => `<div class="li"><span class="sym" style="width:64px">${esc(g.symbol)}</span><span class="grow sub">${esc(g.hint)}</span></div>`).join("");
 }
 function barHTML(v) { const w = Math.min(42, Math.abs(v) * 6); return `<span class="bar2"><i style="${v >= 0 ? `left:42px;width:${w}px;background:var(--up)` : `right:42px;width:${w}px;background:var(--down)`}"></i></span>`; }
 function moverRow(m) {

@@ -2,7 +2,7 @@
 
 News247 runs around the clock and pings your phone within seconds when something breaks that is likely to move stocks. Examples: OpenAI launching an enterprise agent that hits software stocks, an 8-K bankruptcy filing, a "news pending" trading halt, a Fed statement, a tariff post, or a whole sector suddenly dropping 3%.
 
-It watches about 85 sources at once. **First come the places where 2026's market-moving stories actually appeared first** ([research](docs/research/first-sources-2026.md)):
+It watches about 120 sources at once. **First come the places where 2026's market-moving stories actually appeared first** ([research](docs/research/first-sources-2026.md)):
 - Federal Register public inspection, OFAC, BIS and USTR
 - Supreme Court and federal court opinions
 - SEC 8-Ks, 13D/13Gs and tender offers
@@ -13,6 +13,10 @@ It watches about 85 sources at once. **First come the places where 2026's market
 Then come AI-lab and big-tech newsrooms, newspaper scoop feeds (FT, Bloomberg, Axios, NYT, The Information), headline squawks, exchange halts, press-release wires, Asian newsrooms and Bluesky in real time, plus optional push feeds (X, Alpaca/Benzinga).
 
 It also watches **prices**: if software stocks fall together it tells you so, and names the headline that most likely caused it.
+
+**The whole system on one page:** [docs/AXELROD-SYSTEM.md](docs/AXELROD-SYSTEM.md) maps every kind of big move to where it shows up first, what reads it and how fast. It also covers the two newest layers:
+- **Why:** a move with no headline sets off an instant lookup of the company's EDGAR filings and the news, and the alert shows what it found.
+- **The scorecard:** after every big move it records whether you had it before the price, and if not, which rule or source would have caught it.
 
 Alerts arrive as **push notifications from Foretape**, News247's own home-screen app (free, no phone number or account needed). They can also go to **WhatsApp**, **iMessage** from your own Mac relay, ntfy, Telegram, Discord, Slack, Pushover, email or SMS.
 
@@ -372,11 +376,12 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 | `news247 demo` | Simulated "AI launch → software selloff" through the real pipeline, dashboard and notifications |
 | `news247 stats` | Measured detection latency per source, and which source had each story first |
 | `news247 backtest [-v]` | Replay 190 historical market-moving events and 133 noise headlines through the scoring rules |
+| `news247 scorecard [--date YYYY-MM-DD]` | Who knew first: each big move of a day, whether you had it before the price, and what to fix |
 | `news247 init` | Write a starter `config.yaml` + `.env` |
 
 ### API
 
-`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
+`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/scorecard?date=YYYY-MM-DD&days=30`, `/api/brief`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
 
 ---
 
@@ -393,6 +398,8 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
                                           optional local LLM (bounded, time-boxed)              (backup: ntfy/SMS/Telegram/
                                                                                                  Discord/Slack/email/webhook)
  Yahoo / Finnhub prices ─► move detector ─► coalesce ─► correlate with recent news ─► price alert
+ radar / options tape ─► move with no headline ─► Why lookup (EDGAR + news search) ─► "Why" on the alert
+ every pushed move ─► scorecard (had it before the price? scorer gap? source gap?) ─► Brief + /api/scorecard
                            (rules, baskets,   (one alert per
                             cooldowns)          sector move)
  Nasdaq screener ─► universe (market caps) ─► small-cap sizing in the scorer

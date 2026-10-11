@@ -508,6 +508,9 @@ def brief_push(brief: dict[str, Any]) -> dict[str, Any] | None:
     tomorrow = [e for e in brief["calendar"] if e["in_days"] == 1 and e.get("kind") == "binary"]
     for e in tomorrow[:2]:
         lines.append(f"Tomorrow {e['time']} ET: {e['title']}" if e.get("time") else f"Tomorrow: {e['title']}")
+    card = brief.get("scorecard") or {}
+    if card.get("line") and lines:  # the scorecard rides along; it never wakes you up alone
+        lines.append(f"Last session: {card['line']}")
     if not lines:
         return None
     n = brief["count"]

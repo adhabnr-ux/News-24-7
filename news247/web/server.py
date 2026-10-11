@@ -91,6 +91,7 @@ class WebServer:
         app.router.add_get("/api/app", self.api_app)
         app.router.add_get("/api/foretape", self.api_foretape)
         app.router.add_get("/api/brief", self.api_brief)
+        app.router.add_get("/api/scorecard", self.api_scorecard)
         app.router.add_get("/api/calendar", self.api_calendar)
         app.router.add_get("/api/watch", self.api_watch)
         app.router.add_get("/api/radar", self.api_radar)
@@ -501,6 +502,18 @@ class WebServer:
 
     async def api_brief(self, request: web.Request) -> web.Response:
         return _json(self.engine.brief())
+
+    async def api_scorecard(self, request: web.Request) -> web.Response:
+        """Who knew first: every big move of a day with its verdict (``?date=YYYY-MM-DD``,
+        default today), plus the saved daily summaries (``?days=30``)."""
+        day = request.query.get("date") or None
+        try:
+            card = self.engine.scorecard_for(day)
+        except ValueError:
+            return web.json_response({"error": "date must be YYYY-MM-DD"}, status=400)
+        days = min(365, max(0, int(request.query.get("days", 30) or 0)))
+        card["history"] = self.engine.scorecard_history(days) if days else []
+        return _json(card)
 
     async def api_calendar(self, request: web.Request) -> web.Response:
         days = min(120, max(1, int(request.query.get("days", 45))))

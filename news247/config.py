@@ -215,6 +215,10 @@ class SmallCapConfig:
     # pre/after-hours sweep of the largest companies (Yahoo's screeners only rank the regular session)
     sweep_size: int = 400
     sweep_seconds: float = 60.0
+    # a big move with no known headline: look up the company's EDGAR filings and a news search
+    # at once (market/why.py), at most this many lookups an hour
+    why_lookup: bool = True
+    why_per_hour: int = 30
 
     def filters(self) -> dict[str, float]:
         return {

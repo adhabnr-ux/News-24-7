@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="ISO-8859-1" ?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<author><email>webmaster@sec.gov</email><name>Webmaster</name></author>
+<company-info>
+<addresses><address type="business"><city>HOUSTON</city><state>TX</state></address></addresses>
+<cik>0001051470</cik>
+<conformed-name>CROWN CASTLE INC.</conformed-name>
+<fiscal-year-end>1231</fiscal-year-end>
+<state-location>TX</state-location>
+</company-info>
+<entry>
+<category label="form type" scheme="https://www.sec.gov/" term="8-K"/>
+<content type="text/xml">
+<accession-number>0001051470-26-000077</accession-number>
+<act>34</act>
+<file-number>001-16441</file-number>
+<filing-date>2026-10-09</filing-date>
+<filing-href>https://www.sec.gov/Archives/edgar/data/1051470/000105147026000077/0001051470-26-000077-index.htm</filing-href>
+<filing-type>8-K</filing-type>
+<form-name>Current report</form-name>
+<items-desc>items 7.01 8.01 and 9.01</items-desc>
+<size>310 KB</size>
+</content>
+<id>urn:tag:sec.gov,2008:accession-number=0001051470-26-000077</id>
+<link href="https://www.sec.gov/Archives/edgar/data/1051470/000105147026000077/0001051470-26-000077-index.htm" rel="alternate" type="text/html"/>
+<summary type="html"> &lt;b&gt;Filed:&lt;/b&gt; 2026-10-09 &lt;b&gt;AccNo:&lt;/b&gt; 0001051470-26-000077</summary>
+<title>8-K  - Current report</title>
+<updated>2026-10-09T07:31:10-04:00</updated>
+</entry>
+<entry>
+<category label="form type" scheme="https://www.sec.gov/" term="424B5"/>
+<content type="text/xml">
+<accession-number>0001193125-26-210001</accession-number>
+<filing-date>2026-10-09</filing-date>
+<filing-href>https://www.sec.gov/Archives/edgar/data/1051470/000119312526210001/0001193125-26-210001-index.htm</filing-href>
+<filing-type>424B5</filing-type>
+<form-name>Prospectus</form-name>
+</content>
+<title>424B5  - Prospectus</title>
+<updated>2026-10-09T06:02:00-04:00</updated>
+</entry>
+<entry>
+<category label="form type" scheme="https://www.sec.gov/" term="10-Q"/>
+<content type="text/xml">
+<accession-number>0001051470-26-000050</accession-number>
+<filing-date>2026-07-30</filing-date>
+<filing-type>10-Q</filing-type>
+</content>
+<title>10-Q  - Quarterly report</title>
+<updated>2026-07-30T16:10:00-04:00</updated>
+</entry>
+</feed>
