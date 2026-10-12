@@ -2022,6 +2022,17 @@ events:
       - {text: "Humana Announces Improved CMS Star Ratings with 95 Percent of Medicare Advantage Members in 4-Star or Above Plans for 2027", tier: wire}
       - {text: "CMS says 71% of Medicare Advantage prescription drug enrollees in 4-star or higher plans for 2027", tier: media}
 
+  - id: first-tracks-anb033-call-2026
+    date: 2026-10-11
+    category: binary_event_scheduled
+    first_source: "First Tracks' GlobeNewswire release, Sunday 16:00 ET: Phase 1b data the next morning, call at 08:30 ET"
+    move: "TRAX about +$5 (~16%) in overnight trading from the $31.85 Friday close (seen on a broker's overnight session; not in regular-session bars)"
+    tickers: [TRAX]
+    smallcap: {symbol: TRAX, name: "First Tracks Biotherapeutics, Inc. Common Stock", mcap: 1.14e9, price: 31.85, industry: "Biotechnology: Pharmaceutical Preparations"}
+    first_reports:
+      - {text: "First Tracks Biotherapeutics to Announce Top-Line Data from Cohort 1 of Phase 1b Trial of ANB033, a CD122 antagonist, in Celiac Disease on Oct. 12, 2026", tier: wire, tickers: [TRAX], at: "2026-10-11T16:00:00-04:00"}
+      - {text: "First Tracks Biotherapeutics (TRAX) Sets Oct. 12 For Phase 1b ANB033 Cohort 1 Data", tier: media, at: "2026-10-11T16:00:00-04:00"}
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -2171,3 +2182,9 @@ noise:
   - "Intel nears deal to buy chip startup SambaNova"
   - "Berkshire buys more Occidental shares"
   - "Hedge funds buy Tesla calls ahead of deliveries"
+  # scheduled, but not a binary event at a company it can move (the TRAX rule must not fire)
+  - {text: "Vertex to Present Phase 3 Data at ESMO on October 14", at: "2026-10-11T16:00:00-04:00", smallcap: {symbol: VRTX, name: "Vertex Pharmaceuticals Incorporated Common Stock", mcap: 1.1e11, price: 430}}
+  - {text: "Tarsus Bio to Announce Third Quarter 2026 Financial Results on October 13, 2026", at: "2026-10-11T16:00:00-04:00", smallcap: {symbol: TARB, name: "Tarsus Bio Inc. Common Stock", mcap: 1.5e9, price: 40, industry: "Biotechnology: Pharmaceutical Preparations"}}
+  - {text: "Kestrel Therapeutics to Host R&D Day on October 13, 2026", at: "2026-10-11T16:00:00-04:00", smallcap: {symbol: KSTL, name: "Kestrel Therapeutics, Inc. Common Stock", mcap: 900e6, price: 12, industry: "Biotechnology: Pharmaceutical Preparations"}}
+  - {text: "Kestrel Therapeutics to Present at the Jefferies Healthcare Conference on October 14", at: "2026-10-11T16:00:00-04:00"}
+  - {text: "Kestrel Therapeutics to Report Topline Phase 2 Data on November 30, 2026", at: "2026-10-11T16:00:00-04:00"}

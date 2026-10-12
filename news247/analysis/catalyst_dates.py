@@ -87,14 +87,18 @@ KINDS: tuple[tuple[str, re.Pattern[str], str], ...] = (
     (
         "readout",
         re.compile(
-            r"\bto\s+(?:present|report|announce|host|release|share|unveil)\b.{0,60}\b(?:topline|top-line|"
-            r"pivotal|phase\s*(?:2b?|3|iii|ii)|registrational|primary\s+endpoint)",
+            # "to Announce Top-Line Data … on Oct. 12" (TRAX, Oct 11 2026), "Sets Oct. 12 For Phase 1b
+            # ANB033 Cohort 1 Data", "will report topline results tomorrow"
+            r"\b(?:to|will)\s+(?:present|report|announce|host|release|share|unveil)\b.{0,60}\b(?:topline|top-line|"
+            r"pivotal|phase\s*(?:1b|1/2|i/ii|2b?|3|iii|ii)|registrational|primary\s+endpoint)"
+            r"|\b(?:sets?|schedules?)\b.{0,40}\bfor\b.{0,40}\b(?:topline|top-line|phase\s*(?:1b?|1/2|i/ii|2b?|3|iii|ii)|"
+            r"pivotal|registrational|cohort\s+\d+)\b.{0,60}\b(?:data|results|readout)\b",
             re.I,
         ),
         "trial readout",
     ),
 )
-_PHASE_RE = re.compile(r"\b(phase\s*(?:1/2|i/ii|2b|2|3|iii|ii))\b", re.I)
+_PHASE_RE = re.compile(r"\b(phase\s*(?:1/2|i/ii|1b|2b|2|3|iii|ii))\b", re.I)
 _PIVOTAL_RE = re.compile(r"\b(pivotal|registrational)\b", re.I)
 
 
@@ -113,6 +117,25 @@ _INDEX_NAMES = {
     "dowjonesindustrial": "Dow Jones Industrial Average",
 }
 _AT_OPEN_RE = re.compile(r"\b(?:prior\s+to|before)\s+(?:the\s+)?(?:market\s+open|open(?:ing)?\b)", re.I)
+
+
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_RELATIVE_RE = re.compile(
+    r"\b(tomorrow|(?:on|this|next)\s+(?:monday|tuesday|wednesday|thursday|friday))\b", re.I
+)
+
+
+def _relative_dates(text: str, today: date) -> list[date]:
+    """ "…topline data tomorrow", "…on Monday": only used when no calendar date is given."""
+    out = []
+    for m in _RELATIVE_RE.finditer(text):
+        word = m.group(1).lower().split()
+        if word[0] == "tomorrow":
+            out.append(today + timedelta(days=1))
+            continue
+        ahead = (_WEEKDAYS.index(word[-1]) - today.weekday()) % 7 or 7
+        out.append(today + timedelta(days=ahead + (7 if word[0] == "next" and ahead < 7 else 0)))
+    return out
 
 
 def _parse_dates(text: str, today: date) -> list[date]:
@@ -162,7 +185,11 @@ def extract_event(
         return None
     today = datetime.fromtimestamp(now, ET).date() if now else datetime.now(ET).date()
     # the date nearest the keyword wins: "…on September 28, 2026 from DAYBREAK…"
-    dates = [d for d in _parse_dates(title, today) or _parse_dates(text, today) if d >= today]
+    dates = [
+        d
+        for d in _parse_dates(title, today) or _parse_dates(text, today) or _relative_dates(title, today)
+        if d >= today
+    ]
     dates = [d for d in dates if (d - today).days <= max_days]
     if not dates:
         return None

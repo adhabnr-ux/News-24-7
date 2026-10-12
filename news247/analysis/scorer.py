@@ -20,16 +20,27 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..config import ScoringConfig
 from ..models import Analysis, NewsItem, SourceTier
+from .catalyst_dates import extract_event
 from .deals import acquirer_side, read_deal
 from .entities import EntityMatcher
 from .smallcap import SmallCapDesk
 
 TIER_BASE = {SourceTier.PRIMARY: 20.0, SourceTier.WIRE: 12.0, SourceTier.MEDIA: 10.0, SourceTier.SOCIAL: 5.0}
 UNKNOWN_TICKER_FACTOR = 0.45
+_ET = ZoneInfo("America/New_York")
+# A binary event (trial data, FDA decision, panel) days away at a company it can move. The
+# announcement itself moves the stock: TRAX ($1.1B) said on Sunday Oct 11 2026 at 16:00 ET that
+# Phase 1b data would come Monday 08:30, and traded up about $5 overnight. "To announce" reads
+# like a schedule notice, so it scored low and was never pushed.
+IMMINENT_DAYS = 3  # data within this many days: pushed (HIGH)
+SOON_DAYS = 14  # within two weeks: in the app (MEDIUM)
+IMMINENT_KINDS = frozenset({"readout", "pdufa", "adcom", "conference"})
 THEME_CAP = 35.0
 PENALTY_CAP = 60.0
 
@@ -413,6 +424,17 @@ class Scorer:
                     f"{value / buyer.market_cap:.2%} of its value"
                 )
 
+        # --- a binary event days away: the announcement is the first move
+        imminent = self._imminent(item, explicit, small) if self.smallcap is not None else None
+        if imminent is not None:
+            li, ev, floor, why = imminent
+            explicit = [li.symbol, *[t for t in explicit if t != li.symbol]]
+            if score < floor:
+                reasons.append(f"+{floor - score:.0f} {why}")
+                score = floor
+            else:
+                reasons.append(f"+0 {why} (already above)")
+
         # --- big listed companies named in the headline ("Crown Castle stock jumping as SpaceX ..."):
         # tagged so the alert, the Brief and the radar's "moving on the news" link can name them
         if self.smallcap is not None:
@@ -424,7 +446,7 @@ class Scorer:
         # own tickers (sector baskets) make it relevant; generic ones (FDA, deal talk) don't —
         # unless the catalyst is material for a small/mid cap.
         relevant_theme = any(t.tickers for t in themes)
-        material = (small is not None and small.material) or deal is not None
+        material = (small is not None and small.material) or deal is not None or imminent is not None
         if (
             explicit
             and not companies
@@ -458,6 +480,48 @@ class Scorer:
             smallcap=small.to_dict() if small is not None and small.catalyst is not None else {},
             deal=deal.to_dict() if deal is not None else {},
         )
+
+    def _imminent(
+        self, item: NewsItem, explicit: list[str], small: Any
+    ) -> tuple[Any, dict[str, Any], float, str] | None:
+        """(listing, calendar event, score floor, reason) when the headline schedules a binary
+        event within ``SOON_DAYS`` at a company under $50B; None otherwise.
+
+        Floors: data within ``IMMINENT_DAYS`` at a company under $10B is pushed (HIGH); under
+        $50B, or 4-14 days away under $10B, it's in the app (MEDIUM). A $50B+ company's
+        single readout rarely moves it, so it keeps its ordinary score."""
+        assert self.smallcap is not None
+        uni = self.smallcap.universe
+        li = small.listing if small is not None else None
+        if li is None:
+            li = next((uni.get(t) for t in explicit if uni.get(t) is not None), None)
+        if li is None:
+            named = uni.find_named(item.title, limit=1)
+            li = named[0] if named else None
+        if li is None or not li.common or not li.market_cap or li.market_cap >= 50e9:
+            return None
+        when = min(item.published or item.detected, item.detected)
+        ev = extract_event(item.title, item.summary, li.symbol, now=when)
+        if ev is None or ev["event"] not in IMMINENT_KINDS:
+            return None
+        today = datetime.fromtimestamp(when, _ET).date()
+        days = (date.fromisoformat(ev["date"]) - today).days
+        if not 0 <= days <= SOON_DAYS:
+            return None
+        small_mid = li.market_cap < 10e9
+        if days <= IMMINENT_DAYS and small_mid:
+            floor = self.cfg.high + 5
+        elif days <= IMMINENT_DAYS or small_mid:
+            floor = self.cfg.medium + 5
+        else:
+            return None
+        day = {0: "today", 1: "tomorrow"}.get(days, f"in {days} days")
+        at = f" {ev['time']} ET" if ev.get("time") else ""
+        why = (
+            f"binary event {day}: {ev['title']} on {ev['date']}{at} ({li.cap_label} {li.band}); "
+            "the stock can move on the announcement, before the data"
+        )
+        return li, ev, floor, why
 
     def rescore(self, analysis: Analysis, delta: float, reason: str) -> Analysis:
         """Apply a later adjustment (multi-source confirmation, LLM) and recompute severity."""

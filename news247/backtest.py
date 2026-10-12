@@ -14,6 +14,7 @@ Run ``news247 backtest`` after changing keywords/themes to see what you gained o
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from .analysis.scorer import Scorer
@@ -76,14 +77,21 @@ def headline_item(h: Any, default_tier: str = "media") -> NewsItem:
     if isinstance(h, str):
         h = {"text": h}
     tier = _TIERS[str(h.get("tier", default_tier)).lower()]
-    return NewsItem(
+    # ``at``: when it was published (ISO 8601), for headlines whose meaning depends on the day
+    # ("…data on Oct. 12" is a binary event tomorrow on Oct 11, history after)
+    at = datetime.fromisoformat(str(h["at"])).timestamp() if h.get("at") else None
+    item = NewsItem(
         source=h.get("source", "history"),
         title=h["text"],
         summary=h.get("summary", ""),
         tier=tier,
         tickers=[str(t).upper() for t in h.get("tickers", [])],
         extra={"entities": list(h.get("entities", [])), "boost": float(h.get("boost", 0))},
+        published=at,
     )
+    if at is not None:
+        item.detected = at
+    return item
 
 
 def load_history() -> dict[str, Any]:

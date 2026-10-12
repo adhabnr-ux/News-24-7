@@ -230,8 +230,15 @@ class Storage:
         return cur.rowcount > 0
 
     def catalysts(self, from_date: str) -> list[dict[str, Any]]:
-        rows = self.db.execute("SELECT data FROM catalysts WHERE date >= ? ORDER BY date", (from_date,))
-        return [json.loads(r[0]) for r in rows]
+        rows = self.db.execute(
+            "SELECT data, created FROM catalysts WHERE date >= ? ORDER BY date", (from_date,)
+        )
+        out = []
+        for data, created in rows:
+            ev = json.loads(data)
+            ev.setdefault("seen", created)  # events captured before "seen" was recorded
+            out.append(ev)
+        return out
 
     def leads(self, since: float | None = None) -> list[float]:
         since = since or time.time() - 7 * 86400

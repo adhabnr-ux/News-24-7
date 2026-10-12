@@ -331,6 +331,20 @@ class Calendar:
         self.dynamic[event["id"]] = dict(event)
         return True
 
+    def binary_symbols(self, now: float | None = None, days: int = 1) -> list[str]:
+        """Companies with a binary event (data, FDA, panel, index change) today or within
+        ``days``: the radar reads them every sweep, whatever their size, because the move
+        often starts before the event (TRAX, Oct 11-12 2026)."""
+        today = datetime.fromtimestamp(now or time.time(), ET).date()
+        out = []
+        for e in self.dynamic.values():
+            if e.get("kind") != "binary" or not e.get("symbol"):
+                continue
+            d = date.fromisoformat(str(e["date"]))
+            if 0 <= (d - today).days <= days:
+                out.append(str(e["symbol"]))
+        return list(dict.fromkeys(out))
+
     def upcoming(self, days: int = 45, now: float | None = None) -> list[dict[str, Any]]:
         now_dt = datetime.fromtimestamp(now or time.time(), ET)
         today = now_dt.date()

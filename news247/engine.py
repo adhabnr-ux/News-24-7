@@ -97,6 +97,7 @@ class Engine:
                     cfg.data_path,
                     self.radar,
                     market_phase=lambda now: self.calendar.market_status(now)["phase"],
+                    watch=lambda: self.calendar.binary_symbols(),
                 )
         # the options tape: unusual volume and contracts up thousands of percent on every $1B+
         # company (needs the universe the small-cap feed keeps fresh)
@@ -596,7 +597,9 @@ class Engine:
         symbol = sc.get("symbol") or self._subject_symbol(item)
         if not symbol:
             return
-        ev = extract_event(item.title, item.summary, symbol)
+        ev = extract_event(
+            item.title, item.summary, symbol, now=min(item.published or item.detected, item.detected)
+        )
         if ev is None:
             return
         li = self.universe.get(symbol)
@@ -607,6 +610,9 @@ class Engine:
                 "note": f"{li.name} · {li.cap_label} {li.band}" if li is not None and li.market_cap else "",
                 "url": item.url,
                 "source": item.source,
+                # where the date came from and when: the release time and the moment we read it
+                "published": item.published,
+                "seen": item.detected,
             }
         )
         if self.storage.add_catalyst(ev):

@@ -259,11 +259,14 @@ function moverRow(m) {
   return `<div class="li"><span class="sym" style="width:64px">${esc(m.symbol)}</span><span class="grow num faint">${m.price != null ? m.price.toFixed(2) : ""}</span>${barHTML(v)}<span class="chg num ${cls(v)}">${pct(m.chg_day)}</span></div>`;
 }
 const KIND = { fed: "Federal Reserve", data: "Economic data", politics: "Politics", trade: "Trade policy", options: "Options expiry", market: "Market hours", earnings: "Earnings", binary: "Binary event" };
+// "Sun 4:00 PM ET": when a calendar entry's source was released and when Foretape read it
+const etTime = (t) => new Date(t * 1000).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }) + " ET";
 function calRow(e, grouped) {
   const sub = grouped ? [KIND[e.kind] || e.kind, e.note].filter(Boolean).map(esc).join(" · ")
     : `${esc(prettyDate(e.date))} · ${inDays(e.in_days)}${e.note ? " · " + esc(e.note) : ""}`;
   const title = e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener" class="calink">${esc(e.title)}</a>` : esc(e.title);
-  return `<div class="li${e.kind === "binary" ? " binary" : ""}"><span class="time">${esc(e.time || "—")}</span><div class="grow"><div style="font-weight:600">${e.kind === "binary" ? `<span class="capb bin">Binary</span>` : ""}${title}</div><div class="sub">${sub}</div></div>
+  const from = e.kind === "binary" && (e.published || e.seen) ? `<div class="sub">${esc([e.source, e.published && "released " + etTime(e.published), e.seen && "seen " + etTime(e.seen)].filter(Boolean).join(" · "))}</div>` : "";
+  return `<div class="li${e.kind === "binary" ? " binary" : ""}"><span class="time">${esc(e.time || "—")}</span><div class="grow"><div style="font-weight:600">${e.kind === "binary" ? `<span class="capb bin">Binary</span>` : ""}${title}</div><div class="sub">${sub}</div>${from}</div>
     <span class="imp">${[1, 2, 3].map((i) => `<i class="${i <= (e.impact || 1) ? "on" : ""}"></i>`).join("")}</span></div>`;
 }
 async function loadCalendar() {

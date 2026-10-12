@@ -428,8 +428,10 @@ class SmallCapFeed:
         data_dir: Path | None,
         radar: MoversRadar | None = None,
         market_phase: Any = None,
+        watch: Any = None,
     ) -> None:
         self.cfg = cfg
+        self.watch = watch  # callable() -> symbols read every sweep whatever their size (binary events)
         self.http = http
         self.universe = universe
         self.cache = (data_dir / CACHE_NAME) if data_dir else None
@@ -601,11 +603,28 @@ class SmallCapFeed:
         )
         head, rest = ranked[: self.cfg.sweep_size], ranked[self.cfg.sweep_size :]
         n = min(self.cfg.sweep_rotate, len(rest))
-        if n <= 0:
-            return head
-        start = self._sweep_cursor % len(rest)
-        self._sweep_cursor = (start + n) % len(rest)
-        return head + (rest + rest)[start : start + n]
+        batch = head
+        if n > 0:
+            start = self._sweep_cursor % len(rest)
+            self._sweep_cursor = (start + n) % len(rest)
+            batch = head + (rest + rest)[start : start + n]
+        return batch + self._watched({li.symbol for li in batch})
+
+    def _watched(self, have: set[str]) -> list[Listing]:
+        """Binary-event companies of any size (a $1.1B biotech the night before its data)."""
+        if self.watch is None:
+            return []
+        try:
+            symbols = list(self.watch())
+        except Exception:  # noqa: BLE001 - a calendar bug must not stop the radar
+            return []
+        out = []
+        for sym in symbols:
+            li = self.universe.get(sym)
+            if li is not None and li.common and sym not in have:
+                out.append(li)
+                have.add(sym)
+        return out
 
     async def sweep_quotes(self, phase: str = "open") -> list[Quote]:
         """Pre-market, regular and after-hours prices for the sweep batch (Yahoo spark, 20
