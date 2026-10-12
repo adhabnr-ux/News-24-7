@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 from ..config import ScoringConfig
 from ..models import Analysis, NewsItem, SourceTier
 from .catalyst_dates import extract_event
-from .deals import acquirer_side, read_deal
+from .deals import acquirer_side, read_compute_contract, read_deal
 from .entities import EntityMatcher
 from .smallcap import SmallCapDesk
 
@@ -424,6 +424,26 @@ class Scorer:
                     f"{value / buyer.market_cap:.2%} of its value"
                 )
 
+        # --- an AI lab or hyperscaler renting compute from a listed supplier: the supplier's news
+        contract = (
+            read_compute_contract(title, summary, self.smallcap.universe)
+            if self.smallcap is not None and deal is None
+            else None
+        )
+        if contract is not None:
+            li = contract.supplier
+            explicit = [li.symbol, *[t for t in explicit if t != li.symbol]]
+            floor = self.cfg.high + 5 if (li.market_cap or 0) < 50e9 else self.cfg.medium + 5
+            why = (
+                f"compute contract: {li.symbol} ({li.cap_label}) named as {contract.customer}'s "
+                f"{'cloud/compute supplier, reported' if contract.reported else 'cloud/compute supplier'}"
+            )
+            if score < floor:
+                reasons.append(f"+{floor - score:.0f} {why}")
+                score = floor
+            else:
+                reasons.append(f"+0 {why} (already above)")
+
         # --- a binary event days away: the announcement is the first move
         imminent = self._imminent(item, explicit, small) if self.smallcap is not None else None
         if imminent is not None:
@@ -446,7 +466,12 @@ class Scorer:
         # own tickers (sector baskets) make it relevant; generic ones (FDA, deal talk) don't —
         # unless the catalyst is material for a small/mid cap.
         relevant_theme = any(t.tickers for t in themes)
-        material = (small is not None and small.material) or deal is not None or imminent is not None
+        material = (
+            (small is not None and small.material)
+            or deal is not None
+            or imminent is not None
+            or contract is not None
+        )
         if (
             explicit
             and not companies
@@ -467,8 +492,8 @@ class Scorer:
             and small.catalyst.direction in ("up", "down")
         ):
             direction = small.catalyst.direction  # "to be acquired at $X" is up whatever the verbs say
-        if deal is not None:
-            direction = "up"  # for the target, which is tagged first; the buyer usually dips
+        if deal is not None or contract is not None:
+            direction = "up"  # for the target / the supplier, which is tagged first
         return Analysis(
             score=round(score, 1),
             severity=self.cfg.severity_for(score),

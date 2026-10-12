@@ -246,3 +246,118 @@ def acquirer_side(title: str, universe: Any) -> tuple[Any, float] | None:
         return None
     value = float(money.group(1)) * _SCALE[money.group(2).lower()]
     return buyer, value
+
+
+# --------------------------------------------------------------------------- compute contracts
+#
+# An AI lab or hyperscaler renting capacity from a listed supplier is that supplier's biggest
+# news of the year: Nebius +49% on Microsoft (Sep 2025), IREN on Microsoft and Cipher on AWS
+# (Nov 2025). On Oct 11 2026 The Information reported an unannounced multiyear Anthropic cloud
+# deal with IREN; the rules read it as AI-capex news for NVDA and AMD and never tagged IREN.
+
+_LABS = (
+    r"openai|anthropic|xai|x\.ai|meta(?:\s+platforms)?|mistral(?:\s+ai)?|cohere|perplexity|"
+    r"thinking\s+machines(?:\s+lab)?|safe\s+superintelligence|character\.ai"
+)
+# hyperscalers sell cloud as well as buy it, so they count as the customer only when the supplier
+# is named first ("IREN signs $9.7B AI cloud contract with Microsoft")
+_HYPERSCALERS = r"microsoft|google|alphabet|amazon(?:\s+web\s+services)?|aws|oracle|nvidia|coreweave|apple"
+_CONTRACT = r"(?:deal|contract|agreement|lease|leases|partnership|pact|arrangement)"
+_SUPPLIER_WORDS = re.compile(
+    r"\b(?:ai\s+cloud|cloud\s+(?:deal|contract|capacity|agreement|services?)|compute|gpus?|data[\s-]?cent(?:er|re)s?|"
+    r"capacity|colocation|hosting|lease|leases|megawatts?|mw|gigawatts?|gw|ai\s+infrastructure|hpc)\b",
+    re.I,
+)
+# a hyperscaler buying (not selling) cloud: the supplier rents it capacity, not software
+_RENTS_CAPACITY = re.compile(
+    r"\b(?:ai\s+cloud|compute|gpus?|data[\s-]?cent(?:er|re)s?|capacity|colocation|hosting|lease|leases|"
+    r"megawatts?|mw|gigawatts?|gw|ai\s+infrastructure|hpc)\b",
+    re.I,
+)
+_HYPERSCALER_RE = re.compile(rf"^(?:{_HYPERSCALERS})$", re.I)
+_GAP = r"(?:[^.;:]|(?<=\d)\.(?=\d))"  # within a sentence; "$9.7bn" doesn't end it
+_SPAN = r"(?P<span>[A-Z0-9][\w.&'-]*(?:\s+[A-Z0-9][\w.&'-]*){0,3})"
+_DESCRIPTOR = r"(?:(?:bitcoin|crypto|former\s+bitcoin)\s+miner|neocloud|data[\s-]?cent(?:er|re)\s+(?:operator|firm|company|developer)|ai\s+cloud\s+provider)\s+"
+_LAB_FIRST = re.compile(
+    rf"\b(?P<buyer>{_LABS})\b{_GAP}{{0,80}}?\b{_CONTRACT}\b{_GAP}{{0,25}}?\bwith\s+(?:{_DESCRIPTOR})?{_SPAN}",
+    re.I,
+)
+_LAB_TAPS = re.compile(
+    rf"\b(?P<buyer>{_LABS})\s+(?:taps|picks|selects|chooses|turns\s+to|hires)\s+(?:{_DESCRIPTOR})?{_SPAN}",
+    re.I,
+)
+_SUPPLIER_FIRST = re.compile(
+    rf"^{_SPAN}\s+(?:signs?|inks?|lands?|wins?|secures?|strikes?|announces?|enters?\s+into|reaches?|expands?)\b"
+    rf"{_GAP}{{0,80}}?\b{_CONTRACT}\b{_GAP}{{0,25}}?\bwith\s+(?P<buyer>{_LABS}|{_HYPERSCALERS})\b",
+    re.I,
+)
+_REPORTED = re.compile(
+    r"\b(?:reportedly|people\s+familiar|sources\s+say|according\s+to|the\s+information|bloomberg|reuters|wsj|ft)\b"
+    r"|\s[-–—]\s*(?:the\s+information|bloomberg|reuters|wsj|ft|cnbc)\s*$",
+    re.I,
+)
+_CUSTOMER_NAMES = {
+    "openai": "OpenAI", "anthropic": "Anthropic", "xai": "xAI", "x.ai": "xAI", "meta": "Meta",
+    "meta platforms": "Meta", "mistral": "Mistral", "mistral ai": "Mistral", "cohere": "Cohere",
+    "perplexity": "Perplexity", "thinking machines": "Thinking Machines", "thinking machines lab": "Thinking Machines",
+    "safe superintelligence": "Safe Superintelligence", "character.ai": "Character.AI", "microsoft": "Microsoft",
+    "google": "Google", "alphabet": "Google", "amazon": "Amazon", "amazon web services": "AWS", "aws": "AWS",
+    "oracle": "Oracle", "nvidia": "Nvidia", "coreweave": "CoreWeave", "apple": "Apple",
+}  # fmt: skip
+_BIG_BUYERS = frozenset({"MSFT", "GOOGL", "GOOG", "AMZN", "META", "ORCL", "NVDA", "AAPL"})
+
+
+@dataclass
+class ComputeContract:
+    supplier: Any  # Listing
+    customer: str  # "Anthropic", "Microsoft"
+    reported: bool  # a report ("people familiar", "- The Information"), not the company's release
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "supplier": self.supplier.symbol,
+            "supplier_cap": self.supplier.market_cap,
+            "customer": self.customer,
+            "reported": self.reported,
+        }
+
+
+def read_compute_contract(title: str, summary: str, universe: Any) -> ComputeContract | None:
+    """An AI lab or hyperscaler's compute/cloud/data-center contract with a listed supplier, in
+    the headline or the first sentences of the summary (The Information puts the scoop in its dek)."""
+    if universe is None or not len(universe) or "?" in title:
+        return None
+    for text in (title, f"{title}. {summary[:500]}" if summary else ""):
+        if not text or not _SUPPLIER_WORDS.search(text):
+            continue
+        text = " ".join(text.split())
+        for rx in (_SUPPLIER_FIRST, _LAB_FIRST, _LAB_TAPS):
+            for m in rx.finditer(text):
+                if _HYPERSCALER_RE.match(" ".join(m.group("buyer").split())) and not _RENTS_CAPACITY.search(
+                    text
+                ):
+                    continue  # "Snowflake signs cloud deal with Microsoft": Snowflake is the customer
+                li = _supplier(m.group("span"), universe)
+                if li is None:
+                    continue
+                customer = _CUSTOMER_NAMES.get(" ".join(m.group("buyer").lower().split()), m.group("buyer"))
+                return ComputeContract(li, customer, bool(_REPORTED.search(text)))
+    return None
+
+
+def _supplier(span: str, universe: Any) -> Any | None:
+    """The listed supplier a span names: a common stock between $300M and $100B that isn't
+    itself a hyperscaler (their own deals are a rounding error for them)."""
+    words = span.split()
+    for n in range(len(words), 0, -1):  # "IREN and Nscale" -> "IREN"
+        part = " ".join(words[:n]).rstrip(",.;:").removesuffix("'s").removesuffix("’s")
+        if part.lower() in ("the", "a", "an", "its", "bitcoin", "miner"):
+            continue
+        li = resolve(part, universe)
+        if li is None:
+            continue
+        cap = li.market_cap or 0
+        if li.common and li.symbol not in _BIG_BUYERS and 300e6 <= cap < 100e9:
+            return li
+        return None
+    return None

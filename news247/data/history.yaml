@@ -2033,6 +2033,48 @@ events:
       - {text: "First Tracks Biotherapeutics to Announce Top-Line Data from Cohort 1 of Phase 1b Trial of ANB033, a CD122 antagonist, in Celiac Disease on Oct. 12, 2026", tier: wire, tickers: [TRAX], at: "2026-10-11T16:00:00-04:00"}
       - {text: "First Tracks Biotherapeutics (TRAX) Sets Oct. 12 For Phase 1b ANB033 Cohort 1 Data", tier: media, at: "2026-10-11T16:00:00-04:00"}
 
+  # an AI lab or hyperscaler renting compute from a listed supplier (analysis/deals.py)
+  - id: nebius-microsoft-2025
+    date: 2025-09-08
+    category: compute_contract
+    first_source: "Nebius release after the close"
+    move: "NBIS ≈+49% the next session"
+    tickers: [NBIS]
+    smallcap: {symbol: NBIS, name: "Nebius Group N.V. Class A Ordinary Shares", mcap: 15e9, industry: "Computer Software: Programming Data Processing"}
+    first_reports:
+      - {text: "Nebius Group announces multi-billion dollar agreement with Microsoft for AI infrastructure", tier: wire, approx: true}
+
+  - id: iren-microsoft-2025
+    date: 2025-11-03
+    category: compute_contract
+    first_source: "IREN release before the open"
+    move: "IREN up as much as ≈25% intraday"
+    tickers: [IREN]
+    smallcap: {symbol: IREN, name: "IREN Limited Ordinary Shares", mcap: 17e9, industry: "Finance: Consumer Services"}
+    first_reports:
+      - {text: "IREN Signs US$9.7bn AI Cloud Contract with Microsoft", tier: wire, approx: true}
+
+  - id: cipher-aws-2025
+    date: 2025-11-03
+    category: compute_contract
+    first_source: "Cipher Mining release before the open"
+    move: "CIFR ≈+20% intraday"
+    tickers: [CIFR]
+    smallcap: {symbol: CIFR, name: "Cipher Mining Inc. Common Stock", mcap: 7e9, industry: "Finance: Consumer Services"}
+    first_reports:
+      - {text: "Cipher Mining Signs 15-Year Lease with Amazon Web Services", tier: wire, approx: true}
+
+  - id: anthropic-iren-information-2026
+    date: 2026-10-11
+    category: compute_contract
+    first_source: "The Information, Sunday evening (Stocktwits on the buzz at 21:57 ET)"
+    move: "IREN higher in overnight trading on the report"
+    tickers: [IREN]
+    smallcap: {symbol: IREN, name: "IREN Limited Ordinary Shares", mcap: 13.85e9, price: 35.19, industry: "Finance: Consumer Services"}
+    first_reports:
+      - {text: "Anthropic has quietly signed a multiyear cloud deal with miner IREN, The Information reported", tier: media}
+      - {text: "Anthropic's $530 Billion Data Center Sprint Leans on Bitcoin Miners", summary: "People familiar with the relationship say Anthropic also has an unannounced multiyear cloud deal with IREN.", tier: media, approx: true}
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -2188,3 +2230,9 @@ noise:
   - {text: "Kestrel Therapeutics to Host R&D Day on October 13, 2026", at: "2026-10-11T16:00:00-04:00", smallcap: {symbol: KSTL, name: "Kestrel Therapeutics, Inc. Common Stock", mcap: 900e6, price: 12, industry: "Biotechnology: Pharmaceutical Preparations"}}
   - {text: "Kestrel Therapeutics to Present at the Jefferies Healthcare Conference on October 14", at: "2026-10-11T16:00:00-04:00"}
   - {text: "Kestrel Therapeutics to Report Topline Phase 2 Data on November 30, 2026", at: "2026-10-11T16:00:00-04:00"}
+  # cloud deals where the listed company is the customer, or too big for the deal to matter
+  - {text: "Snowflake signs $1 billion cloud deal with Microsoft", smallcap: {symbol: SNOW, name: "Snowflake Inc. Common Stock", mcap: 70e9, price: 210}}
+  - {text: "Salesforce signs expanded cloud deal with Google", smallcap: {symbol: CRM, name: "Salesforce, Inc. Common Stock", mcap: 250e9, price: 260}}
+  - "OpenAI signs deal with Microsoft for more Azure capacity"
+  - "Anthropic partners with Deloitte to bring Claude to 470,000 employees"
+  - "Is IREN's cloud deal with Anthropic real?"
