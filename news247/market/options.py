@@ -170,6 +170,7 @@ class Contract:
     quote_time: datetime | None = None  # ET, when the bid/ask was true (None: the feed did not say)
     bid_size: int | None = None  # contracts on the bid / offer (None: the feed did not say)
     ask_size: int | None = None
+    prev_close_date: date | None = None  # the session prev_close is from (None: the feed did not say)
 
     @property
     def kind(self) -> str:
@@ -236,6 +237,8 @@ class Chain:
     prev_total_volume: int | None = None  # all contracts, previous session (when the source says)
     stock_source: str = ""  # where the stock's price came from ("" = the option source / universe)
     stock_time: datetime | None = None  # ET, when that stock price was true
+    iv_prev: float | None = None  # implied vol at yesterday's close, from yesterday's own closes
+    iv_prev_done: bool = False
 
     @property
     def stock_prev(self) -> float | None:
@@ -462,6 +465,31 @@ class MisprintRow:
 
 
 @dataclass
+class BlowupRow:
+    contract: Contract
+    base: float  # the honest base: yesterday's close, or its value then when the close is stale/old
+    price: float  # now: the live bid, else today's print, else the (delayed) bid
+    multiple: float
+    how: str  # "live bid" | "print" | "bid"
+
+    def to_dict(self, today: date) -> dict[str, Any]:
+        c = self.contract
+        return {
+            "contract": c.symbol,
+            "label": c.label(),
+            "dte": c.dte(today),
+            "base": round(self.base, 4),
+            "reported_prev_close": c.prev_close,
+            "price": self.price,
+            "multiple": round(self.multiple, 1),
+            "how": self.how,
+            "bid": c.bid,
+            "ask": c.ask,
+            "volume": c.volume,
+        }
+
+
+@dataclass
 class OptionsHit:
     symbol: str
     kind: str  # "spike" | "flow"
@@ -471,6 +499,11 @@ class OptionsHit:
     spikes: list[SpikeRow] = field(default_factory=list)
     flow: list[FlowRow] = field(default_factory=list)
     misprints: list[MisprintRow] = field(default_factory=list)
+    blowups: list[BlowupRow] = field(default_factory=list)
+    side: str = ""  # blowup: "calls" | "puts"
+    count: int = 0  # blowup: contracts up blowup_multiple+ on that side
+    iv_now: float | None = None  # blowup: implied vol now vs at yesterday's close
+    iv_prev: float | None = None
     rung: float = 0.0  # spike: the % rung crossed
     flow_premium: float = 0.0
     call_premium: float = 0.0
@@ -504,6 +537,11 @@ class OptionsHit:
             "spikes": [r.to_dict(today) for r in self.spikes],
             "flow": [r.to_dict(today) for r in self.flow],
             "misprints": [r.to_dict(today) for r in self.misprints],
+            "blowups": [r.to_dict(today) for r in self.blowups],
+            "side": self.side,
+            "count": self.count,
+            "iv_now": round(self.iv_now, 4) if self.iv_now else None,
+            "iv_prev": round(self.iv_prev, 4) if self.iv_prev else None,
             "flow_premium": round(self.flow_premium),
             "call_premium": round(self.call_premium),
             "put_premium": round(self.put_premium),
@@ -523,6 +561,10 @@ class _DayState:
     flow_premium: float = 0.0  # unusual premium at the last flow alert
     spike_pushed: float = 0.0  # rung of the last spike push today (the next needs 10x that)
     surge_volume: float = 0.0  # company option volume at the last surge alert
+    blowup_calls: float = 0.0  # contracts counted at the last calls blowup alert
+    blowup_calls_x: float = 0.0  # ... and its best multiple
+    blowup_puts: float = 0.0
+    blowup_puts_x: float = 0.0
 
 
 class OptionsRadar:
@@ -559,7 +601,7 @@ class OptionsRadar:
         day = str(doc.get("day", ""))
         for sym, v in (doc.get("fired") or {}).items():
             try:
-                self.state[sym] = _DayState(day, *(float(x) for x in list(v)[:5]))
+                self.state[sym] = _DayState(day, *(float(x) for x in list(v)[:9]))
             except (TypeError, ValueError, IndexError):
                 continue
         self.pushes = {k: int(v) for k, v in (doc.get("pushes") or {}).items() if k == day}
@@ -569,9 +611,20 @@ class OptionsRadar:
             return
         day = self._day(now or time.time())
         fired = {
-            s: [st.spike_any, st.spike_real, st.flow_premium, st.spike_pushed, st.surge_volume]
+            s: [
+                st.spike_any,
+                st.spike_real,
+                st.flow_premium,
+                st.spike_pushed,
+                st.surge_volume,
+                st.blowup_calls,
+                st.blowup_calls_x,
+                st.blowup_puts,
+                st.blowup_puts_x,
+            ]
             for s, st in self.state.items()
-            if st.day == day and (st.spike_any or st.flow_premium or st.surge_volume)
+            if st.day == day
+            and (st.spike_any or st.flow_premium or st.surge_volume or st.blowup_calls or st.blowup_puts)
         }
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -634,9 +687,7 @@ class OptionsRadar:
             if c.volume * (c.last or 0) * 100 < cfg.spike_min_premium:
                 return None
         fair = self.fair_prev(c, chain, today)
-        prev = c.prev_close or 0.0
-        stale = fair is not None and fair >= cfg.stale_min_fair and prev < cfg.stale_base_ratio * fair
-        base = max(prev, fair or 0.0) if stale else prev
+        base, stale = self.honest_base(c, fair, today)
         px = live if quote_led else c.last
         honest = (px / base - 1.0) * 100.0 if base > 0 and px else move
         bid_move = (c.bid / base - 1.0) * 100.0 if c.bid and base > 0 else None
@@ -647,11 +698,66 @@ class OptionsRadar:
             c, move, bid_move, confirmed, fair, stale, honest, honest >= need, same_day, no_prior, quote_led
         )
 
+    def yesterday_iv(self, chain: Chain, today: date) -> float | None:
+        """The implied vol the market priced at yesterday's close, backed out of yesterday's own
+        closes (contracts that closed at $0.20+ yesterday, strikes within 15% of yesterday's stock
+        price, 3-120 days out): the median, from at least 3. Today's IV is no measure of
+        yesterday: on Oct 12 2026 FLEX's November chain went from ~45% to ~90% with the stock
+        flat, and valuing yesterday's one-cent closes at 90% made every real move look stale."""
+        if chain.iv_prev_done:
+            return chain.iv_prev
+        chain.iv_prev_done = True
+        s = chain.stock_prev
+        if not s:
+            return None
+        yday = prev_session(today)
+        ivs = []
+        for c in chain.contracts:
+            p = c.prev_close
+            if not p or p < 0.20 or abs(c.strike / s - 1) > 0.15:
+                continue
+            if c.prev_close_date is not None and c.prev_close_date != yday:
+                continue
+            days = (c.expiry - yday).days
+            if not 3 <= days <= 120:
+                continue
+            iv = implied_vol(p, s, c.strike, days / YEAR_DAYS, c.cp)
+            if iv is not None:
+                ivs.append(iv)
+        if len(ivs) >= 3:
+            ivs.sort()
+            chain.iv_prev = ivs[len(ivs) // 2]
+        return chain.iv_prev
+
+    def honest_base(self, c: Contract, fair: float | None, today: date) -> tuple[float, bool]:
+        """(the base a move is measured from, whether the reported previous close was replaced).
+
+        * A close from before yesterday (no trade yesterday) is a price from another day: the
+          base is the contract's value at yesterday's close instead.
+        * A tiny close (``stale_max_prev``, $0.10) far below that value is a stale print (the
+          study's $0.01 "closes"): the base is the value.
+        * Any other close is a real price and stays the base: a $0.55 close is not a stale
+          print, whatever today's (crash-inflated) volatility says."""
+        cfg = self.cfg
+        prev = c.prev_close or 0.0
+        old = c.prev_close_date is not None and c.prev_close_date < prev_session(today)
+        if old and fair is not None and fair >= 0.01:
+            return fair, True
+        if (
+            fair is not None
+            and fair >= cfg.stale_min_fair
+            and prev <= cfg.stale_max_prev
+            and prev < cfg.stale_base_ratio * fair
+        ):
+            return max(prev, fair), True
+        return prev, False
+
     def fair_prev(self, c: Contract, chain: Chain, today: date) -> float | None:
         """Model value of the contract at yesterday's close: yesterday's stock price, the time
-        left then, and the company's 30-day implied vol (else the contract's own)."""
+        left then, and yesterday's implied vol (from yesterday's own closes; else the company's
+        30-day IV, else the contract's own)."""
         s = chain.stock_prev
-        sigma = chain.iv30 or c.iv
+        sigma = self.yesterday_iv(chain, today) or chain.iv30 or c.iv
         if not s or not sigma:
             return None
         t = max((c.expiry - prev_session(today)).days, 0) / YEAR_DAYS
@@ -684,9 +790,14 @@ class OptionsRadar:
         hits: list[OptionsHit] = []
 
         live = [c for c in chain.contracts if c.expiry >= today]
+        # many contracts at once says more than the single best one: the blowup goes first and
+        # carries the push; that company's spike still shows in the app
+        if self.cfg.blowup:
+            hits.extend(self._blowup_hits(chain, listing, live, st, today, day, now))
+        blew = any(h.severity == "HIGH" for h in hits)
         spikes = [r for r in (self.spike_row(c, chain, today, now) for c in live) if r is not None]
         if spikes:
-            hit = self._spike_hit(chain, listing, spikes, st, day, now)
+            hit = self._spike_hit(chain, listing, spikes, st, day, now, quiet=blew)
             if hit is not None:
                 hits.append(hit)
 
@@ -725,6 +836,94 @@ class OptionsRadar:
         if hits:
             self.save(now)
         return hits
+
+    # ------------------------------------------------------------------ blowups
+
+    def blowup_row(self, c: Contract, chain: Chain, today: date, now: float) -> BlowupRow | None:
+        """A contract worth ``blowup_multiple``+ its honest base now: measured on the live bid
+        (what it sells for), else a print today, else the bid the feed has."""
+        cfg = self.cfg
+        if not 0 <= (c.expiry - today).days <= cfg.blowup_max_dte:
+            return None
+        live = self.live_bid(c, now)
+        if live is not None:
+            price, how = live, "live bid"
+        elif c.last and c.last_trade is not None and c.last_trade.date() == today and c.volume >= 5:
+            price, how = c.last, "print"
+        elif c.bid and c.quote_time is None:
+            price, how = c.bid, "bid"  # a delayed feed (Cboe): every quote is ~15 min old alike
+        else:
+            return None
+        if price < cfg.blowup_min_price or not c.prev_close:
+            return None
+        old = c.prev_close_date is not None and c.prev_close_date < prev_session(today)
+        fair = self.fair_prev(c, chain, today) if (old or c.prev_close <= cfg.stale_max_prev) else None
+        base, _ = self.honest_base(c, fair, today)
+        base = max(base, 0.01)
+        mult = price / base
+        if mult < cfg.blowup_multiple:
+            return None
+        return BlowupRow(c, base, price, mult, how)
+
+    def _blowup_hits(
+        self,
+        chain: Chain,
+        listing: Listing | None,
+        live: list[Contract],
+        st: _DayState,
+        today: date,
+        day: str,
+        now: float,
+    ) -> list[OptionsHit]:
+        """Many contracts of one company up 4x+ at once, by side: a stock crashing or ripping
+        (LITE's puts, Oct 12 2026), or the whole chain repriced while the stock sits still (FLEX:
+        implied vol ~45% to ~90%, the market pricing an event). Shows from
+        ``blowup_min_contracts``, again when the count or the best multiple doubles."""
+        cfg = self.cfg
+        rows = [r for r in (self.blowup_row(c, chain, today, now) for c in live) if r is not None]
+        out: list[OptionsHit] = []
+        iv_prev = self.yesterday_iv(chain, today)
+        iv_now = chain.iv30
+        for side, cp in (("calls", "C"), ("puts", "P")):
+            mine = sorted((r for r in rows if r.contract.cp == cp), key=lambda r: -r.multiple)
+            if len(mine) < cfg.blowup_min_contracts:
+                continue
+            n, best = len(mine), mine[0].multiple
+            seen_n = st.blowup_calls if cp == "C" else st.blowup_puts
+            seen_x = st.blowup_calls_x if cp == "C" else st.blowup_puts_x
+            if seen_n and n < 2 * seen_n and best < 2 * seen_x:
+                continue
+            if cp == "C":
+                st.blowup_calls, st.blowup_calls_x = float(n), best
+            else:
+                st.blowup_puts, st.blowup_puts_x = float(n), best
+            flat = chain.change_pct is not None and abs(chain.change_pct) < 3.0
+            jump = bool(iv_prev and iv_now and iv_now >= cfg.blowup_iv_jump * iv_prev)
+            big = n >= cfg.blowup_push_contracts or best >= cfg.blowup_push_multiple or (jump and flat)
+            severity, reasons = "MEDIUM", []
+            if big:
+                if self._push_ok(day):
+                    severity = "HIGH"
+                else:
+                    reasons.append("today's push limit for options alerts is reached")
+            out.append(
+                OptionsHit(
+                    chain.symbol,
+                    "blowup",
+                    severity,
+                    chain,
+                    listing,
+                    blowups=mine[: cfg.max_rows],
+                    side=side,
+                    count=n,
+                    iv_now=iv_now,
+                    iv_prev=iv_prev,
+                    rung=best,
+                    reasons=reasons,
+                    detected=now,
+                )
+            )
+        return out
 
     # ------------------------------------------------------------------ misprints
 
@@ -1060,6 +1259,7 @@ class OptionsRadar:
         st: _DayState,
         day: str,
         now: float,
+        quiet: bool = False,
     ) -> OptionsHit | None:
         rows.sort(key=lambda r: (r.real, r.honest_move_pct if r.real else r.move_pct), reverse=True)
         real = [r for r in rows if r.real and r.honest_move_pct >= self.cfg.spike_min_pct]
@@ -1069,7 +1269,9 @@ class OptionsRadar:
             return None  # nothing bigger than what was already shown today
         severity = "MEDIUM"
         held = False
-        if rung_real > st.spike_real:
+        if rung_real > st.spike_real and quiet:
+            held = True  # the company's blowup alert was just pushed and covers this contract
+        elif rung_real > st.spike_real:
             # one push per company per day, and again only at 10x that rung, so a single name
             # climbing 1,000 -> 2,000 -> 5,000% can't spend the whole day's push budget
             if st.spike_pushed and rung_real < 10 * st.spike_pushed:
@@ -1089,11 +1291,21 @@ class OptionsRadar:
                     f"from {need:,.0f}%"
                 )
             if top.stale_base and not top.big_enough and top.fair_prev is not None:
-                reasons.append(
-                    f"stale base: the previous close (${(top.contract.prev_close or 0):.2f}) is far below "
-                    f"the contract's model value that day (${top.fair_prev:.2f}); measured from that, "
-                    f"{top.honest_move_pct:+,.0f}%"
-                )
+                pc = top.contract
+                if pc.prev_close_date is not None and pc.prev_close_date < prev_session(
+                    datetime.fromtimestamp(now, ET).date()
+                ):
+                    reasons.append(
+                        f"no trade yesterday: the last close (${(pc.prev_close or 0):.2f}, {pc.prev_close_date:%b} "
+                        f"{pc.prev_close_date.day}) is from another day; measured from the contract's value at "
+                        f"yesterday's close (${top.fair_prev:.2f}), {top.honest_move_pct:+,.0f}%"
+                    )
+                else:
+                    reasons.append(
+                        f"stale base: the previous close (${(pc.prev_close or 0):.2f}) is far below "
+                        f"the contract's model value that day (${top.fair_prev:.2f}); measured from that, "
+                        f"{top.honest_move_pct:+,.0f}%"
+                    )
             if not top.confirmed:
                 bid = top.contract.bid
                 if bid is None:
@@ -1105,6 +1317,8 @@ class OptionsRadar:
                         f"unconfirmed: the bid (${bid:.2f}) is only {top.bid_move_pct or 0:+,.0f}% above the "
                         "base, so most of the move is the last print"
                     )
+        elif held and quiet:
+            reasons.append("pushed as part of this company's blowup alert")
         elif held:
             reasons.append(
                 f"already pushed today at {st.spike_pushed:,.0f}%; this company pushes again from "
@@ -1265,10 +1479,12 @@ def parse_alpaca_chain(
         prev_day = _utc_ts(prev_bar.get("t"))
         if bar_day is not None and bar_day.date() == today:
             volume, prev_close = _int(bar.get("v")), _num(prev_bar.get("c"))
+            prev_date = prev_day.date() if prev_day is not None else None
             if prev_day is not None and prev_day.date() == yday:
                 prev_total += _int(prev_bar.get("v"))
         else:
             volume, prev_close = 0, _num(bar.get("c"))
+            prev_date = bar_day.date() if bar_day is not None else None
             if bar_day is not None and bar_day.date() == yday:
                 prev_total += _int(bar.get("v"))
         prev_seen = prev_seen or bar_day is not None
@@ -1295,6 +1511,7 @@ def parse_alpaca_chain(
                 quote_time=q_time,
                 bid_size=_oint(quote.get("bs")),
                 ask_size=_oint(quote.get("as")),
+                prev_close_date=prev_date,
             )
         )
         if iv and price and 7 <= (exp - today).days <= 60 and abs(strike / price - 1) <= 0.05:
@@ -1566,7 +1783,9 @@ class OptionsFeed:
             for s in self.live.movers(self.cfg.hot_move_pct, self.cfg.stock_quote_max_age_s, now)
             if self.eligible(self.universe.get(s))
         ]
-        order = list(dict.fromkeys([*self.priority, *live, *moving, *(li.symbol for li in movers)]))
+        # the universe's "% today" is the last session's: only a fallback while no live prices exist
+        stale_movers = [li.symbol for li in movers] if self.live.status(now)["fresh_3m"] < 50 else []
+        order = list(dict.fromkeys([*self.priority, *live, *moving, *stale_movers]))
         due = [
             s
             for s in order
@@ -1698,6 +1917,8 @@ class OptionsFeed:
         if chain is None:
             return []
         self.health.items += len(chain.contracts)
+        if self.live.get(symbol, self.cfg.stock_quote_max_age_s) is None:
+            await self.refresh_stocks([symbol])  # one quote on demand: never judge on yesterday's price
         self.apply_live(chain, now)
         if not self.fresh(chain, now):
             self.stale_chains += 1
@@ -1731,10 +1952,15 @@ class OptionsFeed:
             chain.stock_source = q.source
             chain.stock_time = datetime.fromtimestamp(q.ts, ET)
             return
-        if chain.stock_source == "universe" and self.universe.age > 900:
+        if chain.stock_source == "universe":
+            # the universe (Nasdaq's screener) holds the last close, not today's price: on Oct 12
+            # 2026 it showed BIIB at Friday's $225.71 (+3.33%) and LITE at Friday's $1,103.36
+            # (+5.22%) in the middle of the session. So it is yesterday's price, and today's
+            # price and move are unknown.
+            chain.prev_close = chain.price
+            chain.price = None
             chain.change_pct = None
-            chain.prev_close = None
-            chain.stock_source = "universe (stale)"
+            chain.stock_source = "no live price (the last close stands in for yesterday)"
 
     def urgent(self, symbols: Iterable[str], why: str = "") -> int:
         """Read these companies' chains now, ahead of the rotation (news, the radar, the stream).
@@ -1766,11 +1992,14 @@ class OptionsFeed:
         self.urgent([underlying], why)
 
     async def refresh_stocks(self, symbols: list[str]) -> int:
-        """Real-time stock prices for a batch, from Alpaca when its keys are set (one request per
-        100 companies). Returns how many were updated."""
+        """Real-time stock prices for a batch: Alpaca when its keys are set (one request per 100
+        companies), else Yahoo for the ones without a fresh price (20 a request). Returns how
+        many were updated."""
         alpaca = next((x for x in self.sources if getattr(x, "name", "") == "alpaca"), None)
-        if alpaca is None or not self.cfg.stock_quotes or not symbols:
+        if not self.cfg.stock_quotes or not symbols:
             return 0
+        if alpaca is None:
+            return await self.yahoo_stocks(symbols)
         try:
             rows = await alpaca.stock_snapshots(symbols, self._pace)
         except (HTTPError, aiohttp.ClientError, ValueError, TypeError, asyncio.TimeoutError, OSError) as exc:
@@ -1802,6 +2031,47 @@ class OptionsFeed:
             pct = f" {q.change_pct:+.1f}%" if q is not None and q.change_pct is not None else ""
             self.urgent([s], f"moving{pct} on a live price")
         return new
+
+    async def yahoo_stocks(self, symbols: list[str]) -> int:
+        """Yahoo's spark quotes for the symbols without a fresh live price (no keys needed)."""
+        from .prices import SPARK_URL, parse_spark
+
+        now = time.time()
+        need = [s for s in symbols if self.live.get(s, self.cfg.stock_quote_max_age_s, now) is None]
+        if not need or self.http is None:
+            return 0
+        n = 0
+        for i in range(0, len(need), 20):
+            chunk = need[i : i + 20]
+            try:
+                resp = await self.http.get(
+                    SPARK_URL,
+                    params={"symbols": ",".join(chunk), "range": "1d", "interval": "5m"},
+                    headers={"User-Agent": SCREENER_HEADERS["User-Agent"], "Accept": "application/json"},
+                    timeout_s=20,
+                )
+                snaps = parse_spark(resp.json())
+            except (
+                HTTPError,
+                aiohttp.ClientError,
+                ValueError,
+                TypeError,
+                KeyError,
+                asyncio.TimeoutError,
+                OSError,
+            ) as exc:
+                self.stock_errors += 1
+                log.info("yahoo stock quotes failed: %s", exc)
+                return n
+            self.stock_reads += 1
+            for sym in chunk:
+                snap = snaps.get(sym) or {}
+                pts = snap.get("points") or []
+                price = pts[-1][1] if pts else snap.get("price")
+                if price:
+                    self.live.update(sym, float(price), snap.get("prev_close"), time.time(), "yahoo")
+                    n += 1
+        return n
 
     def _watch(self, chain: Chain, now: float, hit: bool) -> None:
         """Keep the tripwire on this company's most explosive contracts while it is hot (news,

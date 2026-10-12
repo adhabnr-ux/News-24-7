@@ -100,9 +100,10 @@ def test_live_price_replaces_the_universe_and_a_stale_universe_says_nothing():
     f = OptionsFeed(ocfg(), None, u, OptionsRadar(ocfg()))  # type: ignore[arg-type]
     now = time.time()
     ch = biib_chain()
-    f.apply_live(ch, now)  # universe an hour old, no live quote: the move is unknown, not Friday's
-    assert ch.change_pct is None and ch.prev_close is None and ch.stock_prev is None
-    assert ch.stock_source == "universe (stale)"
+    f.apply_live(ch, now)  # no live quote: the universe's figure is Friday's close, not today's price
+    assert ch.price is None and ch.change_pct is None
+    assert ch.prev_close == 225.71 and ch.stock_prev == 225.71  # ... so it is yesterday's price
+    assert ch.stock_source.startswith("no live price")
     f.live.update("BIIB", 233.98, 225.71, now - 5, "alpaca")
     ch = biib_chain()
     f.apply_live(ch, now)

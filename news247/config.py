@@ -310,6 +310,17 @@ class OptionsConfig:
     stale_base_ratio: float = 0.3  # previous close below 30% of its model value = stale print
     spike_0dte_multiple: float = 3.0  # contracts expiring today push only at 3x the threshold (3,000%)
     stale_min_fair: float = 0.05  # ... when that model value is at least $0.05
+    stale_max_prev: float = 0.10  # only a close this small can be a stale print (a $0.55 close is a price)
+    # blowups (Oct 12 2026: LITE -9% and its Oct 16 puts up 4-13x; FLEX flat while its whole Nov
+    # chain was repriced from ~45% to ~90% implied vol): many contracts of one company up at once
+    blowup: bool = True
+    blowup_multiple: float = 4.0  # a contract counts at 4x+ its honest base (the bid, or a print today)
+    blowup_min_price: float = 0.20  # ... and worth $0.20+ now
+    blowup_max_dte: int = 60
+    blowup_min_contracts: int = 4  # shows from 4 such contracts on one side (calls or puts)
+    blowup_push_contracts: int = 8  # pushes at 8+, or when the best is 10x+ ...
+    blowup_push_multiple: float = 10.0
+    blowup_iv_jump: float = 1.5  # ... or when implied vol is 1.5x yesterday's with the stock moving < 3%
     # unusual volume: contracts trading far above their open interest, with real money
     flow_min_volume: int = 500  # contracts traded today
     flow_oi_multiple: float = 3.0  # volume >= 3x open interest (any volume when OI is 0)

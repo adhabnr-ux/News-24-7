@@ -21,7 +21,7 @@ from .config import CASH_HOURS_ONLY_QUIET, PROXIES, Config
 from .edge import ET, Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
-from .market.options import MISPRINT_LABEL, OptionsFeed, OptionsHit, OptionsRadar
+from .market.options import MISPRINT_LABEL, OptionsFeed, OptionsHit, OptionsRadar, prev_session
 from .market.prices import PriceMonitor
 from .market.radar import MoversRadar, RadarHit, SmallCapFeed
 from .market.universe import Universe, fmt_cap
@@ -916,6 +916,55 @@ class Engine:
             bits.append(f"last trade {age(c.last_trade)} old")
         return "Data: " + ", ".join(bits) if bits else ""
 
+    def _blowup_lines(self, hit: OptionsHit, who: str) -> tuple[str, list[str]]:
+        """Title and lines for many contracts of one company up 4x+ at once."""
+        ch = hit.chain
+        lo = min(r.multiple for r in hit.blowups)
+        hi = max(r.multiple for r in hit.blowups)
+        span = f"{lo:,.0f}x" if round(lo) == round(hi) else f"{lo:,.0f}x–{hi:,.0f}x"
+        jump = bool(
+            hit.iv_prev and hit.iv_now and hit.iv_now >= self.cfg.options.blowup_iv_jump * hit.iv_prev
+        )
+        flat = ch.change_pct is not None and abs(ch.change_pct) < 3.0
+        move = f" with the stock {fmt_pct(ch.change_pct)}" if ch.change_pct is not None else ""
+        if jump and flat:
+            title = (
+                f"🧨 {hit.symbol} {hit.side} repriced: {hit.count} contracts up {span}{move} · implied vol "
+                f"{(hit.iv_prev or 0) * 100:.0f}% → {(hit.iv_now or 0) * 100:.0f}% · {who}"
+            )
+        else:
+            title = (
+                f"🧨 {hit.symbol} {hit.side} exploding: {hit.count} contracts up {span} today{move} · {who}"
+            )
+        lines: list[str] = []
+        today = datetime.fromtimestamp(hit.detected, ET).date()
+        for r in hit.blowups:
+            c = r.contract
+            rep = ""
+            if c.prev_close and abs(c.prev_close - r.base) > 0.005:
+                rep = f" (reported close ${c.prev_close:.2f}: {(r.price / c.prev_close - 1) * 100:+,.0f}% on a broker)"
+            lines.append(
+                f"• {c.label()}: ${r.base:.2f} → ${r.price:.2f} {r.how}, {r.multiple:,.1f}x{rep} · "
+                f"{c.dte(today)}d · {c.volume:,} traded"
+            )
+        if hit.count > len(hit.blowups):
+            lines.append(
+                f"…and {hit.count - len(hit.blowups)} more {hit.side} up {self.cfg.options.blowup_multiple:g}x+."
+            )
+        if hit.iv_prev and hit.iv_now:
+            lines.append(
+                f"Implied vol: {hit.iv_prev * 100:.0f}% at yesterday's close → {hit.iv_now * 100:.0f}% now."
+            )
+        if jump and flat:
+            lines.append(
+                "The options were repriced while the stock barely moved: the market is pricing an event "
+                "(a deal, a ruling, results) that hasn't reached the stock yet."
+            )
+        lines.append(
+            "Bases are yesterday's real closes; a stale $0.01 close or one from another day is replaced by the contract's value at yesterday's close."
+        )
+        return title, lines
+
     def _misprint_lines(self, hit: OptionsHit, who: str) -> tuple[str, list[str]]:
         """Title and lines for a misprint: what to do, at what price, and why it's mispriced."""
 
@@ -1035,10 +1084,18 @@ class Engine:
                     f"(${(c.prev_close or 0):.2f})."
                 )
             elif top.stale_base and top.real and top.fair_prev is not None:
-                lines.append(
-                    f"The ${(c.prev_close or 0):.2f} previous close looks stale (model value that day "
-                    f"${top.fair_prev:.2f}); the % is measured from the model value."
-                )
+                today = datetime.fromtimestamp(hit.detected, ET).date()
+                if c.prev_close_date is not None and c.prev_close_date < prev_session(today):
+                    lines.append(
+                        f"No trade yesterday: the last close (${(c.prev_close or 0):.2f}) is from "
+                        f"{c.prev_close_date:%b} {c.prev_close_date.day}; the % is measured from its value at "
+                        f"yesterday's close (${top.fair_prev:.2f})."
+                    )
+                else:
+                    lines.append(
+                        f"The ${(c.prev_close or 0):.2f} previous close looks stale (model value that day "
+                        f"${top.fair_prev:.2f}); the % is measured from the model value."
+                    )
             for reason in hit.reasons:
                 lines.append(f"⚠ {reason}")
         elif hit.kind == "surge":
@@ -1060,6 +1117,13 @@ class Engine:
                 lines.append(
                     f"{rc.label()}: {rc.volume:,} contracts{oi} · {fmt_cap(rc.premium)} at ${rc.price:.2f}{move}{side}"
                 )
+            for reason in hit.reasons:
+                lines.append(f"ⓘ {reason}")
+        elif hit.kind == "blowup":
+            title, more = self._blowup_lines(hit, who)
+            lines.extend(more)
+            if stock:
+                lines.append(stock)
             for reason in hit.reasons:
                 lines.append(f"ⓘ {reason}")
         elif hit.kind == "misprint":

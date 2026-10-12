@@ -249,8 +249,13 @@ def test_friday_spike_pushes_once_the_bid_is_there():
     for c in chain.contracts:
         c.bid, c.ask = round(c.last * 0.92, 2), round(c.last * 1.08, 2)  # a normal 16% spread
     r = options_radar()
-    (hit,) = [h for h in r.scan(chain, None, et(2026, 10, 9, 15, 50)) if h.kind == "spike"]
-    assert hit.severity == "HIGH" and hit.spikes[0].contract.strike in (75.0, 77.5, 80.0)
+    hits = r.scan(chain, None, et(2026, 10, 9, 15, 50))
+    (hit,) = [h for h in hits if h.kind == "spike"]
+    assert hit.spikes[0].contract.strike in (75.0, 77.5, 80.0) and hit.spikes[0].real
+    # four calls up 6x-98x at once: the blowup carries CCI's push, the spike shows in the app
+    (blow,) = [h for h in hits if h.kind == "blowup"]
+    assert blow.severity == "HIGH" and blow.side == "calls" and blow.count == 4
+    assert hit.severity == "MEDIUM" and "pushed as part of this company's blowup alert" in hit.reasons
 
 
 def test_friday_unusual_volume_on_the_80_call():

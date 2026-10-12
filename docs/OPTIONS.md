@@ -135,6 +135,42 @@ $77.5 and $75 calls traded only 1.7× and 0.2× their open interest, yet the cha
 - **When:** the regular session only. Option quotes don't move outside it.
 - **Push limit:** at most 12 options pushes a day (`daily_pushes`). The rest are in the app.
 
+## Blowups: many contracts at once
+
+**The cases (Oct 12 2026):**
+- **LITE** fell 9.3% ($1,103.36 Friday to about $1,000) and its Oct 16 puts went 4-13x: the $925
+  put went $0.55 → $7.21, the $927.5 put $1.98 → $9.90 during the day. Our one alert said
+  "$925 put +36% (unconfirmed)".
+- **FLEX** sat at -1.9% while its whole November chain was repriced from about 45% to about 90%
+  implied vol. Calls worth a cent were bid $0.20-$0.65, and a broker showed +4,400% to +8,400%.
+  Nothing alerted.
+
+**Why they were missed (fixed):**
+1. **A stale stock price.** The universe (Nasdaq's screener) holds the *last close*, not today's
+   price: it showed LITE at Friday's $1,103.36 (+5.22%) mid-session. So "yesterday's" price came
+   out as Thursday's. Every chain read now uses a live stock price (Alpaca, else Yahoo, fetched on
+   demand). Without one, the universe's figure is used for what it is, yesterday's close, and
+   today's move is left unknown.
+2. **Yesterday valued at today's volatility.** The stale-close check valued yesterday's contract
+   at today's implied vol, which a crash or an event inflates. It now backs **yesterday's** IV out
+   of yesterday's own closes (the median of contracts near the money that closed at $0.20+).
+3. **Only a tiny close is a stale print.** A close of `stale_max_prev` ($0.10) or less, far below
+   yesterday's value, is replaced by that value. A $0.55 close is a price. A close from *before*
+   yesterday (no trade yesterday) is replaced by the contract's value at yesterday's close.
+
+**The blowup alert (🧨).** It counts the contracts on one side (calls or puts), up to 60 days out,
+that are worth 4x+ their honest base (`blowup_multiple`) and $0.20+ now. "Now" is the live bid,
+else a print today, else the delayed bid.
+- **Shows** from 4 contracts.
+- **Pushes** at 8+ contracts, when the best is 10x+, or when implied vol is 1.5x yesterday's with
+  the stock moving under 3%. That last one is "repriced", and it means the market is pricing an
+  event that hasn't reached the stock.
+- **Repeats** when the count or the best multiple doubles.
+- **Goes first:** it carries the company's push, and the single-contract spike shows in the app.
+
+Each row gives the base, the price now, the multiple and, where the reported close differs, the
+"% on a broker" that the reported close implies. Settings: `blowup*` and `stale_max_prev`.
+
 ## Misprints
 
 **The case behind it (Oct 12 2026, OPRA prints).** BIIB's $252.5 call (Oct 16) had never traded

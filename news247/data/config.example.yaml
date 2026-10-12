@@ -132,6 +132,10 @@ options:
   stock_quotes: true              # Alpaca real-time stock snapshots (free plan: IEX) for every batch
   stream: ${OPTIONS_STREAM:-true} # the websocket tripwire (needs Alpaca keys; msgpack)
   stream_max_quotes: 190          # free plan: 200 quotes; Algo Trader Plus: 1,000
+  # blowups (docs/OPTIONS.md "Blowups"): 4+ contracts on one side up 4x+; pushes at 8+, a 10x best,
+  # or implied vol 1.5x yesterday's with the stock flat (the chain repriced for an event)
+  blowup: ${OPTIONS_BLOWUP:-true}
+  blowup_multiple: 4
   # misprints (docs/OPTIONS.md "Misprints"): arbitrage and quotes far from value, on live quotes only
   misprints: ${OPTIONS_MISPRINTS:-true}
   misprint_push_edge: 0.10        # arbitrage pushes from $0.10 a share; an ask far below value from $0.20

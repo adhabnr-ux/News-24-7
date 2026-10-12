@@ -391,6 +391,12 @@ async def _options(
                         f"     ALERT {h.severity}: spike {top.contract.label()} {top.honest_move_pct:+,.0f}% "
                         f"(confirmed={top.confirmed}, stale_base={top.stale_base})"
                     )
+                elif h.kind == "blowup":
+                    best = h.blowups[0]
+                    print(
+                        f"     ALERT {h.severity}: {h.count} {h.side} up {s_cfg_mult(ocfg)}x+ · best {best.contract.label()} "
+                        f"${best.base:.2f} -> ${best.price:.2f} ({best.multiple:,.1f}x, {best.how})"
+                    )
                 elif h.kind == "misprint":
                     for m in h.misprints:
                         fair = f", worth ~${m.fair:.2f}" if m.fair is not None else ""
@@ -411,6 +417,10 @@ async def _options(
             worst = max(worst, await _stream_check(feed, watch, stream_s))
     print()
     return worst
+
+
+def s_cfg_mult(ocfg: Any) -> str:
+    return f"{ocfg.blowup_multiple:g}"
 
 
 def _print_ages(contracts: list) -> None:

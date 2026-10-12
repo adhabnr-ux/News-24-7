@@ -281,6 +281,10 @@ rotate through, largest first.
   the app with the reason.
 - **🐋 Unusual volume**: contracts trading 3×+ their open interest with $100K+ in each, summed
   per company. Pushed at $1M+, with calls vs puts and whether the prints hit the ask.
+- **🧨 Blowups**: many contracts of one company up 4x+ at once (LITE's puts on a -9% day), or a
+  whole chain repriced with the stock flat (FLEX: implied vol about 45% to 90%, the market
+  pricing an event). Bases are yesterday's real closes valued at yesterday's implied vol, never
+  today's crash-inflated one.
 - **🎯 Misprints**: quotes you could act on now that are mispriced.
   - Model-free arbitrage: a higher-strike call bid above a lower-strike call's ask, a later
     expiry offered below an earlier one, or an offer below intrinsic value.
