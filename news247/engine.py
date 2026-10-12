@@ -124,11 +124,15 @@ class Engine:
                 self.storage,
                 state_path=cfg.data_path / "trends_state.json",
             )
-            from .camillo import ChatterTags, EarningsBook
+            from .camillo import ChatterTags, EarningsBook, NarrativeWatch, load_narratives
 
+            narratives = load_narratives() if cfg.trends.narratives else []
             self.trends.attach_camillo(
                 EarningsBook(self.http) if cfg.trends.earnings else None,
-                ChatterTags(self.trends.brands, cfg.trends.chatter_sample_s) if cfg.trends.chatter else None,
+                ChatterTags(self.trends.brands, cfg.trends.chatter_sample_s, narratives=narratives)
+                if cfg.trends.chatter
+                else None,
+                NarrativeWatch(narratives, cfg.trends) if narratives else None,
             )
         self.clusterer = StoryClusterer(window_s=cfg.scoring.cluster_window_minutes * 60)
         self.dispatcher = dispatcher or Dispatcher(cfg.notify, self.http)
@@ -239,6 +243,8 @@ class Engine:
             )
         if self.trends is not None and self.cfg.trends.scan:
             runners.append(asyncio.create_task(self.trends.run(self.on_trends, stop), name="trends"))
+        if self.trends is not None and self.trends.narratives is not None:
+            runners.append(asyncio.create_task(self._narrative_loop(stop), name="narratives"))
         if self.whatsapp_cloud is not None:
             runners.append(asyncio.create_task(self.whatsapp_cloud.maintain(stop), name="whatsapp-cloud"))
         if self.cfg.general.keepalive_url:
@@ -772,6 +778,45 @@ class Engine:
             alert.edge["trend"] = sig.to_dict()
             await self.publish(alert)
 
+    async def check_narratives(self, now: float | None = None) -> list[Alert]:
+        """The attention trade: one alert when a narrative starts accelerating (MEDIUM, in the
+        app), HIGH (pushed) when two or more fear narratives in one sector accelerate together."""
+        if self.trends is None or self.trends.narratives is None:
+            return []
+        from .camillo import narrative_alert_text
+
+        out = []
+        for row in self.trends.narratives.check(self.storage, self.trends.chatter, now):
+            title, body = narrative_alert_text(row)
+            ex = row.get("examples") or []
+            alert = Alert(
+                kind="narrative",
+                severity=Severity.parse(row["severity"]),
+                title=title,
+                body=body,
+                url=ex[0]["url"] if ex and ex[0].get("url") else "",
+                tickers=list(row.get("hits") or [])[:6],
+            )
+            alert.edge["narrative"] = {
+                k: row[k]
+                for k in ("id", "name", "side", "sector", "level", "news", "social", "sources_3d", "together")
+            }
+            await self.publish(alert)
+            out.append(alert)
+        if out:
+            self.trends.save()
+        return out
+
+    async def _narrative_loop(self, stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            await _sleep_or_stop(stop, 1800)
+            if stop.is_set():
+                break
+            try:
+                await self.check_narratives()
+            except Exception as exc:  # noqa: BLE001 - the attention trade must never stop the engine
+                log.warning("narratives: %s", exc)
+
     def camillo_page(self) -> dict[str, Any]:
         from .camillo import load_playbook, page
 
@@ -782,6 +827,7 @@ class Engine:
                 "ideas": [],
                 "attention": [],
                 "chatter": [],
+                "narratives": [],
             }
         return {"enabled": True, **page(self.trends)}
 
@@ -1291,6 +1337,17 @@ class Engine:
                 if r["severity"] != "LOW"
             ][:5]
             if self.trends is not None
+            else []
+        )
+        watch = self.trends.narratives if self.trends is not None else None
+        brief["narratives"] = (
+            [
+                {k: r[k] for k in ("id", "name", "side", "level", "sources_3d")}
+                | {"ratio": r["news"]["ratio"]}
+                for r in watch.scan(self.storage, self.trends.chatter, now)
+                if r["level"] in ("accelerating", "elevated")
+            ]
+            if watch is not None
             else []
         )
         return brief

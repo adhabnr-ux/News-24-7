@@ -151,6 +151,11 @@ trends:
   chatter_ratio: 3.0              # a spike: last 3 days' share of posts at 3x the 14 days before...
   chatter_min_mentions: 30        # ...with at least 30 mentions in those 3 days
   earnings: true                  # next report dates from Nasdaq's calendar: each idea's catalyst
+  # the attention trade: how fast each narrative in data/camillo.yaml is spreading (all headlines read + Bluesky)
+  narratives: true
+  narrative_ratio: 2.0            # last 3 days' share at 2x the 14 days before...
+  narrative_min: 8                # ...with at least 8 matching headlines in those 3 days
+  narrative_cooldown_days: 3      # one alert per narrative per wave (HIGH when 2+ fear narratives move together)
 
 # Sources: ~50 built-ins are on by default (`news247 check` lists them). Override one by
 # repeating its name here (e.g. {name: hackernews, enabled: false}) or add your own:

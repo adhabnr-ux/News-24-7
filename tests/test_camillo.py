@@ -11,11 +11,20 @@ import pytest
 from news247.camillo import (
     ChatterTags,
     EarningsBook,
+    Narrative,
+    NarrativeWatch,
+    attention_trade,
     chatter_spike,
     checklist,
+    conviction,
+    load_narratives,
     load_playbook,
+    narrative_alert_text,
+    narrative_pulse,
+    other_side,
     page,
     parse_nasdaq_earnings,
+    thesis_check,
 )
 from news247.config import TrendsConfig
 from news247.http import HTTPError
@@ -238,10 +247,10 @@ def sig(**kw):
 def test_checklist_all_pass():
     rows = checklist(sig(), CFG, {"date": "2026-10-29", "when": "before the open", "in_days": 17})
     assert [r["id"] for r in rows] == [
-        "change", "confirmed", "direction", "material", "imbalance", "unpriced", "catalyst"
+        "change", "confirmed", "direction", "material", "imbalance", "unpriced", "catalyst", "thesis"
     ]  # fmt: skip
     assert all(r["pass"] for r in rows)
-    assert rows[-1]["detail"] == "next report 2026-10-29 before the open (in 17 days)"
+    assert rows[-2]["detail"] == "next report 2026-10-29 before the open (in 17 days)"
 
 
 @pytest.mark.parametrize(
@@ -286,9 +295,13 @@ async def test_page_puts_each_idea_against_the_method(tmp_path):
     await desk.evaluate("QSR", NOW)
     p = page(desk)
     (idea,) = p["ideas"]
-    assert idea["passed"] == 7 and idea["earnings"]["in_days"] == 17
+    assert idea["passed"] == 8 and idea["earnings"]["in_days"] == 17
     assert idea["consensus"]["level"] == "strong imbalance"  # no headline tells the story yet
     assert "Out at information parity, win or lose" in idea["exit"] and idea["exit"].startswith("A long idea")
+    assert "Out at once if something breaks the thesis" in idea["exit"] and idea["exit"].endswith(
+        "Sell half."
+    )
+    assert idea["conviction"]["level"] == "high" and idea["other_side"] == []
     assert p["playbook"]["principles"] and p["status"]["earnings"]["companies"] == 1
     assert p["status"]["chatter"]["enabled"] is True
 
@@ -380,3 +393,239 @@ def test_parity_fails_the_imbalance_test():
         )
     }
     assert not rows["imbalance"]["pass"] and "parity above 2" in rows["imbalance"]["detail"]
+
+
+# --------------------------------------------------------------------------- the interview (Aug 2026)
+
+
+def test_playbook_carries_the_aug_2026_interview():
+    p = load_playbook()
+    titles = {x["title"] for x in p["principles"]}
+    for t in ("Ground truth, not noise", "Study the other side more than your own", "Never marry a stock",
+              "Everything is a probability game", "The attention trade", "Small when unsure",
+              "Know where the leverage is"):  # fmt: skip
+        assert t in titles, t
+    names = {c["name"] for c in p["cases"]}
+    assert {"Amazon's Q2 2026 call (the $10 million day)", "Bloom Energy and the forced sellers (2026)",
+            "Sweetgreen's wraps, overtaken by an outbreak", "Amazon and AWS (the early trade)"} <= names  # fmt: skip
+    v = p["views"]
+    assert v["as_of"] == "2026-08-09" and v["source"]["url"].startswith("https://www.youtube.com/")
+    assert all(x["thesis"] and x["quote"] for x in v["items"])
+    assert any("Citadel" in u for u in p["unverified"])  # his $2-2.5B estimate is not presented as fact
+    steps = [x["step"] for x in p["process"]]
+    assert "Hear the other side" in steps and "Watch the narrative" in steps
+
+
+def test_narratives_load_and_match_whole_phrases():
+    ns = {n.id: n for n in load_narratives()}
+    assert set(ns) == {"open_models", "capex_doubt", "lab_credit", "forced_selling", "ai_efficiency"}
+    for n in ns.values():
+        assert n.side in ("fear", "hope") and n.any and n.name
+    assert ns["open_models"].matches("Kimi K3 sends chip stocks into a bear market")
+    assert ns["open_models"].matches("Why open-source models scare Nvidia bulls")
+    assert not ns["open_models"].matches("Kimi Antonelli wins at Monza")  # the F1 driver, not the model
+    assert ns["capex_doubt"].matches("AI bubble fears return as Nvidia slides")
+    assert not ns["capex_doubt"].matches("Housing bubble worries grow")  # needs an AI word too
+    assert ns["lab_credit"].matches("OpenAI cash burn tops $20 billion")
+    assert not ns["lab_credit"].matches("OpenAI launches a new model")
+    assert ns["forced_selling"].matches("Korean retail traders unwind leveraged bets")  # unwind* stem
+    assert ns["ai_efficiency"].matches("Booking says AI cut customer service costs 10%")
+    assert not ns["ai_efficiency"].matches("AI startup raises $1B")
+    n = Narrative("x", "x", any=["deleverag*", "margin call"])
+    assert (
+        n.matches("Funds deleveraging fast")
+        and n.matches("A margin-call wave")
+        and not n.matches("marginal call")
+    )
+
+
+def series(base, recent, total=1000, n_base=14):
+    d = days(n_base + len(recent))
+    counts = [base] * n_base + list(recent)
+    return [(x, c, total) for x, c in zip(d, counts)]
+
+
+def test_narrative_pulse_levels():
+    p = narrative_pulse(series(2, [6, 9, 14]))
+    assert p["level"] == "accelerating" and p["ratio"] == 4.8 and p["count"] == 29 and p["rising"]
+    assert narrative_pulse(series(2, [14, 9, 6]))["level"] == "elevated"  # high but fading
+    assert narrative_pulse(series(2, [2, 3, 2]))["level"] == "quiet"
+    assert narrative_pulse(series(2, [1, 2, 3]), min_count=8)["level"] == "quiet"  # too few to mean anything
+    assert narrative_pulse(series(2, [6, 9, 14], n_base=3))["level"] == "learning"  # not enough history
+    # share, not count: a busier news day doesn't make a narrative
+    busy = [(x, c * 5, t * 5) for x, c, t in series(2, [2, 2, 2])]
+    assert narrative_pulse(busy)["level"] == "quiet"
+    # a narrative that was silent needs real volume, not 1 headline over a zero baseline
+    assert narrative_pulse(series(0, [0, 1, 2]))["level"] == "quiet"
+    assert narrative_pulse(series(0, [3, 4, 6]))["level"] == "accelerating"
+
+
+def add_headlines(st, rows):
+    from news247.analysis.scorer import Scorer
+    from news247.config import build_config
+    from news247.models import NewsItem
+
+    cfg = build_config({})
+    sc = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
+    for title, src, ts in rows:
+        item = NewsItem(
+            source=src, title=title, url=f"https://x.test/{abs(hash((title, src, ts)))}", detected=ts
+        )
+        st.add_item(item, sc.score(item))
+
+
+def seed_news(st, now, narrative_titles, base_per_day=1, recent=(4, 6, 9), filler=60):
+    """17 days of headlines: ``filler`` unrelated ones a day, ``base_per_day`` for each narrative
+    title for 14 days, then ``recent`` for the last 3."""
+    rows = []
+    for back in range(16, -1, -1):
+        ts = now - back * 86400 - 60
+        rows += [(f"Market wrap {back}-{i}", f"wire{i % 7}", ts) for i in range(filler)]
+        k = recent[2 - back] if back <= 2 else base_per_day
+        for t in narrative_titles:
+            rows += [(f"{t} ({back}-{i})", f"src{i}", ts) for i in range(k)]
+    add_headlines(st, rows)
+
+
+def test_attention_trade_measures_every_headline_read(tmp_path):
+    st = Storage(tmp_path / "n.db")
+    now = datetime.now(ET).replace(hour=15, minute=0, second=0, microsecond=0).timestamp()
+    seed_news(st, now, ["Kimi K3 rattles chip stocks"])
+    rows = {r["id"]: r for r in attention_trade(st, load_narratives(), None, now)}
+    k = rows["open_models"]
+    assert k["level"] == "accelerating" and k["news"]["count"] == 19 and k["news"]["ratio"] >= 5
+    assert k["sources_3d"] == 9 and k["examples"][0]["title"].startswith("Kimi K3")
+    assert rows["lab_credit"]["level"] == "quiet" and rows["ai_efficiency"]["side"] == "hope"
+    assert attention_trade(None, load_narratives(), None, now) == []
+
+
+def test_chatter_counts_narratives_and_keeps_them():
+    ns = load_narratives()
+    c = ChatterTags([Brand("Taco Bell", "YUM", "major", terms=["taco bell"])], narratives=ns)
+    c.count("Kimi K3 is going to crush Nvidia, open weights for everyone", "2026-10-10")
+    c.count("taco bell tonight", "2026-10-10")
+    assert c.ncounts["2026-10-10"] == {"open_models": 1} and c.counts["2026-10-10"] == {"Taco Bell": 1}
+    assert c.nseries("open_models") == [("2026-10-10", 1, 2)]
+    c2 = ChatterTags([], narratives=ns)
+    c2.load(c.dump())
+    assert c2.ncounts == c.ncounts
+
+
+def test_watch_alerts_once_and_high_when_fears_gather(tmp_path):
+    st = Storage(tmp_path / "w.db")
+    now = datetime.now(ET).replace(hour=15, minute=0, second=0, microsecond=0).timestamp()
+    seed_news(st, now, ["Kimi K3 rattles chip stocks"])
+    w = NarrativeWatch(load_narratives(), CFG)
+    (a,) = w.check(st, None, now)
+    assert a["id"] == "open_models" and a["severity"] == "MEDIUM" and a["together"] == []
+    assert w.check(st, None, now + 3600) == []  # once per wave
+    title, body = narrative_alert_text(a)
+    assert title == "▼ Narrative accelerating: Cheap open models make compute less needed"
+    assert "19 headlines from 9 sources in 3 days" in body and "Names it hits: NVDA" in body
+    # two fear narratives in one sector together: a fear cycle forming -> HIGH (pushed)
+    st2 = Storage(tmp_path / "w2.db")
+    seed_news(st2, now, ["Kimi K3 rattles chip stocks", "Hedge funds face margin calls"])
+    alerts = {x["id"]: x for x in NarrativeWatch(load_narratives(), CFG).check(st2, None, now)}
+    assert alerts["open_models"]["severity"] == alerts["forced_selling"]["severity"] == "HIGH"
+    assert "A fear cycle is forming" in narrative_alert_text(alerts["forced_selling"])[1]
+    w2 = NarrativeWatch(load_narratives(), CFG)
+    w2.load(w.dump())
+    assert w2.alerted == w.alerted
+
+
+def test_thesis_check_and_the_other_side():
+    items = [
+        {"title": "Sweetgreen sales jump on wraps", "source": "a", "url": "u1", "detected": NOW},
+        {"title": "Cyclospora outbreak keeps diners away from salads, Sweetgreen falls", "source": "b",
+         "url": "u2", "detected": NOW},
+        {"title": "Sweetgreen traffic slows", "source": "b", "url": "u3", "detected": NOW},
+        {"title": "Sweetgreen weak quarter", "source": "c", "url": "u4", "detected": NOW},
+    ]  # fmt: skip
+    t = thesis_check(items, "up")
+    assert not t["pass"] and "Cyclospora outbreak" in t["detail"] and "exit if it does" in t["detail"]
+    assert thesis_check(items, "down")["pass"]  # a short idea expects the shock
+    assert thesis_check(items[:1], "up")["pass"]
+    for title in ("Chipotle CEO steps down", "Crocs cuts full-year guidance", "FDA recalls Celsius cans",
+                  "Hims faces class action", "Short seller Hunterbrook targets Bloom",
+                  "Flutter Stock Sinks After Brazil Bans Online Betting",
+                  "Ohio sends Robinhood a cease-and-desist over sports contracts",
+                  "Bloom Energy slides on reported Oracle data center force majeure"):  # fmt: skip
+        assert not thesis_check([{"title": title, "source": "x"}], "up")["pass"], title
+    against = other_side(items, "up")
+    assert [o["source"] for o in against] == ["b", "c"]  # gloom only, one per source
+    assert [o["source"] for o in other_side(items, "down")] == ["a"]
+    rows = {r["id"]: r for r in checklist(sig(), CFG, None, None, t)}
+    assert not rows["thesis"]["pass"]
+
+
+def test_conviction_follows_his_size_rule():
+    rows = checklist(sig(), CFG, {"date": "2026-10-29", "when": "", "in_days": 17})
+    assert conviction(rows, "HIGH")["level"] == "high"
+    low = conviction(rows, "MEDIUM")
+    assert low["level"] == "low" and "2-3% of a high-conviction size" in low["rule"]
+
+
+async def test_page_breaks_the_thesis_on_a_shock(tmp_path):
+    uni = Universe([Listing("SG", "Sweetgreen", market_cap=1.1e9, price=9.6)])
+    st = Storage(tmp_path / "p.db")
+    desk = TrendDesk(CFG, None, uni, st, brands=[Brand("Sweetgreen", "SG", "core", terms=["sweetgreen"])])
+    desk.attach_camillo(None, None, NarrativeWatch(load_narratives(), CFG))
+
+    async def move(*a, **k):
+        return 2.0, 9.6
+
+    desk.stock_move = move  # type: ignore[method-assign]
+    desk.add(Evidence("alt_data", "SG", "Sweetgreen", "core", "up", NOW - 86400, NOW - 86400, "visits +9%"))
+    desk.add(Evidence("demand", "SG", "Sweetgreen", "core", "up", NOW - 86400, NOW - 86400, "wraps sold out"))
+    await desk.evaluate("SG", NOW)
+    add_headlines(st, [("Cyclospora outbreak hits salad chains; Sweetgreen slides", "cnbc", NOW - 3600),
+                       ("Sweetgreen wraps sold out again", "old", NOW - 5 * 86400)])  # fmt: skip
+    p = page(desk)
+    (idea,) = p["ideas"]
+    checks = {c["id"]: c for c in idea["checklist"]}
+    assert not checks["thesis"]["pass"] and "Cyclospora" in checks["thesis"]["detail"]
+    assert idea["conviction"]["level"] == "low"
+    assert idea["other_side"][0]["source"] == "cnbc"
+    assert {r["id"] for r in p["narratives"]} >= {"open_models", "ai_efficiency"}
+    assert p["status"]["narratives"] == {
+        "enabled": True,
+        "tracked": 5,
+        "last_scan": p["status"]["narratives"]["last_scan"],
+    }
+    desk.save()
+
+
+async def test_engine_publishes_the_attention_trade(cfg, tmp_path):
+    from news247.engine import Engine
+
+    cfg.market.enabled = False
+    st = Storage(tmp_path / "e.db")
+    eng = Engine(cfg, storage=st, sources=[])
+    assert eng.trends.narratives is not None and eng.trends.chatter.narratives
+    now = datetime.now(ET).replace(hour=15, minute=0, second=0, microsecond=0).timestamp()
+    seed_news(st, now, ["Kimi K3 rattles chip stocks"])
+    sent = []
+
+    async def publish(alert):
+        sent.append(alert)
+
+    eng.publish = publish  # type: ignore[method-assign]
+    (alert,) = await eng.check_narratives(now)
+    assert alert.kind == "narrative" and alert.severity.name == "MEDIUM" and "NVDA" in alert.tickers
+    assert alert.edge["narrative"]["id"] == "open_models" and sent == [alert]
+    assert await eng.check_narratives(now + 60) == []
+    b = eng.brief(now)
+    assert any(n["id"] == "open_models" and n["level"] == "accelerating" for n in b["narratives"])
+
+
+def test_narratives_can_be_turned_off(tmp_path):
+    from news247.config import ConfigError, build_config
+    from news247.engine import Engine
+
+    cfg = build_config({"general": {"data_dir": str(tmp_path)}, "market": {"enabled": False},
+                        "trends": {"narratives": False}})  # fmt: skip
+    eng = Engine(cfg, storage=Storage(":memory:"), sources=[])
+    assert eng.trends.narratives is None and eng.trends.chatter.narratives == []
+    assert eng.camillo_page()["narratives"] == []
+    with pytest.raises(ConfigError):
+        build_config({"trends": {"narrative_ratio": 1.0}})

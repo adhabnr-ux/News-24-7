@@ -14,6 +14,15 @@ that make it Camillo's method rather than a generic trend screen:
 * **The checklist.** Each idea is shown against the method's tests, pass or fail, with the
   numbers behind each (``checklist``). The playbook text (principles, rules in his words,
   case studies with sources) lives in ``data/camillo.yaml``.
+* **The attention trade.** "Where people have their attention, even if the information is not
+  truthful" (Iced Coffee Hour, Aug 2026): he measures how fast a market narrative is
+  accelerating, because a fast one in a levered market precedes a sharp move. ``Narrative`` /
+  ``attention_trade`` / ``NarrativeWatch`` measure each narrative in ``data/camillo.yaml`` over the
+  headlines this system reads and over Bluesky, and alert when one accelerates.
+* **The thesis can break.** He exits "in an instant" when something goes against the thesis
+  (Sweetgreen: a lettuce outbreak made his menu thesis irrelevant). ``thesis_check`` looks for
+  that kind of shock in the brand's headlines since the evidence began; ``other_side`` shows the
+  headlines arguing against each idea, because he studies the other side more than his own.
 """
 
 from __future__ import annotations
@@ -24,6 +33,7 @@ import logging
 import re
 import statistics
 import time
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
@@ -135,6 +145,288 @@ class EarningsBook:
         return {**v, "in_days": days}
 
 
+# --------------------------------------------------------------------------- the attention trade
+#
+# "I'm really paying attention more so than ever to the attention trade, meaning like where people
+# have their attention, even if the information is not truthful." He wants to "measure the
+# acceleration of that narrative because if it starts to accelerate quickly then that is a
+# signal, especially if we get into a levered state again, that we could see a massive
+# correction." His miss: "I knew Kimi was coming… but I did not place enough emphasis on the
+# acceleration of the Kimi narrative as it was happening." (Iced Coffee Hour, Aug 2026.)
+#
+# A narrative here is a set of words (``data/camillo.yaml`` -> ``narratives``). Its pulse is its
+# share of everything read each day (headlines this system stored; Bluesky posts sampled), the
+# last 3 days against the median of the 14 before, the same shape as the chatter test.
+
+
+def _terms_re(terms: list[str]) -> re.Pattern[str] | None:
+    """Whole-word alternation; a trailing ``*`` is a stem ("deleverag*")."""
+    alts = []
+    for t in sorted({str(t).strip().lower() for t in terms if str(t).strip()}, key=len, reverse=True):
+        stem = t.endswith("*")
+        body = re.escape(t.rstrip("*")).replace(r"\ ", r"[\s-]+")
+        alts.append(body + (r"\w*" if stem else ""))
+    if not alts:
+        return None
+    return re.compile(rf"(?<![\w])(?:{'|'.join(alts)})(?![\w])", re.I)
+
+
+@dataclass
+class Narrative:
+    """A market narrative: a headline or post belongs to it when it says one of ``any`` and,
+    when ``with_`` is set, also one of ``with_``."""
+
+    id: str
+    name: str
+    side: str = "fear"  # fear | hope: which way it pushes the names in ``hits``
+    sector: str = ""
+    any: list[str] = field(default_factory=list)
+    with_: list[str] = field(default_factory=list)
+    hits: list[str] = field(default_factory=list)  # the listed names it moves most (this desk's list)
+    note: str = ""
+
+    def __post_init__(self) -> None:
+        self._any = _terms_re(self.any)
+        self._with = _terms_re(self.with_)
+
+    def matches(self, text: str) -> bool:
+        if not text or self._any is None or not self._any.search(text):
+            return False
+        return self._with is None or bool(self._with.search(text))
+
+    def like_terms(self) -> list[str]:
+        """SQL LIKE fragments that every match must contain one of (a cheap prefilter)."""
+        return [str(t).strip().rstrip("*") for t in self.any if len(str(t).strip().rstrip("*")) >= 2]
+
+
+def load_narratives(playbook: dict[str, Any] | None = None) -> list[Narrative]:
+    out = []
+    for n in load_playbook(playbook).get("narratives") or []:
+        out.append(
+            Narrative(
+                id=str(n["id"]),
+                name=str(n["name"]),
+                side=str(n.get("side") or "fear"),
+                sector=str(n.get("sector") or ""),
+                any=list(n.get("any") or []),
+                with_=list(n.get("with") or []),
+                hits=[str(t).upper() for t in n.get("hits") or []],
+                note=str(n.get("note") or ""),
+            )
+        )
+    return out
+
+
+def narrative_pulse(
+    series: list[tuple[str, int, int]],
+    ratio: float = 2.0,
+    min_count: int = 8,
+    min_total: int = 20,
+    per: float = 1000.0,
+) -> dict[str, Any]:
+    """``series``: (day, matching, everything read) oldest first. Returns the narrative's level:
+
+    * ``accelerating``: the last 3 days' share is ``ratio``x the median of the 14 days before (at
+      least 5 of them read), with ``min_count`` matches, and the latest day is not below the
+      first of the three (still rising, not fading);
+    * ``elevated``: at least 1.5x with half the matches, or at ``ratio``x but fading;
+    * ``quiet`` otherwise, or ``learning`` until there is enough history.
+    """
+    days = [(d, n, t) for d, n, t in series if t >= min_total]
+    recent, base = days[-3:], days[-17:-3]
+    out: dict[str, Any] = {
+        "level": "learning",
+        "ratio": None,
+        "count": sum(n for _, n, _ in recent),
+        "share": None,
+        "baseline": None,
+        "days": [(d, n) for d, n, _ in days[-7:]],
+    }
+    if len(recent) < 3 or len(base) < 5:
+        return out
+    shares = [n / t * per for _, n, t in recent]
+    med = statistics.median(n / t * per for _, n, t in base)
+    floor = max(med, 0.5 * per / statistics.median(t for _, _, t in base))  # half a match a day
+    share = sum(n for _, n, _ in recent) / sum(t for _, _, t in recent) * per
+    r = share / floor
+    rising = shares[-1] >= shares[0]
+    count = out["count"]
+    if r >= ratio and count >= min_count and rising:
+        level = "accelerating"
+    elif (r >= 1.5 and count >= max(2, min_count // 2)) or (r >= ratio and count >= min_count):
+        level = "elevated"
+    else:
+        level = "quiet"
+    out.update(
+        level=level,
+        ratio=round(r, 1),
+        share=round(share, 2),
+        baseline=round(med, 2),
+        rising=rising,
+    )
+    return out
+
+
+def narrative_series(
+    storage: Any, narratives: list[Narrative], now: float, days: int = 17
+) -> tuple[dict[str, list[tuple[str, int, int]]], dict[str, list[dict[str, Any]]], dict[str, int]]:
+    """Per narrative: (day, headlines matching, headlines read) for the last ``days`` days (ET),
+    the latest matching headlines, and how many distinct sources told it in the last 3 days."""
+    since = now - days * 86400
+    totals: dict[str, int] = {}
+    for (det,) in storage.db.execute("SELECT detected FROM items WHERE detected >= ?", (since,)):
+        d = datetime.fromtimestamp(det, ET).date().isoformat()
+        totals[d] = totals.get(d, 0) + 1
+    order = sorted(totals)
+    recent_days = set(order[-3:])
+    series: dict[str, list[tuple[str, int, int]]] = {}
+    examples: dict[str, list[dict[str, Any]]] = {}
+    sources: dict[str, int] = {}
+    for n in narratives:
+        terms = n.like_terms()
+        counts: dict[str, int] = {}
+        srcs: set[str] = set()
+        ex: list[dict[str, Any]] = []
+        if terms:
+            where = " OR ".join("title LIKE ?" for _ in terms)
+            rows = storage.db.execute(
+                f"SELECT title, source, url, detected FROM items WHERE detected >= ? AND ({where}) "  # noqa: S608
+                "ORDER BY detected DESC",
+                (since, *[f"%{t}%" for t in terms]),
+            ).fetchall()
+            for title, source, url, det in rows:
+                if not n.matches(title or ""):
+                    continue
+                d = datetime.fromtimestamp(det, ET).date().isoformat()
+                counts[d] = counts.get(d, 0) + 1
+                if d in recent_days:
+                    srcs.add(source)
+                if len(ex) < 3:
+                    ex.append({"title": title, "source": source, "url": url or "", "detected": det})
+        series[n.id] = [(d, counts.get(d, 0), totals[d]) for d in order]
+        examples[n.id] = ex
+        sources[n.id] = len(srcs)
+    return series, examples, sources
+
+
+_LEVEL = {"accelerating": 3, "elevated": 2, "quiet": 1, "learning": 0}
+
+
+def attention_trade(
+    storage: Any,
+    narratives: list[Narrative],
+    chatter: Any = None,
+    now: float | None = None,
+    ratio: float = 2.0,
+    min_count: int = 8,
+) -> list[dict[str, Any]]:
+    """Every narrative's pulse in the news (headlines read) and on Bluesky (posts sampled),
+    the fastest first."""
+    now = now or time.time()
+    if storage is None or not narratives:
+        return []
+    series, examples, sources = narrative_series(storage, narratives, now)
+    today = datetime.fromtimestamp(now, ET).date().isoformat()
+    rows = []
+    for n in narratives:
+        news = narrative_pulse(series[n.id], ratio, min_count)
+        social = None
+        if chatter is not None and getattr(chatter, "narratives", None):
+            social = narrative_pulse(chatter.nseries(n.id, today), ratio, min_count, min_total=5000, per=1e5)
+        best = max([news, social] if social else [news], key=lambda p: _LEVEL[p["level"]])
+        rows.append(
+            {
+                "id": n.id,
+                "name": n.name,
+                "side": n.side,
+                "sector": n.sector,
+                "note": n.note,
+                "hits": n.hits,
+                "level": best["level"],
+                "news": news,
+                "social": social,
+                "sources_3d": sources[n.id],
+                "examples": examples[n.id],
+            }
+        )
+    rows.sort(key=lambda r: (-_LEVEL[r["level"]], -(r["news"]["ratio"] or 0)))
+    return rows
+
+
+class NarrativeWatch:
+    """Alerts once per wave when a narrative starts accelerating. Several fear narratives in the
+    same sector accelerating together is his FUD cycle forming: that one is HIGH."""
+
+    def __init__(self, narratives: list[Narrative], cfg: Any = None) -> None:
+        self.narratives = narratives
+        self.ratio = getattr(cfg, "narrative_ratio", 2.0)
+        self.min_count = getattr(cfg, "narrative_min", 8)
+        self.cooldown = getattr(cfg, "narrative_cooldown_days", 3.0) * 86400
+        self.alerted: dict[str, float] = {}
+        self.rows: list[dict[str, Any]] = []
+        self.at = 0.0
+
+    def load(self, data: dict[str, Any]) -> None:
+        self.alerted = {k: float(v) for k, v in (data.get("alerted") or {}).items()}
+
+    def dump(self) -> dict[str, Any]:
+        return {"alerted": self.alerted}
+
+    def scan(
+        self, storage: Any, chatter: Any = None, now: float | None = None, max_age: float = 600
+    ) -> list[dict[str, Any]]:
+        now = now or time.time()
+        if not self.rows or now - self.at >= max_age:
+            self.rows = attention_trade(storage, self.narratives, chatter, now, self.ratio, self.min_count)
+            self.at = now
+        return self.rows
+
+    def check(self, storage: Any, chatter: Any = None, now: float | None = None) -> list[dict[str, Any]]:
+        """The narratives that just started accelerating (not alerted inside the cooldown),
+        each with its severity and the others accelerating with it."""
+        now = now or time.time()
+        rows = self.scan(storage, chatter, now, max_age=0)
+        hot = [r for r in rows if r["level"] == "accelerating"]
+        out = []
+        for r in hot:
+            if now - self.alerted.get(r["id"], 0.0) < self.cooldown:
+                continue
+            together = [
+                x for x in hot if x["id"] != r["id"] and x["side"] == r["side"] and x["sector"] == r["sector"]
+            ]
+            severity = "HIGH" if r["side"] == "fear" and together else "MEDIUM"
+            self.alerted[r["id"]] = now
+            out.append({**r, "severity": severity, "together": [x["name"] for x in together]})
+        return out
+
+
+def narrative_alert_text(row: dict[str, Any]) -> tuple[str, str]:
+    news, social = row["news"], row.get("social")
+    arrow = "▼" if row["side"] == "fear" else "▲"
+    title = f"{arrow} Narrative accelerating: {row['name']}"
+    lines = [
+        f"In the news: {news['count']} headlines from {row['sources_3d']} sources in 3 days, "
+        f"{news['ratio']}x its share of the 14 days before."
+    ]
+    if social and social.get("ratio") is not None and social["level"] in ("accelerating", "elevated"):
+        lines.append(f"On Bluesky: {social['count']} posts in 3 days, {social['ratio']}x normal.")
+    if row.get("together"):
+        lines.append("Accelerating with it: " + "; ".join(row["together"]) + ". A fear cycle is forming.")
+    if row.get("hits"):
+        lines.append(
+            ("Names it hits: " if row["side"] == "fear" else "Names it helps: ") + ", ".join(row["hits"])
+        )
+    if row.get("note"):
+        lines.append(row["note"])
+    for ex in row.get("examples", [])[:2]:
+        lines.append(f"• {ex['title']} ({ex['source']})")
+    lines.append(
+        "Camillo's rule: measure how fast the narrative is accelerating; a fast one in a levered market "
+        "can drive a sharp move whether or not it is true. Get ahead of it, don't argue with it."
+    )
+    return title, "\n".join(lines)
+
+
 # --------------------------------------------------------------------------- TickerTags chatter
 
 
@@ -175,9 +467,15 @@ class ChatterTags:
     """Brand terms counted across Bluesky's public posts (sampled), per day."""
 
     def __init__(
-        self, brands: list[Any], sample_s: float = 600.0, hosts: tuple[str, ...] = JETSTREAM_HOSTS
+        self,
+        brands: list[Any],
+        sample_s: float = 600.0,
+        hosts: tuple[str, ...] = JETSTREAM_HOSTS,
+        narratives: list[Narrative] | None = None,
     ) -> None:
         self.brands = {b.brand: b for b in brands}
+        self.narratives = list(narratives or [])
+        self.ncounts: dict[str, dict[str, int]] = {}  # day -> narrative id -> posts
         terms: dict[str, str] = {}
         for b in brands:
             for t in b.terms:
@@ -198,6 +496,12 @@ class ChatterTags:
     def count(self, text: str, day: str) -> list[str]:
         """One post: returns the brands it mentions (each counted once per post)."""
         self.posts[day] = self.posts.get(day, 0) + 1
+        if text and self.narratives:
+            nb = None
+            for n in self.narratives:
+                if n.matches(text):
+                    nb = nb if nb is not None else self.ncounts.setdefault(day, {})
+                    nb[n.id] = nb.get(n.id, 0) + 1
         if self.term_re is None or not text:
             return []
         hit = {self.term_brand[m.group(1).lower()] for m in self.term_re.finditer(text)}
@@ -215,11 +519,19 @@ class ChatterTags:
             days = [d for d in days if d <= today]
         return [(d, self.counts.get(d, {}).get(brand, 0), self.posts[d]) for d in days]
 
+    def nseries(self, narrative_id: str, today: str | None = None) -> list[tuple[str, int, int]]:
+        """(day, posts matching the narrative, posts sampled), oldest first."""
+        days = sorted(self.posts)
+        if today:
+            days = [d for d in days if d <= today]
+        return [(d, self.ncounts.get(d, {}).get(narrative_id, 0), self.posts[d]) for d in days]
+
     def prune(self, keep_days: int = 30) -> None:
         cutoff = (datetime.now(ET).date() - timedelta(days=keep_days)).isoformat()
         for d in [d for d in self.posts if d < cutoff]:
             self.posts.pop(d, None)
             self.counts.pop(d, None)
+            self.ncounts.pop(d, None)
 
     def heating_up(self, limit: int = 8, min_posts: int = 5000) -> list[dict[str, Any]]:
         """Brands by their last-3-day share of the conversation vs the 14 days before."""
@@ -250,10 +562,16 @@ class ChatterTags:
     def load(self, data: dict[str, Any]) -> None:
         self.counts = {d: dict(v) for d, v in (data.get("counts") or {}).items()}
         self.posts = {d: int(v) for d, v in (data.get("posts") or {}).items()}
+        self.ncounts = {d: dict(v) for d, v in (data.get("ncounts") or {}).items()}
         self.last_sample = float(data.get("last_sample") or 0.0)
 
     def dump(self) -> dict[str, Any]:
-        return {"counts": self.counts, "posts": self.posts, "last_sample": self.last_sample}
+        return {
+            "counts": self.counts,
+            "posts": self.posts,
+            "ncounts": self.ncounts,
+            "last_sample": self.last_sample,
+        }
 
     # ------------------------------------------------------------------ the firehose
 
@@ -328,7 +646,8 @@ _HYPE = re.compile(
 _GLOOM = re.compile(
     r"\b(?:plung\w*|tumbl\w*|slump\w*|sink\w*|sank|crash\w*|fall(?:s|ing|en)?|fell|drop(?:s|ped)?|declin\w*|"
     r"slow(?:s|ed|ing|down)?|weak\w*|miss(?:es|ed)?|downgrade\w*|cut(?:s|ting)?|struggl\w*|loser|lose[s]?|"
-    r"losing|lost|boycott\w*|backlash|closures?|bankrupt\w*|fad(?:e|es|ed|ing)?|lawsuit|recall\w*|warn\w*)\b",
+    r"losing|lost|boycott\w*|backlash|closures?|bankrupt\w*|fad(?:e|es|ed|ing)?|lawsuit|recall\w*|warn\w*|"
+    r"slid(?:e|es|ing)?|outbreak)\b",
     re.I,
 )
 
@@ -364,18 +683,91 @@ def consensus_score(headlines: list[tuple[str, str]], direction: str | None = "u
     }
 
 
-def coverage(storage: Any, terms: list[str], since: float, limit: int = 400) -> list[tuple[str, str]]:
-    """(title, source) of the stored headlines naming any of ``terms`` since ``since``."""
+def coverage_items(storage: Any, terms: list[str], since: float, limit: int = 400) -> list[dict[str, Any]]:
+    """The stored headlines naming any of ``terms`` since ``since``, newest first:
+    {"title", "source", "url", "detected"}."""
     terms = [t for t in dict.fromkeys(t.strip() for t in terms) if len(t) >= 3]
     if not terms or storage is None:
         return []
     where = " OR ".join("title LIKE ?" for _ in terms)
     rows = storage.db.execute(
-        f"SELECT title, source FROM items WHERE detected >= ? AND ({where}) ORDER BY detected DESC LIMIT ?",  # noqa: S608
+        f"SELECT title, source, url, detected FROM items WHERE detected >= ? AND ({where}) "  # noqa: S608
+        "ORDER BY detected DESC LIMIT ?",
         (since, *[f"%{t}%" for t in terms], limit),
     ).fetchall()
     rx = re.compile("|".join(rf"(?<![\w]){re.escape(t)}(?![\w])" for t in terms), re.I)
-    return [(r[0], r[1]) for r in rows if rx.search(r[0] or "")]
+    return [
+        {"title": r[0], "source": r[1], "url": r[2] or "", "detected": r[3]}
+        for r in rows
+        if rx.search(r[0] or "")
+    ]
+
+
+def coverage(storage: Any, terms: list[str], since: float, limit: int = 400) -> list[tuple[str, str]]:
+    """(title, source) of the stored headlines naming any of ``terms`` since ``since``."""
+    return [(i["title"], i["source"]) for i in coverage_items(storage, terms, since, limit)]
+
+
+# --------------------------------------------------------------------------- the other side
+#
+# "I will always spend more time trying to understand the other side of my trades than I do my
+# own thesis." And: "if I see something that goes against my thesis, I will immediately exit my
+# trade." (Camillo, Iced Coffee Hour, Aug 2026.) His Sweetgreen example: he was trading a new
+# wrap; a cyclospora outbreak in lettuce then became "the only Sweetgreen trade", and his thesis
+# "became irrelevant". A shock like that is what ``thesis_check`` looks for.
+
+_SHOCK = re.compile(
+    r"\b(?:outbreak|e\.?\s?coli|salmonella|listeria|cyclospora|norovirus|food[- ]?borne|food poisoning|"
+    r"recall(?:s|ed|ing)?|lawsuits?|sued|class[- ]action|investigation|probe[sd]?|subpoena\w*|boycott\w*|"
+    r"data breach|hacked|bankrupt\w*|chapter 11|cease[- ]and[- ]desist|bans?|banned|banning|force majeure|"
+    r"(?:ceo|chief executive|founder)\s+(?:resign\w*|steps?\s+down|stepping\s+down|depart\w*|exit\w*|ousted|fired|out)|"
+    r"cuts?\s+(?:its\s+|full[- ]year\s+|annual\s+)?(?:guidance|outlook|forecast)|"
+    r"(?:lowers|slashes|withdraws|pulls)\s+(?:its\s+)?(?:guidance|outlook|forecast)|"
+    r"short[- ]seller|short report)\b",
+    re.I,
+)
+
+
+def thesis_check(items: list[dict[str, Any]], direction: str | None) -> dict[str, Any]:
+    """Has something new broken the thesis? ``items``: the brand's headlines since the evidence
+    began. A shock (an outbreak, a recall, a lawsuit, a CEO exit, a guidance cut) breaks a long
+    idea; for a short idea it is the thesis playing out, not breaking."""
+    shocks = [i for i in items if _SHOCK.search(i.get("title") or "")]
+    if not shocks:
+        return {
+            "pass": True,
+            "shocks": [],
+            "detail": "no outbreak, recall, lawsuit, exit or guidance cut in the headlines since",
+        }
+    first = shocks[0]
+    if direction == "down":
+        return {
+            "pass": True,
+            "shocks": shocks[:3],
+            "detail": f"{len(shocks)} shock headline{'s' if len(shocks) > 1 else ''} since, which a short idea expects: "
+            f"\u201c{first['title']}\u201d ({first['source']})",
+        }
+    return {
+        "pass": False,
+        "shocks": shocks[:3],
+        "detail": f"\u201c{first['title']}\u201d ({first['source']}): check whether it makes the thesis "
+        "irrelevant, and exit if it does",
+    }
+
+
+def other_side(items: list[dict[str, Any]], direction: str | None, k: int = 3) -> list[dict[str, Any]]:
+    """The headlines arguing against the idea (gloom for a long, hype for a short), one per
+    source, newest first: read these before trusting it."""
+    want, other = (_HYPE, _GLOOM) if direction == "down" else (_GLOOM, _HYPE)
+    out, seen = [], set()
+    for i in items:
+        t = i.get("title") or ""
+        if want.search(t) and not other.search(t) and i.get("source") not in seen:
+            seen.add(i.get("source"))
+            out.append({k2: i.get(k2) for k2 in ("title", "source", "url", "detected")})
+            if len(out) >= k:
+                break
+    return out
 
 
 # --------------------------------------------------------------------------- the checklist
@@ -386,6 +778,7 @@ def checklist(
     cfg: Any,
     earnings: dict[str, Any] | None,
     consensus: dict[str, Any] | None = None,
+    thesis: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """The method's tests for one idea, each pass/fail with the numbers behind it."""
     kinds = sig.get("kinds") or []
@@ -471,34 +864,70 @@ def checklist(
                 else "next report date unknown"
             ),
         },
+        {
+            "id": "thesis",
+            "rule": "Nothing new has broken the thesis",
+            "pass": thesis is None or bool(thesis["pass"]),
+            "detail": thesis["detail"] if thesis is not None else "no headlines read",
+        },
     ]
     return rows
 
 
+def conviction(checks: list[dict[str, Any]], severity: str) -> dict[str, Any]:
+    """His sizing rule, shown as a label (the desk never sizes or places a trade). High
+    conviction comes "a few times a year" after 50-100 hours of research; anything less he now
+    trades at "two to 3% of what I would normally trade" (Iced Coffee Hour, Aug 2026)."""
+    passed = sum(c["pass"] for c in checks)
+    if severity == "HIGH" and passed == len(checks):
+        return {
+            "level": "high",
+            "rule": "Every test passes. His high-conviction trades came a few times a year, after 50-100 hours "
+            "of his own research and more time on the bear case than the bull case. The desk's evidence is "
+            "where that research starts, not a substitute for it.",
+        }
+    return {
+        "level": "low",
+        "rule": f"{passed} of {len(checks)} tests pass: low conviction. His rule for these: trade 2-3% of a "
+        "high-conviction size, or not at all.",
+    }
+
+
 def exit_plan(sig: dict[str, Any], earnings: dict[str, Any] | None) -> str:
-    """Camillo exits at information parity, win or lose, with no price target."""
+    """Camillo exits at information parity, win or lose, with no price target; at once when the
+    thesis breaks; and by halves when unsure ("buy half, sell half")."""
     when = f"the {earnings['date']} report" if earnings else "the next report"
     side = {"up": "long", "down": "short"}.get(sig.get("direction") or "", "")
     return (
         f"{('A ' + side + ' idea. ') if side else ''}Out at information parity, win or lose, with no price "
         f"target: when the consensus score passes 2 (the press and analysts are telling the story), when "
-        f"{when} shows it, or when the evidence stops."
+        f"{when} shows it, or when the evidence stops. Out at once if something breaks the thesis. "
+        f"Unsure? Sell half."
     )
 
 
-def page(desk: Any, playbook: dict[str, Any] | None = None, days: float = 45) -> dict[str, Any]:
+def page(
+    desk: Any, playbook: dict[str, Any] | None = None, days: float = 45, now: float | None = None
+) -> dict[str, Any]:
     """Everything the Camillo page shows."""
+    now = now or time.time()
     earnings = getattr(desk, "earnings", None)
     chatter = getattr(desk, "chatter", None)
+    watch = getattr(desk, "narratives", None)
     ideas = []
-    since = time.time() - 30 * 86400
-    for r in desk.board(days):
+    since = now - 30 * 86400
+    for r in desk.board(days, now):
         e = earnings.lookup(r["ticker"]) if earnings is not None else None
         terms = [t for b in desk.by_ticker.get(r["ticker"], []) for t in [b.brand, *b.terms]] or list(
             r["brands"]
         )
-        cons = consensus_score(coverage(desk.storage, terms, since), r.get("direction"))
-        checks = checklist(r, desk.cfg, e, cons)
+        items = coverage_items(desk.storage, terms, since)
+        cons = consensus_score([(i["title"], i["source"]) for i in items], r.get("direction"))
+        began = min(
+            [float(x["started"]) for x in r.get("evidence") or [] if x.get("started")] or [r["created"]]
+        )
+        thesis = thesis_check([i for i in items if i["detected"] >= began], r.get("direction"))
+        checks = checklist(r, desk.cfg, e, cons, thesis)
         ideas.append(
             {
                 **r,
@@ -506,6 +935,8 @@ def page(desk: Any, playbook: dict[str, Any] | None = None, days: float = 45) ->
                 "consensus": cons,
                 "checklist": checks,
                 "passed": sum(c["pass"] for c in checks),
+                "conviction": conviction(checks, r["severity"]),
+                "other_side": other_side(items, r.get("direction")),
                 "exit": exit_plan(r, e),
             }
         )
@@ -515,6 +946,7 @@ def page(desk: Any, playbook: dict[str, Any] | None = None, days: float = 45) ->
     return {
         "playbook": load_playbook(playbook),
         "ideas": ideas,
+        "narratives": watch.scan(desk.storage, chatter, now) if watch is not None else [],
         "attention": desk.heating_up(8),
         "chatter": chatter.heating_up(8) if chatter is not None else [],
         "scorecard": desk.scorecard(),
@@ -531,6 +963,11 @@ def page(desk: Any, playbook: dict[str, Any] | None = None, days: float = 45) ->
                 "enabled": earnings is not None,
                 "companies": len(earnings.next) if earnings is not None else 0,
                 "last_day": earnings.last_day if earnings is not None else None,
+            },
+            "narratives": {
+                "enabled": watch is not None,
+                "tracked": len(watch.narratives) if watch is not None else 0,
+                "last_scan": watch.at or None if watch is not None else None,
             },
         },
     }

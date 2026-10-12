@@ -291,8 +291,29 @@ function ideaCard(r) {
     <div class="sub">${esc(move)}</div>
     <div class="ev">${ev}</div>
     ${checks}
+    ${r.conviction ? `<div class="sub" style="margin-top:8px"><b style="font-weight:600">${r.conviction.level === "high" ? "High conviction" : "Low conviction"}.</b> ${esc(r.conviction.rule)}</div>` : ""}
+    ${(r.other_side || []).length ? `<div class="sub" style="margin-top:8px"><b style="font-weight:600">The other side</b>${r.other_side.map((o) => `<div>• ${o.url ? `<a href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.title)}</a>` : esc(o.title)} <span class="faint">${esc(o.source || "")}</span></div>`).join("")}</div>` : ""}
     <div class="plan">${esc(r.exit || "")}</div>
   </article>`;
+}
+const LEVEL = { accelerating: "Accelerating", elevated: "Elevated", quiet: "Quiet", learning: "Learning" };
+function narrRows(rows) {
+  if (!(rows || []).length) return `<div class="li"><span class="muted">No narratives tracked.</span></div>`;
+  return rows.map((r) => {
+    const n = r.news || {}, so = r.social;
+    const hot = r.level === "accelerating", cls2 = r.side === "fear" ? "neg" : "pos";
+    const bits = [!n.count ? "no matching headlines in 3 days" : n.ratio != null ? `news ${n.ratio}× normal · ${n.count} headlines, ${r.sources_3d} sources in 3 days` : `news: ${n.count} headlines in 3 days (baseline still building)`];
+    if (so && so.ratio != null) bits.push(`Bluesky ${so.ratio}× · ${so.count} posts`);
+    const ex = (r.examples || [])[0];
+    return `<div class="li"><div class="grow"><div style="font-weight:600"><span class="${cls2}">${r.side === "fear" ? "▼" : "▲"}</span> ${esc(r.name)}${(r.hits || []).length ? ` <span class="faint">${esc(r.hits.join(" "))}</span>` : ""}</div>
+      <div class="sub">${esc(bits.join(" · "))}</div>${ex ? `<div class="sub">“${ex.url ? `<a href="${esc(ex.url)}" target="_blank" rel="noopener">${esc(ex.title)}</a>` : esc(ex.title)}”</div>` : ""}</div>
+      <span class="num ${hot ? cls2 : "faint"}" style="font-size:13px">${esc(LEVEL[r.level] || r.level)}</span></div>`;
+  }).join("");
+}
+function viewsHTML(v) {
+  if (!v || !(v.items || []).length) return "";
+  return v.items.map((x) => `<div class="step"><h4>${esc(x.thesis)}${x.ticker ? ` <span class="faint">${esc(x.ticker)}</span>` : ""}</h4>${x.quote ? `<div class="quote">“${esc(x.quote)}”</div>` : ""}<p>${esc(x.detail || "")}</p>${x.since ? `<p class="sub">Since the interview (Aug 7 → Oct 9 close): ${esc(x.since)}</p>` : ""}</div>`).join("")
+    + (v.source ? `<div class="src" style="margin-top:6px">${SRC([v.source])}</div>` : "");
 }
 function heatRows(c) {
   const rows = [
@@ -331,6 +352,8 @@ async function loadCamillo() {
   $("cIdeas").innerHTML = (c.ideas || []).length ? c.ideas.map(ideaCard).join("")
     : emptyHTML("No live ideas. One appears when a brand's evidence passes the trend lane's tests.");
   $("cHeat").innerHTML = heatRows(c);
+  $("cNarr").innerHTML = narrRows(c.narratives);
+  $("cViews").innerHTML = viewsHTML(p.views) || `<div class="step"><p class="muted">No dated views loaded.</p></div>`;
   $("cMethod").innerHTML = methodHTML(p);
   $("cCases").innerHTML = (p.cases || []).map(caseCard).join("") || emptyHTML("No case studies loaded.");
   const by = (c.scorecard || {}).by || {};
@@ -343,6 +366,7 @@ async function loadCamillo() {
     ["App Store chart (6-hourly)", st.last_app_snapshot ? `${st.apps_tracked} apps tracked, last ${ago(st.last_app_snapshot)} ago` : "not read yet"],
     ["Bluesky chatter (hourly sample)", ch.enabled ? (ch.last_sample ? `${ch.days} days, ${Number(ch.posts_today || 0).toLocaleString()} posts today` : "first sample pending") : "off"],
     ["Next report dates", ea.enabled ? (ea.last_day ? `${ea.companies} companies, read ${ea.last_day}` : "first read pending") : "off"],
+    ["Narratives (every headline read)", (st.narratives || {}).enabled ? `${st.narratives.tracked} tracked${st.narratives.last_scan ? `, measured ${ago(st.narratives.last_scan)} ago` : ""}` : "off"],
   ].map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("");
   Fx.observe(document.querySelector('.view[data-view="camillo"]'));
 }

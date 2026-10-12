@@ -258,6 +258,11 @@ class TrendsConfig:
     chatter_ratio: float = 3.0  # last 3 days' share of posts at 3x the 14 days before...
     chatter_min_mentions: int = 30  # ...with at least this many mentions in those 3 days
     earnings: bool = True  # next report dates (Nasdaq's calendar): the catalyst on each idea
+    # the attention trade: how fast each market narrative (camillo.yaml `narratives`) is spreading
+    narratives: bool = True
+    narrative_ratio: float = 2.0  # last 3 days' share of headlines at 2x the 14 days before...
+    narrative_min: int = 8  # ...with at least this many headlines in those 3 days
+    narrative_cooldown_days: float = 3.0  # one alert per narrative per wave
 
 
 @dataclass
@@ -567,6 +572,10 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         raise ConfigError("[trends] need app_hold_snapshots >= 1 and 1 <= app_top < app_from <= 200")
     if trends.window_days <= 0 or trends.priced_in_pct <= 0 or trends.cooldown_days < 0:
         raise ConfigError("[trends] window_days and priced_in_pct must be positive")
+    if trends.narrative_ratio <= 1 or trends.narrative_min < 1 or trends.narrative_cooldown_days < 0:
+        raise ConfigError(
+            "[trends] need narrative_ratio > 1, narrative_min >= 1, narrative_cooldown_days >= 0"
+        )
     if options.request_interval_s < 0.2:
         raise ConfigError("[options] request_interval_s must be at least 0.2 (be polite to free endpoints)")
     if options.spike_0dte_multiple < 1:

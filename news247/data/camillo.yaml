@@ -94,6 +94,76 @@ principles:
       - {label: "Benzinga (June 2019)", url: "https://www.benzinga.com/general/psychology/19/06/13922843/chris-camillo-talks-trading-strategies-advice-and-more-ahead-of-trading-summit"}
       - {label: "Stansberry Investor Hour ep. 192 (2021): \"I was always an options investor\"", url: "https://stansberryresearch.com/stansberry-investor-hour/episode-192-turning-20k-to-2-million-during-the-financial-crisis"}
 
+  - title: Ground truth, not noise
+    text: >-
+      First find the one thing that will drive the stock (for Amazon in 2026: is all that capex
+      turning into returns?), then leave finance to find out whether it is true. He reads the people
+      doing the work (developers and employees on Reddit, X and technology forums, often with
+      almost no followers) instead of other investors' opinions. His early Amazon trade began
+      with developers on Reddit and technology forums talking about moving their companies'
+      data to the cloud.
+    quote: If you can figure out the ground truth in anything and place a bet on it, you're going to win.
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+
+  - title: Study the other side more than your own
+    text: >-
+      Real conviction needs the bear case heard out: once you know why people disagree, you can
+      judge whether they are right. In 2026 he spent more time on why investors were short the
+      hyperscalers and Amazon than on his own thesis.
+    quote: I will always spend more time trying to understand the other side of my trades than I do my own thesis.
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+
+  - title: Never marry a stock
+    text: >-
+      When evidence goes against the thesis he exits at once, and sometimes takes the other
+      side. His Sweetgreen thesis (the new wraps) "became irrelevant" when a lettuce outbreak
+      became the only thing driving the stock.
+    quote: If I see something that goes against my thesis, I will immediately exit my trade and sometimes take the opposite side of that trade.
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+
+  - title: Everything is a probability game
+    text: >-
+      He runs every scenario he can think of, good and bad, and weighs each on research, leaving
+      room for "things that I know I don't know" and "things that I don't know that I don't
+      know". He put his Amazon earnings trade at 80/20: about 99% sure of his work, with the
+      rest for outside events (Iran, a rumor overnight, someone moving the market).
+    quote: I make an assessment on how likely each scenario is to play out based on actual research.
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+
+  - title: The attention trade
+    text: >-
+      Narratives move prices before the truth does, and in a levered market they move them
+      fast. He measures how quickly a narrative is accelerating and who is spreading it, to get
+      ahead of the next AI fear cycle. His own lesson from July 2026: he knew the Kimi model was
+      coming but under-weighted how fast that narrative was spreading.
+    quote: I'm really paying attention more so than ever to the attention trade, meaning like where people have their attention, even if the information is not truthful.
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+
+  - title: Small when unsure
+    text: >-
+      For a low- or medium-conviction idea, or just the urge to be in the game, he trades about
+      2-3% of a high-conviction size: "90 to 95% of the emotional" benefit at a sliver of the
+      risk. At an exit he can't decide on: "if you're at odds, just sell half."
+    quote: When you have a low to medium conviction trade… just do it with a much, much smaller amount of money.
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+
+  - title: Know where the leverage is
+    text: >-
+      Forced selling isn't information. In July 2026 he read Bloom Energy's fall as margin calls at
+      Leopold Aschenbrenner's fund plus leveraged Korean accounts unwinding, so he expected it to
+      revert once the liquidation ended; he had the direction right and the timing wrong.
+      Leverage he knows about is something to plan for, not fear; the danger is leverage
+      combined with influential people moving the market.
+    quote: I'm not afraid of anything that I know exists. I just have to account for it in my thesis.
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+
 process:
   - step: Detect the change
     text: Something people are doing differently, seen early in observation or conversation.
@@ -113,6 +183,14 @@ process:
     how: >-
       An idea is only pushed when two independent kinds of evidence agree on a direction; the
       direction is read from the numbers (visits up 7%, traffic down double digits).
+  - step: Hear the other side
+    text: >-
+      Spend more time on why others disagree than on your own thesis; that is where real
+      conviction comes from.
+    how: >-
+      Each idea lists the headlines arguing against it (gloom for a long, hype for a short), one
+      per source, and fails a test if an outbreak, recall, lawsuit, executive exit or guidance
+      cut has hit the brand since the evidence began.
   - step: Check it matters
     text: The change must be big enough to move the company's results.
     how: >-
@@ -129,15 +207,30 @@ process:
     text: The moment the market learns it, usually the company's next report.
     how: The next report date from Nasdaq's earnings calendar, on every idea.
   - step: Size by conviction
-    text: Few trades, only the high-conviction ones.
+    text: >-
+      Few trades, only the high-conviction ones; anything less at 2-3% of that size, or not at
+      all.
     how: >-
       HIGH ideas (two kinds agree, every filter passed) are pushed; MEDIUM ones wait in the app;
-      LOW ones stay on the board. The desk never places a trade.
-  - step: Exit at parity
-    text: Out when the market agrees, win or lose. No price target.
+      LOW ones stay on the board. Each idea is labeled high or low conviction with his size rule.
+      The desk never sizes or places a trade.
+  - step: Watch the narrative
+    text: >-
+      Know where the market's attention is and how fast it is moving, true or not; a fast
+      narrative in a levered market can swamp the ground truth for a while.
     how: >-
-      Each idea shows its exit: the consensus score passing 2, the report, or the evidence
-      stopping. Every idea is scored against the S&P 500 at 30, 60 and 90 days.
+      The attention trade: every narrative below is measured as a share of all the headlines this
+      system reads (and of Bluesky posts), the last 3 days against the 14 before. One alert when
+      a narrative starts accelerating; a pushed alert when two fear narratives in one sector
+      accelerate together.
+  - step: Exit at parity
+    text: >-
+      Out when the market agrees, win or lose; no price target. Out at once if the thesis
+      breaks. Unsure? Sell half.
+    how: >-
+      Each idea shows its exit: the consensus score passing 2, the report, the evidence stopping,
+      or a shock breaking the thesis. Every idea is scored against the S&P 500 at 30, 60 and 90
+      days.
 
 avoid:
   - text: Low-conviction trades, the ones he says he'd skip if he could do it again.
@@ -154,13 +247,56 @@ avoid:
   - text: Trading big before the strategy has proven itself.
     sources: [{label: "Benzinga (June 2019)", url: "https://www.benzinga.com/general/psychology/19/06/13922843/chris-camillo-talks-trading-strategies-advice-and-more-ahead-of-trading-summit"}]
 
+  - text: >-
+      Loyalty to a stock. "The companies don't care about you. The stocks don't care about you."
+      When the information changes, re-evaluate everything.
+    sources: [{label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}]
+  - text: >-
+      Copying someone else's trade. Without your own conviction you can't make the right
+      decisions when it goes wrong; take the idea, then do your own work and poke holes in it.
+    sources: [{label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}]
+  - text: >-
+      The trade after a big win. "My worst investments are never made after I've lost money.
+      They're always made after a great well-researched investment," chasing the next emotional
+      hit.
+    sources: [{label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}]
+  - text: >-
+      Paying for what others see that he doesn't. He passed on SpaceX at about $1.6 trillion ("I
+      only invest in companies when I see something that others don't"), having invested
+      privately at $30 billion.
+    sources: [{label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}]
+  - text: >-
+      Illiquid money when the world is changing fast. He says his 160 private investments
+      returned about 10-12% in aggregate against 60-70% a year in his public account, and he
+      stopped investing privately as AI emerged to keep his capital movable.
+    sources: [{label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}]
+
 record:
   - claim: Brokerage statements from August 2006 audited for Unknown Market Wizards; 77% average annual compounded return 2006-2020 (S&P about 7.6%).
     sources: [{label: "Benzinga (Feb 2025), citing Schwager", url: "https://www.benzinga.com/news/25/02/43903377/chris-camillo-made-42-million-trading-stocks-over-15-years-heres-his-success-strategy"}]
   - claim: $20,000 in early 2007 to just over $2 million in three years.
     sources: [{label: "Laughing at Wall Street (St. Martin's, 2011)", url: "https://us.macmillan.com/books/9781250015754/laughingatwallstreet/"}]
-  - claim: About $80 million from that start by 2026, self-reported (no audit found after 2021).
-    sources: [{label: "My First Million (2026, summary)", url: "https://finance.biggo.com/podcast/d7d0aa5d1619e25f"}]
+  - claim: >-
+      About $80 million generated in returns from that $20,000 start, before taxes, over 70-80
+      trades in 17 years; self-reported (no audit found after 2021).
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+      - {label: "My First Million (2026, summary)", url: "https://finance.biggo.com/podcast/d7d0aa5d1619e25f"}
+  - claim: >-
+      About 60-70% a year on average in his public account over 17 years, against about 10-12%
+      in aggregate on 160 private investments; self-reported.
+    sources: [{label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}]
+  - claim: >-
+      His biggest dollar winners: Amazon, Nvidia, Palantir and Robinhood, each after 50-100
+      hours of research. About 60% of his biggest trades in the last 10 years started as an idea
+      from someone in his network (a DM, a text, a comment); self-reported.
+    sources: [{label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}]
+  - claim: >-
+      Risk framing for his trading account, in his words: "ultra high risk, ultra high reward",
+      concentrated and levered on high-conviction calls, sized so that it would take about six
+      high-conviction losses in a row to wipe it out ("I've never made more than like two bad
+      calls in a row"). He keeps it separate from money he lives on.
+    sources: [{label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}]
 
 limits:
   - >-
@@ -184,6 +320,14 @@ unverified:
   - Specific option tenors and strikes (beyond "weekly" NVDA options and "leveraged" AMZN options).
   - The e.l.f. Cosmetics origin story and a Victoria's Secret short / Aerie long: secondary blogs only.
   - The exact consensus-score thresholds: one 2012 reader summary of the book.
+  - >-
+    "Citadel made two to two and a half billion dollars" on the Situational Awareness unwind
+    (his estimate in the Aug 2026 interview): no source reports a dollar figure. What is reported:
+    Citadel bought the fund's roughly $16B public book on Jul 30 2026, and its flagship fund had
+    its best month since 2022 (CNBC, Aug 5 2026).
+  - >-
+    His Aug 2026 account figures (a 40% drawdown, about $10M made in one day) are self-reported.
+    The stock moves they rest on are confirmed (see the cases).
 
 cases:
   # Only trades a source describes. "Price check" lines are this desk's own reading of the
@@ -291,3 +435,204 @@ cases:
     outcome: A weak Tim Hortons quarter made it one of his worst losses (he puts it near 40% of his liquid net worth); he says he missed warning signs at a franchisee meeting.
     sources:
       - {label: "VladTV interview (2026, segment description)", url: "https://www.vladtv.com/article/315597/"}
+
+  - name: Amazon and AWS (the early trade)
+    ticker: AMZN
+    period: Early in the cloud era (year not stated)
+    noticed: >-
+      Developers on Reddit and technology forums talking about migrating their companies' data
+      to the cloud: "This AWS is going to be a big deal."
+    trade: Bought Amazon for AWS.
+    outcome: Amazon is among his biggest dollar winners (gain for this trade not stated).
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+
+  - name: Amazon's Q2 2026 call (the $10 million day)
+    ticker: AMZN
+    period: Jul 30-31 2026
+    noticed: >-
+      After 100+ hours of research he was confident AWS would beat (he expected growth "north of
+      25", against a whisper of about 25%). The real question was the call: having watched
+      Microsoft get ahead of the capex question, he expected Andy Jassy to raise capex and say
+      most of it can be pulled back if demand fails. He called that 99% likely and the whole
+      trade 80/20, leaving room for events he couldn't foresee.
+    trade: >-
+      About $2 million of AMZN calls expiring the next day, funded by selling millions of dollars
+      of other stock in a fully levered account, the day after seven figures of 24-hour options
+      expired worthless. He says he knew it "should have been triple".
+    outcome: >-
+      About $10 million in a day, a few million more than his drawdown had cost him (self-reported).
+      AWS revenue grew about 37% to $42.2B and 2026 capex was raised to about $220B, with Jassy
+      saying Amazon still won't have enough capacity for 2026 demand.
+    price_check: "AMZN $235.50 (Jul 30 2026) to $271.58 (Jul 31), +15.3%, its biggest one-day gain since 2012 (Bloomberg)."
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+      - {label: "@ChrisCamillo on X (Jul 30 2026): \"Most gut-wrenching, highest-conviction, levered trade of my life… $AMZN\"", url: "https://x.com/ChrisCamillo/status/2082925083631272364"}
+      - {label: "CNBC (Jul 30 2026): Amazon Q2 2026 results", url: "https://www.cnbc.com/2026/07/30/amazon-amzn-q2-earnings-report-2026.html"}
+
+  - name: Bloom Energy and the forced sellers (2026)
+    ticker: BE
+    period: July 2026
+    noticed: >-
+      Back in Bloom (he bought at about $70, again above $100 and again above $300), he saw its
+      fall as forced selling: Leopold Aschenbrenner's Situational Awareness fund held the same
+      names and had to be getting margin called, while leveraged Korean accounts unwound the
+      same stocks. "I knew it was going to revert. I just didn't have the timing."
+    trade: >-
+      Added Bloom and Amazon into the fall at about 1x leverage; seven figures of options
+      expiring Wednesday Jul 29 went to zero.
+    outcome: >-
+      His account fell about 40% in a couple of weeks (self-reported), and he thinks he lost money on
+      Bloom overall. The fund was reported margin called at about 4x gross leverage and sold its
+      roughly $16B public book to Citadel on Jul 30.
+    price_check: >-
+      BE $295.05 (Jul 6 2026) to $163.75 (Jul 29), -44.5%, including -13.6% on Jul 16 when Kimi K3
+      hit AI stocks; then +26.5% to $207.12 on Jul 30, the day the fund's book was sold.
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+      - {label: "CNBC (Jul 31 2026): why Situational Awareness imploded", url: "https://www.cnbc.com/2026/07/31/why-leopold-aschenbrenner-situational-awareness-hedge-fund-imploded.html"}
+      - {label: "Bloomberg (Jul 21 2026): Korean traders unwind leveraged bets", url: "https://www.bloomberg.com/news/articles/2026-07-21/korean-stock-traders-unwind-leveraged-bets-to-lowest-since-april"}
+
+  - name: Sweetgreen's wraps, overtaken by an outbreak
+    ticker: SG
+    period: May-August 2026
+    noticed: >-
+      The wraps launched nationwide on May 6. His own check in North Texas found wraps about 15% of
+      orders and half of them picked up, but it was "still way too soon to have conviction". A
+      visit to Cava then suggested Cava suits the mass market, where Sweetgreen suits clean
+      eaters.
+    trade: A "very tiny" speculative position, research only partly done.
+    outcome: >-
+      A record cyclospora outbreak, traced to iceberg lettuce Sweetgreen says it doesn't use,
+      scared people off salads. Sweetgreen cut its outlook on Aug 6 (fear took about 600 basis
+      points off July comps), and he called his wrap thesis "completely irrelevant" until the
+      outbreak passed: "the only Sweetgreen trade right now is to what extent will this virus
+      destroy their sales more or less than the market thinks."
+    price_check: >-
+      SG $6.87 at the launch (May 6) to $10.21 (May 28), then $5.40 after the outlook cut (Aug 7).
+      As the outbreak ended it recovered to $9.63 (Oct 9 2026).
+    sources:
+      - {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+      - {label: "@ChrisCamillo on X (Jun 1 2026): wrap channel check", url: "https://x.com/ChrisCamillo/status/2061540915886367048"}
+      - {label: "CNBC (Aug 6 2026): Sweetgreen cuts outlook on cyclospora fears", url: "https://www.cnbc.com/2026/08/06/sweetgreen-cuts-full-year-outlook-as-cyclospora-fears-weigh-on-sales.html"}
+
+# His theses in the Aug 9 2026 interview. These are his views as dated, not this desk's calls; the
+# "since" lines are this desk's own price check (TradingView closes, Aug 7 2026 -> Oct 9 2026;
+# SPY +0.7% over the same span).
+views:
+  as_of: "2026-08-09"
+  source: {label: "Iced Coffee Hour, \"EMERGENCY UPLOAD\" with Chris Camillo (Aug 9 2026)", url: "https://www.youtube.com/watch?v=ahQlC54rqhk"}
+  items:
+    - thesis: The Amazon trade isn't over
+      ticker: AMZN
+      quote: Amazon trade is not over. In many ways, it's just beginning.
+      detail: >-
+        A multi-year trade on AWS and on 25 years of logistics and distribution, traded around
+        the moments the stock is likely to jump. He said he was no longer heavily levered in it.
+      since: AMZN $274.48 to $262.43, -4.4%.
+    - thesis: Still heavily in Bloom Energy
+      ticker: BE
+      quote: Mainly Bloom and Amazon. Yes.
+      detail: Still invested and levered in AI names after the July drawdown.
+      since: BE $219.34 to $280.50, +27.9%.
+    - thesis: Distribution moats win when intelligence is free
+      ticker: ""
+      quote: Those that have distribution will win.
+      detail: >-
+        The coffee-cup theory: once every company can get the best design from AI, the winner
+        is the one that already makes and ships billions of cups. He is looking for companies with
+        massive distribution, often boring ones, that will get cheaper and better to run.
+      since: ""
+    - thesis: The AI efficiency wave reaching the income statement
+      ticker: BKNG
+      quote: If we start to see that wording starting to come out more and more in earnings reports… watch out.
+      detail: >-
+        Booking.com reported AI tools cutting its customer-service costs. Its CFO has said
+        gen-AI cut service cost per reservation by about 10% while bookings rose about 10% (Feb 2026),
+        and in August that cost per booking keeps falling at a double-digit rate. The desk tracks
+        that wording as the "Companies cutting costs with AI" narrative.
+      since: BKNG $214.42 to $160.34, -25.2%.
+    - thesis: Another AI fear cycle is coming
+      ticker: ""
+      quote: What will the narratives be like that people use to try to crash the AI sector in 30 to 90 days?
+      detail: >-
+        He expected the next 30-60 days to show "the realness of AI" and another fear cycle after
+        it, so he is measuring narrative acceleration and following who drove the last one. The
+        desk's attention trade does the measuring.
+      since: ""
+    - thesis: The AI labs are too big to fail
+      ticker: ""
+      quote: Do you really think that our government is going to let OpenAI and Anthropic fail?
+      detail: >-
+        If OpenAI or Anthropic couldn't pay for their compute, he expects a government-brokered
+        rescue that moves the contracts to stronger hands, so compute keeps its value.
+      since: ""
+    - thesis: No SpaceX at $1.6 trillion
+      ticker: SPCX
+      quote: Whatever people are seeing in SpaceX is something more than I'm able to see.
+      detail: >-
+        He invested privately at $30 billion and won't buy the public stock "unless something
+        radically changes": the price assumes best cases years away.
+      since: SPCX $133.11 to $162.57, +22.1%.
+    - thesis: The Sweetgreen wrap thesis is on hold
+      ticker: SG
+      quote: My thesis on the wrap has become irrelevant until this virus passes.
+      detail: The only question left was whether the outbreak hurt sales more or less than the market expected.
+      since: SG $5.40 to $9.63, +78.3%.
+
+# The attention trade (camillo.py: Narrative, attention_trade, NarrativeWatch). Each narrative is
+# a set of words; a headline or post belongs to it when it says one of `any` (and, when given,
+# one of `with`). A trailing * is a stem. `hits` is this desk's list of the listed names each
+# narrative moves most: the ones Camillo named in the interview (Bloom Energy, Nebius, Amazon) plus the AI
+# infrastructure leaders. Built from his account of July 2026: Kimi's open model, AI capex
+# doubts, worry that OpenAI and Anthropic can't pay for compute, and forced selling.
+narratives:
+  - id: open_models
+    name: Cheap open models make compute less needed
+    side: fear
+    sector: AI
+    any: [kimi k2, kimi k3, kimi k4, kimi model, moonshot ai, deepseek, qwen, open-source model, open-source models, open source model, open source models, open-weight, open-weights, open weights, chinese ai model, chinese ai models, chinese open model, chinese open models]
+    hits: [NVDA, AVGO, BE, NBIS, AMZN]
+    note: >-
+      Kimi K3 (Jul 16 2026) sent chip stocks into a bear market and Bloom Energy down 13.6% in a
+      day. His miss: he knew it was coming but under-weighted how fast the narrative spread.
+  - id: capex_doubt
+    name: AI spending won't pay back
+    side: fear
+    sector: AI
+    any: [ai bubble, bubble, capex, capital spending, ai spending, data center spending, data-center spending, overbuild*, circular deal*, circular financing, dot-com]
+    with: [ai, a.i., artificial intelligence, data center, data centers, hyperscaler*, nvidia, compute]
+    hits: [NVDA, AVGO, BE, NBIS, AMZN, ORCL]
+    note: >-
+      The capex panic he says ran all of 2026: investors marking down companies for spending
+      cash on contracted demand.
+  - id: lab_credit
+    name: AI labs can't pay for their compute
+    side: fear
+    sector: AI
+    any: [openai, anthropic, xai, ai lab, ai labs]
+    with: [cash burn, burn rate, burning cash, losses, debt, default*, bailout, backstop, insolven*, funding gap, can't pay, cannot pay, too big to fail, contract risk]
+    hits: [ORCL, CRWV, NBIS, IREN, AMZN, MSFT]
+    note: >-
+      His answer to it: the government would broker a rescue and the compute contracts would
+      move to stronger hands.
+  - id: forced_selling
+    name: Leverage unwinding
+    side: fear
+    sector: AI
+    any: [margin call, margin calls, deleverag*, forced selling, forced seller*, forced liquidation*, liquidation*, de-grossing, degrossing, unwind*]
+    with: [fund, funds, hedge fund*, investors, traders, retail, stocks, shares, ai, korea*, leverage*, etf, etfs, margin]
+    hits: [BE, NBIS, NVDA, CRWV]
+    note: >-
+      Forced selling isn't information, and it ends; the July 2026 unwind at Situational Awareness and
+      in Korea reversed the day the fund's book was sold.
+  - id: ai_efficiency
+    name: Companies cutting costs with AI
+    side: hope
+    sector: AI
+    any: [ai, a.i., artificial intelligence, generative ai, gen ai, genai, ai agents, ai tools, chatbot*]
+    with: [cost savings, saves, saving, lower costs, lowering costs, cut costs, cutting costs, cost cuts, costs down, customer service costs, customer-service costs, cost per, efficiency, efficiencies, productivity, headcount, fewer employees, margin expansion, layoff*, job cuts, cuts jobs, cut jobs, jobs cut, workforce]
+    hits: [AMZN, BKNG]
+    note: >-
+      His "last leg" of the AI cycle: when earnings reports start saying AI is lowering costs, "you're
+      going to see AI blow up unlike we've ever seen it before."

@@ -414,6 +414,7 @@ class TrendDesk:
         # by the engine; their saved state waits here until then
         self.earnings: Any = None
         self.chatter: Any = None
+        self.narratives: Any = None  # camillo.NarrativeWatch: the attention trade
         self._camillo_state: dict[str, Any] = {}
         self.stats = {
             "wiki_reads": 0,
@@ -447,10 +448,12 @@ class TrendDesk:
         self.last_snapshot = float(data.get("last_snapshot") or 0.0)
         self.last_wiki_day = data.get("last_wiki_day", "")
         self.last_marks_day = data.get("last_marks_day", "")
-        self._camillo_state = {k: data.get(k) or {} for k in ("earnings", "chatter")}
+        self._camillo_state = {k: data.get(k) or {} for k in ("earnings", "chatter", "narratives")}
 
-    def attach_camillo(self, earnings: Any = None, chatter: Any = None) -> None:
-        self.earnings, self.chatter = earnings, chatter
+    def attach_camillo(self, earnings: Any = None, chatter: Any = None, narratives: Any = None) -> None:
+        self.earnings, self.chatter, self.narratives = earnings, chatter, narratives
+        if narratives is not None:
+            narratives.load(self._camillo_state.get("narratives") or {})
         if earnings is not None:
             earnings.load(self._camillo_state.get("earnings") or {})
         if chatter is not None:
@@ -472,6 +475,7 @@ class TrendDesk:
             "last_marks_day": self.last_marks_day,
             "earnings": self.earnings.dump() if self.earnings is not None else {},
             "chatter": self.chatter.dump() if self.chatter is not None else {},
+            "narratives": self.narratives.dump() if self.narratives is not None else {},
         }
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
