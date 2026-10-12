@@ -411,12 +411,45 @@ async def _options(
                     print(
                         f"     ALERT {h.severity}: unusual volume {fmt_cap(d['flow_premium'])} in {len(h.flow)} contracts"
                     )
+                if h.kind in ("spike", "blowup"):
+                    _print_play(sym, h, await _play_now(feed, h))
                 for r in h.reasons:
                     print(f"       ⚠ {r}")
         if stream_s > 0:
             worst = max(worst, await _stream_check(feed, watch, stream_s))
     print()
     return worst
+
+
+async def _play_now(feed: Any, h: Any) -> Any:
+    await feed._play(h, time.time())
+    return h.play
+
+
+def _print_play(sym: str, h: Any, p: Any) -> None:
+    """The late-entry card: what the ask buys now, where the exits are (market/follow.py)."""
+    if p is None:
+        return
+    from datetime import datetime as _dt
+
+    from .market.options import ET as _ET
+
+    be = f" ({p.breakeven_pct:+.1f}%)" if p.breakeven_pct is not None else ""
+    print(
+        f"       if you buy now: ${p.entry:.2f} {p.entry_how} · breakeven at expiry {sym} ${p.breakeven:,.2f}{be}"
+    )
+    if p.path is not None:
+        print(
+            f"       its day: high ${p.path.high:.2f} at {_dt.fromtimestamp(p.path.high_ts, _ET):%H:%M} ET · "
+            f"{p.path.legs} leg(s) · trades through {_dt.fromtimestamp(p.path.to_ts, _ET):%H:%M} ET"
+        )
+    if p.verdict:
+        print(f"       {p.verdict}")
+    for what, v, pct in p.scenarios:
+        print(f"       if {what}: ${v:.2f} ({pct:+.0f}%)")
+    print(
+        f"       exits: fading under a ${p.fade:.2f} bid, stop under ${p.stop:.2f} (both trail the best bid)"
+    )
 
 
 def s_cfg_mult(ocfg: Any) -> str:

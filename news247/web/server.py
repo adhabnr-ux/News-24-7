@@ -615,6 +615,7 @@ class WebServer:
         story = self.engine.storage.story_of(uid) if uid else None
         alert["story_sources"] = self.engine.storage.story_sources(story) if story is not None else []
         alert["series"] = self.engine.price_series(alert)
+        alert["follow"] = self.engine.follow_for(alert)
         return _json(alert)
 
     async def api_foretape(self, request: web.Request) -> web.Response:

@@ -52,7 +52,7 @@ import aiohttp
 from ..config import OptionsConfig
 from ..http import HttpClient, HTTPError
 from ..sources.base import SourceHealth, _sleep_or_stop
-from .live import LiveQuotes, OptionStream, Watch, parse_stock_snapshots, pick_watch
+from .live import LiveQuotes, OptionStream, Watch, parse_stock_ranges, parse_stock_snapshots, pick_watch
 from .universe import SCREENER_HEADERS, Listing, Universe, band, fmt_cap
 
 log = logging.getLogger(__name__)
@@ -513,6 +513,8 @@ class OptionsHit:
     volume_today: int = 0  # surge: all contracts today
     volume_prev: int = 0  # surge: all contracts in the previous session
     budget: str = "options"  # which daily push budget a HIGH spent: "options" | "misprint"
+    paths: dict[str, Any] = field(default_factory=dict)  # occ -> OptionPath: the contract's session so far
+    play: Any = None  # Play: what a buyer at the ask now gets, and the exits (spikes and blowups)
 
     @property
     def market_cap(self) -> float | None:
@@ -550,6 +552,8 @@ class OptionsHit:
             "volume_prev": self.volume_prev,
             "detected": self.detected,
             "source": self.chain.source,
+            "play": self.play.to_dict() if self.play is not None else None,
+            "paths": {k: v.to_dict() for k, v in self.paths.items()},
         }
 
 
@@ -1540,6 +1544,8 @@ class AlpacaSource:
         self._oi: dict[str, tuple[str, dict[str, int]]] = {}  # symbol -> (ET date, {occ: OI})
         self.oi_fail_run = 0  # open-interest reads failed in a row
         self.oi_last_error = ""
+        # today's (high, low, open) per stock, from the last snapshots
+        self.ranges: dict[str, tuple[float | None, float | None, float | None]] = {}
 
     @property
     def headers(self) -> dict[str, str]:
@@ -1616,8 +1622,32 @@ class AlpacaSource:
                 params={"symbols": ",".join(syms[i : i + 100]), "feed": self.cfg.alpaca_stock_feed},
                 timeout_s=20,
             )
-            for sym, row in parse_stock_snapshots(resp.json(), today).items():
+            doc = resp.json()
+            for sym, row in parse_stock_snapshots(doc, today).items():
                 out[sym.replace(".", "-")] = row
+            for sym, rng in parse_stock_ranges(doc, today).items():
+                self.ranges[sym.replace(".", "-")] = rng
+        return out
+
+    async def option_bars(
+        self, occs: list[str], start: datetime, pace: Callable[[float], Any]
+    ) -> dict[str, list[tuple[float, float, float, float, float, int]]]:
+        """Today's 5-minute bars for a few contracts (built from trades: on the free feed they
+        reach about 15 minutes back)."""
+        from .follow import parse_option_bars
+
+        out: dict[str, list[tuple[float, float, float, float, float, int]]] = {}
+        pages = await self._pages(
+            self.cfg.alpaca_data_url.rstrip("/") + "/v1beta1/options/bars",
+            {"symbols": ",".join(occs), "timeframe": "5Min", "start": start.isoformat(), "limit": 1000},
+            "bars",
+            pace,
+        )
+        for page in pages:
+            for occ, rows in parse_option_bars({"bars": page}).items():
+                out.setdefault(occ, []).extend(rows)
+        for rows in out.values():
+            rows.sort()
         return out
 
     async def fetch(self, symbol: str, listing: Listing | None, pace: Callable[[float], Any]) -> Chain:
@@ -1697,6 +1727,20 @@ class OptionsFeed:
         self._on_hits: Callable[[list[OptionsHit]], Any] | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
         self.stream_misprints = 0
+        # after the alert: the lead contract of every spike/blowup is followed on live quotes
+        from .follow import FollowDesk
+
+        rp = getattr(radar, "state_path", None)
+        self.follow = FollowDesk(cfg, rp.with_name("options_follow.json") if rp else None)
+        self._on_follow: Callable[[list[Any]], Any] | None = None
+        self.follow_events = 0
+        self.follow_reads = 0
+        self.bar_reads = 0
+        self.bar_errors = 0
+        # jumps: a stock moving fast between sweeps
+        self._jumped: dict[tuple[str, int], float] = {}
+        self._jump_checked = 0.0
+        self.jump_reads = 0
         alpaca = next((x for x in self.sources if getattr(x, "name", "") == "alpaca"), None)
         if cfg.stream and alpaca is not None:
             self.stream = OptionStream(
@@ -1710,6 +1754,7 @@ class OptionsFeed:
                 on_misprint=self._on_stream_misprint if cfg.misprints else None,
                 misprint_ratio=cfg.misprint_ratio,
                 rich_ratio=cfg.misprint_rich_ratio,
+                on_quote=self._on_stream_quote,
             )
         self.source_stats: dict[str, dict[str, Any]] = {src.name: _blank_stats() for src in self.sources}
         self.fallbacks = 0  # chains read from the fallback source after the primary failed
@@ -1930,10 +1975,14 @@ class OptionsFeed:
         self._stale_run = 0
         hits = self.radar.scan(chain, self.universe.get(symbol), now)
         self._watch(chain, now, bool(hits))
+        await self._observe_chain(chain, now)
         why = self.urgent_why.get(symbol)
         if why and now - why[1] < 600:
             for h in hits:
                 h.reasons.append(f"read at once: {why[0]}")
+        for h in hits:
+            if h.kind in ("spike", "blowup"):
+                await self._play(h, now)
         return hits
 
     # ------------------------------------------------------------------ live
@@ -2007,8 +2056,12 @@ class OptionsFeed:
             log.info("alpaca stock snapshots failed: %s", exc)
             return 0
         self.stock_reads += 1
+        ranges = getattr(alpaca, "ranges", {})
         for sym, (price, prev, ts) in rows.items():
             self.live.update(sym, price, prev, ts, "alpaca")
+            rng = ranges.get(sym)
+            if rng:
+                self.live.set_range(sym, rng[0], rng[1], rng[2], ts)
         return len(rows)
 
     async def sweep_stocks(self, now: float) -> list[str]:
@@ -2068,6 +2121,8 @@ class OptionsFeed:
                 snap = snaps.get(sym) or {}
                 pts = snap.get("points") or []
                 price = pts[-1][1] if pts else snap.get("price")
+                today = datetime.fromtimestamp(now, ET).date()
+                self.live.seed(sym, [p for p in pts if datetime.fromtimestamp(p[0], ET).date() == today])
                 if price:
                     self.live.update(sym, float(price), snap.get("prev_close"), time.time(), "yahoo")
                     n += 1
@@ -2090,6 +2145,15 @@ class OptionsFeed:
         rows: list[Watch] = pick_watch(
             chain.contracts, sym, chain.price, today, per_symbol=self.cfg.stream_per_symbol, weight=weight
         )
+        by_w = {w.occ: w for w in rows}
+        for f in self.follow.active():  # followed contracts are watched first, whatever their price
+            if f.underlying != sym:
+                continue
+            w = by_w.get(f.occ)
+            if w is None:
+                w = Watch(f.occ, sym, f.base)
+                rows.append(w)
+            w.follow, w.rank = True, 1e6
         if self.cfg.misprints and chain.price:
             curves: dict[tuple[date, str], list[tuple[float, float]]] = {}
             by_occ = {c.symbol: c for c in chain.contracts}
@@ -2099,6 +2163,151 @@ class OptionsFeed:
                     w.fair, _ = self.radar._fair(c, chain, chain.price, now, curves)
         self._chains[sym] = chain
         self.stream.set_candidates(sym, rows)
+
+    # ------------------------------------------------------------------ after the alert
+
+    def track(self, hit: OptionsHit, now: float | None = None) -> list[Any]:
+        """Follow an alert's lead contract: its company stays hot and the contract goes to the top
+        of the websocket watch."""
+        now = now or hit.detected or time.time()
+        rows = self.follow.track(hit, now)
+        if rows:
+            self.prioritize([hit.symbol], hold_s=self.cfg.follow_hours * 3600)
+            self._watch(hit.chain, now, True)
+        return rows
+
+    async def _play(self, hit: OptionsHit, now: float) -> None:
+        """The lead contract's session so far (its bars, when Alpaca is a source) and the play
+        card for a buyer at the ask now."""
+        from .follow import lead_contracts, option_path, play_card
+
+        leads = lead_contracts(hit)
+        if not leads:
+            return
+        c, base = leads[0]
+        alpaca = next((x for x in self.sources if getattr(x, "name", "") == "alpaca"), None)
+        if self.cfg.follow_bars and alpaca is not None and hasattr(alpaca, "option_bars"):
+            start = datetime.fromtimestamp(now, ET).replace(hour=9, minute=30, second=0, microsecond=0)
+            try:
+                bars = await alpaca.option_bars([c.symbol], start, self._pace)
+                self.bar_reads += 1
+                path = option_path(bars.get(c.symbol, []), base)
+                if path is not None:
+                    hit.paths[c.symbol] = path
+            except (
+                HTTPError,
+                aiohttp.ClientError,
+                ValueError,
+                TypeError,
+                KeyError,
+                asyncio.TimeoutError,
+                OSError,
+            ) as exc:
+                self.bar_errors += 1
+                log.info("option bars for %s unavailable: %s", c.symbol, exc)
+        today = datetime.fromtimestamp(now, ET).date()
+        iv_prev = hit.iv_prev or self.radar.yesterday_iv(hit.chain, today)
+        try:
+            hit.play = play_card(
+                c,
+                hit.chain,
+                base,
+                now,
+                self.cfg,
+                iv_prev,
+                hit.paths.get(c.symbol),
+                self.live.path(hit.symbol, now),
+            )
+        except (ValueError, ZeroDivisionError, OverflowError) as exc:  # a play card must never cost the alert
+            log.info("play card for %s failed: %s", c.symbol, exc)
+
+    async def _observe_chain(self, chain: Chain, now: float) -> None:
+        followed = [f for f in self.follow.active() if f.underlying == chain.symbol]
+        if not followed:
+            return
+        by = {c.symbol: c for c in chain.contracts}
+        events: list[Any] = []
+        for f in followed:
+            c = by.get(f.occ)
+            if c is None:
+                continue
+            ts = c.quote_time.timestamp() if c.quote_time else now
+            events += self.follow.observe(
+                c.symbol, c.bid, c.ask, ts, chain.price, self.live.path(chain.symbol, now), now
+            )
+        if events:
+            await self._emit_follow(events)
+
+    def _on_stream_quote(self, w: Watch, bid: float | None, ask: float | None, ts: float) -> None:
+        now = time.time()
+        q = self.live.get(w.underlying, self.cfg.stock_quote_max_age_s, now)
+        events = self.follow.observe(
+            w.occ, bid, ask, ts, q.price if q else None, self.live.path(w.underlying, now), now
+        )
+        if events:
+            task = asyncio.get_running_loop().create_task(self._emit_follow(events))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+
+    async def _emit_follow(self, events: list[Any]) -> None:
+        self.follow_events += len(events)
+        if self._on_follow is None:
+            return
+        try:
+            await self._on_follow(events)
+        except Exception:  # noqa: BLE001
+            log.exception("options follow-ups not published")
+
+    def follow_tick(self, now: float) -> None:
+        """Every few seconds: end the follows at the close; re-read the chains of followed
+        contracts that have had no quote for ``follow_read_s`` (no websocket, or a quiet one)."""
+        if not self.follow.items:
+            return
+        if self._phase(now) != "open":
+            self.follow.close(now)
+            return
+        self.follow.expire(now)
+        due = self.follow.due(now, self.cfg.follow_read_s)
+        if due:
+            self.follow_reads += self.urgent(sorted(due), "following up an alert")
+
+    def check_jumps(self, now: float) -> list[str]:
+        """A stock jumping between sweeps (0.7% in 10 minutes for a $200B+ name, 1.2% for $20B+,
+        2% for the rest) has its chain read at once. A read, not an alert: the usual tests decide."""
+        if now - self._jump_checked < 15.0:
+            return []
+        self._jump_checked = now
+        out: list[str] = []
+        for sym, q in list(self.live.quotes.items()):
+            if now - q.ts > self.cfg.stock_quote_max_age_s:
+                continue
+            li = self.universe.get(sym)
+            if not self.eligible(li):
+                continue
+            j = self.live.jump(sym, self.cfg.jump_window_s, now)
+            if j is None:
+                continue
+            pct, frm, frm_ts = j
+            cap = (li.market_cap if li else 0) or 0
+            thr = (
+                self.cfg.jump_pct_mega
+                if cap >= 200e9
+                else self.cfg.jump_pct_large
+                if cap >= 20e9
+                else self.cfg.jump_pct
+            )
+            if abs(pct) < thr:
+                continue
+            key = (sym, 1 if pct > 0 else -1)
+            if now - self._jumped.get(key, -1e12) < self.cfg.jump_cooldown_s:
+                continue
+            self._jumped[key] = now
+            mins = max(1, round((q.ts - frm_ts) / 60))
+            why = f"jumped {pct:+.1f}% in {mins} min on a live price (${frm:,.2f} → ${q.price:,.2f})"
+            self.urgent_why[sym] = (why, now)
+            self.jump_reads += self.urgent([sym], why)
+            out.append(sym)
+        return out
 
     def _on_stream_misprint(self, w: Watch, bid: float | None, ask: float | None, ts: float) -> None:
         """A watched contract's live quote crossed its fair value by the misprint ratio: patch the
@@ -2148,6 +2357,10 @@ class OptionsFeed:
         if self._urgent_sem is None:
             self._urgent_sem = asyncio.Semaphore(self.cfg.urgent_concurrency)
         while not stop.is_set():
+            now = time.time()
+            if self._phase(now) == "open":
+                self.check_jumps(now)
+            self.follow_tick(now)
             if not self._urgent:
                 self._urgent_wake.clear()
                 try:
@@ -2237,11 +2450,13 @@ class OptionsFeed:
         on_hits: Callable[[list[OptionsHit]], Any],
         stop: asyncio.Event,
         on_problem: Callable[[str], Any] | None = None,
+        on_follow: Callable[[list[Any]], Any] | None = None,
     ) -> None:
         """Regular session only: options quotes do not move outside it. Alongside the rotation:
-        the urgent lane and the websocket tripwire."""
+        the urgent lane (news, the radar, jumps, follow-ups) and the websocket tripwire."""
         self._urgent_wake = asyncio.Event()
         self._on_hits = on_hits
+        self._on_follow = on_follow
         side = [asyncio.create_task(self._urgent_loop(on_hits, stop), name="options-urgent")]
         if self.stream is not None:
             side.append(asyncio.create_task(self.stream.run(stop), name="options-stream"))
@@ -2331,6 +2546,10 @@ class OptionsFeed:
                 "urgent_reads": self.urgent_reads,
                 "stream_misprints": self.stream_misprints,
                 "urgent_waiting": len(self._urgent),
+                "jump_reads": self.jump_reads,
+                "follow_reads": self.follow_reads,
+                "option_bar_reads": self.bar_reads,
+                "option_bar_errors": self.bar_errors,
                 "stream": (
                     {
                         "enabled": True,
@@ -2344,5 +2563,6 @@ class OptionsFeed:
                     else {"enabled": False, "why": "needs Alpaca keys" if self.cfg.stream else "off"}
                 ),
             },
+            "follow": {**self.follow.status(), "events_sent": self.follow_events},
             **self.health.to_dict(),
         }

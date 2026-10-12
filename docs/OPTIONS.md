@@ -236,7 +236,8 @@ Friday's stock price ($225.71, +3.33%). Two causes:
 |---|---|---|
 | **Quote-led spikes** | A contract whose *live bid* (quote at most `live_quote_s`, 120 s, old) is already 1,000%+ above its close fires, even before its trades print. The bid is what it could be sold at now, so it is bid-confirmed by construction, and the stale-base model check still applies. | the quote's age, seconds |
 | **Live stock prices** (`market/live.py`) | Each batch's stock prices come from Alpaca's real-time snapshots (free plan: IEX), and the radar shares the Yahoo prices it reads for the ~600 largest companies every minute. The chain's price, its move and the model base come from these. A universe price older than 15 minutes is never used for today's move. | seconds to a minute |
-| **The stock sweep** | With Alpaca keys, every covered company's live price every 2 minutes (`stock_sweep_s`, 100 a request, about 30 requests). Names that newly start moving 3%+ go straight to the urgent lane, the 20 biggest moves first. | ≤ 2 min to notice, on any $1B+ name |
+| **The stock sweep** | With Alpaca keys, every covered company's live price every 60 s (`stock_sweep_s`, 100 a request, about 30 requests). Names that newly start moving 3%+ go straight to the urgent lane, the 20 biggest moves first. | ≤ 1 min to notice, on any $1B+ name |
+| **Jumps** | A stock moving 0.7% in 10 minutes ($200B+), 1.2% ($20B+) or 2% (the rest) between sweeps has its chain read at once ("After the alert" → "Earlier: jumps"). | seconds after the price |
 | **Live hot list** | Companies moving 3%+ on a *live* price are re-read first, not after the 10-minute universe refresh. | ≤ 1 min to notice |
 | **The urgent lane** | A company in a news or radar alert, or tripped by the stream, is read at once, ahead of the rotation (two at a time, at most every 20 s per name). | seconds |
 | **The tripwire** (`OptionStream`) | Alpaca's options websocket watches the quotes of up to 190 contracts: the cheap ($0.03-$2), near-dated (≤ 21 days), near-the-money contracts of companies in the news, on the radar, moving 3%+ or just alerted, with contracts already running ranked first. A bid crossing 4x, 6x, 11x, 21x or 51x its previous close re-reads that company's chain at once, and the usual tests decide the alert. | seconds |
@@ -329,6 +330,144 @@ All settings are under `options:` in `config.yaml`; each is commented in
 **To turn it off:** set `OPTIONS_ENABLED=false`, or `options: {enabled: false}`. Nothing else
 changes.
 
+## After the alert: still running, fading, or stopped
+
+**The question that shaped this (Oct 12 2026):** "How am I supposed to know if it keeps going
+higher or stops out, assuming I entered late?" The META $785 call (Oct 14) alert went out at
+12:51 ET. The contract's real day (OPRA 5-minute bars):
+
+| ET | The $785 call | META |
+|---|---|---|
+| Fri close | $0.18 | $718.67 |
+| 9:30-9:45 | $0.23 → $1.27 (first run) | gap to $748 |
+| 9:55-10:40 | back to $0.62-$0.75 | holding $739-$746 |
+| 10:45 | $1.40 (second run) | $749.59 |
+| 11:05-11:20 | $1.43 → **$1.83, the day's high** (third run) | $751.58, the day's high |
+| 11:25-12:35 | $0.98-$1.36 | $743-$748 |
+| 12:40 | $1.07 → $1.30 | $745-$748 |
+| 12:51 | **the alert** | |
+| 12:58 | bid $1.52 / ask $1.69 | $746.48 |
+
+The alert said none of that, and nothing came after it. Now three things do.
+
+### 1. Where you are in the move (on the alert)
+
+With Alpaca keys, the alert reads the lead contract's 5-minute bars for the day (trades: on the
+free feed they reach about 15 minutes back):
+- when it began to run (the first bar at 2x yesterday's close);
+- its high and when;
+- how many legs so far. A leg ends when a bar opens or closes 35% under the leg's high.
+
+The META call at 12:58: "push #3 of the day: late in the move; within 8% of the day's $1.83 high:
+the move is live, but you pay near the top."
+
+### 2. If you buy now (on the alert)
+
+Every spike and blowup alert ends with the card for the price a late buyer pays: the ask.
+For the META call at 12:58 (the real quote, META $746.48):
+
+```
+▶ If you buy now at the $1.69 ask (9.4x yesterday's $0.18):
+• Its day: began running 09:30 ET · high $1.83 at 11:20 ET · low $0.23 · 1,601 traded (trades through 12:40 ET)
+• Where you are: push #3 of the day: late in the move; within 8% of the day's $1.83 high: the move is live, but you pay near the top.
+• Each 1% META moves your way: about $1.03 (61% of the entry) · delta 0.11 · implied vol 53%
+• Breakeven at expiry: META $786.69 (+5.4% from here)
+• If META 1% higher now: $2.63 (+56%) · META flat into the close: $1.44 (-15%) · META gives back half today's move: $0.56 (-67%)
+• Exits: fading under a $1.28 bid, stop under $1.04 (20% / 35% under the mid; both trail the best bid) · on the stock: half its move gone at $735.12, all of it at $718.67
+• Followed until the close: a follow-up when it runs (+25% steps), fades or hits the stop.
+```
+
+How each line is worked out:
+- The scenarios are Black-Scholes at the contract's own implied vol (from its mid).
+- "Flat into the close" is the rest of today's time decay.
+- When the chain's vol is 15%+ above yesterday's, a vol-crush case is added: "implied vol back to
+  yesterday's X%".
+- The stock lines use the day's high from Alpaca's daily bar, or the prices seen.
+
+### 3. The follow-through (after the alert)
+
+The lead contract of every spike and blowup alert (HIGH or MEDIUM) is followed until the close:
+- on the websocket, when there are Alpaca keys: every quote, ranked first on the watch;
+- otherwise by re-reading its chain whenever it has had no quote for `follow_read_s` (45 s).
+
+It is judged on the **bid** (what you can sell for) against:
+- **the entry:** the ask at the alert, what a late buyer paid;
+- **the reference:** the alert's mid, or the best bid since, whichever is higher. Lines hang from
+  this, so the spread alone never trips them.
+
+| State | Rule (default) | Follow-up |
+|---|---|---|
+| **Still running** | a new high, `follow_run_step` (+25%) above the entry, then +25% above each push | 📈 MEDIUM |
+| Holding | under the high, above the fade line | none |
+| **Fading** | the bid `follow_fade` (20%) under the reference, or the stock has given back half its move today | ⚠️ HIGH |
+| **Stop hit** | the bid `follow_stop` (35%) under the reference, or the stock back to yesterday's close (its whole move erased) | 🛑 HIGH, always sent |
+| **Running again** | after a stop: a bid above the high it had before the stop, with the stock's move intact; the lines start over from that price | 🔁 MEDIUM |
+
+Guards against noise:
+- A drop must show on **two quotes 20 s apart** (`follow_confirm_s`). A market maker pulling a
+  bid for a second is not a stop, and if the second quote is milder, the milder state is what
+  counts.
+- Highs, and "still running", count only when **two quotes in a row** reach them.
+- At most `follow_max_pushes` (6) follow-ups a contract, 2 minutes apart (a stop excepted), and
+  `follow_daily_pushes` (30) a day.
+
+Every follow-up says:
+- **why** it was sent;
+- the entry, the best bid since and when, and the bid and ask now with the quote's time;
+- **the stock:** "holding near its best level today: the option is losing value faster than the
+  stock (implied vol coming out, or time)", or "has given back 60% of its move today". The first
+  is a vol or time problem; the second is the move failing;
+- the lines now: fading under, stop under, and the next "still running".
+
+**Replay: a META alert at 9:44 ET** (after the 9:40 bar; the real bars, closes as the mid with a
+$0.06 spread, ask $1.06):
+
+| ET | Follow-up | Bid |
+|---|---|---|
+| 9:59 | 🛑 stop hit: 39% under the $1.03 mid, **with META holding $742** (the opening premium draining) | $0.63 |
+| 10:49 | 🔁 running again: above the $1.00 it reached before the stop | $1.18 |
+| 10:54 | ⚠️ fading | $0.96 |
+| 11:19 | 📈 still running: a new high | $1.64 |
+| 11:24 | ⚠️ fading: 29% under the $1.64 high | $1.16 |
+| 11:44 | 🛑 stop hit: 38% under the high | $1.02 |
+
+An alert at 11:09 (ask $1.41, near the top) would have run to a $1.64 bid (+16%, short of a +25%
+step), then gotten ⚠️ fading at 11:24 and 🛑 at 11:44 ($1.02).
+
+That is the honest picture of cheap, short-dated options:
+- a mechanical stop is hit by vol draining out while the stock holds (9:59), and the move can run
+  again;
+- buying the third push near the high tends to stop out.
+
+The follow-ups show both, and say which one is happening. The system never trades: these are the
+same rules every time, so the exit is decided before the entry.
+
+**In the app:** open an options alert, and **After the alert** shows the contract's state now:
+- the entry, the bid now and the % since the alert;
+- the best bid since;
+- the fade and stop lines, the next "still running", and the stock.
+
+`GET /api/status` → `options.follow` lists every followed contract and the recent follow-ups.
+
+### Earlier: jumps
+
+Between sweeps, each company's last 30 minutes of live prices are kept. A stock that jumps
+reads its chain at once:
+- 0.7% in 10 minutes for $200B+ companies (`jump_pct_mega`);
+- 1.2% for $20B+ (`jump_pct_large`);
+- 2% for the rest (`jump_pct`).
+
+That is a read, not an alert: the usual tests decide.
+
+On the real META tape, the 9:30 → 9:35 closes ($734.08 → $741.94, +1.1%) trip it in the second
+minute it shows. The stock sweep now runs every 60 s (it was 120 s).
+
+Settings: `follow`, `follow_per_alert`, `follow_fade`, `follow_stop`, `follow_run_step`,
+`follow_confirm_s`, `follow_read_s`, `follow_hours`, `follow_max_pushes`, `follow_gap_s`,
+`follow_daily_pushes`, `follow_max`, `follow_bars`, `jump_window_s`, `jump_pct_mega`,
+`jump_pct_large`, `jump_pct`, `jump_cooldown_s` (`news247/config.py`). Followed contracts survive a
+restart within the day (`options_follow.json` next to the radar's state).
+
 ## Where to see it
 
 - **Your phone:** HIGH alerts push like any other alert. The app shows every options alert under
@@ -341,8 +480,16 @@ changes.
 
 - `news247/market/options.py`: the parser, Black-Scholes, the spike and volume rules, and the
   feed.
-- `news247/engine.py`: alert text and wiring (`on_options`, `_options_alert`, `options_board`).
+- `news247/market/follow.py`: after the alert: the contract's day from its bars, the "if you buy
+  now" card, and the follow-through desk (running, fading, stopped, running again).
+- `news247/market/live.py`: live stock prices, each stock's day path and the jump detector, and
+  the websocket tripwire.
+- `news247/engine.py`: alert text and wiring (`on_options`, `_options_alert`, `_play_lines`,
+  `on_follow`, `_follow_alert`, `options_board`).
 - `news247/config.py`: `OptionsConfig`, every threshold with a comment.
 - `tests/test_options.py`: 55 tests, covering pricing, parsing, every rule, the feed (pacing,
   priorities, back-off, freshness, problem reports), the engine, the API, the CLI and the NWE
   replay.
+- `tests/test_options_follow.py`: 25 tests, covering the day path and jumps, the option's bars and
+  legs, the play card, every follow rule, the real META replays (9:44 and 11:09 alerts), the feed
+  wiring (websocket, follow lane, jump reads), the engine text and the app's state.

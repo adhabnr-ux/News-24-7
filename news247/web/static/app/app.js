@@ -457,6 +457,24 @@ function sparkline(series, alertTs) {
   return `<style>@keyframes draw{to{stroke-dashoffset:0}}</style><div class="chart"><div class="legend">${legend}</div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
     <line x1="0" x2="${W}" y1="${Y(0)}" y2="${Y(0)}" stroke="rgba(255,255,255,.18)"/>${ax}${paths}</svg></div>`;
 }
+// an options alert's contract after the alert (market/follow.py): its state now and its exit lines
+const FSTATE = { RUNNING: ["pos", "Still running"], HOLDING: ["", "Holding"], FADING: ["neg", "Fading"], STOPPED: ["neg", "Stop hit"] };
+function followBlock(f) {
+  if (!f) return "";
+  const [c, label] = FSTATE[f.state] || ["", f.state];
+  const m = (v) => (v == null ? "—" : "$" + Number(v).toFixed(2));
+  const t = (ts) => (ts ? new Date(ts * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }) + " ET" : "");
+  const sp = f.stock != null && f.stock_prev ? (f.stock / f.stock_prev - 1) * 100 : null;
+  return `<h4>After the alert</h4><div class="panel glass">
+      <div class="kv"><span>${esc(f.label)}</span><b class="${f.ended ? "" : c}">${f.ended ? "Done · " + esc(f.ended) : esc(label)}</b></div>
+      <div class="kv"><span>Entry (the ask at the alert, ${esc(t(f.alert_ts))})</span><b class="num">${m(f.entry)}</b></div>
+      <div class="kv"><span>Bid now</span><b class="num ${cls(f.since_alert_pct)}">${m(f.bid)}${f.since_alert_pct != null ? " · " + pct(f.since_alert_pct) : ""}</b></div>
+      <div class="kv"><span>Best bid since</span><b class="num">${m(f.high)} ${esc(t(f.high_ts))}</b></div>
+      <div class="kv"><span>Fading under · stop under</span><b class="num">${m(f.fade)} · ${m(f.stop)}</b></div>
+      ${f.state !== "STOPPED" ? `<div class="kv"><span>Next "still running"</span><b class="num">${m(f.next_run)}</b></div>` : ""}
+      ${f.stock != null ? `<div class="kv"><span>${esc(f.underlying)}</span><b class="num">$${Number(f.stock).toFixed(2)}${sp != null ? ` <span class="${cls(sp)}">${pct(sp)}</span>` : ""}</b></div>` : ""}
+      <div class="sub" style="padding:10px 0 4px">Judged on the bid, on live quotes; a drop must show on two quotes. Followed until the close. The system never trades.</div></div>`;
+}
 async function openSheet(id) {
   $("toast").classList.remove("show");
   let a;
@@ -489,6 +507,7 @@ async function openSheet(id) {
         <a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a>
         <div class="sub">${esc(x.source)} · ${esc(x.age)} before the move</div></div></div>`).join("")}</div>` : "",
     chart ? `<h4>The tape since the alert</h4>${chart}` : "",
+    followBlock(a.follow),
     p.direction ? `<h4>The play</h4><div class="panel glass padded">
         <div class="play" style="margin:0">${p.direction in dirLabel ? `<span class="dir ${p.direction}">${dirLabel[p.direction]}</span>` : ""}${meter(p.meter)}<span class="conv">${esc(p.conviction)} conviction · score ${Math.round(p.score)}</span></div>
         ${p.direction_basis === "precedents" ? `<div class="sub" style="margin-top:8px">Direction inferred from how similar events traded.</div>` : ""}

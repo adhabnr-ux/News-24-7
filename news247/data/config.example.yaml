@@ -140,6 +140,15 @@ options:
   misprints: ${OPTIONS_MISPRINTS:-true}
   misprint_push_edge: 0.10        # arbitrage pushes from $0.10 a share; an ask far below value from $0.20
   misprint_daily_pushes: 6        # its own push budget
+  # after the alert (docs/OPTIONS.md "After the alert"): every spike/blowup alert carries an "if you buy
+  # now" card, and its contract is followed on live quotes until the close: still running, fading,
+  # stop hit, running again. Judged on the bid; a drop must show on two quotes.
+  follow: ${OPTIONS_FOLLOW:-true}
+  follow_fade: 0.20               # FADING: the bid 20% under the alert's mid (or the best bid since)
+  follow_stop: 0.35               # STOP HIT: 35% under it, or the stock back to yesterday's close
+  follow_run_step: 0.25           # "still running" at +25% over the entry, then +25% over each push
+  # jumps: a stock moving 0.7% ($200B+), 1.2% ($20B+) or 2% in 10 minutes reads its chain at once
+  jump_pct_mega: 0.7
 
 # The trend lane (docs/TRENDS.md): consumer behavior changing before the earnings report shows it.
 # Brands -> companies live in news247/data/trends.yaml. `news247 trends` shows the board and how

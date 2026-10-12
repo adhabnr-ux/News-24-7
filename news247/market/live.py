@@ -60,11 +60,31 @@ class LiveQuote:
         return None
 
 
+@dataclass
+class DayPath:
+    """One stock's session so far, from the live prices seen (and the day's bar when a source
+    gives it): where it opened, its high and low and when, and the last ``JUMP_KEEP_S`` of prices
+    for the jump detector."""
+
+    day: str
+    high: float
+    high_ts: float
+    low: float
+    low_ts: float
+    open: float | None = None
+    hist: list[tuple[float, float]] = field(default_factory=list)  # (epoch, price), oldest first
+
+
+JUMP_KEEP_S = 1800.0  # price history kept per symbol for the jump detector
+
+
 class LiveQuotes:
-    """The latest stock price per symbol, newest source wins."""
+    """The latest stock price per symbol, newest source wins; plus each symbol's path today
+    (high/low and when) and a 30-minute history, so a sudden jump is seen between sweeps."""
 
     def __init__(self) -> None:
         self.quotes: dict[str, LiveQuote] = {}
+        self.paths: dict[str, DayPath] = {}
         self.updates = 0
 
     def update(
@@ -80,6 +100,84 @@ class LiveQuotes:
             sym, float(price), prev_close or (cur.prev_close if cur else None), ts, source
         )
         self.updates += 1
+        self._track(sym, float(price), ts)
+
+    def _track(self, sym: str, price: float, ts: float) -> None:
+        day = datetime.fromtimestamp(ts, ET).date().isoformat()
+        p = self.paths.get(sym)
+        if p is None or p.day != day:
+            p = self.paths[sym] = DayPath(day, price, ts, price, ts)
+        if price > p.high:
+            p.high, p.high_ts = price, ts
+        if price < p.low:
+            p.low, p.low_ts = price, ts
+        if not p.hist or ts > p.hist[-1][0]:
+            p.hist.append((ts, price))
+        elif ts == p.hist[-1][0]:
+            p.hist[-1] = (ts, price)
+        cut = ts - JUMP_KEEP_S
+        while p.hist and p.hist[0][0] < cut:
+            p.hist.pop(0)
+
+    def seed(self, symbol: str, points: Iterable[tuple[float, float]]) -> None:
+        """Today's earlier prices (e.g. Yahoo's 5-minute spark), so the day's high and low are
+        known from the open even when the first live read comes late."""
+        sym = (symbol or "").upper()
+        for ts, price in sorted(points or []):
+            if price and price > 0:
+                self._track(sym, float(price), float(ts))
+
+    def set_range(
+        self, symbol: str, high: float | None, low: float | None, open_: float | None, ts: float
+    ) -> None:
+        """The day's bar from a source that has it (Alpaca's daily bar): widens the path's high and
+        low to the whole session. The time of a bar high is unknown, so it keeps the observed time
+        when the observed high matches it."""
+        sym = (symbol or "").upper()
+        p = self.paths.get(sym)
+        day = datetime.fromtimestamp(ts, ET).date().isoformat()
+        if p is None or p.day != day:
+            if not high or not low:
+                return
+            p = self.paths[sym] = DayPath(day, float(high), 0.0, float(low), 0.0)
+        if high and high > p.high:
+            p.high, p.high_ts = float(high), 0.0
+        if low and 0 < low < p.low:
+            p.low, p.low_ts = float(low), 0.0
+        if open_ and p.open is None:
+            p.open = float(open_)
+
+    def path(self, symbol: str, now: float | None = None) -> DayPath | None:
+        p = self.paths.get((symbol or "").upper())
+        if p is None:
+            return None
+        if p.day != datetime.fromtimestamp(now or time.time(), ET).date().isoformat():
+            return None
+        return p
+
+    def jump(
+        self, symbol: str, window_s: float, now: float | None = None
+    ) -> tuple[float, float, float] | None:
+        """The biggest move into the latest price within the last ``window_s``: (% move, price it
+        started from, when). Up moves are measured from the window's low, down moves from its high;
+        the larger one wins. None without at least two prices in the window."""
+        p = self.path(symbol, now)
+        if p is None or len(p.hist) < 2:
+            return None
+        now = now or time.time()
+        last_ts, last = p.hist[-1]
+        if now - last_ts > window_s:
+            return None
+        pts = [(t, x) for t, x in p.hist if t >= last_ts - window_s]
+        if len(pts) < 2:
+            return None
+        lo_t, lo = min(pts[:-1], key=lambda r: r[1])
+        hi_t, hi = max(pts[:-1], key=lambda r: r[1])
+        up = (last / lo - 1.0) * 100.0 if lo > 0 else 0.0
+        down = (last / hi - 1.0) * 100.0 if hi > 0 else 0.0
+        if up >= -down:
+            return (up, lo, lo_t)
+        return (down, hi, hi_t)
 
     def get(self, symbol: str, max_age_s: float, now: float | None = None) -> LiveQuote | None:
         q = self.quotes.get((symbol or "").upper())
@@ -156,6 +254,29 @@ def parse_stock_snapshots(doc: Any, today: date) -> dict[str, tuple[float, float
     return out
 
 
+def parse_stock_ranges(doc: Any, today: date) -> dict[str, tuple[float | None, float | None, float | None]]:
+    """Alpaca ``/v2/stocks/snapshots`` -> {symbol: (day high, day low, open)} from today's daily
+    bar (none before today's first trade)."""
+    out: dict[str, tuple[float | None, float | None, float | None]] = {}
+    if not isinstance(doc, dict):
+        return out
+    rows = doc.get("snapshots") if isinstance(doc.get("snapshots"), dict) else doc
+    for sym, snap in rows.items():
+        if not isinstance(snap, dict):
+            continue
+        bar = snap.get("dailyBar") or {}
+        bar_day = _rfc3339(bar.get("t"))
+        if bar_day is None or bar_day.astimezone(ET).date() != today:
+            continue
+        try:
+            out[str(sym).upper()] = tuple(  # type: ignore[assignment]
+                float(bar[k]) if bar.get(k) else None for k in ("h", "l", "o")
+            )
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 # --------------------------------------------------------------------------- the option stream
 
 STREAM_RUNGS = (3.0, 5.0, 10.0, 20.0, 50.0)  # bid / previous close - 1: +300%, +500%, +1,000% ...
@@ -175,6 +296,7 @@ class Watch:
     fair: float | None = None  # value at the last chain read (neighbor-strike implied vol)
     ask: float | None = None
     misprint_at: float = 0.0  # when this contract last tripped the misprint check
+    follow: bool = False  # an alerted contract being followed: every quote goes to ``on_quote``
 
 
 @dataclass
@@ -240,7 +362,9 @@ class OptionStream:
         on_misprint: Callable[[Watch, float | None, float | None, float], Any] | None = None,
         misprint_ratio: float = 0.5,
         rich_ratio: float = 2.0,
+        on_quote: Callable[[Watch, float | None, float | None, float], Any] | None = None,
     ) -> None:
+        self.on_quote = on_quote  # (watch, bid, ask, quote epoch): every quote of a watched contract
         self.on_misprint = on_misprint  # (watch, bid, ask, quote epoch): a quote far from fair value
         self.misprint_ratio = misprint_ratio
         self.rich_ratio = rich_ratio
@@ -336,6 +460,11 @@ class OptionStream:
                 del self.stats.quote_lag_s[:-200]
             w.ask = float(ask) if ask else None
             self._misprint_check(w, float(bid) if bid else None, w.ask, ts, now)
+            if self.on_quote is not None and w.follow:
+                try:
+                    self.on_quote(w, float(bid) if bid else None, w.ask, ts)
+                except Exception:  # noqa: BLE001 - one bad follow-up must not drop the socket
+                    log.exception("options stream follow-up failed")
             if not bid:
                 continue
             w.bid, w.bid_ts = float(bid), ts

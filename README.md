@@ -294,6 +294,16 @@ rotate through, largest first.
   - Live quotes only; the websocket also watches each contract's ask against its value.
 - **Live, not 15 minutes late** (with Alpaca keys): spikes fire on the live bid before the feed's
   delayed trades print, stock prices are real-time, and news or radar names are read at once.
+- **After the alert**: every spike and blowup alert says where you are in the move (when it
+  began, its high, which push this is) and what the ask buys now: delta, breakeven, the contract's
+  value if the stock holds, gives back half, or goes 1% further, and the exits. Then the contract
+  is followed on live quotes until the close, with a follow-up for each change:
+  - 📈 still running;
+  - ⚠️ fading (20% off its high, or the stock giving back half its move);
+  - 🛑 stop hit (35% off, or the stock's move erased);
+  - 🔁 running again after a stop.
+- **Earlier on fast moves**: a stock jumping 0.7% in 10 minutes ($200B+; 2% for small names)
+  has its chain read at once, and every company's live price is swept every minute.
 
 Chains come from **Alpaca** when its keys are set (free paper account; Cboe as the automatic
 fallback), else Cboe. The repo's `.mcp.json` also gives Claude Code a read-only Alpaca MCP

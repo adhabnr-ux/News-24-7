@@ -346,7 +346,7 @@ class OptionsConfig:
     stock_quotes: bool = True  # Alpaca real-time stock snapshots for each batch's companies (keys needed)
     stock_quote_max_age_s: float = 180.0  # a stock quote older than this is not "live"
     stock_sweep_s: float = (
-        120.0  # every company's live stock price this often (Alpaca, 100 a request; 0 = off)
+        60.0  # every company's live stock price this often (Alpaca, 100 a request; 0 = off)
     )
     stock_sweep_urgent: int = 20  # names newly moving hot_move_pct+ in a sweep read at once (biggest first)
     urgent_concurrency: int = 2  # chains read at once for urgent names (news, radar, the stream)
@@ -372,6 +372,28 @@ class OptionsConfig:
     misprint_print_minutes: float = 60.0  # ... within the last hour
     misprint_push_edge: float = 0.10  # arbitrage pushes from $0.10 a share; value misprints from 2x that
     misprint_daily_pushes: int = 6  # most misprint pushes per day (separate from daily_pushes)
+    # after the alert (Oct 12 2026: the META $785 call alert came at 12:51 ET on the third push of
+    # a move that began at 9:35, and nothing said whether it kept going): every spike or blowup
+    # alert's lead contract is followed on live quotes until the close, judged on its bid
+    follow: bool = True
+    follow_per_alert: int = 1  # contracts followed per alert (the one in the title first)
+    follow_fade: float = 0.20  # FADING: the bid 20% under its high since the alert (or the alert's mid)
+    follow_stop: float = 0.35  # STOPPED: 35% under it (or the stock back to yesterday's close)
+    follow_run_step: float = 0.25  # "still running" pushes at +25% steps above the entry, then each push
+    follow_confirm_s: float = 20.0  # a drop must show on two quotes this far apart
+    follow_read_s: float = 45.0  # with no fresh quote this long, the company's chain is re-read
+    follow_hours: float = 6.5  # the longest a contract is followed (it always ends at the close)
+    follow_max_pushes: int = 6  # follow-ups per contract (a stop is always sent)
+    follow_gap_s: float = 120.0  # at least this long between follow-ups of one contract (a stop excepted)
+    follow_daily_pushes: int = 30
+    follow_max: int = 40  # contracts followed at once
+    follow_bars: bool = True  # its 5-minute bars on the alert (Alpaca): how far into the move
+    # jumps: a stock moving fast between sweeps reads its chain at once (a read, not an alert)
+    jump_window_s: float = 600.0
+    jump_pct_mega: float = 0.7  # $200B+: 0.7% in 10 minutes
+    jump_pct_large: float = 1.2  # $20B+
+    jump_pct: float = 2.0  # everyone else
+    jump_cooldown_s: float = 900.0  # one jump read per company and direction this often
 
 
 @dataclass
@@ -638,6 +660,23 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         raise ConfigError(
             "[options] misprint_ratio and misprint_print_ratio must be in (0, 1), misprint_rich_ratio > 1"
         )
+    if (
+        not 0 < options.follow_fade < options.follow_stop < 1
+        or options.follow_run_step <= 0
+        or options.follow_per_alert < 1
+        or options.follow_confirm_s < 0
+        or options.follow_read_s <= 0
+        or options.follow_max < 1
+    ):
+        raise ConfigError(
+            "[options] need 0 < follow_fade < follow_stop < 1, follow_run_step > 0, follow_per_alert >= 1, "
+            "follow_confirm_s >= 0, follow_read_s > 0, follow_max >= 1"
+        )
+    if (
+        options.jump_window_s <= 0
+        or min(options.jump_pct_mega, options.jump_pct_large, options.jump_pct) <= 0
+    ):
+        raise ConfigError("[options] jump_window_s and the jump_pct thresholds must be > 0")
     if options.request_interval_s < 0.2:
         raise ConfigError("[options] request_interval_s must be at least 0.2 (be polite to free endpoints)")
     if options.spike_0dte_multiple < 1:

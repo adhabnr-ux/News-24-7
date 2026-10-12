@@ -21,6 +21,7 @@ from .config import CASH_HOURS_ONLY_QUIET, PROXIES, Config
 from .edge import ET, Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
+from .market.follow import FollowEvent, Play
 from .market.options import MISPRINT_LABEL, OptionsFeed, OptionsHit, OptionsRadar, prev_session
 from .market.prices import PriceMonitor
 from .market.radar import MoversRadar, RadarHit, SmallCapFeed
@@ -245,7 +246,8 @@ class Engine:
         if self.options_feed is not None:
             runners.append(
                 asyncio.create_task(
-                    self.options_feed.run(self.on_options, stop, self.on_options_problem), name="options"
+                    self.options_feed.run(self.on_options, stop, self.on_options_problem, self.on_follow),
+                    name="options",
                 )
             )
         if self.trends is not None and self.cfg.trends.scan:
@@ -756,6 +758,13 @@ class Engine:
             alert = self._options_alert(hit)
             await self.publish(alert)
             self._maybe_hunt(alert, hit.to_dict().get("name") or "")
+            if self.options_feed is not None and alert.severity >= Severity.MEDIUM:
+                self.options_feed.track(hit)
+
+    async def on_follow(self, events: list[FollowEvent]) -> None:
+        """Follow-ups on alerted contracts: still running, fading, stopped."""
+        for ev in events:
+            await self.publish(self._follow_alert(ev))
 
     # ------------------------------------------------------------------ the trend lane
 
@@ -1022,6 +1031,130 @@ class Engine:
         lines.append("Misprints vanish in seconds: check the live quote before you act.")
         return title, lines
 
+    def _play_lines(self, play: Play, hit: OptionsHit) -> list[str]:
+        """'If you buy now': where in the move the ask is, what the contract does as the stock
+        moves, the breakeven, and the exits the follow-ups will watch."""
+        o = self.cfg.options
+        sym = hit.symbol
+        mult = f" ({play.entry / play.base:,.1f}x yesterday's ${play.base:.2f})" if play.base > 0 else ""
+        lines = [f"▶ If you buy now at the ${play.entry:.2f} {play.entry_how}{mult}:"]
+        p = play.path
+        if p is not None:
+            began = (
+                f"began running {datetime.fromtimestamp(p.began_ts, ET):%H:%M} ET · " if p.began_ts else ""
+            )
+            lines.append(
+                f"• Its day: {began}high ${p.high:.2f} at {datetime.fromtimestamp(p.high_ts, ET):%H:%M} ET · "
+                f"low ${p.low:.2f} · {p.volume:,} traded (trades through {datetime.fromtimestamp(p.to_ts, ET):%H:%M} ET)"
+            )
+            if play.verdict:
+                lines.append(f"• Where you are: {play.verdict}.")
+        if play.per_1pct is not None and play.delta is not None:
+            iv = f" · implied vol {play.iv * 100:.0f}%" if play.iv else ""
+            lines.append(
+                f"• Each 1% {sym} moves your way: about ${abs(play.per_1pct):.2f} "
+                f"({abs(play.per_1pct) / play.entry * 100:.0f}% of the entry) · delta {abs(play.delta):.2f}{iv}"
+            )
+        be = f" ({play.breakeven_pct:+.1f}% from here)" if play.breakeven_pct is not None else ""
+        lines.append(f"• Breakeven at expiry: {sym} ${play.breakeven:,.2f}{be}")
+        if play.scenarios:
+            lines.append(
+                "• If " + " · ".join(f"{what}: ${v:.2f} ({pct:+.0f}%)" for what, v, pct in play.scenarios)
+            )
+        stock = ""
+        if play.stock_fade is not None and play.stock_stop is not None:
+            stock = (
+                f" · on the stock: half its move gone at ${play.stock_fade:,.2f}, all of it at "
+                f"${play.stock_stop:,.2f}"
+            )
+        lines.append(
+            f"• Exits: fading under a ${play.fade:.2f} bid, stop under ${play.stop:.2f} "
+            f"({o.follow_fade * 100:.0f}% / {o.follow_stop * 100:.0f}% under the mid; both trail the best bid){stock}"
+        )
+        if o.follow:
+            lines.append(
+                f"• Followed until the close: a follow-up when it runs (+{o.follow_run_step * 100:.0f}% steps), "
+                "fades or hits the stop."
+            )
+        return lines
+
+    def _follow_alert(self, ev: FollowEvent) -> Alert:
+        f = ev.f
+        o = self.cfg.options
+        bid = f.bid or 0.0
+        since = (bid / f.entry - 1.0) * 100.0 if f.entry else 0.0
+        at = datetime.fromtimestamp(f.alert_ts, ET)
+        stock = ""
+        if f.stock is not None:
+            stock = f" · {f.underlying} ${f.stock:,.2f}"
+        if ev.kind == "running":
+            title = f"📈 {f.label} still running: bid ${bid:.2f}, {since:+.0f}% since the {at:%H:%M} ET alert{stock}"
+            sev = Severity.MEDIUM
+        elif ev.kind == "fading":
+            title = f"⚠️ {f.label} fading: bid ${bid:.2f}, {since:+.0f}% since the {at:%H:%M} ET alert{stock}"
+            sev = Severity.HIGH
+        elif ev.kind == "rerun":
+            title = f"🔁 {f.label} running again after its stop: bid ${bid:.2f}, a new high{stock}"
+            sev = Severity.MEDIUM
+        else:
+            title = (
+                f"🛑 {f.label} stop hit: bid ${bid:.2f}, {since:+.0f}% since the {at:%H:%M} ET alert{stock}"
+            )
+            sev = Severity.HIGH
+        lines = [f"Why: {ev.why}."]
+        ask = f" / ask ${f.ask:.2f}" if f.ask else ""
+        lines.append(
+            f"Alert {at:%H:%M} ET: ask ${f.entry:.2f} (mid ${f.mark:.2f}) · best bid since ${f.high:.2f} at "
+            f"{datetime.fromtimestamp(f.high_ts, ET):%H:%M} ET · now bid ${bid:.2f}{ask} "
+            f"(quote {datetime.fromtimestamp(f.ts, ET):%H:%M:%S} ET)"
+        )
+        if f.stock is not None and f.stock_prev and f.stock_peak is not None:
+            move = f.stock_peak - f.stock_prev
+            kept = (f.stock - f.stock_prev) / move if move else 0.0
+            if kept >= 0.75:
+                read = "holding near its best level today"
+                if ev.kind != "running":
+                    read += (
+                        ": the option is losing value faster than the stock (implied vol coming out, or time)"
+                    )
+            elif kept > 0:
+                read = f"has given back {(1 - kept) * 100:.0f}% of its move today"
+            else:
+                read = "has given back its whole move today"
+            lines.append(
+                f"{f.underlying} ${f.stock:,.2f}: {read} (yesterday ${f.stock_prev:,.2f}, best ${f.stock_peak:,.2f}"
+                + (f", at the alert ${f.stock_alert:,.2f})" if f.stock_alert else ")")
+            )
+        if f.day_high:
+            when = f" at {datetime.fromtimestamp(f.day_high_ts, ET):%H:%M} ET" if f.day_high_ts else ""
+            lines.append(f"Its high of the day before the alert: ${f.day_high:.2f}{when}.")
+        if ev.kind == "stopped":
+            lines.append(
+                f"The stop rule ({o.follow_stop * 100:.0f}% under the best bid, or the stock's move erased) says out. "
+                f"It stays watched until the close: a bid back above ${f.high:.2f} sends 'running again'."
+            )
+        elif ev.kind == "rerun":
+            lines.append(
+                f"New lines from here: ask ${f.entry:.2f} · fading under ${f.fade:.2f} · stop under "
+                f"${f.stop:.2f} · next 'still running' at ${f.next_run:.2f}."
+            )
+        else:
+            lines.append(
+                f"Lines now: fading under ${f.fade:.2f} · stop under ${f.stop:.2f} · next 'still running' at "
+                f"${f.next_run:.2f}."
+            )
+        lines.append("The system never trades: these are the rules' levels, the same every time.")
+        alert = Alert(
+            kind="options",
+            severity=sev,
+            title=title,
+            body="\n".join(lines),
+            url=f"https://www.cboe.com/delayed_quotes/{f.underlying.lower()}/quote_table",
+            tickers=[f.underlying],
+        )
+        alert.edge["follow"] = {**f.to_dict(), "event": ev.kind, "why": ev.why}
+        return alert
+
     def _options_alert(self, hit: OptionsHit) -> Alert:
         d = hit.to_dict()
         ch = hit.chain
@@ -1157,6 +1290,8 @@ class Engine:
                     f"{fmt_cap(rc.premium)} at ${rc.price:.2f}{side}"
                 )
             lines.append("Side is estimated from where the last print sat in the bid/ask spread.")
+        if hit.play is not None and hit.kind in ("spike", "blowup"):
+            lines.extend(self._play_lines(hit.play, hit))
         news = self.find_catalysts([hit.symbol], hit.detected, overnight=True)
         if not news:
             lines.append("No headline yet.")
@@ -1173,6 +1308,21 @@ class Engine:
         alert.edge["options"] = d
         self._track_symbols([hit.symbol])
         return alert
+
+    def follow_for(self, alert: dict[str, Any]) -> dict[str, Any] | None:
+        """The live follow-through of an options alert's contract (its state now), for the app."""
+        if self.options_feed is None:
+            return None
+        e = alert.get("edge") or {}
+        occ = (e.get("follow") or {}).get("occ") or ((e.get("options") or {}).get("play") or {}).get(
+            "contract"
+        )
+        if not occ:
+            o = e.get("options") or {}
+            rows = o.get("spikes") or o.get("blowups") or []
+            occ = rows[0].get("contract") if rows else None
+        f = self.options_feed.follow.items.get(occ) if occ else None
+        return f.to_dict() if f is not None else None
 
     def options_board(self, limit: int = 40) -> dict[str, Any]:
         return {
