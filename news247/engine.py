@@ -10,7 +10,7 @@ import os
 import re
 import time
 from collections import deque
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from .analysis.catalyst_dates import extract_event
@@ -1078,6 +1078,65 @@ class Engine:
             )
         return lines
 
+    def _daymove_lines(self, hit: OptionsHit, who: str) -> tuple[str, list[str]]:
+        """A big stock's directional day: the call, its pullback zone, or its fade; with the
+        contracts to buy, at what price, and the stock level that ends it."""
+        c = hit.daycall
+        o = self.cfg.options
+        sym = hit.symbol
+        px = c.last or c.price
+        at = datetime.fromtimestamp(c.ts, ET)
+        fade = c.line(o.daymove_fade)
+        verb = "up" if c.cp == "C" else "down"
+        if hit.stage == "faded":
+            title = (
+                f"⛔ {sym} day move faded: {c.move_pct(px):+.1f}%, under 70% of its move for "
+                f"{o.daymove_fade_s / 60:.0f} min · {who}"
+            )
+            lines = [
+                f"{sym} ${px:,.2f}: best ${c.best:,.2f} today, yesterday ${c.prev:,.2f}; the 70% line was ${fade:,.2f}.",
+                f"The {c.side} call from {at:%H:%M} ET is off: no new entries. If you hold, the follow-ups (fading / stop) still apply.",
+            ]
+            return title, lines
+        if hit.stage == "zone":
+            title = (
+                f"🔁 {sym} pullback zone: {c.move_pct(px):+.1f}%, {c.kept(px) * 100:.0f}% of its move held · "
+                f"the {c.side}' buy zone · {who}"
+            )
+        else:
+            title = f"📊 {sym} day move: {c.side} · {sym} {verb} {abs(c.move_pct(px)):.1f}% and holding ({c.how}) · {who}"
+        lines = [
+            f"{sym} ${px:,.2f} ({c.move_pct(px):+.2f}%): best ${c.best:,.2f} today, yesterday ${c.prev:,.2f}. "
+            f"Called at {at:%H:%M} ET ({c.how})."
+        ]
+        names = {"day": "Day trade", "swing": "Trend (multi-day)", "lotto": "Lotto (expires today/tomorrow)"}
+        for p in c.picks:
+            when = date.fromisoformat(p.expiry)
+            vol = self.options_feed.daymove.volume_state(p.occ) if self.options_feed is not None else ""
+            lines.append(
+                f"• {names.get(p.tier, p.tier)}: {p.label} ({p.dte}d): ask ${p.ask:.2f} / bid ${p.bid:.2f} · "
+                f"delta {p.delta:.2f} · +${p.per_1pct:.2f} per 1% {sym} moves ({p.leverage:.0f}%) · "
+                f"breakeven at expiry ${p.breakeven:,.2f}"
+            )
+            lines.append(
+                f"  Pullback buy zone ${p.zone_hi:.2f}–${p.zone_lo:.2f} (with {sym} ${c.line(0.85):,.2f}–${fade:,.2f}) · "
+                f"implied vol {p.iv * 100:.0f}% · {p.volume:,} traded"
+                + (f" · volume {vol}" if hit.stage == "zone" and vol else "")
+                + (f" · expires {when:%b} {when.day}" if p.tier == "lotto" else "")
+            )
+        lines.append(
+            f"How to use it: buy at the ask now, or rest a limit inside the pullback zone. The call is off if {sym} "
+            f"stays {'under' if c.cp == 'C' else 'over'} ${fade:,.2f} (70% of its move) for {o.daymove_fade_s / 60:.0f} "
+            "minutes. After you buy, the follow-ups say when it runs, fades or hits its stop."
+        )
+        lines.append(
+            "Study (real OPRA tape, Sep 21–Oct 12 2026): options bought at this call made a median +14% by the close "
+            "(7 of 11 up); at the pullback zone, +14% (8 of 11). On META's +4% day, 10%-out calls bought at 9:45 made "
+            "+54% (2 days out), +29% (4), +10% (11), +1% (18), −1% (39): the month-out contracts had repriced in the "
+            "first 15 minutes. The system never trades."
+        )
+        return title, lines
+
     def _follow_alert(self, ev: FollowEvent) -> Alert:
         f = ev.f
         o = self.cfg.options
@@ -1259,6 +1318,12 @@ class Engine:
                 lines.append(stock)
             for reason in hit.reasons:
                 lines.append(f"ⓘ {reason}")
+        elif hit.kind == "daymove":
+            title, more = self._daymove_lines(hit, who)
+            lines.extend(more)
+            for reason in hit.reasons:
+                if hit.stage != "faded":
+                    lines.append(f"ⓘ {reason}")
         elif hit.kind == "misprint":
             title, more = self._misprint_lines(hit, who)
             lines.extend(more)

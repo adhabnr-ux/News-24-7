@@ -475,7 +475,7 @@ class FollowDesk:
     def track(self, hit: OptionsHit, now: float | None = None) -> list[Followed]:
         """Follow the lead contract(s) of a spike or blowup alert. A contract already followed is
         left as it is; one that was stopped starts over from this alert (a new entry)."""
-        if not self.cfg.follow or hit.kind not in ("spike", "blowup"):
+        if not self.cfg.follow or hit.kind not in ("spike", "blowup", "daymove"):
             return []
         now = now or time.time()
         self._roll(now)
@@ -772,4 +772,10 @@ def lead_contracts(hit: OptionsHit) -> list[tuple[Contract, float]]:
                 out.append((c, base))
     elif hit.kind == "blowup":
         out = [(r.contract, r.base) for r in hit.blowups if r.base > 0]
+    elif hit.kind == "daymove" and hit.daycall is not None and hit.stage in ("call", "zone"):
+        by = {c.symbol: c for c in hit.chain.contracts}
+        for p in hit.daycall.picks:
+            c = by.get(p.occ)
+            if c is not None:
+                out.append((c, c.prev_close or p.mid))
     return out

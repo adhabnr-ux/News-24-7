@@ -394,6 +394,32 @@ class OptionsConfig:
     jump_pct_large: float = 1.2  # $20B+
     jump_pct: float = 2.0  # everyone else
     jump_cooldown_s: float = 900.0  # one jump read per company and direction this often
+    # day moves (docs/DAYMOVE.md): a big stock's directional day called at the 9:45 hold (or later,
+    # pressing its extreme), and the options to buy with exact prices, a pullback zone and the line
+    # that ends it. Rules from the OPRA tape of Sep 21 - Oct 12 2026.
+    daymove: bool = True
+    daymove_min_cap: float = 50e9  # companies this big (liquid weekly options)
+    daymove_min_pct: float = 1.0  # the stock this far from yesterday's close
+    daymove_hold: float = 0.9  # ... holding 90%+ of its best move of the day
+    daymove_fade: float = 0.7  # under 70% held the call is off (the pullback zone is 85-70%)
+    daymove_fade_s: float = 900.0  # ... for 15 minutes in a row (one sharp dip is not a fade)
+    daymove_until: str = "15:00"  # no new calls from this time (ET)
+    daymove_daily: int = 10  # calls a day at most
+    daymove_day_min_dte: int = 1  # the "day" pick: 1-7 days out ...
+    daymove_day_max_dte: int = 7
+    daymove_day_delta: float = 0.25  # ... nearest 0.25 delta
+    daymove_swing_min_dte: int = 14  # the "swing" pick: 14-35 days out ...
+    daymove_swing_max_dte: int = 35
+    daymove_swing_delta: float = 0.30  # ... nearest 0.30 delta
+    daymove_lotto: bool = False  # also a 0-1 day "lotto" pick (contracts that can go to pennies)
+    daymove_lotto_delta: float = 0.15
+    daymove_max_spread: float = 0.25  # a pick's bid/ask no wider than 25% of its mid
+    daymove_min_price: float = 0.10
+
+    @property
+    def daymove_until_min(self) -> int:
+        h, _, m = self.daymove_until.partition(":")
+        return int(h) * 60 + int(m or 0)
 
 
 @dataclass
@@ -671,6 +697,25 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         raise ConfigError(
             "[options] need 0 < follow_fade < follow_stop < 1, follow_run_step > 0, follow_per_alert >= 1, "
             "follow_confirm_s >= 0, follow_read_s > 0, follow_max >= 1"
+        )
+    try:
+        until = options.daymove_until_min
+    except ValueError:
+        until = -1
+    deltas = (options.daymove_day_delta, options.daymove_swing_delta, options.daymove_lotto_delta)
+    if (
+        not 9 * 60 + 45 < until <= 16 * 60
+        or not 0 < options.daymove_fade < options.daymove_hold <= 1
+        or options.daymove_min_pct <= 0
+        or not 0 <= options.daymove_day_min_dte <= options.daymove_day_max_dte
+        or not 0 <= options.daymove_swing_min_dte <= options.daymove_swing_max_dte
+        or not all(0 < d < 0.5 for d in deltas)
+        or options.daymove_max_spread <= 0
+    ):
+        raise ConfigError(
+            "[options] day moves need daymove_until between 09:46 and 16:00, "
+            "0 < daymove_fade < daymove_hold <= 1, daymove_min_pct > 0, ordered dte ranges, "
+            "deltas in (0, 0.5) and daymove_max_spread > 0"
         )
     if (
         options.jump_window_s <= 0

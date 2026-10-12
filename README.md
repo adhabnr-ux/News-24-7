@@ -302,6 +302,12 @@ rotate through, largest first.
   - ⚠️ fading (20% off its high, or the stock giving back half its move);
   - 🛑 stop hit (35% off, or the stock's move erased);
   - 🔁 running again after a stop.
+- **📊 Day moves**: when a $50B+ stock is having its directional day (1%+ and holding at 9:45, or
+  pressing its extreme later), one alert names the options to buy. It gives a 1–7 day ~0.25-delta
+  contract for the day and a 14–35 day ~0.30-delta one for a trend, each with its exact ask, a
+  pullback buy zone, and the stock level that ends the trade. Then come 🔁 the pullback zone and
+  ⛔ the fade. The rules come from a study of real OPRA tape: [docs/DAYMOVE.md](docs/DAYMOVE.md) and
+  [the research](docs/research/options-volume-strategy-2026-10-12.md).
 - **Earlier on fast moves**: a stock jumping 0.7% in 10 minutes ($200B+; 2% for small names)
   has its chain read at once, and every company's live price is swept every minute.
 

@@ -515,6 +515,8 @@ class OptionsHit:
     budget: str = "options"  # which daily push budget a HIGH spent: "options" | "misprint"
     paths: dict[str, Any] = field(default_factory=dict)  # occ -> OptionPath: the contract's session so far
     play: Any = None  # Play: what a buyer at the ask now gets, and the exits (spikes and blowups)
+    daycall: Any = None  # DayCall: a big stock's directional day and its picks (kind "daymove")
+    stage: str = ""  # daymove: "call" | "zone" | "faded"
 
     @property
     def market_cap(self) -> float | None:
@@ -553,6 +555,8 @@ class OptionsHit:
             "detected": self.detected,
             "source": self.chain.source,
             "play": self.play.to_dict() if self.play is not None else None,
+            "daycall": self.daycall.to_dict() if self.daycall is not None else None,
+            "stage": self.stage,
             "paths": {k: v.to_dict() for k, v in self.paths.items()},
         }
 
@@ -1737,6 +1741,11 @@ class OptionsFeed:
         self.follow_reads = 0
         self.bar_reads = 0
         self.bar_errors = 0
+        # day moves: a big stock's directional day, and the options to buy (market/daymove.py)
+        from .daymove import DayMoveDesk
+
+        self.daymove = DayMoveDesk(cfg)
+        self._daymove_pending: dict[str, str] = {}  # symbol -> "call" | "zone", waiting for its chain
         # jumps: a stock moving fast between sweeps
         self._jumped: dict[tuple[str, int], float] = {}
         self._jump_checked = 0.0
@@ -1976,6 +1985,9 @@ class OptionsFeed:
         hits = self.radar.scan(chain, self.universe.get(symbol), now)
         self._watch(chain, now, bool(hits))
         await self._observe_chain(chain, now)
+        dm = self._daymove_hit(chain, now)
+        if dm is not None:
+            hits.append(dm)
         why = self.urgent_why.get(symbol)
         if why and now - why[1] < 600:
             for h in hits:
@@ -2271,6 +2283,72 @@ class OptionsFeed:
         if due:
             self.follow_reads += self.urgent(sorted(due), "following up an alert")
 
+    def daymove_tick(self, now: float) -> None:
+        """Every few seconds in the session: new day-move calls (read their chains at once), and the
+        pullback zone (re-read) or the fade (sent as is) of the calls already made."""
+        if not self.cfg.daymove:
+            return
+        caps = {
+            li.symbol: float(li.market_cap or 0)
+            for li in self.universe.by_symbol.values()
+            if self.eligible(li) and (li.market_cap or 0) >= self.cfg.daymove_min_cap
+        }
+        for c in self.daymove.scan(self.live.quotes, self.live.paths, caps, now):
+            why = f"day move: {c.symbol} {c.move_pct():+.1f}% ({c.how})"
+            self._daymove_pending[c.symbol] = "call"
+            self.urgent_why[c.symbol] = (why, now)
+            self.prioritize([c.symbol], hold_s=6 * 3600)
+            self.urgent([c.symbol], why)
+        for e in self.daymove.watch(now):
+            if e.kind == "zone":
+                self._daymove_pending[e.call.symbol] = "zone"
+                self.urgent([e.call.symbol], f"day move pullback: {e.why}")
+                continue
+            chain = self._chains.get(e.call.symbol) or Chain(
+                e.call.symbol, price=e.call.last, prev_close=e.call.prev
+            )
+            hit = OptionsHit(
+                e.call.symbol,
+                "daymove",
+                "MEDIUM",
+                chain,
+                self.universe.get(e.call.symbol),
+                daycall=e.call,
+                stage="faded",
+                reasons=[e.why],
+                detected=now,
+            )
+            if self._on_hits is not None:
+                task = asyncio.get_running_loop().create_task(self._emit([hit]))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
+
+    def _daymove_hit(self, chain: Chain, now: float) -> OptionsHit | None:
+        """A called company's chain: price its picks; the call's first read and its zone read
+        become alerts."""
+        if not self.cfg.daymove or chain.symbol not in self.daymove.calls:
+            return None
+        stage = self._daymove_pending.pop(chain.symbol, None)
+        c = self.daymove.calls[chain.symbol]
+        first = self.daymove.on_chain(chain, now) is not None
+        if stage is None and not first:
+            return None
+        stage = "call" if first else stage
+        if not c.picks:
+            log.info("day move %s: no option met the pick rules", chain.symbol)
+            return None
+        self._chains[chain.symbol] = chain
+        return OptionsHit(
+            chain.symbol,
+            "daymove",
+            "HIGH" if stage == "call" else "MEDIUM",
+            chain,
+            self.universe.get(chain.symbol),
+            daycall=c,
+            stage=stage or "call",
+            detected=now,
+        )
+
     def check_jumps(self, now: float) -> list[str]:
         """A stock jumping between sweeps (0.7% in 10 minutes for a $200B+ name, 1.2% for $20B+,
         2% for the rest) has its chain read at once. A read, not an alert: the usual tests decide."""
@@ -2360,6 +2438,7 @@ class OptionsFeed:
             now = time.time()
             if self._phase(now) == "open":
                 self.check_jumps(now)
+                self.daymove_tick(now)
             self.follow_tick(now)
             if not self._urgent:
                 self._urgent_wake.clear()
@@ -2564,5 +2643,6 @@ class OptionsFeed:
                 ),
             },
             "follow": {**self.follow.status(), "events_sent": self.follow_events},
+            "daymove": self.daymove.status(),
             **self.health.to_dict(),
         }

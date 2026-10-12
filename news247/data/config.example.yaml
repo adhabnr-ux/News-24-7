@@ -149,6 +149,11 @@ options:
   follow_run_step: 0.25           # "still running" at +25% over the entry, then +25% over each push
   # jumps: a stock moving 0.7% ($200B+), 1.2% ($20B+) or 2% in 10 minutes reads its chain at once
   jump_pct_mega: 0.7
+  # day moves (docs/DAYMOVE.md): a $50B+ stock's directional day called at the 9:45 hold, with the options
+  # to buy (a 1-7 day ~0.25 delta and a 14-35 day ~0.30 delta), exact prices, a pullback zone and the fade line
+  daymove: ${OPTIONS_DAYMOVE:-true}
+  daymove_min_pct: 1.0            # the stock 1%+ from yesterday's close, holding 90%+ of its best move
+  daymove_lotto: false            # also a 0-1 day pick (it can go to pennies by the close)
 
 # The trend lane (docs/TRENDS.md): consumer behavior changing before the earnings report shows it.
 # Brands -> companies live in news247/data/trends.yaml. `news247 trends` shows the board and how

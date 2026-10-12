@@ -468,6 +468,13 @@ Settings: `follow`, `follow_per_alert`, `follow_fade`, `follow_stop`, `follow_ru
 `jump_pct_large`, `jump_pct`, `jump_cooldown_s` (`news247/config.py`). Followed contracts survive a
 restart within the day (`options_follow.json` next to the radar's state).
 
+## Day moves
+
+When a $50B+ stock is having its directional day, the tape calls it at the 9:45 hold. It then
+names the options to buy, with exact prices, a pullback zone and the line that ends the trade.
+See [DAYMOVE.md](DAYMOVE.md), and the study it comes from in
+[research/options-volume-strategy-2026-10-12.md](research/options-volume-strategy-2026-10-12.md).
+
 ## Where to see it
 
 - **Your phone:** HIGH alerts push like any other alert. The app shows every options alert under
@@ -480,6 +487,8 @@ restart within the day (`options_follow.json` next to the radar's state).
 
 - `news247/market/options.py`: the parser, Black-Scholes, the spike and volume rules, and the
   feed.
+- `news247/market/daymove.py`: day moves: the call, the picks, the volume tape, the desk
+  ([DAYMOVE.md](DAYMOVE.md)).
 - `news247/market/follow.py`: after the alert: the contract's day from its bars, the "if you buy
   now" card, and the follow-through desk (running, fading, stopped, running again).
 - `news247/market/live.py`: live stock prices, each stock's day path and the jump detector, and

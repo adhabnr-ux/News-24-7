@@ -73,6 +73,13 @@ class DayPath:
     low_ts: float
     open: float | None = None
     hist: list[tuple[float, float]] = field(default_factory=list)  # (epoch, price), oldest first
+    # the regular session only (9:30-16:00 ET): its extremes, and the first 5-minute bar's close
+    # (the last price seen before 9:35), which the day-move rule compares 9:45 with
+    s_high: float | None = None
+    s_low: float | None = None
+    first5: float | None = None
+    first5_ts: float = 0.0
+    s_first_ts: float = 0.0  # the first regular-session price seen (a late start has no first5)
 
 
 JUMP_KEEP_S = 1800.0  # price history kept per symbol for the jump detector
@@ -111,6 +118,15 @@ class LiveQuotes:
             p.high, p.high_ts = price, ts
         if price < p.low:
             p.low, p.low_ts = price, ts
+        d = datetime.fromtimestamp(ts, ET)
+        mins = d.hour * 60 + d.minute
+        if 570 <= mins < 960:  # 9:30-16:00 ET
+            p.s_high = price if p.s_high is None else max(p.s_high, price)
+            p.s_low = price if p.s_low is None else min(p.s_low, price)
+            if not p.s_first_ts:
+                p.s_first_ts = ts
+            if mins < 575 and ts >= p.first5_ts:  # before 9:35: the first bar is still forming
+                p.first5, p.first5_ts = price, ts
         if not p.hist or ts > p.hist[-1][0]:
             p.hist.append((ts, price))
         elif ts == p.hist[-1][0]:
