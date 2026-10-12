@@ -21,7 +21,7 @@ from .config import CASH_HOURS_ONLY_QUIET, PROXIES, Config
 from .edge import ET, Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
-from .market.options import OptionsFeed, OptionsHit, OptionsRadar
+from .market.options import MISPRINT_LABEL, OptionsFeed, OptionsHit, OptionsRadar
 from .market.prices import PriceMonitor
 from .market.radar import MoversRadar, RadarHit, SmallCapFeed
 from .market.universe import Universe, fmt_cap
@@ -916,6 +916,63 @@ class Engine:
             bits.append(f"last trade {age(c.last_trade)} old")
         return "Data: " + ", ".join(bits) if bits else ""
 
+    def _misprint_lines(self, hit: OptionsHit, who: str) -> tuple[str, list[str]]:
+        """Title and lines for a misprint: what to do, at what price, and why it's mispriced."""
+
+        def size(n: Any) -> str:
+            return f" ({n:,} offered)" if n else ""
+
+        lines: list[str] = []
+        top = hit.misprints[0]
+        c = top.contract
+        if top.kind in ("vertical", "calendar") and top.other is not None:
+            o = top.other
+            title = (
+                f"🎯 Arbitrage: buy {c.label()} at ${top.price:.2f}, sell {o.label()} at "
+                f"${(top.other_price or 0):.2f} (+${top.edge:.2f} a share) · {who}"
+            )
+        elif top.kind == "intrinsic":
+            title = (
+                f"🎯 Below intrinsic: {c.label()} offered at ${top.price:.2f}, worth ${(top.fair or 0):.2f} "
+                f"exercised · {who}"
+            )
+        elif top.kind == "cheap_ask":
+            title = (
+                f"🎯 Misprint: {c.label()} offered at ${top.price:.2f}, worth ~${(top.fair or 0):.2f} · {who}"
+            )
+        elif top.kind == "rich_bid":
+            title = f"🎯 Misprint: {c.label()} bid ${top.price:.2f}, worth ~${(top.fair or 0):.2f} · {who}"
+        else:
+            title = f"🎯 Misprinted trade: {c.label()} traded ${top.price:.2f}, worth ~${(top.fair or 0):.2f} · {who}"
+        for r in hit.misprints:
+            rc = r.contract
+            quote = f"bid ${rc.bid:.2f} / ask ${rc.ask:.2f}" if rc.bid is not None and rc.ask else "no quote"
+            if r.kind in ("vertical", "calendar") and r.other is not None:
+                oq = r.other
+                lines.append(
+                    f"• {MISPRINT_LABEL[r.kind]}: buy {rc.label()} at ${r.price:.2f}{size(rc.ask_size)}, sell "
+                    f"{oq.label()} at ${(r.other_price or 0):.2f}: +${r.edge:.2f} a share (${r.edge * 100:,.0f} a "
+                    f"contract) locked in now. Why: {r.ref}."
+                )
+            elif r.kind == "print":
+                when = f" at {rc.last_trade:%H:%M} ET" if rc.last_trade else ""
+                lines.append(
+                    f"• {MISPRINT_LABEL[r.kind]}: {rc.label()} printed ${r.price:.2f}{when}, worth ~${(r.fair or 0):.2f} "
+                    f"({quote}) by {r.ref}. A thin market: resting limit orders can fill this far from value."
+                )
+            else:
+                verb = "buy" if r.kind in ("cheap_ask", "intrinsic") else "sell"
+                lines.append(
+                    f"• {MISPRINT_LABEL[r.kind]}: {verb} {rc.label()} at ${r.price:.2f}"
+                    f"{size(rc.ask_size if verb == 'buy' else rc.bid_size)} ({quote}), worth ~${(r.fair or 0):.2f} "
+                    f"by {r.ref}: ${r.edge:.2f} a share in your favor."
+                )
+            ages = self._option_ages(rc, hit.detected)
+            if ages:
+                lines.append(f"  {ages}")
+        lines.append("Misprints vanish in seconds: check the live quote before you act.")
+        return title, lines
+
     def _options_alert(self, hit: OptionsHit) -> Alert:
         d = hit.to_dict()
         ch = hit.chain
@@ -1003,6 +1060,13 @@ class Engine:
                 lines.append(
                     f"{rc.label()}: {rc.volume:,} contracts{oi} · {fmt_cap(rc.premium)} at ${rc.price:.2f}{move}{side}"
                 )
+            for reason in hit.reasons:
+                lines.append(f"ⓘ {reason}")
+        elif hit.kind == "misprint":
+            title, more = self._misprint_lines(hit, who)
+            lines.extend(more)
+            if stock:
+                lines.append(stock)
             for reason in hit.reasons:
                 lines.append(f"ⓘ {reason}")
         else:

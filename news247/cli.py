@@ -391,6 +391,16 @@ async def _options(
                         f"     ALERT {h.severity}: spike {top.contract.label()} {top.honest_move_pct:+,.0f}% "
                         f"(confirmed={top.confirmed}, stale_base={top.stale_base})"
                     )
+                elif h.kind == "misprint":
+                    for m in h.misprints:
+                        fair = f", worth ~${m.fair:.2f}" if m.fair is not None else ""
+                        other = (
+                            f" vs {m.other.label()} at ${m.other_price:.2f}" if m.other is not None else ""
+                        )
+                        print(
+                            f"     ALERT {h.severity}: misprint ({m.kind}) {m.contract.label()} at ${m.price:.2f}"
+                            f"{other}{fair}: +${m.edge:.2f} a share"
+                        )
                 else:
                     print(
                         f"     ALERT {h.severity}: unusual volume {fmt_cap(d['flow_premium'])} in {len(h.flow)} contracts"

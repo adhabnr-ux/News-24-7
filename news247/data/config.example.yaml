@@ -132,6 +132,10 @@ options:
   stock_quotes: true              # Alpaca real-time stock snapshots (free plan: IEX) for every batch
   stream: ${OPTIONS_STREAM:-true} # the websocket tripwire (needs Alpaca keys; msgpack)
   stream_max_quotes: 190          # free plan: 200 quotes; Algo Trader Plus: 1,000
+  # misprints (docs/OPTIONS.md "Misprints"): arbitrage and quotes far from value, on live quotes only
+  misprints: ${OPTIONS_MISPRINTS:-true}
+  misprint_push_edge: 0.10        # arbitrage pushes from $0.10 a share; an ask far below value from $0.20
+  misprint_daily_pushes: 6        # its own push budget
 
 # The trend lane (docs/TRENDS.md): consumer behavior changing before the earnings report shows it.
 # Brands -> companies live in news247/data/trends.yaml. `news247 trends` shows the board and how

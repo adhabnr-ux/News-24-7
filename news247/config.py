@@ -347,6 +347,20 @@ class OptionsConfig:
     stream_per_symbol: int = 8
     alpaca_stream_url: str = "wss://stream.data.alpaca.markets"
     alpaca_stock_feed: str = "iex"  # real-time stock snapshots: "iex" (free plan) or "sip" (paid)
+    # misprints (Oct 12 2026: BIIB's $252.5 call showed $0.01 on a broker, printed $0.20 between
+    # $0.65 and $0.85, and quoted $0.15/$1.25): quotes or prints far from what the contract is
+    # worth. Executable ones (arbitrage, an ask far below value) are judged on live quotes only.
+    misprints: bool = True
+    misprint_max_dte: int = 60  # expiries further out are not checked
+    misprint_min_edge: float = 0.05  # arbitrage: at least $0.05 a share ($5 a contract) in your favor
+    misprint_ratio: float = 0.5  # value: an ask at most half the fair value ...
+    misprint_value_edge: float = 0.15  # ... and at least $0.15 a share below it ...
+    misprint_min_fair: float = 0.20  # ... on a contract worth at least $0.20
+    misprint_rich_ratio: float = 2.0  # a bid at 2x+ the fair value (sell to it)
+    misprint_print_ratio: float = 0.4  # a trade today at <= 40% (or >= 1/0.4 = 2.5x) of the fair value
+    misprint_print_minutes: float = 60.0  # ... within the last hour
+    misprint_push_edge: float = 0.10  # arbitrage pushes from $0.10 a share; value misprints from 2x that
+    misprint_daily_pushes: int = 6  # most misprint pushes per day (separate from daily_pushes)
 
 
 @dataclass
@@ -604,6 +618,14 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
     ):
         raise ConfigError(
             "[options] need urgent_concurrency >= 1, stream_max_quotes 1-1000, stream_per_symbol >= 1"
+        )
+    if (
+        not 0 < options.misprint_ratio < 1
+        or not 0 < options.misprint_print_ratio < 1
+        or options.misprint_rich_ratio <= 1
+    ):
+        raise ConfigError(
+            "[options] misprint_ratio and misprint_print_ratio must be in (0, 1), misprint_rich_ratio > 1"
         )
     if options.request_interval_s < 0.2:
         raise ConfigError("[options] request_interval_s must be at least 0.2 (be polite to free endpoints)")

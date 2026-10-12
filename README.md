@@ -281,6 +281,15 @@ rotate through, largest first.
   the app with the reason.
 - **🐋 Unusual volume**: contracts trading 3×+ their open interest with $100K+ in each, summed
   per company. Pushed at $1M+, with calls vs puts and whether the prints hit the ask.
+- **🎯 Misprints**: quotes you could act on now that are mispriced.
+  - Model-free arbitrage: a higher-strike call bid above a lower-strike call's ask, a later
+    expiry offered below an earlier one, or an offer below intrinsic value.
+  - Offers far below value: fair value comes from the neighboring strikes' implied vol.
+  - Trades far below value (like BIIB's $0.20 print between $0.65 and $0.85 on Oct 12 2026) show
+    a thin chain where resting orders fill.
+  - Live quotes only; the websocket also watches each contract's ask against its value.
+- **Live, not 15 minutes late** (with Alpaca keys): spikes fire on the live bid before the feed's
+  delayed trades print, stock prices are real-time, and news or radar names are read at once.
 
 Chains come from **Alpaca** when its keys are set (free paper account; Cboe as the automatic
 fallback), else Cboe. The repo's `.mcp.json` also gives Claude Code a read-only Alpaca MCP

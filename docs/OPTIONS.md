@@ -135,6 +135,54 @@ $77.5 and $75 calls traded only 1.7× and 0.2× their open interest, yet the cha
 - **When:** the regular session only. Option quotes don't move outside it.
 - **Push limit:** at most 12 options pushes a day (`daily_pushes`). The rest are in the app.
 
+## Misprints
+
+**The case behind it (Oct 12 2026, OPRA prints).** BIIB's $252.5 call (Oct 16) had never traded
+before that day, so a broker showed it at a $0.01 placeholder ("+0.00% today"), and its chart
+flicked as the quotes came and went. Meanwhile it printed:
+- $0.65 at the open;
+- one contract at **$0.20** at 10:45 ET;
+- 200 at $0.76-$0.85 at 11:05.
+
+All of it on a $0.15 / $1.25 market. In a chain that thin, a resting low bid catches someone's
+market sell (the $0.20 print), and a stub offer can sit far below value for a few seconds.
+
+The tape now looks for six kinds of misprint. Every kind except prints is judged on **live
+quotes** (at most `live_quote_s` old) and, where the stock price matters, a live stock price. So
+each one is something you could act on when it is flagged:
+
+| Kind | What it means | How it's found | Pushed? |
+|---|---|---|---|
+| **Strike-order arbitrage** | A higher-strike call bid above a lower-strike call's ask, or the mirror for puts: buy one, sell the other, profit locked in | Model-free: a lower-strike call is always worth at least a higher-strike one | Yes, from $0.10 a share |
+| **Calendar arbitrage** | A later expiry offered below an earlier expiry's bid, same strike | Model-free: a later American option is always worth at least an earlier one | Yes, from $0.10 |
+| **Below intrinsic** | Offered below what exercising it is worth at the live stock price | Model-free | Yes, from $0.10 |
+| **Offered far below value** | Ask at most half the fair value and $0.15+ below it, on a contract worth $0.20+ | Fair value: Black-Scholes at the live stock price with the **implied vol of its neighboring strikes** (their tight live markets, interpolated; the contract's own quote is never used) | Yes, from $0.20 below value |
+| **Bid far above value** | Bid at 2x+ the fair value and $0.15+ above it: sell to it | Same fair value | No (in the app) |
+| **Traded far below value** | A print in the last hour at 40% of the fair value or less, $0.15+ below it, unless the contract's own tight market agrees | Same fair value | No: a thin chain where resting orders fill. A print can also be one leg of a spread |
+
+**No neighbors, no value claim.** The company-wide 30-day IV misses the skew and a day's
+repricing, so with no tight neighboring markets there is no value misprint. Arbitrage still
+counts: it needs no model. Prints far *above* value aren't called misprints either: on a news
+day that is informed buying, and the spike alerts cover it.
+
+**On the stream.** A stub offer can vanish in seconds, so the websocket tripwire also watches each
+contract's ask against its fair value (worked out at the last chain read). An ask at half the
+value or less, or a bid at twice or more, is judged against the cached live chain at once,
+with no REST round-trip.
+
+**Noise control:**
+- each contract and kind is shown once a day, and again only when the edge doubles;
+- at most `misprint_daily_pushes` (6) pushes a day, a budget separate from spikes and flow;
+- one push per company per scan.
+
+**Caveat on the free feed:** Alpaca's indicative quotes are live but adjusted, not the exact
+exchange bid/ask, and every misprint alert says so. Confirm the quote on your broker: real
+misprints last seconds.
+
+Settings: `misprints`, `misprint_max_dte`, `misprint_min_edge`, `misprint_ratio`,
+`misprint_value_edge`, `misprint_min_fair`, `misprint_rich_ratio`, `misprint_print_ratio`,
+`misprint_print_minutes`, `misprint_push_edge`, `misprint_daily_pushes` (`news247/config.py`).
+
 ## How live it is
 
 **The miss that shaped this (Oct 12 2026).** BIIB gapped up at the open and its $247.5 calls

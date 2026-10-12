@@ -172,6 +172,9 @@ class Watch:
     fired: float = 0.0  # highest rung already triggered today
     bid: float | None = None
     bid_ts: float = 0.0
+    fair: float | None = None  # value at the last chain read (neighbor-strike implied vol)
+    ask: float | None = None
+    misprint_at: float = 0.0  # when this contract last tripped the misprint check
 
 
 @dataclass
@@ -234,7 +237,14 @@ class OptionStream:
         max_quotes: int = 190,
         is_open: Callable[[], bool] | None = None,
         session: Callable[[], Any] | None = None,
+        on_misprint: Callable[[Watch, float | None, float | None, float], Any] | None = None,
+        misprint_ratio: float = 0.5,
+        rich_ratio: float = 2.0,
     ) -> None:
+        self.on_misprint = on_misprint  # (watch, bid, ask, quote epoch): a quote far from fair value
+        self.misprint_ratio = misprint_ratio
+        self.rich_ratio = rich_ratio
+        self.misprint_trips = 0
         self.url = url
         self.key = key
         self.secret = secret
@@ -262,6 +272,7 @@ class OptionStream:
             if prev is not None:
                 w.fired = prev.fired
                 w.bid, w.bid_ts = prev.bid, prev.bid_ts
+                w.misprint_at = prev.misprint_at
             self.watch[w.occ] = w
         self._trim()
         self._dirty.set()
@@ -315,14 +326,18 @@ class OptionStream:
             self.stats.quotes += 1
             occ = str(m.get("S") or "")
             w = self.watch.get(occ)
-            bid = m.get("bp")
-            if w is None or not bid:
+            if w is None:
                 continue
+            bid, ask = m.get("bp"), m.get("ap")
             ts = _ts_seconds(m.get("t")) or now
             lag = now - ts
             if -5 < lag < 3600:
                 self.stats.quote_lag_s.append(lag)
                 del self.stats.quote_lag_s[:-200]
+            w.ask = float(ask) if ask else None
+            self._misprint_check(w, float(bid) if bid else None, w.ask, ts, now)
+            if not bid:
+                continue
             w.bid, w.bid_ts = float(bid), ts
             if w.prev_close <= 0:
                 continue
@@ -333,6 +348,24 @@ class OptionStream:
                 self.stats.triggers += 1
                 fired.append((w.underlying, occ, float(bid), pct))
         return fired
+
+    def _misprint_check(self, w: Watch, bid: float | None, ask: float | None, ts: float, now: float) -> None:
+        """A stub offer (or bid) can vanish in seconds, so the check happens on the quote itself:
+        an ask at ``misprint_ratio`` of the contract's fair value or less, or a bid at
+        ``rich_ratio`` times it or more, hands the quote to ``on_misprint`` (once a minute per
+        contract), which judges it against the live chain."""
+        if self.on_misprint is None or not w.fair or now - w.misprint_at < 60:
+            return
+        cheap = ask is not None and 0 < ask <= self.misprint_ratio * w.fair
+        rich = bid is not None and bid >= self.rich_ratio * w.fair
+        if not (cheap or rich):
+            return
+        w.misprint_at = now
+        self.misprint_trips += 1
+        try:
+            self.on_misprint(w, bid, ask, ts)
+        except Exception:  # noqa: BLE001 - one bad check must not drop the socket
+            log.exception("options stream misprint check failed")
 
     # ------------------------------------------------------------------ the socket
 

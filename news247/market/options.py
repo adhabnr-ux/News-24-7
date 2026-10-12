@@ -118,6 +118,37 @@ def prev_session(d: date) -> date:
     return d
 
 
+def _cents(x: float) -> float:
+    """Money differences to the cent: 0.90 - 0.80 is $0.10, not 0.0999..."""
+    return round(x, 4)
+
+
+def years_left(expiry: date, now: float) -> float:
+    """Time to the 16:00 ET close on expiry day, in years (at least an hour): a 4-day option's
+    value depends on the hours, not just the days."""
+    end = datetime(expiry.year, expiry.month, expiry.day, 16, tzinfo=ET).timestamp()
+    return max(end - now, 3600.0) / (YEAR_DAYS * 86400)
+
+
+def implied_vol(price: float, s: float, k: float, t: float, cp: str) -> float | None:
+    """The volatility that prices the option at ``price`` (bisection, 1% to 500%). None when the
+    price is outside what any volatility can give (below intrinsic, above the stock)."""
+    if price <= 0 or s <= 0 or k <= 0 or t <= 0:
+        return None
+    lo, hi = 0.01, 5.0
+    if price < bs_price(s, k, t, lo, cp) - 1e-4 or price > bs_price(s, k, t, hi, cp):
+        return None
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if bs_price(s, k, t, mid, cp) < price:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-4:
+            break
+    return (lo + hi) / 2
+
+
 # --------------------------------------------------------------------------- the chain
 
 
@@ -137,6 +168,8 @@ class Contract:
     iv: float | None = None
     last_trade: datetime | None = None  # ET
     quote_time: datetime | None = None  # ET, when the bid/ask was true (None: the feed did not say)
+    bid_size: int | None = None  # contracts on the bid / offer (None: the feed did not say)
+    ask_size: int | None = None
 
     @property
     def kind(self) -> str:
@@ -292,6 +325,8 @@ def parse_chain(doc: dict[str, Any], symbol: str) -> Chain:
                 open_interest=_oint(row.get("open_interest")),
                 iv=as_vol(row.get("iv")),
                 last_trade=_ts(row.get("last_trade_time")),
+                bid_size=_oint(row.get("bid_size")),
+                ask_size=_oint(row.get("ask_size")),
             )
         )
     return chain
@@ -374,6 +409,58 @@ class FlowRow:
         }
 
 
+MISPRINT_LABEL = {
+    "vertical": "strike-order arbitrage",
+    "calendar": "calendar arbitrage",
+    "intrinsic": "below intrinsic value",
+    "cheap_ask": "offered far below its value",
+    "rich_bid": "bid far above its value",
+    "print": "traded far from its value",
+}
+
+
+@dataclass
+class MisprintRow:
+    kind: str  # vertical | calendar | intrinsic | cheap_ask | rich_bid | print
+    contract: Contract  # the mispriced contract (for arbitrage: the leg you buy)
+    price: float  # the misprinted quote or trade
+    edge: float  # $ a share in your favor: fair - ask, bid - fair, bid - ask, intrinsic - ask
+    fair: float | None = None  # value now (value misprints)
+    ref: str = ""  # how the value was found
+    other: Contract | None = None  # arbitrage: the leg you sell
+    other_price: float | None = None
+    live: bool = True  # judged on live quotes (executable now)
+
+    @property
+    def arbitrage(self) -> bool:
+        return self.kind in ("vertical", "calendar", "intrinsic")
+
+    def to_dict(self, today: date) -> dict[str, Any]:
+        c = self.contract
+        d: dict[str, Any] = {
+            "kind": self.kind,
+            "what": MISPRINT_LABEL.get(self.kind, self.kind),
+            "contract": c.symbol,
+            "label": c.label(),
+            "dte": c.dte(today),
+            "price": self.price,
+            "edge": round(self.edge, 4),
+            "fair": round(self.fair, 4) if self.fair is not None else None,
+            "ref": self.ref,
+            "bid": c.bid,
+            "ask": c.ask,
+            "bid_size": c.bid_size,
+            "ask_size": c.ask_size,
+            "last": c.last,
+            "last_trade": c.last_trade.isoformat() if c.last_trade else None,
+            "quote_time": c.quote_time.isoformat() if c.quote_time else None,
+            "live": self.live,
+        }
+        if self.other is not None:
+            d.update(other=self.other.symbol, other_label=self.other.label(), other_price=self.other_price)
+        return d
+
+
 @dataclass
 class OptionsHit:
     symbol: str
@@ -383,6 +470,7 @@ class OptionsHit:
     listing: Listing | None
     spikes: list[SpikeRow] = field(default_factory=list)
     flow: list[FlowRow] = field(default_factory=list)
+    misprints: list[MisprintRow] = field(default_factory=list)
     rung: float = 0.0  # spike: the % rung crossed
     flow_premium: float = 0.0
     call_premium: float = 0.0
@@ -391,6 +479,7 @@ class OptionsHit:
     detected: float = field(default_factory=time.time)
     volume_today: int = 0  # surge: all contracts today
     volume_prev: int = 0  # surge: all contracts in the previous session
+    budget: str = "options"  # which daily push budget a HIGH spent: "options" | "misprint"
 
     @property
     def market_cap(self) -> float | None:
@@ -414,6 +503,7 @@ class OptionsHit:
             "rung": self.rung,
             "spikes": [r.to_dict(today) for r in self.spikes],
             "flow": [r.to_dict(today) for r in self.flow],
+            "misprints": [r.to_dict(today) for r in self.misprints],
             "flow_premium": round(self.flow_premium),
             "call_premium": round(self.call_premium),
             "put_premium": round(self.put_premium),
@@ -448,6 +538,8 @@ class OptionsRadar:
         self.chains_scanned = 0
         self.contracts_scanned = 0
         self.hits_total = 0
+        self.misprint_seen: dict[str, float] = {}  # "day|kind|contract" -> biggest edge shown
+        self.misprint_pushes: dict[str, int] = {}  # ET date -> misprint pushes sent
         self.state_path = state_path
         self._load()
 
@@ -608,6 +700,10 @@ class OptionsRadar:
         if surge is not None:
             hits.append(surge)
 
+        misprint = self._misprint_hit(chain, listing, self.misprint_rows(chain, today, now), day, now)
+        if misprint is not None:
+            hits.append(misprint)
+
         # one push per company per scan: the first HIGH (spike, then flow, then surge) carries
         # it; the others still show in the app, and their push is handed back to the budget
         pushed = False
@@ -616,7 +712,8 @@ class OptionsRadar:
                 if pushed:
                     h.severity = "MEDIUM"
                     h.reasons.append("pushed together with this company's other options alert")
-                    self.pushes[day] = max(0, self.pushes.get(day, 0) - 1)
+                    budget = self.misprint_pushes if h.budget == "misprint" else self.pushes
+                    budget[day] = max(0, budget.get(day, 0) - 1)
                 pushed = True
 
         for h in hits:
@@ -628,6 +725,265 @@ class OptionsRadar:
         if hits:
             self.save(now)
         return hits
+
+    # ------------------------------------------------------------------ misprints
+
+    def _quote_live(self, c: Contract, now: float) -> bool:
+        if c.quote_time is None:
+            return False
+        age = now - c.quote_time.timestamp()
+        return -60 <= age <= self.cfg.live_quote_s
+
+    def _stock_live(self, chain: Chain, now: float) -> bool:
+        return (
+            chain.stock_time is not None
+            and now - chain.stock_time.timestamp() <= self.cfg.stock_quote_max_age_s
+        )
+
+    def _curve(self, chain: Chain, exp: date, cp: str, s: float, now: float) -> list[tuple[float, float]]:
+        """(strike, implied vol) for this expiry and type, from contracts with a tight live market
+        (spread at most 35% of the mid, mid $0.05+), strikes within 30% of the stock."""
+        t = years_left(exp, now)
+        pts = []
+        for c in chain.contracts:
+            if c.expiry != exp or c.cp != cp or not (c.bid and c.ask and c.ask >= c.bid > 0):
+                continue
+            mid = (c.bid + c.ask) / 2
+            if mid < 0.05 or (c.ask - c.bid) > 0.35 * mid or abs(c.strike / s - 1) > 0.30:
+                continue
+            if not self._quote_live(c, now) and c.quote_time is not None:
+                continue
+            iv = implied_vol(mid, s, c.strike, t, cp)
+            if iv is not None:
+                pts.append((c.strike, iv))
+        pts.sort()
+        return pts
+
+    def _fair(
+        self,
+        c: Contract,
+        chain: Chain,
+        s: float,
+        now: float,
+        curves: dict[tuple[date, str], list[tuple[float, float]]],
+    ) -> tuple[float | None, str]:
+        """What the contract is worth now: Black-Scholes at the stock price with the implied vol of
+        its neighboring strikes (interpolated; the contract's own quote is never used). None when
+        the neighbors don't trade tightly enough to say: a company-wide IV misses the skew and a
+        day's repricing, and would call ordinary contracts misprinted."""
+        key = (c.expiry, c.cp)
+        if key not in curves:
+            curves[key] = self._curve(chain, c.expiry, c.cp, s, now)
+        pts = [(k, v) for k, v in curves[key] if k != c.strike]
+        below = [(k, v) for k, v in pts if k < c.strike and c.strike - k <= 0.15 * s]
+        above = [(k, v) for k, v in pts if k > c.strike and k - c.strike <= 0.15 * s]
+        iv: float | None = None
+        ref = ""
+        if below and above:
+            (k1, v1), (k2, v2) = below[-1], above[0]
+            iv = v1 + (v2 - v1) * (c.strike - k1) / (k2 - k1)
+            ref = f"the implied vol of its neighboring strikes (${k1:g} and ${k2:g}: {iv * 100:.0f}%)"
+        elif below or above:
+            k1, v1 = below[-1] if below else above[0]
+            if abs(k1 - c.strike) <= 0.075 * s:
+                iv, ref = v1, f"the implied vol of the nearest strike (${k1:g}: {v1 * 100:.0f}%)"
+        if iv is None:
+            return None, ""
+        return bs_price(s, c.strike, years_left(c.expiry, now), iv, c.cp), ref
+
+    def misprint_rows(self, chain: Chain, today: date, now: float) -> list[MisprintRow]:
+        """Quotes and prints far from what a contract is worth. Arbitrage (model-free: strike
+        order, calendar order, intrinsic value) and value misprints are judged on live quotes
+        only, so every one is something you could act on now; misprinted trades are shown so you
+        know the chain is thin enough for resting orders to get filled far from value."""
+        cfg = self.cfg
+        if not cfg.misprints:
+            return []
+        live = [c for c in chain.contracts if 0 <= (c.expiry - today).days <= cfg.misprint_max_dte]
+        quoted = [c for c in live if self._quote_live(c, now) and c.bid and c.ask and c.ask >= c.bid > 0]
+        asks = [c for c in live if self._quote_live(c, now) and c.ask and c.ask > 0]
+        tol = cfg.misprint_min_edge
+        rows: list[MisprintRow] = []
+
+        # 1. strike order: a lower-strike call (higher-strike put) is never worth less
+        groups: dict[tuple[date, str], list[Contract]] = {}
+        for c in quoted:
+            groups.setdefault((c.expiry, c.cp), []).append(c)
+        for (_, cp), cs in groups.items():
+            cs.sort(key=lambda c: c.strike, reverse=(cp == "C"))  # walk from the cheap side
+            best: Contract | None = None
+            for c in cs:
+                if best is not None and _cents((best.bid or 0) - (c.ask or 0)) >= tol:
+                    rows.append(
+                        MisprintRow(
+                            "vertical",
+                            c,
+                            c.ask or 0.0,
+                            _cents((best.bid or 0) - (c.ask or 0)),
+                            ref="a lower-strike call (or higher-strike put) is always worth at least the other",
+                            other=best,
+                            other_price=best.bid,
+                        )
+                    )
+                if best is None or (c.bid or 0) > (best.bid or 0):
+                    best = c
+
+        # 2. calendar order: a later expiry (American option) is never worth less
+        by_strike: dict[tuple[str, float], list[Contract]] = {}
+        for c in quoted:
+            by_strike.setdefault((c.cp, c.strike), []).append(c)
+        for cs in by_strike.values():
+            cs.sort(key=lambda c: c.expiry)
+            best = None
+            for c in cs:
+                if best is not None and _cents((best.bid or 0) - (c.ask or 0)) >= tol:
+                    rows.append(
+                        MisprintRow(
+                            "calendar",
+                            c,
+                            c.ask or 0.0,
+                            _cents((best.bid or 0) - (c.ask or 0)),
+                            ref="a later expiry is always worth at least an earlier one",
+                            other=best,
+                            other_price=best.bid,
+                        )
+                    )
+                if best is None or (c.bid or 0) > (best.bid or 0):
+                    best = c
+
+        s_live = chain.price if chain.price and self._stock_live(chain, now) else None
+        # 3. intrinsic value: an American option is never worth less than exercising it
+        if s_live:
+            for c in asks:
+                intrinsic = s_live - c.strike if c.cp == "C" else c.strike - s_live
+                if _cents(intrinsic - (c.ask or 0)) >= tol:
+                    rows.append(
+                        MisprintRow(
+                            "intrinsic",
+                            c,
+                            c.ask or 0.0,
+                            _cents(intrinsic - (c.ask or 0)),
+                            fair=intrinsic,
+                            ref=f"intrinsic value at the live stock price ${s_live:,.2f}",
+                        )
+                    )
+
+        # 4. value: an ask far below (or a bid far above) the contract's fair value now
+        curves: dict[tuple[date, str], list[tuple[float, float]]] = {}
+        taken = {r.contract.symbol for r in rows}
+        if s_live:
+            for c in asks:
+                if c.symbol in taken:
+                    continue
+                cheap = (c.ask or 0) <= 0.75 * self._rough(c, chain, s_live, now)
+                rich = bool(c.bid) and (c.bid or 0) >= 1.5 * self._rough(c, chain, s_live, now, low=True)
+                if not (cheap or rich):
+                    continue
+                fair, ref = self._fair(c, chain, s_live, now, curves)
+                if fair is None or fair < cfg.misprint_min_fair * (0.25 if rich else 1.0):
+                    continue
+                ask = c.ask or 0.0
+                if (
+                    fair >= cfg.misprint_min_fair
+                    and ask <= cfg.misprint_ratio * fair
+                    and fair - ask >= cfg.misprint_value_edge
+                ):
+                    rows.append(MisprintRow("cheap_ask", c, ask, fair - ask, fair=fair, ref=ref))
+                    taken.add(c.symbol)
+                elif (
+                    c.bid
+                    and c.bid >= 0.10
+                    and c.bid >= cfg.misprint_rich_ratio * fair
+                    and c.bid - fair >= cfg.misprint_value_edge
+                ):
+                    rows.append(MisprintRow("rich_bid", c, c.bid, c.bid - fair, fair=fair, ref=ref))
+                    taken.add(c.symbol)
+
+        # 5. a trade today far below value (informational): someone sold into a thin market and a
+        # resting low bid got filled. Prints far *above* value are informed buying (spikes), not this.
+        s_any = s_live or chain.price
+        if s_any:
+            for c in live:
+                if c.symbol in taken or not c.last or c.last_trade is None or c.last_trade.date() != today:
+                    continue
+                if now - c.last_trade.timestamp() > cfg.misprint_print_minutes * 60:
+                    continue
+                tight = bool(
+                    c.bid and c.ask and c.ask >= c.bid > 0 and (c.ask - c.bid) <= 0.35 * (c.ask + c.bid) / 2
+                )
+                if tight and (c.bid or 0) * 0.9 <= c.last:
+                    continue  # a tight market that agrees with the print: nothing misprinted
+                if c.last > cfg.misprint_print_ratio * self._rough(c, chain, s_any, now):
+                    continue  # can't be far below value: skip the neighbor curve
+                fair, ref = self._fair(c, chain, s_any, now, curves)
+                if fair is None or fair < cfg.misprint_min_fair:
+                    continue
+                if c.last <= cfg.misprint_print_ratio * fair and fair - c.last >= cfg.misprint_value_edge:
+                    rows.append(
+                        MisprintRow("print", c, c.last, fair - c.last, fair=fair, ref=ref, live=False)
+                    )
+        order = {"vertical": 0, "calendar": 0, "intrinsic": 0, "cheap_ask": 1, "rich_bid": 2, "print": 3}
+        rows.sort(key=lambda r: (order[r.kind], -r.edge))
+        return rows
+
+    def _rough(self, c: Contract, chain: Chain, s: float, now: float, low: bool = False) -> float:
+        """A quick value bound to skip contracts that can't be misprinted before the costlier
+        neighbor curve: Black-Scholes at a generous vol (the high bound) or a stingy one (low)."""
+        base = chain.iv30 or c.iv or 0.5
+        sigma = base * (0.5 if low else 2.5)
+        return bs_price(s, c.strike, years_left(c.expiry, now), max(sigma, 0.05), c.cp)
+
+    def _misprint_hit(
+        self, chain: Chain, listing: Listing | None, rows: list[MisprintRow], day: str, now: float
+    ) -> OptionsHit | None:
+        cfg = self.cfg
+        new: list[MisprintRow] = []
+        for r in rows:
+            key = f"{day}|{r.kind}|{r.contract.symbol}"
+            seen = self.misprint_seen.get(key)
+            if seen is not None and r.edge < 2 * seen:
+                continue  # already shown today, and not twice as big
+            self.misprint_seen[key] = r.edge
+            new.append(r)
+        if len(self.misprint_seen) > 20000:
+            for k in [k for k in self.misprint_seen if not k.startswith(day)]:
+                del self.misprint_seen[k]
+        if not new:
+            return None
+        top = new[0]
+        pushable = top.live and (
+            (top.arbitrage and top.edge >= cfg.misprint_push_edge)
+            or (
+                top.kind == "cheap_ask"
+                and top.edge >= 2 * cfg.misprint_push_edge
+                and "neighboring" in top.ref
+            )
+        )
+        severity, reasons = "MEDIUM", []
+        if pushable:
+            if self.misprint_pushes.get(day, 0) < cfg.misprint_daily_pushes:
+                self.misprint_pushes[day] = self.misprint_pushes.get(day, 0) + 1
+                severity = "HIGH"
+            else:
+                reasons.append("today's push limit for misprints is reached")
+        if "indicative" in (chain.source or "").lower() and any(r.live for r in new):
+            reasons.append(
+                "these are Alpaca's indicative quotes (live but adjusted, not the exact exchange bid/ask): "
+                "confirm the quote on your broker before trading"
+            )
+        if any(r.kind == "print" for r in new):
+            reasons.append("a single print can be one leg of a spread or a late report: shown, never pushed")
+        return OptionsHit(
+            chain.symbol,
+            "misprint",
+            severity,
+            chain,
+            listing,
+            misprints=new[: cfg.max_rows],
+            reasons=reasons,
+            detected=now,
+            budget="misprint",
+        )
 
     def prev_total(self, chain: Chain, today: date) -> int | None:
         """The company's option volume in the previous session: from the source when it says
@@ -937,6 +1293,8 @@ def parse_alpaca_chain(
                 iv=iv,
                 last_trade=t_time,
                 quote_time=q_time,
+                bid_size=_oint(quote.get("bs")),
+                ask_size=_oint(quote.get("as")),
             )
         )
         if iv and price and 7 <= (exp - today).days <= 60 and abs(strike / price - 1) <= 0.05:
@@ -1118,6 +1476,10 @@ class OptionsFeed:
         self.stock_swept = 0.0  # last full sweep of every company's live price
         self._moving: set[str] = set()  # moving hot_move_pct+ at the last sweep
         self.stream: OptionStream | None = None
+        self._chains: dict[str, Chain] = {}  # the last chain of each company on the tripwire
+        self._on_hits: Callable[[list[OptionsHit]], Any] | None = None
+        self._tasks: set[asyncio.Task[Any]] = set()
+        self.stream_misprints = 0
         alpaca = next((x for x in self.sources if getattr(x, "name", "") == "alpaca"), None)
         if cfg.stream and alpaca is not None:
             self.stream = OptionStream(
@@ -1128,6 +1490,9 @@ class OptionsFeed:
                 max_quotes=cfg.stream_max_quotes,
                 is_open=lambda: self._phase(time.time()) == "open",
                 session=lambda: getattr(http, "session", None),
+                on_misprint=self._on_stream_misprint if cfg.misprints else None,
+                misprint_ratio=cfg.misprint_ratio,
+                rich_ratio=cfg.misprint_rich_ratio,
             )
         self.source_stats: dict[str, dict[str, Any]] = {src.name: _blank_stats() for src in self.sources}
         self.fallbacks = 0  # chains read from the fallback source after the primary failed
@@ -1448,13 +1813,64 @@ class OptionsFeed:
         chg = abs(chain.change_pct or 0.0)
         if not (pr or hit or chg >= self.cfg.hot_move_pct):
             self.stream.drop(sym)
+            self._chains.pop(sym, None)
             return
         weight = (3.0 if pr else 1.0) + (2.0 if hit else 0.0) + min(chg, 20.0) / 5.0
         today = datetime.fromtimestamp(now, ET).date()
         rows: list[Watch] = pick_watch(
             chain.contracts, sym, chain.price, today, per_symbol=self.cfg.stream_per_symbol, weight=weight
         )
+        if self.cfg.misprints and chain.price:
+            curves: dict[tuple[date, str], list[tuple[float, float]]] = {}
+            by_occ = {c.symbol: c for c in chain.contracts}
+            for w in rows:
+                c = by_occ.get(w.occ)
+                if c is not None:
+                    w.fair, _ = self.radar._fair(c, chain, chain.price, now, curves)
+        self._chains[sym] = chain
         self.stream.set_candidates(sym, rows)
+
+    def _on_stream_misprint(self, w: Watch, bid: float | None, ask: float | None, ts: float) -> None:
+        """A watched contract's live quote crossed its fair value by the misprint ratio: patch the
+        cached chain with that quote and judge it at once (no REST round-trip: a stub quote can be
+        gone in seconds)."""
+        chain = self._chains.get(w.underlying)
+        if chain is None or self._on_hits is None:
+            return
+        c = next((x for x in chain.contracts if x.symbol == w.occ), None)
+        if c is None:
+            return
+        if bid is not None:
+            c.bid = bid
+        if ask is not None:
+            c.ask = ask
+        c.quote_time = datetime.fromtimestamp(ts, ET)
+        now = time.time()
+        self.apply_live(chain, now)
+        today = datetime.fromtimestamp(now, ET).date()
+        rows = [
+            r
+            for r in self.radar.misprint_rows(chain, today, now)
+            if r.contract.symbol == w.occ or (r.other is not None and r.other.symbol == w.occ)
+        ]
+        hit = self.radar._misprint_hit(
+            chain, self.universe.get(w.underlying), rows, self.radar._day(now), now
+        )
+        if hit is None:
+            return
+        self.stream_misprints += 1
+        hit.reasons.append("caught on the live websocket quote")
+        task = asyncio.get_running_loop().create_task(self._emit([hit]))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _emit(self, hits: list[OptionsHit]) -> None:
+        if self._on_hits is None:
+            return
+        try:
+            await self._on_hits(hits)
+        except Exception:  # noqa: BLE001
+            log.exception("stream options hits not published")
 
     async def _urgent_loop(self, on_hits: Callable[[list[OptionsHit]], Any], stop: asyncio.Event) -> None:
         if self._urgent_wake is None:
@@ -1555,6 +1971,7 @@ class OptionsFeed:
         """Regular session only: options quotes do not move outside it. Alongside the rotation:
         the urgent lane and the websocket tripwire."""
         self._urgent_wake = asyncio.Event()
+        self._on_hits = on_hits
         side = [asyncio.create_task(self._urgent_loop(on_hits, stop), name="options-urgent")]
         if self.stream is not None:
             side.append(asyncio.create_task(self.stream.run(stop), name="options-stream"))
@@ -1642,6 +2059,7 @@ class OptionsFeed:
                 "moving_now": len(self._moving),
                 "stock_snapshot_errors": self.stock_errors,
                 "urgent_reads": self.urgent_reads,
+                "stream_misprints": self.stream_misprints,
                 "urgent_waiting": len(self._urgent),
                 "stream": (
                     {
