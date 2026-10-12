@@ -145,6 +145,12 @@ trends:
   core_max_cap: 150e9             # material: the brand is the company, up to $150B...
   major_max_cap: 60e9             # ...one of its few headline brands, up to $60B...
   auto_max_cap: 20e9              # ...matched by name only, up to $20B
+  # the Camillo desk (docs/CAMILLO.md, the Camillo tab in the app)
+  chatter: true                   # TickerTags-style: brand mentions across Bluesky's public posts
+  chatter_sample_s: 600           # read the firehose 10 minutes every hour (low bandwidth)
+  chatter_ratio: 3.0              # a spike: last 3 days' share of posts at 3x the 14 days before...
+  chatter_min_mentions: 30        # ...with at least 30 mentions in those 3 days
+  earnings: true                  # next report dates from Nasdaq's calendar: each idea's catalyst
 
 # Sources: ~50 built-ins are on by default (`news247 check` lists them). Override one by
 # repeating its name here (e.g. {name: hackernews, enabled: false}) or add your own:

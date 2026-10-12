@@ -124,6 +124,12 @@ class Engine:
                 self.storage,
                 state_path=cfg.data_path / "trends_state.json",
             )
+            from .camillo import ChatterTags, EarningsBook
+
+            self.trends.attach_camillo(
+                EarningsBook(self.http) if cfg.trends.earnings else None,
+                ChatterTags(self.trends.brands, cfg.trends.chatter_sample_s) if cfg.trends.chatter else None,
+            )
         self.clusterer = StoryClusterer(window_s=cfg.scoring.cluster_window_minutes * 60)
         self.dispatcher = dispatcher or Dispatcher(cfg.notify, self.http)
         self.detector = MoveDetector(cfg.market)
@@ -765,6 +771,19 @@ class Engine:
             )
             alert.edge["trend"] = sig.to_dict()
             await self.publish(alert)
+
+    def camillo_page(self) -> dict[str, Any]:
+        from .camillo import load_playbook, page
+
+        if self.trends is None:
+            return {
+                "enabled": False,
+                "playbook": load_playbook(),
+                "ideas": [],
+                "attention": [],
+                "chatter": [],
+            }
+        return {"enabled": True, **page(self.trends)}
 
     def trends_board(self, days: float = 30) -> dict[str, Any]:
         if self.trends is None:

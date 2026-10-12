@@ -252,6 +252,12 @@ class TrendsConfig:
     core_max_cap: float = 150e9  # the brand IS the company: material up to this size
     major_max_cap: float = 60e9  # one of a few headline brands
     auto_max_cap: float = 20e9  # matched by name only (unmapped app developers, news)
+    # the Camillo desk (camillo.py)
+    chatter: bool = True  # TickerTags-style brand chatter on Bluesky's public firehose
+    chatter_sample_s: float = 600.0  # read the firehose this long every hour (a sample keeps bandwidth low)
+    chatter_ratio: float = 3.0  # last 3 days' share of posts at 3x the 14 days before...
+    chatter_min_mentions: int = 30  # ...with at least this many mentions in those 3 days
+    earnings: bool = True  # next report dates (Nasdaq's calendar): the catalyst on each idea
 
 
 @dataclass

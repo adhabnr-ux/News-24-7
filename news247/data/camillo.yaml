@@ -1,0 +1,293 @@
+# The Camillo desk's playbook (camillo.py, the Camillo tab in the app, docs/CAMILLO.md).
+#
+# Every statement here carries its source. Quotes are as the sources print them; where a source
+# is a summary of a book rather than the book (Laughing at Wall Street, Unknown Market Wizards),
+# the label says so. Nothing is filled in from folklore: claims we could not source are listed
+# under `unverified` and never shown as fact.
+
+intro: >-
+  Chris Camillo trades "when there's an imbalance of information": he spots a change in what
+  people do before Wall Street does, ties it to the listed company it moves, and gets out when the
+  market knows what he knows. This desk runs that method as rules over the trend lane and shows
+  every idea against it.
+
+principles:
+  - title: Social arbitrage
+    text: >-
+      The edge is information that is already public in culture and conversation but not yet in
+      the market's view of a company. He calls it social (or information) arbitrage: neither
+      fundamental nor technical analysis.
+    quote: I like to think of it as investing when there's an imbalance of information.
+    sources:
+      - {label: "Opto Sessions / CMC Markets interview (2020)", url: "https://www.cmcmarkets.com/en/optox/how-chris-camillo-invests-in-the-imbalance-of-information"}
+      - {label: "Jack Schwager, Unknown Market Wizards (2020), chapter \"Neither\"", url: "https://seekingalpha.com/article/4395212-unknown-market-wizards-jack-schwager-joins-alpha-trader-podcast-transcript"}
+
+  - title: Detect change before others
+    text: >-
+      The method relies on noticing change first: a product selling out, a habit spreading, a
+      brand losing its crowd, conversation about a topic accelerating. It starts as unstructured
+      conversation on social channels before it reaches financial media.
+    quote: I'm a social arb trader… I essentially try and detect change early in the world.
+    sources:
+      - {label: "Benzinga interview (June 2023)", url: "https://www.benzinga.com/top-stories/23/06/32897513/exclusive-chris-camillo-on-connecting-the-dots-from-social-change-to-investment-opportunities"}
+      - {label: "Opto Sessions / CMC Markets (2020): \"an acceleration in conversation… or if a product is selling out\"", url: "https://www.cmcmarkets.com/en/optox/how-chris-camillo-invests-in-the-imbalance-of-information"}
+
+  - title: Tags, not tickers
+    text: >-
+      His company TickerTags mapped words and phrases (products, brands, habits) to the tickers
+      they affect and tracked how often people said them; he described a taxonomy of 350,000
+      tags. M Science (Jefferies' research arm) bought it in June 2018.
+    sources:
+      - {label: "The Successful Pitch, ep. TSP027 (transcript)", url: "https://johnlivesay.com/chris-camillo-transcription/"}
+      - {label: "Business Wire, June 1 2018: M Science acquires TickerTags", url: "https://www.businesswire.com/news/home/20180601005203/en/M-Science-Acquires-Leading-Data-Mapping-Company-TickerTags"}
+
+  - title: It has to matter to the company
+    text: >-
+      The question is whether the information will have a real impact on a publicly traded
+      company, and smaller companies feel it more. He names no fixed revenue share: his slime
+      trade was on Newell Brands, where slime glue was a sliver of revenue, but the product line
+      itself jumped about 50%.
+    sources:
+      - {label: "Laughing at Wall Street excerpt, US News (Nov 1 2011)", url: "https://money.usnews.com/money/personal-finance/mutual-funds/articles/2011/11/01/how-one-amateur-investor-spots-stocks-before-wall-street"}
+      - {label: "Opto Sessions / CMC Markets (2020)", url: "https://www.cmcmarkets.com/en/optox/how-chris-camillo-invests-in-the-imbalance-of-information"}
+
+  - title: Exit at information parity, win or lose
+    text: >-
+      He enters on an imbalance and leaves when the market at large agrees with him, whether the
+      trade made or lost money. No price targets. In March 2024 he trimmed Celsius because "the
+      world's finally caught on."
+    quote: I invest when there's an information imbalance, and I exit the investment when we reach information parity.
+    sources:
+      - {label: "Stansberry Investor Hour ep. 192 (Feb 4 2021)", url: "https://stansberryresearch.com/stansberry-investor-hour/episode-192-turning-20k-to-2-million-during-the-financial-crisis"}
+      - {label: "24/7 Wall St. (May 29 2026): \"I don't trade price, and I don't have price targets\"", url: "https://247wallst.com/investing/2026/05/29/investor-goes-70-into-amazon-with-leveraged-options-calls-amazon-ultimate-beneficiary-of-ai/"}
+      - {label: "@ChrisCamillo on X (Mar 2024): trimmed CELH", url: "https://x.com/ChrisCamillo/status/1763618585572716715"}
+
+  - title: Only the high-conviction ideas
+    text: >-
+      He estimated that 99% of his ideas never become trades. Looking back, he would have spent
+      less time on low-conviction trades; Schwager's lesson from the chapter is the same, noting
+      the best ideas may come only every couple of months.
+    quote: If I could go back in time I would spend less time on low conviction trades.
+    sources:
+      - {label: "Benzinga (June 2019)", url: "https://www.benzinga.com/general/psychology/19/06/13922843/chris-camillo-talks-trading-strategies-advice-and-more-ahead-of-trading-summit"}
+      - {label: "Benzinga (Mar 2014): Nintendo and LeapFrog", url: "https://www.benzinga.com/trading-ideas/long-ideas/14/03/4355310/how-one-investor-profited-from-leapfrog-and-nintendo-before-w"}
+      - {label: "Unknown Market Wizards chapter lessons (summary)", url: "https://www.elearnmarkets.com/school/units/unknown-market-wizards#chris-camillo-neither"}
+
+  - title: Hold your own view
+    text: >-
+      His most regretted trade was Under Armour: shaken by a related company's weak results and
+      other people's opinions, he sold about two-thirds of a call position at a loss, and the
+      company's earnings then proved his original read right.
+    sources:
+      - {label: "Unknown Market Wizards, Camillo chapter (summary)", url: "https://www.elearnmarkets.com/school/units/unknown-market-wizards#chris-camillo-neither"}
+
+  - title: Earn the right to size up
+    text: >-
+      He trades concentrated, often with options, in his own money. His advice to anyone starting
+      is the opposite: keep most money in a low-cost index fund and experiment with small amounts
+      until a strategy has proven it delivers.
+    quote: >-
+      Do not trade aggressively or with conviction until you are able to identify a trading
+      strategy that consistently delivers alpha. Until that happens, be content experimenting
+      with small dollars.
+    sources:
+      - {label: "Benzinga (June 2019)", url: "https://www.benzinga.com/general/psychology/19/06/13922843/chris-camillo-talks-trading-strategies-advice-and-more-ahead-of-trading-summit"}
+      - {label: "Stansberry Investor Hour ep. 192 (2021): \"I was always an options investor\"", url: "https://stansberryresearch.com/stansberry-investor-hour/episode-192-turning-20k-to-2-million-during-the-financial-crisis"}
+
+process:
+  - step: Detect the change
+    text: Something people are doing differently, seen early in observation or conversation.
+    how: >-
+      Wikipedia attention (daily), Bluesky chatter counted by brand tags (hourly sample, the
+      TickerTags idea), App Store climbs (6-hourly), sell-outs and waitlists, and tracker numbers
+      in the news.
+  - step: Map it to the company
+    text: Work out which listed company the change actually flows to.
+    how: >-
+      A brand map of about 50 consumer brands to their owners, plus app developers matched to
+      listed company names.
+  - step: Validate it
+    text: >-
+      Test the observation before believing it. His book's Coach example: long store lines turned
+      out to be shoppers trading down, not strength.
+    how: >-
+      An idea is only pushed when two independent kinds of evidence agree on a direction; the
+      direction is read from the numbers (visits up 7%, traffic down double digits).
+  - step: Check it matters
+    text: The change must be big enough to move the company's results.
+    how: >-
+      Our rule, not his: a company up to $150B when the brand is the company, $60B for one of a
+      few headline brands, $20B when matched by name only.
+  - step: Confirm the imbalance
+    text: >-
+      Wall Street must not know yet. His book's consensus score: bullish quotes over bearish
+      quotes from journalists and analysts; above 2 is parity.
+    how: >-
+      The consensus score over every headline this system read in 30 days naming the brand, one
+      per source; plus the price check (out if the stock already moved 15% the trend's way).
+  - step: Find the catalyst
+    text: The moment the market learns it, usually the company's next report.
+    how: The next report date from Nasdaq's earnings calendar, on every idea.
+  - step: Size by conviction
+    text: Few trades, only the high-conviction ones.
+    how: >-
+      HIGH ideas (two kinds agree, every filter passed) are pushed; MEDIUM ones wait in the app;
+      LOW ones stay on the board. The desk never places a trade.
+  - step: Exit at parity
+    text: Out when the market agrees, win or lose. No price target.
+    how: >-
+      Each idea shows its exit: the consensus score passing 2, the report, or the evidence
+      stopping. Every idea is scored against the S&P 500 at 30, 60 and 90 days.
+
+avoid:
+  - text: Low-conviction trades, the ones he says he'd skip if he could do it again.
+    sources: [{label: "Benzinga (June 2019)", url: "https://www.benzinga.com/general/psychology/19/06/13922843/chris-camillo-talks-trading-strategies-advice-and-more-ahead-of-trading-summit"}]
+  - text: Letting other people's opinions shake you out of a thesis the evidence still supports (Under Armour).
+    sources: [{label: "Unknown Market Wizards (summary)", url: "https://www.elearnmarkets.com/school/units/unknown-market-wizards#chris-camillo-neither"}]
+  - text: Trading on price or holding past parity.
+    sources: [{label: "24/7 Wall St. (May 2026)", url: "https://247wallst.com/investing/2026/05/29/investor-goes-70-into-amazon-with-leveraged-options-calls-amazon-ultimate-beneficiary-of-ai/"}]
+  - text: >-
+      Betting on one brand's trend when the company is several brands. A high-conviction options
+      bet on Restaurant Brands into earnings went wrong on a weak Tim Hortons quarter; he says he
+      missed warning signs at a franchisee meeting.
+    sources: [{label: "VladTV interview (2026, segment description)", url: "https://www.vladtv.com/article/315597/"}]
+  - text: Trading big before the strategy has proven itself.
+    sources: [{label: "Benzinga (June 2019)", url: "https://www.benzinga.com/general/psychology/19/06/13922843/chris-camillo-talks-trading-strategies-advice-and-more-ahead-of-trading-summit"}]
+
+record:
+  - claim: Brokerage statements from August 2006 audited for Unknown Market Wizards; 77% average annual compounded return 2006-2020 (S&P about 7.6%).
+    sources: [{label: "Benzinga (Feb 2025), citing Schwager", url: "https://www.benzinga.com/news/25/02/43903377/chris-camillo-made-42-million-trading-stocks-over-15-years-heres-his-success-strategy"}]
+  - claim: $20,000 in early 2007 to just over $2 million in three years.
+    sources: [{label: "Laughing at Wall Street (St. Martin's, 2011)", url: "https://us.macmillan.com/books/9781250015754/laughingatwallstreet/"}]
+  - claim: About $80 million from that start by 2026, self-reported (no audit found after 2021).
+    sources: [{label: "My First Million (2026, summary)", url: "https://finance.biggo.com/podcast/d7d0aa5d1619e25f"}]
+
+limits:
+  - >-
+    He reads TikTok, Instagram and X; none has a free API, so this desk reads Bluesky (smaller,
+    and its users differ), Wikipedia and the App Store as stand-ins. Trends that live only on
+    TikTok reach it later, through press coverage and attention.
+  - >-
+    It can't do his store checks, channel checks or franchisee conversations; his Restaurant
+    Brands loss came from exactly that kind of missed signal.
+  - >-
+    The size limits for "it matters" are this desk's rule; he names no fixed revenue share.
+  - >-
+    The consensus score follows his book as readers have summarized it (not checked against the
+    text), and it counts headlines this system read rather than analysts' quotes.
+  - >-
+    It never trades and never sizes positions. Ideas are leads to research; the track record below
+    shows how they did against the S&P 500.
+
+unverified:
+  - '"Never use stop losses": appears only on quote-compilation sites, no source found.'
+  - Specific option tenors and strikes (beyond "weekly" NVDA options and "leveraged" AMZN options).
+  - The e.l.f. Cosmetics origin story and a Victoria's Secret short / Aerie long: secondary blogs only.
+  - The exact consensus-score thresholds: one 2012 reader summary of the book.
+
+cases:
+  # Only trades a source describes. "Price check" lines are this desk's own reading of the
+  # stock's daily bars (TradingView, split-adjusted), not his profit.
+  - name: Snapple (his first trade)
+    ticker: Snapple (acquired 1994)
+    period: As a teenager; year not stated
+    noticed: His favorite flavor was missing at 7-Eleven; the clerk said new iced-tea brands had squeezed Snapple's shelf space.
+    trade: Bought put options, with his stockbroker brother's help.
+    outcome: The next report showed inventories piling up; he says he tripled about $300 within days ("tripling his money in seven days," per the book's description).
+    sources:
+      - {label: "Tradestreaming Radio / Tearsheet interview (~2011)", url: "https://tearsheet.co/podcasts/how-to-beat-wall-street-by-using-facebook-reading-tabloids-and-shopping-with-chris-camillo/"}
+      - {label: "Laughing at Wall Street, publisher description", url: "https://us.macmillan.com/books/9781429989664/laughingatwallstreet/"}
+
+  - name: Nintendo and the Wii
+    ticker: Nintendo ADR (NTDOY)
+    period: E3 2006, held about a year
+    noticed: At E3 the crowds lined up for the Wii's motion controller while Wall Street watched Microsoft and Sony.
+    trade: Moved his whole portfolio into the Nintendo ADR.
+    outcome: Held it about a year (gain not stated in the source).
+    sources:
+      - {label: "Benzinga (Mar 2014)", url: "https://www.benzinga.com/trading-ideas/long-ideas/14/03/4355310/how-one-investor-profited-from-leapfrog-and-nintendo-before-w"}
+
+  - name: J.Crew and Michelle Obama
+    ticker: J.Crew Group (taken private 2011)
+    period: 2008-09
+    noticed: Michelle Obama wearing and praising J.Crew in public.
+    trade: Bought the stock (instrument not stated).
+    outcome: Up 186%; "Wall Street caught up four months later."
+    sources:
+      - {label: "Laughing at Wall Street, publisher description", url: "https://us.macmillan.com/books/9781429989664/laughingatwallstreet/"}
+
+  - name: LeapFrog's LeapPad
+    ticker: LeapFrog (acquired 2016)
+    period: Christmas 2011, stock around $3
+    noticed: The LeapPad was the toy parents and "mommy bloggers" were hunting for, weeks before the financial press noticed.
+    trade: Long (instrument not stated).
+    outcome: The financial press picked the story up weeks after the parents did; gain not stated.
+    sources:
+      - {label: "Benzinga (Mar 2014)", url: "https://www.benzinga.com/trading-ideas/long-ideas/14/03/4355310/how-one-investor-profited-from-leapfrog-and-nintendo-before-w"}
+
+  - name: The slime craze and Newell Brands
+    ticker: NWL
+    period: About 2016-17 (not stated)
+    noticed: Kids making slime were emptying stores of Elmer's glue. "The whole world could have seen this," but few tied it to a stock. Elmer's belongs to Newell Brands.
+    trade: Long Newell. Slime glue was a sliver of Newell's revenue, but that product line jumped about 50%.
+    outcome: Not stated by him in the sources found (a secondary blog says about 200% on a leveraged trade).
+    price_check: "Context only: Newell's Q1 2017 report, which the press tied to Elmer's, moved NWL from $46.39 (May 5 2017) to $51.93 (May 8), +11.9%."
+    sources:
+      - {label: "Opto Sessions / CMC Markets (2020)", url: "https://www.cmcmarkets.com/en/optox/how-chris-camillo-invests-in-the-imbalance-of-information"}
+
+  - name: Netflix and Stranger Things
+    ticker: NFLX
+    period: Stranger Things season 1 (date not stated in the source)
+    noticed: His team's social-data report showed the conversation around Stranger Things pointing to a strong quarter.
+    trade: Long into the report.
+    outcome: The stock rose about 20% on the earnings.
+    price_check: "Our inference of the date: the first report after season 1 (Oct 17 2016) took NFLX from $9.98 to $11.88 the next day, +19.0% (split-adjusted)."
+    sources:
+      - {label: "Opto Sessions / CMC Markets (2020)", url: "https://www.cmcmarkets.com/en/optox/how-chris-camillo-invests-in-the-imbalance-of-information"}
+
+  - name: Bikes in the lockdown (Dorel Industries)
+    ticker: TSX:DII.B (Schwinn, Cannondale)
+    period: April 2020 to late 2020
+    noticed: Lockdown chatter about biking, bike shortages and rising searches.
+    trade: Long Dorel around $1.56.
+    outcome: Reported as sold around $11, about +629% (sources mix US and Canadian dollars).
+    price_check: "TSX: C$1.56 on Apr 7 2020 to C$14.53 on Nov 30 2020, about 9.3x."
+    sources:
+      - {label: "Business Insider profile (May 2021), syndicated", url: "https://markets.financialcontent.com/stocks/news/read/41712499/experts_say_chris_camillo_made_$42_million_trading_stocks_over_15_years._he_shares_his_strategy"}
+
+  - name: Celsius, and knowing when to leave
+    ticker: CELH
+    period: Exit trimmed March 2024
+    noticed: The energy drink's rise on social media, which his Dumb Money group had followed for a year.
+    trade: Long; trimmed when the story became common knowledge.
+    outcome: '"Seems the world''s finally caught on to what @DumbMoneyTV knew a year ago. #socialarb #informationparity"'
+    sources:
+      - {label: "@ChrisCamillo on X (Mar 2024)", url: "https://x.com/ChrisCamillo/status/1763618585572716715"}
+
+  - name: Bloom Energy
+    ticker: BE
+    period: Named as a pick in December 2025; sold by May 2026
+    noticed: Described as a "social arbitrage discovery."
+    trade: Long.
+    outcome: Sold up 248%, taking the short-term tax hit to redeploy the money.
+    price_check: "Context only: BE $92.26 (Dec 22 2025) to $285.00 (May 29 2026), +209%."
+    sources:
+      - {label: "24/7 Wall St. (May 29 2026)", url: "https://247wallst.com/investing/2026/05/29/investor-goes-70-into-amazon-with-leveraged-options-calls-amazon-ultimate-beneficiary-of-ai/"}
+
+  - name: Under Armour, the trade he regrets
+    ticker: UA
+    period: Not stated
+    noticed: His own read of the brand was bullish.
+    trade: A call position; shaken by a related company's weak results and other people's opinions, he sold about two-thirds at a loss.
+    outcome: Under Armour's earnings then proved his original read right. Schwager's lesson is to stick with your own method.
+    sources:
+      - {label: "Unknown Market Wizards, Camillo chapter (summary)", url: "https://www.elearnmarkets.com/school/units/unknown-market-wizards#chris-camillo-neither"}
+
+  - name: Restaurant Brands, the loss
+    ticker: QSR
+    period: Not stated
+    noticed: A thesis on the company into earnings.
+    trade: A high-conviction options bet into the report.
+    outcome: A weak Tim Hortons quarter made it one of his worst losses (he puts it near 40% of his liquid net worth); he says he missed warning signs at a franchisee meeting.
+    sources:
+      - {label: "VladTV interview (2026, segment description)", url: "https://www.vladtv.com/article/315597/"}

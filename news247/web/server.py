@@ -97,6 +97,7 @@ class WebServer:
         app.router.add_get("/api/radar", self.api_radar)
         app.router.add_get("/api/options", self.api_options)
         app.router.add_get("/api/trends", self.api_trends)
+        app.router.add_get("/api/camillo", self.api_camillo)
         app.router.add_get("/api/alert/{id}", self.api_alert)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
@@ -597,6 +598,11 @@ class WebServer:
         except ValueError:
             days = 30.0
         return _json(self.engine.trends_board(days))
+
+    async def api_camillo(self, request: web.Request) -> web.Response:
+        """The Camillo desk: the method (principles, rules, case studies), live ideas with the
+        checklist and next report date, what's heating up, the scorecard and the feeds' health."""
+        return _json(self.engine.camillo_page())
 
     async def api_alert(self, request: web.Request) -> web.Response:
         """Everything about one alert: the analysis, the play, precedents, every source that

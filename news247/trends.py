@@ -7,11 +7,14 @@ professional versions of that data (foot traffic, app downloads, card spend) are
 funds, so the edge that is left is narrower: speed of mapping, materiality, and catching the
 cases where the data and the price disagree (Oct 2026: Burger King visits +7% while QSR fell 9%).
 
-Four kinds of evidence, each with its own test:
+Five kinds of evidence, each with its own test:
 
 ``attention``  Wikipedia page views for the brand (Wikimedia's free API): the 7-day average at
                2x+ the prior 8 weeks, 4+ robust standard deviations up, on 4 of the last 7 days.
                Direction-free: a scandal draws attention too.
+``chatter``    Brand mentions across Bluesky's public posts (camillo.ChatterTags, sampled hourly):
+               the share of posts at 3x the 14 days before, on 2 of the last 3 days.
+               Direction-free, like attention.
 ``app``        The US App Store top-free chart (Apple's free feed, every 6 h): an app climbing
                into the top 50 from outside the top 150 and holding there.
 ``alt_data``   News citing the trackers (Placer.ai, Sensor Tower, Circana, Second Measure...)
@@ -69,9 +72,10 @@ WIKI_TITLES_URL = "https://en.wikipedia.org/w/api.php"
 WIKI_UA = "News247 trend lane (github.com/adhabnr-ux/News-24-7)"
 QUIET_VIEWS = 50.0  # an article this quiet is almost certainly the wrong one
 APPS_URL = "https://rss.applemarketingtools.com/api/v2/us/apps/top-free/200/apps.json"
-KINDS = ("attention", "app", "alt_data", "demand")
+KINDS = ("attention", "chatter", "app", "alt_data", "demand")
 KIND_LABEL = {
     "attention": "Wikipedia attention",
+    "chatter": "social chatter (Bluesky)",
     "app": "App Store climb",
     "alt_data": "tracker data",
     "demand": "sell-out / waitlist",
@@ -406,6 +410,11 @@ class TrendDesk:
         self.last_resolve_day = ""
         self.attention: dict[str, dict[str, Any]] = {}  # article -> latest 7-day vs baseline read
         self.last_chart: list[dict[str, Any]] = []
+        # the Camillo desk (camillo.py): next report dates and TickerTags-style chatter, attached
+        # by the engine; their saved state waits here until then
+        self.earnings: Any = None
+        self.chatter: Any = None
+        self._camillo_state: dict[str, Any] = {}
         self.stats = {
             "wiki_reads": 0,
             "wiki_errors": 0,
@@ -438,6 +447,14 @@ class TrendDesk:
         self.last_snapshot = float(data.get("last_snapshot") or 0.0)
         self.last_wiki_day = data.get("last_wiki_day", "")
         self.last_marks_day = data.get("last_marks_day", "")
+        self._camillo_state = {k: data.get(k) or {} for k in ("earnings", "chatter")}
+
+    def attach_camillo(self, earnings: Any = None, chatter: Any = None) -> None:
+        self.earnings, self.chatter = earnings, chatter
+        if earnings is not None:
+            earnings.load(self._camillo_state.get("earnings") or {})
+        if chatter is not None:
+            chatter.load(self._camillo_state.get("chatter") or {})
 
     def save(self) -> None:
         if not self.state_path:
@@ -453,6 +470,8 @@ class TrendDesk:
             "evidence": {k: [asdict(e) for e in v] for k, v in self.evidence.items()},
             "last_wiki_day": self.last_wiki_day,
             "last_marks_day": self.last_marks_day,
+            "earnings": self.earnings.dump() if self.earnings is not None else {},
+            "chatter": self.chatter.dump() if self.chatter is not None else {},
         }
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -582,6 +601,45 @@ class TrendDesk:
                 await asyncio.sleep(0.2)  # Wikimedia asks for gentle clients
         if self.stats["wiki_reads"] > reads:  # a scan that read nothing (offline) is retried
             self.last_wiki_day = end.isoformat()
+        return touched
+
+    async def scan_chatter(self, now: float | None = None) -> list[str]:
+        """Sample the Bluesky firehose (``chatter_sample_s``), then test every brand's share of
+        the conversation. Returns tickers with new evidence."""
+        from .camillo import chatter_spike
+
+        if self.chatter is None:
+            return []
+        now = now or time.time()
+        await self.chatter.sample(self.http.session, now)
+        today = datetime.fromtimestamp(now, ET).date().isoformat()
+        return self.chatter_evidence(now, today, chatter_spike)
+
+    def chatter_evidence(self, now: float, today: str, spike_fn: Any) -> list[str]:
+        touched = []
+        for b in self.brands:
+            spike = spike_fn(
+                self.chatter.series(b.brand, today), self.cfg.chatter_ratio, self.cfg.chatter_min_mentions
+            )
+            if spike is None:
+                continue
+            started = datetime.fromisoformat(spike["first_day"]).replace(tzinfo=ET).timestamp()
+            ev = Evidence(
+                kind="chatter",
+                ticker=b.ticker,
+                brand=b.brand,
+                weight=b.weight,
+                direction=None,
+                started=started,
+                detected=now,
+                detail=(
+                    f"{b.brand} is {spike['ratio']}x its usual share of Bluesky posts "
+                    f"({spike['mentions']} mentions in the last 3 days sampled)"
+                ),
+                url=f"https://bsky.app/search?q={quote(b.terms[0] if b.terms else b.brand)}",
+            )
+            if self.add(ev):
+                touched.append(b.ticker)
         return touched
 
     def _brand_for_app(self, name: str, artist: str) -> tuple[str, str, str] | None:
@@ -902,6 +960,14 @@ class TrendDesk:
                     touched += await self.scan_wiki(now)
                 if now - self.last_apps >= 6 * 3600:
                     touched += await self.scan_apps(now)
+                if self.chatter is not None and now - self.chatter.last_sample >= 3600:
+                    touched += await self.scan_chatter(now)
+                if (
+                    self.earnings is not None
+                    and dt.hour >= 5
+                    and self.earnings.last_day != dt.date().isoformat()
+                ):
+                    await self.earnings.refresh(dt.date())
                 signals = [s for s in [await self.evaluate(t, now) for t in dict.fromkeys(touched)] if s]
                 if signals:
                     await on_signals(signals)

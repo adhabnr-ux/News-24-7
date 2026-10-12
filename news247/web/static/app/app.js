@@ -277,6 +277,75 @@ async function loadCalendar() {
       <div class="panel glass tilt rv">${evs.map((e) => calRow(e, true)).join("")}</div>`).join("") : emptyHTML("Nothing scheduled in the next 60 days.");
   Fx.observe($("cal"));
 }
+// ---------------------------------------------------------------- the Camillo desk
+const SRC = (s) => (s || []).map((x) => x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.label)}</a>` : esc(x.label)).join(" · ");
+function ideaCard(r) {
+  const arrow = { up: "▲", down: "▼" }[r.direction] || "◆";
+  const dcls = { up: "pos", down: "neg" }[r.direction] || "faint";
+  const move = r.move_pct != null ? `stock ${r.move_pct > 0 ? "+" : ""}${r.move_pct.toFixed(1)}% since the evidence began` : "";
+  const ev = (r.evidence || []).map((e) => `<div>• ${esc(e.detail)}${e.url ? ` <a class="src" href="${esc(e.url)}" target="_blank" rel="noopener">source</a>` : ""}</div>`).join("");
+  const checks = (r.checklist || []).map((c) => `<div class="chk ${c.pass ? "ok" : "no"}"><i>${c.pass ? "✓" : "✗"}</i><div>${esc(c.rule)}<span class="sub">${esc(c.detail)}</span></div></div>`).join("");
+  return `<article class="idea glass tilt rv">
+    <div class="sub"><span style="color:${SEV[r.severity]}">${esc(r.severity)}</span> · ${r.passed}/${(r.checklist || []).length} tests · ${ago(r.created)} ago</div>
+    <h3><span class="${dcls}">${arrow}</span> ${esc((r.brands || []).join(", "))} <span class="faint">${esc(r.ticker)}</span></h3>
+    <div class="sub">${esc(move)}</div>
+    <div class="ev">${ev}</div>
+    ${checks}
+    <div class="plan">${esc(r.exit || "")}</div>
+  </article>`;
+}
+function heatRows(c) {
+  const rows = [
+    ...(c.attention || []).map((r) => ({ brand: r.brand, ticker: r.ticker, what: `Wikipedia ${r.ratio.toFixed(2)}× normal`, sub: `${Number(r.avg7).toLocaleString()}/day vs ${Number(r.baseline).toLocaleString()}` })),
+    ...(c.chatter || []).map((r) => ({ brand: r.brand, ticker: r.ticker, what: r.ratio != null ? `Bluesky chatter ${r.ratio.toFixed(1)}× normal` : "Bluesky chatter (new)", sub: `${r.mentions} mentions in 3 days${r.example ? " · “" + r.example.slice(0, 90) + "”" : ""}` })),
+  ];
+  return rows.length ? rows.map((r) => `<div class="li"><div class="grow"><div style="font-weight:600">${esc(r.brand)} <span class="faint">${esc(r.ticker)}</span></div><div class="sub">${esc(r.sub)}</div></div><span class="num" style="font-size:13px">${esc(r.what)}</span></div>`).join("")
+    : `<div class="li"><span class="muted">Nothing unusual yet. Wikipedia is read daily, the App Store every 6 hours, Bluesky every hour.</span></div>`;
+}
+function methodHTML(p) {
+  const princ = (p.principles || []).map((x) => `<div class="step"><h4>${esc(x.title)}</h4><p>${esc(x.text)}</p>${x.quote ? `<div class="quote">“${esc(x.quote)}”</div>` : ""}${x.sources ? `<div class="src" style="margin-top:6px">${SRC(x.sources)}</div>` : ""}</div>`).join("");
+  const steps = (p.process || []).map((x, i) => `<div class="step"><h4>${i + 1}. ${esc(x.step)}</h4><p>${esc(x.text)}</p>${x.how ? `<p class="sub">On this desk: ${esc(x.how)}</p>` : ""}</div>`).join("");
+  const avoid = (p.avoid || []).map((x) => `<div class="step"><p>✗ ${esc(x.text || x)}</p>${x.sources ? `<div class="src">${SRC(x.sources)}</div>` : ""}</div>`).join("");
+  const limits = (p.limits || []).map((x) => `<div class="step"><p>${esc(x)}</p></div>`).join("");
+  const record = (p.record || []).map((x) => `<div class="step"><p>${esc(x.claim)}</p><div class="src">${SRC(x.sources)}</div></div>`).join("");
+  const unver = (p.unverified || []).map((x) => `<div class="step"><p>? ${esc(x)}</p></div>`).join("");
+  return [
+    princ && `<div class="panel glass tilt rv padded method">${princ}</div>`,
+    steps && `<div class="sec-title rv"><h2 style="font-size:20px">The process</h2></div><div class="panel glass tilt rv padded method">${steps}</div>`,
+    avoid && `<div class="sec-title rv"><h2 style="font-size:20px">What he avoids</h2></div><div class="panel glass tilt rv padded method">${avoid}</div>`,
+    record && `<div class="sec-title rv"><h2 style="font-size:20px">His record, as reported</h2></div><div class="panel glass tilt rv padded method">${record}</div>`,
+    limits && `<div class="sec-title rv"><h2 style="font-size:20px">What this desk can't do</h2></div><div class="panel glass tilt rv padded method">${limits}</div>`,
+    unver && `<div class="sec-title rv"><h2 style="font-size:20px">Said about him, not sourced</h2></div><div class="panel glass tilt rv padded method">${unver}</div>`,
+  ].filter(Boolean).join("");
+}
+function caseCard(c) {
+  const rows = [["What he noticed", c.noticed], ["The trade", c.trade], ["What happened", c.outcome], ["Price check", c.price_check]].filter(([, v]) => v);
+  return `<article class="idea glass tilt rv"><div class="sub">${esc(c.period || "")}</div><h3>${esc(c.name)}${c.ticker ? ` <span class="faint">${esc(c.ticker)}</span>` : ""}</h3>
+    ${rows.map(([k, v]) => `<div class="chk"><div><b style="font-weight:600">${esc(k)}</b><span class="sub">${esc(v)}</span></div></div>`).join("")}
+    <div class="src" style="margin-top:8px">${SRC(c.sources)}</div></article>`;
+}
+async function loadCamillo() {
+  const c = await api("/api/camillo");
+  const p = c.playbook || {};
+  $("cSub").textContent = p.intro || "";
+  $("cIdeas").innerHTML = (c.ideas || []).length ? c.ideas.map(ideaCard).join("")
+    : emptyHTML("No live ideas. One appears when a brand's evidence passes the trend lane's tests.");
+  $("cHeat").innerHTML = heatRows(c);
+  $("cMethod").innerHTML = methodHTML(p);
+  $("cCases").innerHTML = (p.cases || []).map(caseCard).join("") || emptyHTML("No case studies loaded.");
+  const by = (c.scorecard || {}).by || {};
+  $("cScore").innerHTML = Object.keys(by).length ? Object.entries(by).map(([k, s]) => `<div class="kv"><span>${esc(k)} · ${s.n} idea${s.n > 1 ? "s" : ""}</span><b class="num ${s.avg_excess >= 0 ? "pos" : "neg"}">${Math.round(s.hit_rate * 100)}% · ${s.avg_excess > 0 ? "+" : ""}${s.avg_excess}% vs SPY</b></div>`).join("")
+    : `<div class="kv"><span>${(c.scorecard || {}).signals || 0} ideas recorded</span><b>marked 30, 60 and 90 days after</b></div>`;
+  const st = c.status || {}, ch = st.chatter || {}, ea = st.earnings || {};
+  $("cFeeds").innerHTML = [
+    ["Brands mapped to companies", `${st.brands ?? 0} → ${st.companies ?? 0}`],
+    ["Wikipedia (daily)", st.last_wiki_day ? `views through ${st.last_wiki_day}` : "not read yet"],
+    ["App Store chart (6-hourly)", st.last_app_snapshot ? `${st.apps_tracked} apps tracked, last ${ago(st.last_app_snapshot)} ago` : "not read yet"],
+    ["Bluesky chatter (hourly sample)", ch.enabled ? (ch.last_sample ? `${ch.days} days, ${Number(ch.posts_today || 0).toLocaleString()} posts today` : "first sample pending") : "off"],
+    ["Next report dates", ea.enabled ? (ea.last_day ? `${ea.companies} companies, read ${ea.last_day}` : "first read pending") : "off"],
+  ].map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("");
+  Fx.observe(document.querySelector('.view[data-view="camillo"]'));
+}
 async function loadTicker() {
   try {
     const w = await api("/api/watch");
@@ -575,7 +644,7 @@ addEventListener("pointermove", (e) => {
 document.addEventListener("pointerleave", () => document.querySelectorAll(".tilt.hot").forEach(Fx.rest), true);
 
 // ------------------------------------------------------------------ the choreography
-const TAB_BASE = { tape: 0, brief: 0.5, calendar: 1.0, watch: 0.14, desk: 1.75 };
+const TAB_BASE = { tape: 0, brief: 0.5, calendar: 1.0, watch: 0.14, camillo: 1.35, desk: 1.75 };
 const Fx = {
   dirty: true, io: null, y: 0,
   observe(root) {
@@ -702,7 +771,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -719,7 +788,7 @@ async function refresh() {
   setTimeout(() => { refreshing = false; $("pull").classList.remove("firing"); Fx.pull = -1; Fx.dirty = true; }, 650);
 }
 addEventListener("touchend", () => { if (!sheetOpen && scrollY <= -PULL_AT) refresh(); }, { passive: true });
-const TABS = ["tape", "brief", "calendar", "watch", "desk"];
+const TABS = ["tape", "brief", "calendar", "watch", "camillo", "desk"];
 function go(name) {
   if (name === tab && !document.querySelector(`.view[data-view="${name}"]`).hidden) { scrollTo({ top: 0, behavior: "smooth" }); return; }
   tab = name;

@@ -18,6 +18,7 @@ It also watches **prices**: if software stocks fall together it tells you so, an
 - **Why:** a move with no headline sets off an instant lookup of the company's EDGAR filings and the news, and the alert shows what it found.
 - **The scorecard:** after every big move it records whether you had it before the price, and if not, which rule or source would have caught it.
 - **The trend lane** (Chris Camillo's method): consumer trends tied to the listed company before its earnings report shows them, with written filters and a 30/60/90-day scorecard. See [docs/TRENDS.md](docs/TRENDS.md).
+- **The Camillo desk:** his social-arbitrage method as its own page in Foretape. Every idea is checked against his rules: information imbalance vs parity (his book's consensus score), materiality, the catalyst (next report) and the exit. It adds TickerTags-style Bluesky chatter, his principles with sources, and 11 sourced case studies. See [docs/CAMILLO.md](docs/CAMILLO.md).
 
 Alerts arrive as **push notifications from Foretape**, News247's own home-screen app (free, no phone number or account needed). They can also go to **WhatsApp**, **iMessage** from your own Mac relay, ntfy, Telegram, Discord, Slack, Pushover, email or SMS.
 
@@ -293,11 +294,12 @@ Full guide: [docs/OPTIONS.md](docs/OPTIONS.md).
 ## The trend lane: what people are doing, before the earnings report says it
 
 Chris Camillo's edge was noticing what people were buying before Wall Street did. The trend lane
-collects four kinds of evidence, ties them to the listed company that owns the brand
+collects five kinds of evidence, ties them to the listed company that owns the brand
 (`news247/data/trends.yaml`, about 50 brands), and filters them by written rules.
 
 **Evidence:**
 - **Wikipedia attention:** 2x+ normal for 4 of 7 days.
+- **Bluesky chatter:** a brand's share of posts at 3x normal (TickerTags-style).
 - **App Store climbs:** into the top 50 from outside the top 150.
 - **Tracker numbers in the news:** Placer.ai, Sensor Tower, Circana…, or "Taco Bell's traffic
   still down double digits".
@@ -415,7 +417,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 
 ### API
 
-`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/scorecard?date=YYYY-MM-DD&days=30`, `/api/trends?days=30`, `/api/brief`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
+`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/scorecard?date=YYYY-MM-DD&days=30`, `/api/trends?days=30`, `/api/camillo`, `/api/brief`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
 
 ---
 

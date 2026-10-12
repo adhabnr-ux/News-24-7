@@ -18,7 +18,7 @@ where it first becomes public, what reads it, how fast, and what is still out of
 | **3. Explain any move at once** | A move with no headline sets off an instant lookup of the company's EDGAR filings and a news search. The best explanation is attached to the alert as **Why**. | `market/why.py` |
 | **4. Know what's scheduled** | FOMC, CPI, jobs, PDUFA dates, trial readouts, index rebalances, option expiries. Binary events are captured from headlines weeks ahead. | `edge.py` (Calendar), `analysis/catalyst_dates.py` |
 | **5. Audit every move** | After each big move: did we have it before the price? If not, was the headline read but scored too low, or never read? The answer goes in the morning Brief. | `scorecard.py` |
-| **6. See the customer first** | Consumer trends (Wikipedia attention, App Store climbs, tracker numbers, sell-outs) tied to the listed owner before its earnings report, filtered for materiality and whether the price has already moved, and scored at 30/60/90 days. See [TRENDS.md](TRENDS.md) | `trends.py`, `data/trends.yaml` |
+| **6. See the customer first** | Consumer trends (Wikipedia attention, App Store climbs, tracker numbers, sell-outs) tied to the listed owner before its earnings report, filtered for materiality and whether the price has already moved, and scored at 30/60/90 days. See [TRENDS.md](TRENDS.md). The **Camillo desk** checks each idea against his rules (consensus score, catalyst, exit at parity). See [CAMILLO.md](CAMILLO.md) | `trends.py`, `camillo.py`, `data/trends.yaml`, `data/camillo.yaml` |
 
 ## The map: every kind of big move
 

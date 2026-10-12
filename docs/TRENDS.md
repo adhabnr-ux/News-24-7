@@ -33,13 +33,14 @@ machine can hold to, and a scorecard that says whether it works.
 
   The edge is measured, not assumed.
 
-## The four kinds of evidence
+## The five kinds of evidence
 
 | Kind | Feed | The test | Direction |
 |---|---|---|---|
 | **Attention** | Wikipedia page views for the brand (Wikimedia's free API), read once a day after 06:00 ET | The 7-day average is **2x+** the median of the 8 weeks before, **4+ robust standard deviations** up (median absolute deviation, floored at 5% of the median), on **4 of the last 7 days**, at **1,500+ views a day** | None: a scandal draws attention too |
 | **App Store climb** | Apple's free top-200 US free-apps chart, read every 6 hours | Inside the **top 50** for **3 snapshots in a row**, after being **outside the top 150 (or off the chart)** two weeks earlier | Up |
 | **Tracker data** | Any news source: a headline naming a tracker (Placer.ai, Sensor Tower, Circana, Second Measure, YipitData, Similarweb…) with a customer metric; or a mapped brand with a customer metric ("Taco Bell's traffic still down double digits") | A metric (visits, traffic, downloads, installs, active users, card spend) that points somewhere. Earnings releases are excluded ("same-store sales", "quarterly results"): that is the report itself, not a lead on it | From the numbers: rose, +7%, up double digits / fell, −12%, slows |
+| **Social chatter** | Bluesky's public posts, sampled 10 minutes an hour (TickerTags-style brand tags; see [CAMILLO.md](CAMILLO.md)) | The brand's share of posts over the last 3 days at **3x** the median of the 14 days before, on 2 of the 3 days, with **30+ mentions** | None, like attention |
 | **Sell-out / waitlist** | Any news source | Sold out, waitlist, out of stock, restock, shortage, backorder, "can't keep … in stock", with a consumer word (shoppers, fans, stores, launch, collectors…) | Up, unless the headline says otherwise |
 
 **Why each test is shaped this way:**
