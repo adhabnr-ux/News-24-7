@@ -82,6 +82,11 @@ class Engine:
         self.radar: MoversRadar | None = None
         self.smallcap_feed: SmallCapFeed | None = None
         self.radar_seen: dict[str, tuple[float, float]] = {}  # symbol -> (flagged at, % move)
+        # every live stock price read anywhere (radar sweep, Alpaca snapshots), shared with the
+        # options tape so its movers and model values come from now, not the 10-minute universe
+        from .market.live import LiveQuotes
+
+        self.live_quotes = LiveQuotes()
         if sc.enabled:
             self.scorer.attach_universe(self.universe, **sc.filters())
             if cfg.market.enabled:
@@ -98,6 +103,7 @@ class Engine:
                     self.radar,
                     market_phase=lambda now: self.calendar.market_status(now)["phase"],
                     watch=lambda: self.calendar.binary_symbols(),
+                    live=self.live_quotes,
                 )
         # the options tape: unusual volume and contracts up thousands of percent on every $1B+
         # company (needs the universe the small-cap feed keeps fresh)
@@ -112,6 +118,7 @@ class Engine:
                 self.options_radar,
                 market_phase=lambda now: self.calendar.market_status(now)["phase"],
                 movers=lambda: list(self.radar.board) if self.radar is not None else [],
+                live=self.live_quotes,
             )
         # the trend lane: what consumers are doing (Wikipedia attention, App Store climbs, tracker
         # data, sell-outs), tied to the listed company before its earnings report says it (trends.py)
@@ -894,6 +901,21 @@ class Engine:
             Alert(kind="system", severity=Severity.HIGH, title="Options tape: feed problem", body=note)
         )
 
+    @staticmethod
+    def _option_ages(c: Any, now: float) -> str:
+        """How old the contract's quote and last trade were when the alert went out."""
+
+        def age(t: Any) -> str:
+            s = max(0.0, now - t.timestamp())
+            return f"{s:.0f}s" if s < 90 else f"{s / 60:.0f} min"
+
+        bits = []
+        if getattr(c, "quote_time", None) is not None:
+            bits.append(f"quote {age(c.quote_time)} old")
+        if getattr(c, "last_trade", None) is not None:
+            bits.append(f"last trade {age(c.last_trade)} old")
+        return "Data: " + ", ".join(bits) if bits else ""
+
     def _options_alert(self, hit: OptionsHit) -> Alert:
         d = hit.to_dict()
         ch = hit.chain
@@ -906,7 +928,10 @@ class Engine:
             )
         when = ""
         if ch.quote_time is not None:
-            when = f" · quotes as of {ch.quote_time:%H:%M} ET"
+            when = f" · quotes as of {ch.quote_time:%H:%M:%S} ET"
+        if ch.stock_source and ch.stock_source != "universe":
+            stamp = f" {ch.stock_time:%H:%M:%S} ET" if ch.stock_time else ""
+            when += f" · stock price: {ch.stock_source}{stamp}"
         footer = f"{ch.source}{when}. Option prices move fast; check the live bid/ask."
         lines: list[str] = []
         if hit.kind == "spike":
@@ -917,11 +942,24 @@ class Engine:
                 f"🔥 {c.label()} {pct:+,.0f}% today" + ("" if top.real else " (unconfirmed)") + f" · {who}"
             )
             quote = f"bid ${c.bid:.2f} / ask ${c.ask:.2f}" if c.bid is not None and c.ask else "no live quote"
-            first = (
-                f"${(c.prev_close or 0):.2f} → ${(c.last or 0):.2f} ({quote}) · {c.volume:,} contracts "
-                f"({fmt_cap(c.premium)})"
-            )
+            ages = self._option_ages(c, hit.detected)
+            if top.quote_led:
+                first = (
+                    f"${(c.prev_close or 0):.2f} → bid ${(c.bid or 0):.2f} live ({quote}) · last print "
+                    f"${(c.last or 0):.2f}, {c.volume:,} contracts so far"
+                )
+            else:
+                first = (
+                    f"${(c.prev_close or 0):.2f} → ${(c.last or 0):.2f} ({quote}) · {c.volume:,} contracts "
+                    f"({fmt_cap(c.premium)})"
+                )
             lines.append(first + (f" · {stock}" if stock else ""))
+            if ages:
+                lines.append(ages)
+            if top.quote_led:
+                lines.append(
+                    "Caught on the live quote: this feed's trades print about 15 minutes late, the bid does not."
+                )
             if ch.price and c.strike:
                 otm = (c.strike / ch.price - 1) * 100 if c.cp == "C" else (1 - c.strike / ch.price) * 100
                 where = f"{abs(otm):.1f}% {'out of' if otm > 0 else 'in'} the money"
@@ -1047,6 +1085,9 @@ class Engine:
             mk = self.calendar.market_status(time.time())
             until_open = 0.0 if mk.get("open") else float(mk.get("until_s") or 0.0)
             self.options_feed.prioritize(alert.tickers[:6], hold_s=2 * 3600.0 + until_open)
+            if mk.get("open"):  # in session: read them now, not at their turn in the rotation
+                why = "on the radar" if alert.kind == "price" else "in the news"
+                self.options_feed.urgent(alert.tickers[:6], f"{why}: {alert.title[:90]}")
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:

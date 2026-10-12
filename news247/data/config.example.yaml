@@ -125,6 +125,13 @@ options:
   daily_pushes: ${OPTIONS_DAILY_PUSHES:-12}         # most options pushes per day; the rest show in the app
   hot_move_pct: 3                 # companies moving this much today are re-read every 3 minutes
   request_interval_s: 0.35        # ~3 chain reads a second, everyone else rotates (largest first)
+  # live (docs/OPTIONS.md "How live it is"): with Alpaca keys, a fresh bid can fire a spike before the
+  # free feed's trades print (they run ~15 min late), stock prices are real-time, and a websocket
+  # watches the quotes of the ~190 contracts most likely to explode on the companies moving now
+  live_quote_s: 120               # a contract's quote this fresh counts as live
+  stock_quotes: true              # Alpaca real-time stock snapshots (free plan: IEX) for every batch
+  stream: ${OPTIONS_STREAM:-true} # the websocket tripwire (needs Alpaca keys; msgpack)
+  stream_max_quotes: 190          # free plan: 200 quotes; Algo Trader Plus: 1,000
 
 # The trend lane (docs/TRENDS.md): consumer behavior changing before the earnings report shows it.
 # Brands -> companies live in news247/data/trends.yaml. `news247 trends` shows the board and how

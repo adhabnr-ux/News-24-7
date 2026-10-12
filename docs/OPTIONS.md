@@ -127,13 +127,58 @@ $77.5 and $75 calls traded only 1.7× and 0.2× their open interest, yet the cha
   small-cap lane uses) worth `min_market_cap` ($1B) or more, about 3,000. A company with no
   listed options is skipped for a day.
 - **Hot names, re-read every 3 minutes (up to 40 at a time):**
-  - companies moving 3% or more today;
+  - companies moving 3% or more today (on a live price, see "How live it is");
   - names on the price radar's board;
   - any company in a news or price alert, for 2 hours.
 - **Everyone else** rotates through, largest first. At ~3 chain reads a second, a full pass takes
   about 15 to 20 minutes.
 - **When:** the regular session only. Option quotes don't move outside it.
 - **Push limit:** at most 12 options pushes a day (`daily_pushes`). The rest are in the app.
+
+## How live it is
+
+**The miss that shaped this (Oct 12 2026).** BIIB gapped up at the open and its $247.5 calls
+(Oct 16) went from $0.06 to $0.80 within minutes. The alert arrived after the run, showing
+Friday's stock price ($225.71, +3.33%). Two causes:
+- **Late trades:** on the free Alpaca feed, option *trades* print about 15 minutes late, and the
+  spike test was driven by the last trade.
+- **A stale stock price:** the chain's price came from the Nasdaq-screener universe, which still
+  showed Friday after the open. So the scheduler didn't know BIIB was moving, and the model value
+  of yesterday's close was computed from the wrong day.
+
+**What runs now:**
+
+| Piece | What it does | Delay |
+|---|---|---|
+| **Quote-led spikes** | A contract whose *live bid* (quote at most `live_quote_s`, 120 s, old) is already 1,000%+ above its close fires, even before its trades print. The bid is what it could be sold at now, so it is bid-confirmed by construction, and the stale-base model check still applies. | the quote's age, seconds |
+| **Live stock prices** (`market/live.py`) | Each batch's stock prices come from Alpaca's real-time snapshots (free plan: IEX), and the radar shares the Yahoo prices it reads for the ~600 largest companies every minute. The chain's price, its move and the model base come from these. A universe price older than 15 minutes is never used for today's move. | seconds to a minute |
+| **The stock sweep** | With Alpaca keys, every covered company's live price every 2 minutes (`stock_sweep_s`, 100 a request, about 30 requests). Names that newly start moving 3%+ go straight to the urgent lane, the 20 biggest moves first. | ≤ 2 min to notice, on any $1B+ name |
+| **Live hot list** | Companies moving 3%+ on a *live* price are re-read first, not after the 10-minute universe refresh. | ≤ 1 min to notice |
+| **The urgent lane** | A company in a news or radar alert, or tripped by the stream, is read at once, ahead of the rotation (two at a time, at most every 20 s per name). | seconds |
+| **The tripwire** (`OptionStream`) | Alpaca's options websocket watches the quotes of up to 190 contracts: the cheap ($0.03-$2), near-dated (≤ 21 days), near-the-money contracts of companies in the news, on the radar, moving 3%+ or just alerted, with contracts already running ranked first. A bid crossing 4x, 6x, 11x, 21x or 51x its previous close re-reads that company's chain at once, and the usual tests decide the alert. | seconds |
+
+**Every options alert now states its data's age:** "Data: quote 4s old, last trade 15 min old",
+plus where the stock price came from and when.
+
+**What is still not live, and why:**
+- **Cboe only (no Alpaca keys):** quotes and trades are both about 15 minutes delayed. Quote-led
+  spikes and the tripwire need Alpaca keys.
+- **The free Alpaca feed:** quotes are "indicative": live, but adjusted, not the exact exchange
+  bid/ask. Trades stay 15 minutes late, so volume and dollar figures lag. That is why a quote-led
+  spike is judged on the bid and says "N contracts so far".
+- **Fully real time:** Alpaca's Algo Trader Plus ($99/month) gives OPRA trades and quotes and
+  1,000 stream quotes. Set `ALPACA_OPTIONS_FEED=opra`, `options.stream_max_quotes: 1000` and a
+  lower `alpaca_request_interval_s`.
+
+**Check it from the server:**
+
+```bash
+news247 options --provider alpaca BIIB                # prints "freshness: quotes Ns old, last trades N min old"
+news247 options --provider alpaca BIIB --stream 30    # watches its contracts on the websocket for 30 s
+```
+
+`GET /api/status` → `options.live` shows the stream (connected, contracts watched, quotes, median
+quote lag, triggers), urgent reads, and how many stock prices are fresh, by source.
 
 ## The data, and its limits
 

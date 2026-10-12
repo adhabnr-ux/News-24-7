@@ -429,8 +429,10 @@ class SmallCapFeed:
         radar: MoversRadar | None = None,
         market_phase: Any = None,
         watch: Any = None,
+        live: Any = None,
     ) -> None:
         self.cfg = cfg
+        self.live = live  # LiveQuotes: every regular-session price read here is shared with the options tape
         self.watch = watch  # callable() -> symbols read every sweep whatever their size (binary events)
         self.http = http
         self.universe = universe
@@ -590,7 +592,18 @@ class SmallCapFeed:
         self.radar_health.consecutive_errors = 0
         self.radar_health.items += len(quotes)
         self.radar_health.last_fetch_ms = (time.monotonic() - t0) * 1000
+        self._share(quotes, "yahoo screener")
         await self._emit(on_hits, self.radar.scan(quotes, provider="yahoo"))
+
+    def _share(self, quotes: list[Quote], source: str) -> None:
+        """Regular-session prices go to the live store the options tape reads (its stock price and
+        its movers), so a $33B name gapping at the open is known in a minute, not ten."""
+        if self.live is None:
+            return
+        now = time.time()
+        for q in quotes:
+            if q.session == "regular" and q.price:
+                self.live.update(q.symbol, q.price, q.prev_close, now, source)
 
     def sweep_batch(self) -> list[Listing]:
         """The largest ``sweep_size`` companies every sweep, plus the next ``sweep_rotate`` of
@@ -687,6 +700,7 @@ class SmallCapFeed:
         if not quotes:
             return  # no large caps known yet (universe still loading)
         self.radar_health.items += len(quotes)
+        self._share(quotes, "yahoo sweep")
         await self._emit(on_hits, self.radar.scan(quotes, provider="sweep"))
 
     @staticmethod

@@ -52,6 +52,7 @@ import aiohttp
 from ..config import OptionsConfig
 from ..http import HttpClient, HTTPError
 from ..sources.base import SourceHealth, _sleep_or_stop
+from .live import LiveQuotes, OptionStream, Watch, parse_stock_snapshots, pick_watch
 from .universe import SCREENER_HEADERS, Listing, Universe, band, fmt_cap
 
 log = logging.getLogger(__name__)
@@ -135,6 +136,7 @@ class Contract:
     open_interest: int | None = None  # None: the feed did not say (never read as 0)
     iv: float | None = None
     last_trade: datetime | None = None  # ET
+    quote_time: datetime | None = None  # ET, when the bid/ask was true (None: the feed did not say)
 
     @property
     def kind(self) -> str:
@@ -199,6 +201,8 @@ class Chain:
     skipped: int = 0  # adjusted / unparseable contracts
     source: str = "Cboe delayed quotes (~15 min)"  # shown on every alert
     prev_total_volume: int | None = None  # all contracts, previous session (when the source says)
+    stock_source: str = ""  # where the stock's price came from ("" = the option source / universe)
+    stock_time: datetime | None = None  # ET, when that stock price was true
 
     @property
     def stock_prev(self) -> float | None:
@@ -308,6 +312,7 @@ class SpikeRow:
     big_enough: bool = True  # the honest move still clears the threshold (higher on expiry day)
     same_day: bool = False  # expires today: 0DTE contracts need spike_0dte_multiple x the threshold to push
     no_prior: bool = False  # no previous close: measured from the model value (min $0.01)
+    quote_led: bool = False  # measured on the live bid: the trades have not printed yet (feed delay)
 
     @property
     def real(self) -> bool:
@@ -338,7 +343,9 @@ class SpikeRow:
             "honest_move_pct": round(self.honest_move_pct, 1),
             "same_day": self.same_day,
             "no_prior": self.no_prior,
+            "quote_led": self.quote_led,
             "last_trade": c.last_trade.isoformat() if c.last_trade else None,
+            "quote_time": c.quote_time.isoformat() if c.quote_time else None,
         }
 
 
@@ -490,9 +497,21 @@ class OptionsRadar:
         self.pushes[day] = self.pushes.get(day, 0) + 1
         return True
 
-    def spike_row(self, c: Contract, chain: Chain, today: date) -> SpikeRow | None:
-        """A contract up ``spike_min_pct``+ on today's prints, with real volume behind it."""
+    def live_bid(self, c: Contract, now: float) -> float | None:
+        """The bid when the contract's quote is fresh (``live_quote_s``): what it could be sold at
+        right now. None when the feed gave no quote time (Cboe: everything ~15 min late)."""
+        if not c.bid or c.quote_time is None:
+            return None
+        age = now - c.quote_time.timestamp()
+        return c.bid if -60 <= age <= self.cfg.live_quote_s else None
+
+    def spike_row(self, c: Contract, chain: Chain, today: date, now: float | None = None) -> SpikeRow | None:
+        """A contract up ``spike_min_pct``+ today, on its prints with real volume behind them, or
+        on its live bid when the feed's trades lag its quotes (Alpaca's free feed: 15 minutes).
+        The bid is what the contract could be sold at now, so a quote-led spike is bid-confirmed by
+        construction and needs no printed volume yet."""
         cfg = self.cfg
+        now = now or time.time()
         move = c.move_pct
         no_prior = False
         if move is None and c.last and not c.prev_close:
@@ -503,24 +522,38 @@ class OptionsRadar:
                 return None
             c.prev_close = max(round(fair0, 2), 0.01)
             move, no_prior = c.move_pct, True
+        traded_today = c.last_trade is not None and c.last_trade.date() == today
+        if c.last_trade is not None and not traded_today:
+            move = None  # the "last" is an old print: nothing traded today
+        live = self.live_bid(c, now)
+        quote_led = False
+        if live is not None and c.prev_close and c.prev_close > 0 and not no_prior:
+            live_move = (live / c.prev_close - 1.0) * 100.0
+            if live_move >= cfg.spike_min_pct and (move is None or live_move > move):
+                move, quote_led = live_move, True
         if move is None or move < cfg.spike_min_pct:
             return None
-        if c.last_trade is not None and c.last_trade.date() != today:
-            return None  # the "last" is an old print: nothing traded today
-        if c.volume < cfg.spike_min_volume or (c.last or 0) < cfg.spike_min_price:
-            return None
-        if c.volume * (c.last or 0) * 100 < cfg.spike_min_premium:
-            return None
+        if quote_led:
+            if (live or 0) < cfg.spike_min_price:
+                return None
+        else:
+            if c.volume < cfg.spike_min_volume or (c.last or 0) < cfg.spike_min_price:
+                return None
+            if c.volume * (c.last or 0) * 100 < cfg.spike_min_premium:
+                return None
         fair = self.fair_prev(c, chain, today)
         prev = c.prev_close or 0.0
         stale = fair is not None and fair >= cfg.stale_min_fair and prev < cfg.stale_base_ratio * fair
         base = max(prev, fair or 0.0) if stale else prev
-        honest = (c.last / base - 1.0) * 100.0 if base > 0 and c.last else move
+        px = live if quote_led else c.last
+        honest = (px / base - 1.0) * 100.0 if base > 0 and px else move
         bid_move = (c.bid / base - 1.0) * 100.0 if c.bid and base > 0 else None
         confirmed = bid_move is not None and bid_move >= cfg.spike_min_pct * cfg.spike_confirm_fraction
         same_day = c.expiry == today
         need = cfg.spike_min_pct * (cfg.spike_0dte_multiple if same_day else 1.0)
-        return SpikeRow(c, move, bid_move, confirmed, fair, stale, honest, honest >= need, same_day, no_prior)
+        return SpikeRow(
+            c, move, bid_move, confirmed, fair, stale, honest, honest >= need, same_day, no_prior, quote_led
+        )
 
     def fair_prev(self, c: Contract, chain: Chain, today: date) -> float | None:
         """Model value of the contract at yesterday's close: yesterday's stock price, the time
@@ -559,7 +592,7 @@ class OptionsRadar:
         hits: list[OptionsHit] = []
 
         live = [c for c in chain.contracts if c.expiry >= today]
-        spikes = [r for r in (self.spike_row(c, chain, today) for c in live) if r is not None]
+        spikes = [r for r in (self.spike_row(c, chain, today, now) for c in live) if r is not None]
         if spikes:
             hit = self._spike_hit(chain, listing, spikes, st, day, now)
             if hit is not None:
@@ -857,7 +890,7 @@ def parse_alpaca_chain(
     root = symbol.replace("-", "").replace(".", "").replace("/", "").upper()
     price = listing.price if listing else None
     change = listing.change_pct if listing else None
-    chain = Chain(symbol=symbol, price=price, change_pct=change, source=source)
+    chain = Chain(symbol=symbol, price=price, change_pct=change, source=source, stock_source="universe")
     newest: datetime | None = None
     near_iv: list[float] = []
     yday = prev_session(today)
@@ -903,6 +936,7 @@ def parse_alpaca_chain(
                 open_interest=open_interest.get(str(occ)) if open_interest is not None else None,
                 iv=iv,
                 last_trade=t_time,
+                quote_time=q_time,
             )
         )
         if iv and price and 7 <= (exp - today).days <= 60 and abs(strike / price - 1) <= 0.05:
@@ -991,6 +1025,26 @@ class AlpacaSource:
             self._oi.pop(next(iter(self._oi)))
         return oi
 
+    async def stock_snapshots(
+        self, symbols: list[str], pace: Callable[[float], Any]
+    ) -> dict[str, tuple[float, float | None, float]]:
+        """Real-time stock prices for up to 100 companies a request (the free plan's IEX feed is
+        live): {symbol: (price, previous close, epoch)}."""
+        out: dict[str, tuple[float, float | None, float]] = {}
+        today = datetime.now(ET).date()
+        syms = [s.replace("-", ".").upper() for s in symbols]
+        for i in range(0, len(syms), 100):
+            await pace(self.interval_s)
+            resp = await self.http.get(
+                self.cfg.alpaca_data_url.rstrip("/") + "/v2/stocks/snapshots",
+                headers=self.headers,
+                params={"symbols": ",".join(syms[i : i + 100]), "feed": self.cfg.alpaca_stock_feed},
+                timeout_s=20,
+            )
+            for sym, row in parse_stock_snapshots(resp.json(), today).items():
+                out[sym.replace(".", "-")] = row
+        return out
+
     async def fetch(self, symbol: str, listing: Listing | None, pace: Callable[[float], Any]) -> Chain:
         today = datetime.now(ET).date()
         params: dict[str, Any] = {"limit": 1000}
@@ -1046,9 +1100,35 @@ class OptionsFeed:
         market_phase: Callable[[float], str] | None = None,
         movers: Callable[[], Iterable[str]] | None = None,
         sources: list[Any] | None = None,
+        live: LiveQuotes | None = None,
     ) -> None:
         self.cfg = cfg
         self.sources = sources if sources is not None else build_sources(cfg, http)
+        # live: stock prices from the fastest source (radar sweep, Alpaca snapshots), the urgent
+        # lane (news, radar, the stream) that skips the rotation, and the websocket tripwire
+        self.live = live if live is not None else LiveQuotes()
+        self._urgent: dict[str, str] = {}  # symbol -> why, waiting for the urgent lane
+        self._urgent_read: dict[str, float] = {}  # symbol -> last urgent read
+        self._urgent_wake: asyncio.Event | None = None
+        self._urgent_sem: asyncio.Semaphore | None = None
+        self.urgent_reads = 0
+        self.urgent_why: dict[str, tuple[str, float]] = {}  # symbol -> (why, when): shown on its alert
+        self.stock_reads = 0
+        self.stock_errors = 0
+        self.stock_swept = 0.0  # last full sweep of every company's live price
+        self._moving: set[str] = set()  # moving hot_move_pct+ at the last sweep
+        self.stream: OptionStream | None = None
+        alpaca = next((x for x in self.sources if getattr(x, "name", "") == "alpaca"), None)
+        if cfg.stream and alpaca is not None:
+            self.stream = OptionStream(
+                f"{cfg.alpaca_stream_url.rstrip('/')}/v1beta1/{cfg.alpaca_feed or 'indicative'}",
+                cfg.alpaca_key,
+                cfg.alpaca_secret,
+                self._on_trigger,
+                max_quotes=cfg.stream_max_quotes,
+                is_open=lambda: self._phase(time.time()) == "open",
+                session=lambda: getattr(http, "session", None),
+            )
         self.source_stats: dict[str, dict[str, Any]] = {src.name: _blank_stats() for src in self.sources}
         self.fallbacks = 0  # chains read from the fallback source after the primary failed
         self._big_nochain = 0  # $10B+ companies in a row a source said have no options
@@ -1116,7 +1196,12 @@ class OptionsFeed:
                 live = [s for s in self.movers() if self.eligible(self.universe.get(s))]
             except Exception:  # noqa: BLE001 - a radar bug must not stop the options feed
                 live = []
-        order = list(dict.fromkeys([*self.priority, *live, *(li.symbol for li in movers)]))
+        moving = [
+            s
+            for s in self.live.movers(self.cfg.hot_move_pct, self.cfg.stock_quote_max_age_s, now)
+            if self.eligible(self.universe.get(s))
+        ]
+        order = list(dict.fromkeys([*self.priority, *live, *moving, *(li.symbol for li in movers)]))
         due = [
             s
             for s in order
@@ -1248,6 +1333,7 @@ class OptionsFeed:
         if chain is None:
             return []
         self.health.items += len(chain.contracts)
+        self.apply_live(chain, now)
         if not self.fresh(chain, now):
             self.stale_chains += 1
             self._stale_run += 1
@@ -1256,7 +1342,158 @@ class OptionsFeed:
             )
             return []  # never alert on stale data
         self._stale_run = 0
-        return self.radar.scan(chain, self.universe.get(symbol), now)
+        hits = self.radar.scan(chain, self.universe.get(symbol), now)
+        self._watch(chain, now, bool(hits))
+        why = self.urgent_why.get(symbol)
+        if why and now - why[1] < 600:
+            for h in hits:
+                h.reasons.append(f"read at once: {why[0]}")
+        return hits
+
+    # ------------------------------------------------------------------ live
+
+    def apply_live(self, chain: Chain, now: float) -> None:
+        """The stock's price from the live store when it is fresh. Otherwise a price that came
+        from a universe older than 15 minutes says nothing about today's move (on Oct 12 2026 it
+        still showed Friday's close after the open), so the move and the model base are dropped
+        rather than computed from the wrong day."""
+        q = self.live.get(chain.symbol, self.cfg.stock_quote_max_age_s, now)
+        if q is not None:
+            chain.price = q.price
+            if q.prev_close:
+                chain.prev_close = q.prev_close
+                chain.change_pct = q.change_pct
+            chain.stock_source = q.source
+            chain.stock_time = datetime.fromtimestamp(q.ts, ET)
+            return
+        if chain.stock_source == "universe" and self.universe.age > 900:
+            chain.change_pct = None
+            chain.prev_close = None
+            chain.stock_source = "universe (stale)"
+
+    def urgent(self, symbols: Iterable[str], why: str = "") -> int:
+        """Read these companies' chains now, ahead of the rotation (news, the radar, the stream).
+        Returns how many were queued."""
+        n = 0
+        now = time.time()
+        for s in symbols:
+            s = (s or "").upper()
+            if not s or not self.eligible(self.universe.get(s)):
+                continue
+            if now - self._urgent_read.get(s, 0.0) < self.cfg.urgent_gap_s and s not in self._urgent:
+                continue
+            if s not in self._urgent:
+                n += 1
+            self._urgent[s] = why or self._urgent.get(s, "")
+            self.prioritize([s])
+        if n and self._urgent_wake is not None:
+            self._urgent_wake.set()
+        return n
+
+    def _on_trigger(self, underlying: str, occ: str, bid: float, pct: float) -> None:
+        parsed = parse_occ(occ)
+        label = occ
+        if parsed is not None:
+            k = f"{parsed[3]:,.2f}".rstrip("0").rstrip(".")
+            label = f"${k} {'call' if parsed[2] == 'C' else 'put'} ({parsed[1]:%b} {parsed[1].day})"
+        why = f"the live bid on the {label} hit ${bid:.2f} ({pct:+,.0f}% on its close)"
+        self.urgent_why[underlying] = (why, time.time())
+        self.urgent([underlying], why)
+
+    async def refresh_stocks(self, symbols: list[str]) -> int:
+        """Real-time stock prices for a batch, from Alpaca when its keys are set (one request per
+        100 companies). Returns how many were updated."""
+        alpaca = next((x for x in self.sources if getattr(x, "name", "") == "alpaca"), None)
+        if alpaca is None or not self.cfg.stock_quotes or not symbols:
+            return 0
+        try:
+            rows = await alpaca.stock_snapshots(symbols, self._pace)
+        except (HTTPError, aiohttp.ClientError, ValueError, TypeError, asyncio.TimeoutError, OSError) as exc:
+            self.stock_errors += 1
+            log.info("alpaca stock snapshots failed: %s", exc)
+            return 0
+        self.stock_reads += 1
+        for sym, (price, prev, ts) in rows.items():
+            self.live.update(sym, price, prev, ts, "alpaca")
+        return len(rows)
+
+    async def sweep_stocks(self, now: float) -> list[str]:
+        """Every covered company's live price (Alpaca, 100 a request) every ``stock_sweep_s``, so
+        a gap at the open is seen in a couple of minutes on any $1B+ name. Names that newly
+        start moving ``hot_move_pct``+ go to the urgent lane, biggest moves first. Returns them."""
+        if not self.cfg.stock_sweep_s or now - self.stock_swept < self.cfg.stock_sweep_s:
+            return []
+        alpaca = next((x for x in self.sources if getattr(x, "name", "") == "alpaca"), None)
+        if alpaca is None or not self.cfg.stock_quotes:
+            return []
+        self.stock_swept = now
+        if not await self.refresh_stocks([li.symbol for li in self.companies()]):
+            return []
+        moving = self.live.movers(self.cfg.hot_move_pct, self.cfg.stock_quote_max_age_s, time.time())
+        new = [s for s in moving if s not in self._moving][: self.cfg.stock_sweep_urgent]
+        self._moving = set(moving)
+        for s in new:
+            q = self.live.get(s, self.cfg.stock_quote_max_age_s)
+            pct = f" {q.change_pct:+.1f}%" if q is not None and q.change_pct is not None else ""
+            self.urgent([s], f"moving{pct} on a live price")
+        return new
+
+    def _watch(self, chain: Chain, now: float, hit: bool) -> None:
+        """Keep the tripwire on this company's most explosive contracts while it is hot (news,
+        radar, moving today, or a hit just now); take it off when it cools."""
+        if self.stream is None:
+            return
+        sym = chain.symbol
+        pr = self.priority.get(sym, 0.0) > now
+        chg = abs(chain.change_pct or 0.0)
+        if not (pr or hit or chg >= self.cfg.hot_move_pct):
+            self.stream.drop(sym)
+            return
+        weight = (3.0 if pr else 1.0) + (2.0 if hit else 0.0) + min(chg, 20.0) / 5.0
+        today = datetime.fromtimestamp(now, ET).date()
+        rows: list[Watch] = pick_watch(
+            chain.contracts, sym, chain.price, today, per_symbol=self.cfg.stream_per_symbol, weight=weight
+        )
+        self.stream.set_candidates(sym, rows)
+
+    async def _urgent_loop(self, on_hits: Callable[[list[OptionsHit]], Any], stop: asyncio.Event) -> None:
+        if self._urgent_wake is None:
+            self._urgent_wake = asyncio.Event()
+        if self._urgent_sem is None:
+            self._urgent_sem = asyncio.Semaphore(self.cfg.urgent_concurrency)
+        while not stop.is_set():
+            if not self._urgent:
+                self._urgent_wake.clear()
+                try:
+                    await asyncio.wait_for(self._urgent_wake.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    continue
+            now = time.time()
+            if self._phase(now) != "open" or now < self._backoff_until:
+                self._urgent.clear()
+                continue
+            batch = list(self._urgent)
+            self._urgent.clear()
+            for s in batch:
+                self._urgent_read[s] = now
+                self.fetched[s] = now
+            await self.refresh_stocks(batch)
+
+            async def one(sym: str) -> list[OptionsHit]:
+                assert self._urgent_sem is not None
+                async with self._urgent_sem:
+                    if stop.is_set():
+                        return []
+                    self.urgent_reads += 1
+                    return await self.read(sym, time.time())
+
+            results = await asyncio.gather(*(one(s) for s in batch))
+            hits = [h for r in results for h in r]
+            if hits:
+                try:
+                    await on_hits(hits)
+                except Exception:  # noqa: BLE001
+                    log.exception("urgent options hits not published")
 
     def _error(self, exc: BaseException) -> None:
         h = self.health
@@ -1315,16 +1552,36 @@ class OptionsFeed:
         stop: asyncio.Event,
         on_problem: Callable[[str], Any] | None = None,
     ) -> None:
-        """Regular session only: options quotes do not move outside it."""
+        """Regular session only: options quotes do not move outside it. Alongside the rotation:
+        the urgent lane and the websocket tripwire."""
+        self._urgent_wake = asyncio.Event()
+        side = [asyncio.create_task(self._urgent_loop(on_hits, stop), name="options-urgent")]
+        if self.stream is not None:
+            side.append(asyncio.create_task(self.stream.run(stop), name="options-stream"))
+        try:
+            await self._rotate(on_hits, stop, on_problem)
+        finally:
+            for t in side:
+                t.cancel()
+            await asyncio.gather(*side, return_exceptions=True)
+
+    async def _rotate(
+        self,
+        on_hits: Callable[[list[OptionsHit]], Any],
+        stop: asyncio.Event,
+        on_problem: Callable[[str], Any] | None = None,
+    ) -> None:
         while not stop.is_set():
             now = time.time()
             if self._phase(now) != "open" or now < self._backoff_until:
                 await _sleep_or_stop(stop, 60.0)
                 continue
+            await self.sweep_stocks(now)
             batch = self.next_batch(now, self.cfg.batch_size)
             if not batch:
                 await _sleep_or_stop(stop, 30.0)
                 continue
+            await self.refresh_stocks(batch)
             results = await asyncio.gather(*(self._one(s, stop) for s in batch))
             note = self.problem(time.time())
             if note and on_problem is not None:
@@ -1378,5 +1635,26 @@ class OptionsFeed:
             "stale_chains": self.stale_chains,
             "last_stale": self._stale_warned,
             "backing_off_s": max(0, round(self._backoff_until - time.time())),
+            "live": {
+                "stock_quotes": self.live.status(),
+                "stock_snapshot_reads": self.stock_reads,
+                "last_stock_sweep": self.stock_swept or None,
+                "moving_now": len(self._moving),
+                "stock_snapshot_errors": self.stock_errors,
+                "urgent_reads": self.urgent_reads,
+                "urgent_waiting": len(self._urgent),
+                "stream": (
+                    {
+                        "enabled": True,
+                        "url": self.stream.url,
+                        "watching": len(self.stream.watch),
+                        "subscribed": len(self.stream.subscribed),
+                        "max_quotes": self.stream.max_quotes,
+                        **self.stream.stats.to_dict(),
+                    }
+                    if self.stream is not None
+                    else {"enabled": False, "why": "needs Alpaca keys" if self.cfg.stream else "off"}
+                ),
+            },
             **self.health.to_dict(),
         }

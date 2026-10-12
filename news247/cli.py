@@ -299,7 +299,11 @@ def cmd_universe(cfg: Config, args: argparse.Namespace) -> int:
 
 
 async def _options(
-    cfg: Config, symbols: list[str], min_pct: float | None, provider: str | None = None
+    cfg: Config,
+    symbols: list[str],
+    min_pct: float | None,
+    provider: str | None = None,
+    stream_s: float = 0.0,
 ) -> int:
     """Read option chains once from this machine and show what the options tape sees."""
     import dataclasses
@@ -329,6 +333,13 @@ async def _options(
     async with HttpClient(cfg.general.user_agent, timeout_s=60) as http:
         feed = OptionsFeed(ocfg, http, uni, OptionsRadar(ocfg))
         print(f"  source: {feed.label}")
+        live_n = await feed.refresh_stocks([s.upper() for s in symbols])
+        print(
+            f"  live stock prices: {live_n} from Alpaca snapshots"
+            if live_n
+            else "  live stock prices: none (Alpaca keys needed; in the server the radar sweep also supplies them)"
+        )
+        watch: list = []
         for sym in [s.upper() for s in symbols]:
             print(f"\n  {sym}")
             try:
@@ -340,8 +351,16 @@ async def _options(
             if chain is None:
                 print("     no option chain listed for this symbol")
                 continue
+            feed.apply_live(chain, time.time())
             today = datetime.now(ET).date()
             live = [c for c in chain.contracts if c.expiry >= today]
+            _print_ages(live)
+            if chain.stock_source:
+                stamp = f" at {chain.stock_time:%H:%M:%S} ET" if chain.stock_time else ""
+                print(f"     stock price from: {chain.stock_source}{stamp}")
+            from .market.live import pick_watch
+
+            watch += pick_watch(live, sym, chain.price, today, per_symbol=ocfg.stream_per_symbol)
             expiries = sorted({c.expiry for c in live})
             when = f"{chain.quote_time:%Y-%m-%d %H:%M} ET" if chain.quote_time else "no timestamp"
             stock = f"${chain.price:,.2f}" if chain.price else "?"
@@ -378,12 +397,62 @@ async def _options(
                     )
                 for r in h.reasons:
                     print(f"       ⚠ {r}")
+        if stream_s > 0:
+            worst = max(worst, await _stream_check(feed, watch, stream_s))
     print()
     return worst
 
 
+def _print_ages(contracts: list) -> None:
+    """How live this chain is: the median age of its quotes and of its last trades today."""
+    now = time.time()
+
+    def median(xs: list[float]) -> str:
+        if not xs:
+            return "n/a"
+        xs.sort()
+        m = xs[len(xs) // 2]
+        return f"{m:.0f}s" if m < 90 else f"{m / 60:.1f} min"
+
+    q = [now - c.quote_time.timestamp() for c in contracts if c.quote_time is not None]
+    t = [
+        now - c.last_trade.timestamp()
+        for c in contracts
+        if c.last_trade is not None and c.volume > 0 and now - c.last_trade.timestamp() < 6 * 3600
+    ]
+    print(f"     freshness: quotes {median(q)} old (median of {len(q):,}), last trades {median(t)} old")
+
+
+async def _stream_check(feed: Any, watch: list, seconds: float) -> int:
+    """Connect to Alpaca's options websocket, watch the picked contracts for ``seconds`` and say
+    what arrived: proof that the tripwire is live from this machine."""
+    if feed.stream is None:
+        print("\n  stream: off (needs Alpaca keys and options.stream: true)")
+        return 1
+    st = feed.stream
+    st.is_open = lambda: True  # a check runs whatever the clock says
+    by: dict[str, list] = {}
+    for w in watch:
+        by.setdefault(w.underlying, []).append(w)
+    for sym, rows in by.items():
+        st.set_candidates(sym, rows)
+    print(f"\n  stream: {st.url}, watching {len(st.watch)} contracts for {seconds:.0f}s ...")
+    stop = asyncio.Event()
+    task = asyncio.create_task(st.run(stop))
+    await asyncio.sleep(seconds)
+    stop.set()
+    await asyncio.gather(task, return_exceptions=True)
+    d = st.stats.to_dict()
+    print(
+        f"  stream: connected={d['connects'] > 0}, {d['quotes']:,} quotes, median quote lag "
+        f"{d['quote_lag_median_s']}s, triggers {d['triggers']}"
+        + (f", last error: {d['last_error']}" if d["last_error"] else "")
+    )
+    return 0 if d["connects"] > 0 and not d["last_error"] else 1
+
+
 def cmd_options(cfg: Config, args: argparse.Namespace) -> int:
-    return asyncio.run(_options(cfg, args.symbols, args.min_pct, args.provider))
+    return asyncio.run(_options(cfg, args.symbols, args.min_pct, args.provider, args.stream))
 
 
 # --------------------------------------------------------------------------- test-notify
@@ -774,6 +843,13 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("symbols", nargs="+", help="symbols, e.g. NVDA NWE")
     o.add_argument("--min-pct", type=float, help="spike threshold for this run (default from config: 1000)")
     o.add_argument("--provider", choices=["alpaca", "cboe"], help="read from this source only (no fallback)")
+    o.add_argument(
+        "--stream",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="also watch these companies' contracts on Alpaca's options websocket this long (live check)",
+    )
 
     tn = sub.add_parser("test-notify", help="send a test alert to every enabled channel")
     tn.add_argument(

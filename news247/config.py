@@ -328,6 +328,25 @@ class OptionsConfig:
     # noise control
     daily_pushes: int = 12  # most options pushes per day; the rest show in the app
     max_rows: int = 5  # contracts listed per alert
+    # live (Oct 12 2026, the BIIB miss): the free Alpaca feed's option *trades* are 15 min late but
+    # its quotes are live, so a spike is also measured on a fresh bid; the stock's price comes from
+    # live quotes, not the 10-minute universe; urgent names skip the rotation
+    live_quote_s: float = 120.0  # a contract's quote this fresh counts as live
+    stock_quotes: bool = True  # Alpaca real-time stock snapshots for each batch's companies (keys needed)
+    stock_quote_max_age_s: float = 180.0  # a stock quote older than this is not "live"
+    stock_sweep_s: float = (
+        120.0  # every company's live stock price this often (Alpaca, 100 a request; 0 = off)
+    )
+    stock_sweep_urgent: int = 20  # names newly moving hot_move_pct+ in a sweep read at once (biggest first)
+    urgent_concurrency: int = 2  # chains read at once for urgent names (news, radar, the stream)
+    urgent_gap_s: float = 20.0  # an urgent name is re-read at most this often
+    # the tripwire: Alpaca's options websocket on the quotes of the contracts most likely to
+    # multiply (free plan: 200 quotes); a bid crossing 4x/6x/11x/21x its close re-reads the chain
+    stream: bool = True
+    stream_max_quotes: int = 190
+    stream_per_symbol: int = 8
+    alpaca_stream_url: str = "wss://stream.data.alpaca.markets"
+    alpaca_stock_feed: str = "iex"  # real-time stock snapshots: "iex" (free plan) or "sip" (paid)
 
 
 @dataclass
@@ -575,6 +594,16 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
     if trends.narrative_ratio <= 1 or trends.narrative_min < 1 or trends.narrative_cooldown_days < 0:
         raise ConfigError(
             "[trends] need narrative_ratio > 1, narrative_min >= 1, narrative_cooldown_days >= 0"
+        )
+    if options.live_quote_s <= 0 or options.stock_quote_max_age_s <= 0 or options.urgent_gap_s < 0:
+        raise ConfigError("[options] live_quote_s and stock_quote_max_age_s must be > 0, urgent_gap_s >= 0")
+    if (
+        options.urgent_concurrency < 1
+        or not 1 <= options.stream_max_quotes <= 1000
+        or options.stream_per_symbol < 1
+    ):
+        raise ConfigError(
+            "[options] need urgent_concurrency >= 1, stream_max_quotes 1-1000, stream_per_symbol >= 1"
         )
     if options.request_interval_s < 0.2:
         raise ConfigError("[options] request_interval_s must be at least 0.2 (be polite to free endpoints)")

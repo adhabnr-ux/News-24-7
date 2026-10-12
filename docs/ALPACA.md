@@ -46,13 +46,19 @@ Once a day per company, one request to the option-contracts list gives **open in
 If open interest can't be read, unusual volume is not judged for that chain, so it can never
 raise a fake "no open interest" alert. Spikes are still judged.
 
-The stock's price comes from the Nasdaq universe (refreshed every 10 minutes in session). The
-company's 30-day IV, used by the stale-base check, is the median IV of near-the-money contracts
-7 to 60 days out.
+The stock's price comes from Alpaca's real-time stock snapshots (`/v2/stocks/snapshots`, the
+free plan's IEX feed), one request per 100 companies in each batch. Without keys it comes from
+the radar's live Yahoo prices, or else the Nasdaq universe. The company's 30-day IV, used by the
+stale-base check, is the median IV of near-the-money contracts 7 to 60 days out.
+
+**The live tripwire:** `wss://stream.data.alpaca.markets/v1beta1/{feed}` (msgpack only). It
+watches the quotes of up to 190 contracts (the free plan allows 200) and re-reads a company's chain
+the moment a bid crosses 4x/6x/11x/21x its close. The stream holds one connection. Turn it off with
+`OPTIONS_STREAM=false`. Details are in [OPTIONS.md](OPTIONS.md) ("How live it is").
 
 | Plan | Feed (`alpaca_feed`) | What it means |
 |---|---|---|
-| Free (Basic) | `indicative` (default) | Trades about 15 minutes delayed; quotes are Alpaca's adjusted "indicative" quotes, not the exchange's exact bid/ask. 200 requests a minute: a full pass over ~3,000 companies takes roughly 20 to 30 minutes, and hot names are still re-read every 3 minutes. |
+| Free (Basic) | `indicative` (default) | Trades about 15 minutes delayed; quotes are live but Alpaca's adjusted "indicative" quotes, not the exchange's exact bid/ask. The tape fires on a fresh bid (quote-led spikes) and the websocket watches 190 quotes, so a spike is seen in seconds, not 15 minutes. 200 requests a minute: a full pass over ~3,000 companies takes roughly 20 to 30 minutes; hot and urgent names are read first. |
 | Algo Trader Plus (paid) | `opra` | Real-time OPRA trades and quotes, 10,000 requests a minute. Set `ALPACA_OPTIONS_FEED=opra` and lower `options.alpaca_request_interval_s` (e.g. 0.01). |
 
 On the free feed, the "bid-confirmed" test uses indicative quotes. They follow the real market

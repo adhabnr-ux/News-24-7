@@ -17,6 +17,7 @@ dependencies = [
   "cryptography>=41",  # Web Push encryption + VAPID signing (Foretape phone alerts)
   "pg8000>=1.31",  # pure-Python Postgres driver: optional STATE_DB keeps phone subscriptions durable
   "segno>=1.5",  # pure-Python QR codes (Setup page: scan to open Foretape / pair WhatsApp)
+  "msgpack>=1.0",  # Alpaca's options websocket speaks only msgpack (the live options tripwire)
 ]
 
 [project.optional-dependencies]

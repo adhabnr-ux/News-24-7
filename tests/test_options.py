@@ -653,7 +653,8 @@ async def test_engine_publishes_spikes_and_flow(tmp_path: Path):
         "$0.15 → $2.00 (bid $1.90 / ask $2.10) · 400 contracts ($80K)" in first
         and "XYZ $52.00 (+4.00%)" in first
     )
-    assert "Cboe delayed quotes (~15 min) · quotes as of 11:29 ET" in spike.body
+    assert "Cboe delayed quotes (~15 min) · quotes as of 11:29:00 ET" in spike.body
+    assert "Data: last trade 10 min old" in spike.body
     assert "No headline yet." in spike.body and spike.url.endswith("/xyz/quote_table")
     assert flow.title.startswith(
         "🐋 Unusual options: XYZ $1.2M · XYZ $55 call (Oct 16) 6,000 contracts, 12× open interest"
