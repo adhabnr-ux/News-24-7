@@ -151,7 +151,11 @@ companies:
   - {name: Bank of England, aliases: [bank of england, boe], exposure: [FXB]}
 
   # ---- added 2026-10-09 from the "where it broke first" research (Jun-Oct 2026 movers)
-  - {name: FHFA, aliases: [fhfa, federal housing finance agency, bill pulte, pulte, fannie mae, freddie mac, fannie and freddie], exposure: [FICO, RKT, UWMC]}
+  - {name: FHFA, aliases: [fhfa, federal housing finance agency, bill pulte, pulte], exposure: [FNMA, FMCC, FICO, RKT, UWMC]}
+  # added 2026-10-13 from the Oct 12 audit: both trade over the counter (-14% on Burry's warning)
+  - {name: Fannie Mae, ticker: FNMA, aliases: [fannie mae, fannie, federal national mortgage association]}
+  - {name: Freddie Mac, ticker: FMCC, aliases: [freddie mac, freddie, federal home loan mortgage corporation]}
+  - {name: Michael Burry, aliases: [michael burry, scion asset management], cased: [Burry]}
   - {name: Fair Isaac, ticker: FICO, aliases: [fair isaac, fico score, fico classic], cased: [FICO]}
   - {name: PayPal, ticker: PYPL, aliases: [paypal, venmo]}
   - {name: Generac, ticker: GNRC, aliases: [generac]}
@@ -261,6 +265,26 @@ keywords:
   # analyst
   downgrade*: 12
   upgrade*: 10
+  # "Fannie Mae, Freddie Mac cut to Neutral at Mizuho" (Seeking Alpha's rating-change wording)
+  cut to neutral: 12
+  cut to hold: 12
+  cut to sell: 15
+  cut to underweight: 15
+  cut to underperform: 15
+  cut to equal weight: 12
+  cut to market perform: 12
+  cut to sector perform: 12
+  cut to peer perform: 12
+  cut to in-line: 12
+  lowered to neutral: 12
+  lowered to hold: 12
+  lowered to sell: 15
+  lowered to underweight: 15
+  lowered to underperform: 15
+  raised to buy: 10
+  raised to outperform: 10
+  raised to overweight: 10
+  worthless: 12
   price target: 5
   # regulation / legal
   antitrust: 22
@@ -674,7 +698,12 @@ penalties:
   to announce: 10
   announces date: 40
   date for: 15
-  release date: 20
+  # the date of an earnings release, not a "release" in general ("as release date extends" is
+  # Fannie Mae's exit from conservatorship slipping, a -14% catalyst on Oct 12 2026)
+  release date for: 20
+  release date and: 20
+  sets * release date: 20
+  announces * release date: 20
   earnings release date: 40
   to release * results: 30
   investor day: 10
@@ -973,11 +1002,32 @@ themes:
   housing_finance_regulator:
     description: FHFA / Fannie-Freddie policy (Pulte's X posts crashed FICO twice in Sep 2026)
     all:
-      - [fhfa, pulte, fannie mae, freddie mac, fannie and freddie]
-      - [vantagescore, fico, credit score*, pricing grid, llpa, loan-level, effective immediately, hereby, conservatorship, ipo, guarantee fee, g-fee, mortgage]
+      - [fhfa, pulte, fannie mae, freddie mac, fannie, freddie]
+      - [vantagescore, fico, credit score*, pricing grid, llpa, loan-level, effective immediately, hereby, guarantee fee, g-fee, mortgage]
     weight: 30
     direction: mixed
     tickers: [FICO, RKT, UWMC, XHB]
+  gse_release:
+    description: >-
+      Fannie Mae / Freddie Mac leaving conservatorship: the release, an IPO, Treasury's stake and the
+      dilution it means for the common (Oct 12 2026: Burry warned the common could be "worthless" and
+      Mizuho cut both to Neutral "as release date extends"; FNMA -14%, FMCC -14%)
+    all:
+      - [fannie mae, freddie mac, fannie, freddie, fhfa, pulte, gse, gses]
+      - [conservatorship, release, released, releasing, privatiz*, ipo, public offering, relist*, uplist*, recap*, senior preferred, junior preferred, preferred, warrant*, dilut*, worthless, treasury stake, implicit guarantee]
+    weight: 25
+    direction: mixed
+    tickers: [FNMA, FMCC]
+  star_investor_bet:
+    description: >-
+      A famous investor publicly bets against, dumps or warns on a stock (Michael Burry on Fannie Mae
+      and Freddie Mac, Oct 11-12 2026: the first reports came 10-15 hours before FNMA and FMCC fell 14%)
+    all:
+      - [michael burry, burry, scion asset management, jim chanos, chanos, kynikos, david einhorn, einhorn, greenlight capital]
+      - [warns, warning, worthless, short*, puts, put options, bet* against, dump*, sells, sold, exits, exited, swap*, slash*, overvalued, bubble, takes aim, zero, wipe* out, collapse*]
+    weight: 25
+    direction: down
+    tickers: []
   yield_threshold:
     description: Treasury yields cross a multi-decade threshold (5y 5%, 10y 5.3%, 30y 2007 high) — hits tech, banks, housing
     all:

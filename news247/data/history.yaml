@@ -2075,6 +2075,20 @@ events:
       - {text: "Anthropic has quietly signed a multiyear cloud deal with miner IREN, The Information reported", tier: media}
       - {text: "Anthropic's $530 Billion Data Center Sprint Leans on Bitcoin Miners", summary: "People familiar with the relationship say Anthropic also has an unannounced multiyear cloud deal with IREN.", tier: media, approx: true}
 
+  # ---- added 2026-10-13 from the Oct 12 live audit (tests/test_monday_replay.py)
+  - id: burry-fannie-freddie-worthless-2026
+    date: 2026-10-12
+    category: star_investor_bet
+    first_source: "Michael Burry's Substack post (Sunday Oct 11); Stocktwits 01:46 ET, Seeking Alpha 02:42 ET, Benzinga 04:56 ET; Mizuho cut both to Neutral at 08:18 ET"
+    move: "FNMA -14.2% (low -19.9%), FMCC -14.4% (both OTC); 17.5M and 10.6M shares, 3x their 10-day averages"
+    tickers: [FNMA, FMCC]
+    first_reports:
+      - {text: "Michael Burry Warns Fannie Mae and Freddie Mac Could Become ‘Worthless’ as Trump-Era Gains Collapse Under Fresh Pressure", tier: media}
+      - {text: "Why Michael Burry Is Swapping Fannie Mae, Freddie Mac Common Stock For Preferred Shares", tier: media}
+      - {text: "Fannie Mae, Freddie Mac cut to Neutral at Mizuho as release date extends", tier: media}
+    coverage:
+      - "Fannie Mae, Freddie Mac Stocks Sink on Fading Privatization Hopes"
+
 noise:
   # Things that sound big or mention big names but moved nothing — must not be texted.
   - "OpenAI DevDay 2026: live updates"
@@ -2108,6 +2122,8 @@ noise:
   - "Podcast: The future of AI agents with industry leaders"
   - "Webinar: Navigating tariffs in 2026"
   - "Fed's Barkin: still watching the data closely"
+  - "Fannie Mae announces sale of non-performing loans"
+  - "Fannie Mae Economic and Strategic Research: housing starts forecast little changed"
   - "Treasury announces regular weekly bill auction sizes"
   - "BLS to release September CPI on October 15"
   - "President Trump to speak at a rally in Ohio tonight"

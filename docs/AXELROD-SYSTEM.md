@@ -31,6 +31,7 @@ where it first becomes public, what reads it, how fast, and what is still out of
 | Insiders buying | EDGAR Form 4 (open-market purchases) | `sec-insider-buys` | 30 s |
 | Big funds' new stakes | 13F filings (NVIDIA, Alphabet, Amazon, Berkshire) | `sec-13f-giants` | 10 min |
 | Short-seller reports | The short seller's own site | 15 `short-*` page watches, `gnews-short-reports` | 2 min |
+| Star investors' calls, Fannie/Freddie (OTC) | Burry's posts, Benzinga, Stocktwits, Seeking Alpha | Alpaca/Benzinga, `gnews-gse-investors`, with rules that tag FNMA and FMCC (both added to the radar's universe) | 1–30 min |
 | Policy: tariffs, sanctions, export rules | Federal Register public inspection, OFAC, BIS, USTR, White House, Truth Social | Those pages and feeds | 5 s bursts at release times, 15–30 s otherwise |
 | Sector regulators | FCC, CMS, DOE, NRC, FDA, FTC, DOJ | Page watches and feeds | 1–2 min |
 | Courts | Supreme Court slip opinions, Federal Circuit, PACER dockets | Page watches | 2 s from 10:00 ET (SCOTUS) |
@@ -81,6 +82,20 @@ Every big single-catalyst move of that week was replayed at its real timestamps
 - **After the fixes:** pushed ahead of the price on PCVX, RXO and OPCH, and in the app ahead on
   HUM and XP (Brazil's Sunday vote). The radar was first on PTC, where the price moved before
   any public headline. No move went unseen.
+
+## Live audit: Monday Oct 12 2026
+
+The day's $2B+ movers were replayed the same way
+([research/monday-2026-10-12.md](research/monday-2026-10-12.md), `tests/test_monday_replay.py`).
+- **The miss:** Fannie Mae and Freddie Mac fell 14% the morning after Michael Burry warned that
+  their common could be "worthless". The system saw none of it:
+  - Both trade over the counter, so they were not in the radar's universe.
+  - Every headline about them was read as regulator news and tagged FICO instead.
+- **Now:** both are in the universe and known by name. Benzinga's 04:56 ET story pushes (HIGH,
+  "down") about 5 hours before either stock crossed −15%.
+- **The rest:**
+  - FICO's all-day climb had the WSJ credit-score story in the app.
+  - Cerebras and Semtech fell with semiconductors. No company news, so correctly not pushed.
 
 ## What "first" means here, honestly
 

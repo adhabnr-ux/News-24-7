@@ -113,7 +113,8 @@ class Company:
 def _alias_pattern(aliases: list[str]) -> str:
     # longest first so "google deepmind" wins over "google"
     escaped = [re.escape(a) for a in sorted(set(aliases), key=len, reverse=True) if a]
-    return r"(?<![\w$])(" + "|".join(escaped) + r")(?![\w])"
+    # "Trump-era trade", "Biden-era rule": a name used as an era describes a time, not an actor
+    return r"(?<![\w$])(" + "|".join(escaped) + r")(?![\w])(?!-era\b)"
 
 
 class EntityMatcher:

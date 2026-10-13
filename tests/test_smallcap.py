@@ -19,6 +19,7 @@ from news247.engine import Engine
 from news247.market import radar as radar_mod
 from news247.market.radar import MoversRadar, Quote, SmallCapFeed, parse_yahoo_screener, quotes_from_listings
 from news247.market.universe import (
+    OTC_LISTINGS,
     Listing,
     Universe,
     band,
@@ -580,12 +581,14 @@ async def test_universe_refresh_and_cache(server, http, tmp_path: Path):
     uni = Universe()
     feed = SmallCapFeed(cfg, http, uni, tmp_path)
     got = await feed.refresh_universe()
-    assert got and len(uni) == 1200 and feed.health.last_ok
+    n = 1200 + len(OTC_LISTINGS)  # plus Fannie Mae and Freddie Mac, which trade over the counter
+    assert got and len(uni) == n and feed.health.last_ok
+    assert uni.get("FNMA").name == "Fannie Mae" and uni.get("FMCC").market_cap >= 2e9
     assert server.requests[0]["headers"]["Origin"] == "https://www.nasdaq.com"
-    assert (tmp_path / "universe.json.gz").exists() and len(SmallCapFeed.load_cached(tmp_path)) == 1200
+    assert (tmp_path / "universe.json.gz").exists() and len(SmallCapFeed.load_cached(tmp_path)) == n
     # a truncated answer must never wipe a good universe
     server.on("/api/screener/stocks", {"data": {"rows": rows[:5]}})
-    assert await feed.refresh_universe() is None and len(uni) == 1200
+    assert await feed.refresh_universe() is None and len(uni) == n
     server.on("/api/screener/stocks", (503, "busy"))
     assert await feed.refresh_universe() is None and feed.health.consecutive_errors == 2
 
@@ -700,9 +703,10 @@ def engine(tmp_path: Path, uni: Universe | None = None) -> tuple[Engine, Capture
 async def test_engine_loads_cached_universe(tmp_path: Path):
     Universe.stub(STUB).save(tmp_path / "universe.json.gz")
     eng, _ = engine(tmp_path)
-    assert len(eng.universe) == len(STUB) and eng.scorer.smallcap is not None
+    n = len(STUB) + len(OTC_LISTINGS)  # a cache saved before the OTC names gains them on load
+    assert len(eng.universe) == n and eng.scorer.smallcap is not None
     assert eng.smallcap_feed is None  # market off: no network feed
-    assert eng.status()["smallcap"]["listings"] == len(STUB)
+    assert eng.status()["smallcap"]["listings"] == n
 
 
 async def test_small_cap_news_alert_carries_the_read(tmp_path: Path, uni: Universe):

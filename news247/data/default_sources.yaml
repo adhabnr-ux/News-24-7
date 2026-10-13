@@ -70,6 +70,10 @@
 - {name: gnews-outbreaks, type: rss, url: "https://news.google.com/rss/search?q=(plague+OR+outbreak+OR+ebola+OR+%22bird+flu%22+OR+H5N1+OR+pandemic+OR+mpox+OR+marburg)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 120}
 - {name: gnews-em-elections, type: rss, url: "https://news.google.com/rss/search?q=(Brazil+OR+Argentina+OR+Mexico+OR+Colombia)+(election+OR+runoff+OR+%22first+round%22+OR+polls)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 300}
 - {name: gnews-short-reports, type: rss, url: "https://news.google.com/rss/search?q=(%22short+seller%22+OR+%22short+report%22+OR+%22short-seller%22+OR+%22short+position+in%22)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 120}
+# Fannie Mae and Freddie Mac (OTC) and the investors whose public calls move stocks. Oct 12 2026:
+# Burry's "worthless" warning and Mizuho's downgrade ran on Benzinga, Stocktwits and Seeking Alpha
+# 5-15 hours before FNMA and FMCC fell 14%; only Benzinga was read.
+- {name: gnews-gse-investors, type: rss, url: "https://news.google.com/rss/search?q=(Fannie+OR+Freddie+OR+FHFA+OR+Pulte+OR+%22Michael+Burry%22+OR+%22Jim+Chanos%22+OR+%22David+Einhorn%22)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 90}
 - {name: gnews-scoops, type: rss, url: "https://news.google.com/rss/search?q=(%22Exclusive%22+OR+%22sources+say%22+OR+%22people+familiar%22+OR+%22said+to%22)+(site:reuters.com+OR+site:bloomberg.com+OR+site:wsj.com+OR+site:ft.com+OR+site:nytimes.com+OR+site:statnews.com+OR+site:axios.com+OR+site:theinformation.com+OR+site:semafor.com)+when:1h&hl=en-US&gl=US&ceid=US:en", tier: media, interval: 60, boost: 5}
 # AI labs and hyperscalers renting compute from listed neoclouds and miners: the supplier's biggest news of the
 # year (Oct 11 2026: The Information on Anthropic's unannounced cloud deal with IREN)

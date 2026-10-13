@@ -203,6 +203,7 @@ class Listing:
     country: str = ""
     ipo_year: int | None = None
     common: bool = True  # False for warrants, units, rights, preferreds, notes
+    otc: bool = False  # trades over the counter: priced by the radar, but no listed options
 
     @property
     def band(self) -> str:
@@ -296,6 +297,43 @@ def _share_classes(a: str, b: str) -> bool:
     if a.split("-")[0] == b.split("-")[0]:
         return True
     return b.startswith(a) or (len(a) == len(b) >= 3 and a[:-1] == b[:-1])
+
+
+# Big, heavily traded US companies that Nasdaq's screener leaves out because they trade over the
+# counter. Fannie Mae and Freddie Mac (in conservatorship since 2008) moved 14% on Oct 12 2026 on
+# Michael Burry's warning and a Mizuho downgrade, and the radar could not see them. Market caps
+# and prices are TradingView's close on Oct 9 2026 (common shares only); they rank the names in
+# the sweep and pick the size rules, while the sweep reads live prices from Yahoo.
+OTC_LISTINGS: tuple[Listing, ...] = (
+    Listing(
+        symbol="FNMA",
+        name="Fannie Mae",
+        market_cap=4.68e9,
+        price=4.04,
+        sector="Finance",
+        industry="Government-sponsored mortgage finance (OTC)",
+        country="United States",
+        otc=True,
+    ),
+    Listing(
+        symbol="FMCC",
+        name="Freddie Mac",
+        market_cap=2.39e9,
+        price=3.68,
+        sector="Finance",
+        industry="Government-sponsored mortgage finance (OTC)",
+        country="United States",
+        otc=True,
+    ),
+)
+
+
+def with_otc(listings: Iterable[Listing]) -> list[Listing]:
+    """The screener's listings plus the OTC names it doesn't carry (a listing it does carry wins)."""
+    out = list(listings)
+    have = {li.symbol for li in out}
+    out.extend(li for li in OTC_LISTINGS if li.symbol not in have)
+    return out
 
 
 class Universe:

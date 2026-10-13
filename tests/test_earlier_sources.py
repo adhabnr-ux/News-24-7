@@ -246,6 +246,7 @@ def test_registered_and_in_the_defaults():
         "short-culper",
         "gnews-short-reports",
         "gnews-spacex-deals",
+        "gnews-gse-investors",
     ):
         assert name in built, name
         assert built[name].tier in (T.PRIMARY, T.MEDIA)

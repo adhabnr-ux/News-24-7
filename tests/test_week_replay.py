@@ -6,75 +6,20 @@ of its move; the takeover targets RXO, PTC and OPCH were never even tagged."""
 from __future__ import annotations
 
 import json
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import pytest
 
-from news247.analysis.scorer import Scorer
-from news247.config import build_config
-from news247.market.universe import Universe
-from news247.models import Alert, NewsItem, PriceMove, Severity, SourceTier
-from news247.scorecard import Scorecard
-from news247.storage import Storage
+from news247.models import Severity
 
 from .conftest import FIXTURES
+from .replaying import replay as run_replay
 
-ET = ZoneInfo("America/New_York")
 WEEK = json.loads((FIXTURES / "week_2026-10-05.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
 def replay():
-    cfg = build_config({})
-    uni = Universe.stub(WEEK["universe"])
-    scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
-    scorer.attach_universe(uni, **cfg.smallcap.filters())
-    st = Storage(":memory:")
-    scored = {}
-    for h in WEEK["headlines"]:
-        item = NewsItem(
-            source=h["source"],
-            title=h["title"],
-            url=f"https://example.com/{h['published']}",
-            published=h["published"],
-            detected=h["published"] + h["lag"],
-            tier=SourceTier[h["tier"].upper()],
-        )
-        an = scorer.score(item)
-        scored[h["title"]] = an
-        st.add_item(item, an)
-        if an.severity >= Severity.MEDIUM:  # the engine publishes MEDIUM and up
-            st.add_alert(
-                Alert(
-                    kind="news",
-                    severity=an.severity,
-                    title=item.title,
-                    body="",
-                    tickers=an.tickers,
-                    created=item.detected,
-                    item=item,
-                    analysis=an,
-                )
-            )
-    for m in WEEK["moves"]:
-        st.add_alert(
-            Alert(
-                kind="price",
-                severity=Severity[m["severity"]],
-                title=f"{m['symbol']} {m['pct']:+.1f}%",
-                body=m["note"],
-                tickers=[m["symbol"]],
-                created=m["at"],
-                move=PriceMove(m["symbol"], m["pct"], 86400, 1.0, 1.0, detected=m["at"]),
-            )
-        )
-    card = Scorecard(st, uni)
-    verdicts = {}
-    for day in sorted({datetime.fromtimestamp(m["at"], ET).date().isoformat() for m in WEEK["moves"]}):
-        for v in card.build(day, now=2e9)["verdicts"]:
-            verdicts[v["symbol"]] = v
-    return scored, verdicts
+    return run_replay(WEEK)
 
 
 def test_every_first_headline_tags_its_stock(replay):

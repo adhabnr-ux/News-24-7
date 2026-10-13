@@ -324,7 +324,9 @@ async def _options(
             return 2
     uni = SmallCapFeed.load_cached(cfg.data_path) or Universe()
     covered = sum(
-        1 for li in uni.by_symbol.values() if li.common and (li.market_cap or 0) >= ocfg.min_market_cap
+        1
+        for li in uni.by_symbol.values()
+        if li.common and not li.otc and (li.market_cap or 0) >= ocfg.min_market_cap
     )
     print(f"\n  options tape: {covered} companies of {fmt_cap(ocfg.min_market_cap)}+ in the cached universe")
     if not len(uni):

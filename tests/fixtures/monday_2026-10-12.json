@@ -1,0 +1,153 @@
+{
+  "about": "Monday Oct 12 2026: every US-traded $2B+ stock that moved 10%+ on real volume (TradingView screener), with the first headlines News247 can read at their TradingView timestamps (unix seconds, UTC). 'lag' is how long after publication News247 reads that source: Benzinga through the Alpaca news stream 60 s; Google News queries (gnews-gse-investors) are polled every 90 s but index a story minutes to half an hour after it runs, so they are given 30 min. Headlines from sources News247 does not read (Zacks, GuruFocus, Binance News) are left out; the Stocktwits and Seeking Alpha stories reach it only through Google News. Move times: the 5-minute bar in which the radar's push line was crossed (mid caps $2-10B push at 15%, large caps $10-200B at 9%), from TradingView 5m bars; FIGS (+13.9% at its high) never reached its 15% line, so its radar alert is MEDIUM and the scorecard leaves it out. Before the Oct 13 fixes FNMA and FMCC were not in the universe (they trade over the counter, which Nasdaq's screener leaves out) and every Fannie/Freddie headline tagged FICO, RKT and UWMC instead, so the radar never saw the moves and no headline named them. CBRS and SMTC fell with semiconductors (SOXX -2.6%, 'China chip concerns' after CXMT's server-memory push): sector beta, no company catalyst.",
+  "universe": {
+    "FNMA": {
+      "name": "Fannie Mae",
+      "mcap": 4683000000.0,
+      "price": 4.04,
+      "sector": "Finance"
+    },
+    "FMCC": {
+      "name": "Freddie Mac",
+      "mcap": 2392000000.0,
+      "price": 3.68,
+      "sector": "Finance"
+    },
+    "FICO": {
+      "name": "Fair Isaac Corporation Common Stock",
+      "mcap": 14418000000.0,
+      "price": 667.58
+    },
+    "CBRS": {
+      "name": "Cerebras Systems Inc. Class A Common Stock",
+      "mcap": 36749000000.0,
+      "price": 164.17
+    },
+    "SMTC": {
+      "name": "Semtech Corporation Common Stock",
+      "mcap": 17480000000.0,
+      "price": 187.3
+    },
+    "FIGS": {
+      "name": "FIGS, Inc. Class A Common Stock",
+      "mcap": 2622000000.0,
+      "price": 15.78
+    }
+  },
+  "moves": [
+    {
+      "symbol": "FMCC",
+      "at": 1791813000,
+      "pct": -14.4,
+      "note": "opened $3.635 vs $3.68 (-1.2%), $3.10 (-15.8%) in the 09:45 bar; closed -14.4%; Burry's warning and Mizuho's downgrade",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "FNMA",
+      "at": 1791815100,
+      "pct": -14.2,
+      "note": "opened $3.90 vs $4.04 (-3.5%), crossed -15% ($3.42) in the 10:20 bar, low $3.24 (-19.9%); closed -14.2%",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "CBRS",
+      "at": 1791814500,
+      "pct": -10.7,
+      "note": "opened -2.0%, crossed -9% ($148.50) in the 10:10 bar; closed -10.7% with semiconductors (SOXX -2.6%)",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "SMTC",
+      "at": 1791819000,
+      "pct": -10.2,
+      "note": "opened -1.9%, crossed -9% ($169.29) in the 11:25 bar; closed -10.2% with semiconductors",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "FICO",
+      "at": 1791828900,
+      "pct": 10.8,
+      "note": "opened +1.0%, climbed all day: +5% by 11:30, crossed +9% ($729.82) in the 14:30 bar; closed +10.8%",
+      "severity": "HIGH"
+    },
+    {
+      "symbol": "FIGS",
+      "at": 1791820800,
+      "pct": 12.4,
+      "note": "no headline; +10% in the 11:45 bar, high +13.9% (under its 15% push line); closed +12.4%",
+      "severity": "MEDIUM"
+    }
+  ],
+  "headlines": [
+    {
+      "symbol": "FNMA",
+      "published": 1791783985,
+      "lag": 1800,
+      "tier": "media",
+      "source": "gnews-gse-investors",
+      "title": "Why Michael Burry Is Swapping Fannie Mae, Freddie Mac Common Stock For Preferred Shares",
+      "evidence": "Stocktwits, 01:46 ET"
+    },
+    {
+      "symbol": "FMCC",
+      "published": 1791787369,
+      "lag": 1800,
+      "tier": "media",
+      "source": "gnews-gse-investors",
+      "title": "Burry cites treasury dilution risk in shift to Fannie and Freddie preferred stock",
+      "evidence": "Seeking Alpha, 02:42 ET"
+    },
+    {
+      "symbol": "FNMA",
+      "published": 1791795416,
+      "lag": 60,
+      "tier": "media",
+      "source": "alpaca-news",
+      "title": "Michael Burry Warns Fannie Mae and Freddie Mac Could Become ‘Worthless’ as Trump-Era Gains Collapse Under Fresh Pressure",
+      "evidence": "Benzinga, 04:56 ET"
+    },
+    {
+      "symbol": "FICO",
+      "published": 1791806400,
+      "lag": 1800,
+      "tier": "media",
+      "source": "gnews-gse-investors",
+      "title": "A Credit-Score Shift at Fannie and Freddie Is Shaking Up the Mortgage Market — WSJ",
+      "evidence": "WSJ via Dow Jones Newswires, 08:00 ET"
+    },
+    {
+      "symbol": "FMCC",
+      "published": 1791807484,
+      "lag": 1800,
+      "tier": "media",
+      "source": "gnews-gse-investors",
+      "title": "Fannie Mae, Freddie Mac cut to Neutral at Mizuho as release date extends",
+      "evidence": "Seeking Alpha, 08:18 ET"
+    },
+    {
+      "symbol": "CBRS",
+      "published": 1791809811,
+      "lag": 60,
+      "tier": "media",
+      "source": "alpaca-news",
+      "title": "Cerebras Stock Fell on OpenAI Chip Report, Then Rose 9% After Altman Weighed In",
+      "evidence": "Benzinga, 08:56 ET: a recap of Sep 30 - Oct 5, nothing new on Oct 12"
+    },
+    {
+      "symbol": "FNMA",
+      "published": 1791817860,
+      "lag": 1800,
+      "tier": "media",
+      "source": "gnews-gse-investors",
+      "title": "Fannie Mae, Freddie Mac Stocks Sink on Fading Privatization Hopes — Barrons.com",
+      "evidence": "Barron's, 11:11 ET (after the move)"
+    }
+  ],
+  "expected": {
+    "FNMA": "pushed",
+    "FMCC": "pushed",
+    "FICO": "app",
+    "CBRS": "scored_low",
+    "SMTC": "unexplained"
+  }
+}

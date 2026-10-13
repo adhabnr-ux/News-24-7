@@ -1799,7 +1799,7 @@ class OptionsFeed:
                 self.priority[s] = max(self.priority.get(s, 0.0), until)
 
     def eligible(self, li: Listing | None) -> bool:
-        return bool(li and li.common and (li.market_cap or 0) >= self.cfg.min_market_cap)
+        return bool(li and li.common and not li.otc and (li.market_cap or 0) >= self.cfg.min_market_cap)
 
     def companies(self) -> list[Listing]:
         """Every eligible company, largest first."""

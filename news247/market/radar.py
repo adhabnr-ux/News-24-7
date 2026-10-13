@@ -35,7 +35,7 @@ from ..config import SmallCapConfig
 from ..http import HttpClient, HTTPError
 from ..sources.base import SourceHealth, _sleep_or_stop
 from .prices import SPARK_URL, parse_spark
-from .universe import CACHE_NAME, SCREENER_HEADERS, Listing, Universe, band, fmt_cap
+from .universe import CACHE_NAME, SCREENER_HEADERS, Listing, Universe, band, fmt_cap, with_otc
 
 log = logging.getLogger(__name__)
 ET = ZoneInfo("America/New_York")
@@ -451,7 +451,10 @@ class SmallCapFeed:
     def load_cached(data_dir: Path | None) -> Universe | None:
         if data_dir is None:
             return None
-        return Universe.load(data_dir / CACHE_NAME)
+        uni = Universe.load(data_dir / CACHE_NAME)
+        if uni is not None:  # a cache saved before the OTC names were added
+            uni.replace(with_otc(uni.by_symbol.values()), loaded_at=uni.loaded_at, source=uni.source)
+        return uni
 
     # ------------------------------------------------------------------ universe
 
@@ -478,6 +481,7 @@ class SmallCapFeed:
         if len(listings) < 1000:  # a truncated or blocked answer must not wipe a good universe
             self._error(self.health, ValueError(f"only {len(listings)} listings"))
             return None
+        listings = with_otc(listings)
         self.universe.replace(listings, loaded_at=time.time(), source="nasdaq")
         self.health.last_ok = time.time()
         self.health.consecutive_errors = 0

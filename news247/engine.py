@@ -453,7 +453,9 @@ class Engine:
             self.recent.popleft()
         if analysis.score >= OVERNIGHT_MIN_SCORE and analysis.tickers:
             self.recent_long.append((item, analysis))
-            old = time.time() - 4 * 86400  # a long weekend at most
+            # a long weekend at most, counted from this item's detection (= now when live) so a
+            # replayed day keeps its own overnight news whatever the wall clock says
+            old = item.detected - 4 * 86400
             while self.recent_long and self.recent_long[0][0].detected < old:
                 self.recent_long.popleft()
 

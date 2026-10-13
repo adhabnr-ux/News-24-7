@@ -227,6 +227,14 @@ class EdgeDesk:
         # never delay an alert: until the history is scored (first seconds after start) skip it
         precs = self.precedents_for(alert.analysis, alert.title) if self.ready else []
         alert.edge["precedents"] = precs
+        if precs and play.get("read_through"):
+            # the names a headline mentions aren't always the trade: "@pulte: Fannie Mae and Freddie
+            # Mac will accept VantageScore" names the GSEs, but both times it was FICO that crashed.
+            # A tagged stock that the closest precedent moved leads the play.
+            lead = [t for t in precs[0].get("tickers", []) if t in play["read_through"]]
+            if lead:
+                play["direct"] = list(dict.fromkeys([*lead, *play["direct"]]))[:6]
+                play["read_through"] = [t for t in play["read_through"] if t not in lead]
         if play["direction"] not in ("up", "down"):  # ambiguous headline: ask history
             lean = self.precedent_direction(precs, play["direct"])
             if lean:

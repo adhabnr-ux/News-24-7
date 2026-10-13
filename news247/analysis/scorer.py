@@ -49,14 +49,17 @@ _DOWN_WORDS = re.compile(
     r"\b(plunge\w*|crash\w*|tumble\w*|sink\w*|slump\w*|plummet\w*|fall\w*|drop\w*|sell-?off|bankrupt\w*|halt\w*|"
     r"cuts? guidance|lowers? guidance|withdraws?|miss(es|ed)?|probe|bans?|banned|downgrade\w*|recall\w*|fraud|"
     r"restat\w*|delist\w*|lawsuit|investigation|warning|layoffs?|resign\w*|ousted|reject\w*|clinical hold|"
-    r"lower than|below|short of|scales? back|slash\w*)\b",
+    r"lower than|below|short of|scales? back|slash\w*|worthless|"
+    r"(?:cut|lowered) to (?:neutral|hold|sell|underweight|underperform|equal[- ]weight|market perform|"
+    r"sector perform|peer perform|in-line))\b",
     re.I,
 )
 _DEAL_KEYWORD = re.compile(r"acqui|to buy|buyout|takeover|merge|tender", re.I)
 _DEAL_WORDS = re.compile(r"\b(to acquire|takeover|buyout)\b", re.I)
 _UP_WORDS = re.compile(
     r"\b(soar\w*|surge\w*|jump\w*|rall(y|ies|ied)|rocket\w*|beats?|raises? guidance|record|approv\w*|"
-    r"upgrade\w*|buyback|repurchase|to acquire|takeover|buyout|wins?|awarded|partnership)\b",
+    r"upgrade\w*|buyback|repurchase|to acquire|takeover|buyout|wins?|awarded|partnership|"
+    r"raised to (?:buy|outperform|overweight|strong buy))\b",
     re.I,
 )
 
