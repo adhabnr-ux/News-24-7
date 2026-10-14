@@ -28,7 +28,7 @@ where it first becomes public, what reads it, how fast, and what is still out of
 | Company news: deals, guidance, results, FDA | The 8-K on EDGAR, the company's wire release | SEC 8-K feed; PR Newswire, GlobeNewswire, Business Wire and their topic feeds; Alpaca/Benzinga | 10 s (8-K), 20–45 s (wires) |
 | "News pending" halts | Nasdaq's halt list | `nasdaq-halts` | 15 s |
 | Activist stakes, tender offers, merger filings | EDGAR 13D/13G, SC TO-T, SC 14D-9, 425 | `sec-8k` (paired forms) | 10 s |
-| Insiders buying | EDGAR Form 4 (open-market purchases) | `sec-insider-buys` | 30 s |
+| Insiders buying | EDGAR Form 4 (open-market purchases) | `sec-insider-buys`: opportunistic vs routine from the insider's history, stake increase, 10b5-1 plans and offerings dropped, the price now vs what they paid | 10 s |
 | Big funds' new stakes | 13F filings (NVIDIA, Alphabet, Amazon, Berkshire) | `sec-13f-giants` | 10 min |
 | Short-seller reports | The short seller's own site | 15 `short-*` page watches, `gnews-short-reports` | 2 min |
 | Star investors' calls, Fannie/Freddie (OTC) | Burry's posts, Benzinga, Stocktwits, Seeking Alpha | Alpaca/Benzinga, `gnews-gse-investors`, with rules that tag FNMA and FMCC (both added to the radar's universe) | 1–30 min |
@@ -47,6 +47,7 @@ where it first becomes public, what reads it, how fast, and what is still out of
 | Outbreak scares, emerging-market elections | Health agencies and foreign press; Sunday-night election counts | `gnews-outbreaks`, `gnews-em-elections`, with rules that tag the vaccine makers and the Brazilian/Argentine ADRs | 2–5 min |
 | Earnings surprises built by customers (traffic, downloads, sell-outs) | Weeks earlier, in what people do: Wikipedia attention, the App Store chart, tracker numbers in trade press | The trend lane: two independent kinds agreeing on a material, not-yet-priced company is pushed | Daily (Wikipedia), 6 h (App Store), as fast as the source (news) |
 | **No headline at all** | The tape | Radar: small caps every minute; outside the session, the 400 largest every minute and every other $2B+ company within ~6 min. Then the options tape and the **Why** lookup | 1–6 min (radar); seconds for the lookup |
+| **A stock starting to move** | The live tape: a 5-minute push on 4× normal volume to a new session high/low, or a steady build on 2× | Ignition (`market/ignition.py`, every $100M+ stock every 30 s): a median 20 min before the day-move ladder; pushed when a headline, an insider buy or same-side options back it | 30 s |
 
 ## The daily loop
 

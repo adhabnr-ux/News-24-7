@@ -1725,6 +1725,7 @@ class OptionsFeed:
         self.stock_reads = 0
         self.stock_errors = 0
         self.stock_swept = 0.0  # last full sweep of every company's live price
+        self.tape_driven = False  # the whole-market tape (market/tape.py) reads every price instead
         self._moving: set[str] = set()  # moving hot_move_pct+ at the last sweep
         self.stream: OptionStream | None = None
         self._chains: dict[str, Chain] = {}  # the last chain of each company on the tripwire
@@ -2083,10 +2084,11 @@ class OptionsFeed:
         if not self.cfg.stock_sweep_s or now - self.stock_swept < self.cfg.stock_sweep_s:
             return []
         alpaca = next((x for x in self.sources if getattr(x, "name", "") == "alpaca"), None)
-        if alpaca is None or not self.cfg.stock_quotes:
+        if (alpaca is None and not self.tape_driven) or not self.cfg.stock_quotes:
             return []
         self.stock_swept = now
-        if not await self.refresh_stocks([li.symbol for li in self.companies()]):
+        # with the tape running the prices are already fresh: only find what started moving
+        if not self.tape_driven and not await self.refresh_stocks([li.symbol for li in self.companies()]):
             return []
         moving = self.live.movers(self.cfg.hot_move_pct, self.cfg.stock_quote_max_age_s, time.time())
         new = [s for s in moving if s not in self._moving][: self.cfg.stock_sweep_urgent]

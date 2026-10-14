@@ -176,10 +176,21 @@ async def test_insider_feed_primes_then_reads_new_filings(server, http, tmp_path
     server.on("/files/company_tickers.json", {"0": {"cik_str": 1555555, "ticker": "ACMB", "title": "Acme"}})
     server.on("/Archives/edgar/data/1555555/000000000226000002/0000000002-26-000002.txt", (200, FORM4))
     server.on("/Archives/edgar/data/1555555/000000000226000003/0000000003-26-000003.txt", (500, "down"))
-    old = (edgar.CURRENT_URL, edgar.TICKERS_URL, mod.CURRENT_URL, mod.ARCHIVE_URL)
+    old = (
+        edgar.CURRENT_URL,
+        edgar.TICKERS_URL,
+        mod.CURRENT_URL,
+        mod.ARCHIVE_URL,
+        mod.SUBMISSIONS_URL,
+        mod.SPARK_URL,
+    )
     edgar.TICKERS_URL = server.url("/files/company_tickers.json")
     mod.CURRENT_URL = server.url("/cgi-bin/browse-edgar") + "?type={form}&count={count}"
     mod.ARCHIVE_URL = server.url("/") + "Archives/edgar/data/{cik}/{acc_nodash}/{acc}.txt"
+    mod.SUBMISSIONS_URL = (
+        server.url("/") + "submissions/CIK{cik}.json"
+    )  # not served: no history, still alerts
+    mod.SPARK_URL = server.url("/spark")
     try:
         src = SECInsiderSource({"name": "sec-insider"}, ctx(http, data_dir=tmp_path))
         assert await src.fetch() == []  # start-up: what is already on the list is history
@@ -196,9 +207,17 @@ async def test_insider_feed_primes_then_reads_new_filings(server, http, tmp_path
         archive = [r["path"] for r in server.requests if "/Archives/" in r["path"]]
         assert len(archive) == 2  # the private filer and the seen filing were never fetched
         assert await src.fetch() == []  # nothing is read twice
-        assert all(r["headers"]["User-Agent"] == "Test/1.0 (t@example.com)" for r in server.requests)
+        sec = [r for r in server.requests if not r["path"].startswith("/spark")]  # Yahoo gets a browser agent
+        assert all(r["headers"]["User-Agent"] == "Test/1.0 (t@example.com)" for r in sec)
     finally:
-        edgar.CURRENT_URL, edgar.TICKERS_URL, mod.CURRENT_URL, mod.ARCHIVE_URL = old
+        (
+            edgar.CURRENT_URL,
+            edgar.TICKERS_URL,
+            mod.CURRENT_URL,
+            mod.ARCHIVE_URL,
+            mod.SUBMISSIONS_URL,
+            mod.SPARK_URL,
+        ) = old
 
 
 def _text(body: str):
@@ -235,7 +254,7 @@ def test_registered_and_in_the_defaults():
     assert "sec_insider" in SOURCE_TYPES
     built = {s.name: s for s in build_sources(build_config({}).sources, ctx())}
     assert isinstance(built["sec-insider-buys"], SECInsiderSource)
-    assert built["sec-insider-buys"].interval == 30 and built["sec-insider-buys"].min_value == 250_000
+    assert built["sec-insider-buys"].interval == 10 and built["sec-insider-buys"].min_value == 250_000
     for name in (
         "fcc-headlines",
         "cms-newsroom",

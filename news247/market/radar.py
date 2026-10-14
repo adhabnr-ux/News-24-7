@@ -349,8 +349,9 @@ class MoversRadar:
                 "updated": now,
             }
             if abs(pct) < min_pct and not (jump is not None and abs(jump) >= jump_pct):
-                if abs(pct) < min_pct * 0.5:
-                    self.board.pop(q.symbol, None)  # faded: off the board
+                ign = (self.board.get(q.symbol) or {}).get("ignition") or {}
+                if abs(pct) < min_pct * 0.5 and now - (ign.get("detected") or 0) > 3600:
+                    self.board.pop(q.symbol, None)  # faded: off the board (an ignition stays an hour)
                 continue
             hit: RadarHit | None = None
             fired = st.fired_up if pct >= 0 else st.fired_down
@@ -409,9 +410,17 @@ class MoversRadar:
             for sym in list(self.state)[:5000]:
                 del self.state[sym]
 
-    def snapshot(self, limit: int = 40) -> list[dict[str, Any]]:
-        rows = sorted(self.board.values(), key=lambda e: abs(e.get("change_pct") or 0), reverse=True)
-        return rows[:limit]
+    def snapshot(self, limit: int = 40, now: float | None = None) -> list[dict[str, Any]]:
+        """The board: stocks igniting in the last hour first (newest first), then the biggest moves."""
+        now = now or time.time()
+
+        def key(e: dict[str, Any]) -> tuple[int, float]:
+            ign = (e.get("ignition") or {}).get("detected") or 0
+            if now - ign < 3600:
+                return (0, -ign)
+            return (1, -abs(e.get("change_pct") or 0))
+
+        return sorted(self.board.values(), key=key)[:limit]
 
 
 # --------------------------------------------------------------------------- the feed
@@ -506,18 +515,23 @@ class SmallCapFeed:
             "lang": "en-US",
             "region": "US",
         }
+        return parse_yahoo_screener(await self.yahoo_json(YAHOO_SCREENER, params))
+
+    async def yahoo_json(self, url: str, params: dict[str, str]) -> Any:
+        """A Yahoo Finance API call with the cookie + crumb it sometimes asks for."""
+        params = dict(params)
         for attempt in range(2):
             if self._crumb:
                 params["crumb"] = self._crumb
             try:
-                resp = await self.http.get(YAHOO_SCREENER, headers=YAHOO_HEADERS, params=params)
-                return parse_yahoo_screener(resp.json())
+                resp = await self.http.get(url, headers=YAHOO_HEADERS, params=params)
+                return resp.json()
             except HTTPError as exc:
                 if exc.status in (401, 403) and attempt == 0:
                     await self._get_crumb()
                     continue
                 raise
-        return []
+        return {}
 
     async def _get_crumb(self) -> None:
         """Yahoo's cookie dance: fc.yahoo.com sets the A3 cookie (answering 404 is normal),
@@ -579,8 +593,8 @@ class SmallCapFeed:
         screens = ["small_cap_gainers"] + (["day_gainers", "day_losers"] if phase == "open" else [])
         quotes: list[Quote] = []
         try:
-            for scr in screens:
-                quotes.extend(await self.fetch_yahoo(scr))
+            for got in await asyncio.gather(*(self.fetch_yahoo(scr) for scr in screens)):
+                quotes.extend(got)
         except (
             HTTPError,
             aiohttp.ClientError,
@@ -650,19 +664,25 @@ class SmallCapFeed:
         big = self.sweep_batch()
         session = {"pre-market": "pre", "after-hours": "post"}.get(phase, "regular")
         out: list[Quote] = []
-        for i in range(0, len(big), 20):
-            chunk = big[i : i + 20]
-            resp = await self.http.get(
-                SPARK_URL,
-                params={
-                    "symbols": ",".join(li.symbol for li in chunk),
-                    "range": "1d",
-                    "interval": "5m",
-                    "includePrePost": "true",
-                },
-                headers=YAHOO_HEADERS,
-            )
-            snaps = parse_spark(resp.json())
+        sem = asyncio.Semaphore(max(1, self.cfg.sweep_concurrency))
+
+        async def read(chunk: list[Listing]) -> tuple[list[Listing], dict[str, Any]]:
+            async with sem:
+                resp = await self.http.get(
+                    SPARK_URL,
+                    params={
+                        "symbols": ",".join(li.symbol for li in chunk),
+                        "range": "1d",
+                        "interval": "5m",
+                        "includePrePost": "true",
+                    },
+                    headers=YAHOO_HEADERS,
+                )
+                return chunk, parse_spark(resp.json())
+
+        # several requests at once: ~30 chunks used to take most of the minute one after another
+        results = await asyncio.gather(*(read(big[i : i + 20]) for i in range(0, len(big), 20)))
+        for chunk, snaps in results:
             for li in chunk:
                 snap = snaps.get(li.symbol)
                 if not snap:

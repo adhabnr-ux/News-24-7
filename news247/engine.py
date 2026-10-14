@@ -22,9 +22,11 @@ from .edge import ET, Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
 from .market.follow import FollowEvent, Play
+from .market.ignition import IgnitionHit, IgnitionScanner
 from .market.options import MISPRINT_LABEL, OptionsFeed, OptionsHit, OptionsRadar, prev_session
 from .market.prices import PriceMonitor
 from .market.radar import MoversRadar, RadarHit, SmallCapFeed
+from .market.tape import TapeFeed
 from .market.universe import Universe, fmt_cap
 from .market.why import WhyHunter
 from .models import Alert, Analysis, NewsItem, PriceMove, Severity, SourceTier
@@ -121,6 +123,39 @@ class Engine:
                 movers=lambda: list(self.radar.board) if self.radar is not None else [],
                 live=self.live_quotes,
             )
+        # ignition: the whole market's live tape, read for stocks starting to move (market/ignition.py)
+        self.ignition: IgnitionScanner | None = None
+        self.tape: TapeFeed | None = None
+        self.options_seen: dict[str, tuple[float, str, str]] = {}  # symbol -> (when, up/down, what)
+        self.ignition_pending: dict[str, tuple[IgnitionHit, float]] = {}  # unconfirmed, waiting on its chain
+        self.ignition_day: dict[str, Any] = {"day": "", "pushed": 0, "shown": 0}
+        if self.smallcap_feed is not None and sc.radar and sc.ignition:
+            self.ignition = IgnitionScanner(sc)
+            alpaca = None
+            pace = None
+            if self.options_feed is not None:
+                alpaca = next(
+                    (x for x in self.options_feed.sources if getattr(x, "name", "") == "alpaca"), None
+                )
+                pace = self.options_feed._pace  # one budget for Alpaca's 200 requests a minute
+            elif cfg.options.alpaca_key and cfg.options.alpaca_secret:
+                from .market.options import AlpacaSource
+
+                alpaca = AlpacaSource(cfg.options, self.http)
+            self.tape = TapeFeed(
+                sc,
+                self.http,
+                self.universe,
+                self.ignition,
+                live=self.live_quotes,
+                market_phase=lambda now: self.calendar.market_status(now)["phase"],
+                alpaca=alpaca,
+                pace=pace,
+                yahoo_json=self.smallcap_feed.yahoo_json,
+                data_dir=cfg.data_path,
+            )
+            if self.options_feed is not None and self.tape.provider == "alpaca":
+                self.options_feed.tape_driven = True  # the tape already reads every price: no second sweep
         # the trend lane: what consumers are doing (Wikipedia attention, App Store climbs, tracker
         # data, sell-outs), tied to the listed company before its earnings report says it (trends.py)
         self.trends: TrendDesk | None = None
@@ -153,6 +188,7 @@ class Engine:
             max_item_age_s=cfg.general.max_item_age_minutes * 60,
             data_dir=cfg.data_path,
             universe=self.universe,
+            live=self.live_quotes,
         )
         self.sources = sources if sources is not None else build_sources(cfg.sources, ctx)
         saved_phone = self.storage.get_setting("phone")
@@ -243,6 +279,8 @@ class Engine:
         runners.append(asyncio.create_task(self._edge_loop(stop), name="edge"))
         if self.smallcap_feed is not None:
             runners.append(asyncio.create_task(self.smallcap_feed.run(self.on_radar, stop), name="smallcap"))
+        if self.tape is not None:
+            runners.append(asyncio.create_task(self.tape.run(self.on_ignition, stop), name="tape"))
         if self.options_feed is not None:
             runners.append(
                 asyncio.create_task(
@@ -716,7 +754,11 @@ class Engine:
         for e in today:  # e.g. "MRNA joins the Nasdaq-100 (effective at the open)"
             body += f"\nOn the calendar today: {e['title']}"
         if not catalysts and not today:
-            body += "\nNo headline yet — on the radar before the news. Watch halts, 8-Ks and the wires."
+            body += (
+                "\nNo headline yet — on the radar before the news. Watch halts, 8-Ks and the wires. "
+                "Until one lands, be careful chasing it: moves this big with no news tended to give back "
+                "(in the Sep-Oct 2026 study, 63% of 68 such alerts closed the day back against the move)."
+            )
         move = PriceMove(
             hit.symbol,
             round(hit.jump_pct if hit.kind == "jump" and hit.jump_pct is not None else pct, 3),
@@ -753,12 +795,224 @@ class Engine:
         self._track_symbols([hit.symbol])
         return alert
 
+    # ------------------------------------------------------------------ ignition (the live tape)
+
+    async def on_ignition(self, hits: list[IgnitionHit]) -> None:
+        """A stock starting to move. Confirmed (a headline, an insider buy, options on the same
+        side): an alert, pushed up to ``ignition_daily_pushes`` a day. Unconfirmed: on the radar
+        board, its option chain read at once (a flow hit there confirms it), and the strongest
+        (3x volume, 8x burst) shown in the app."""
+        sc = self.cfg.smallcap
+        for hit in hits:
+            self._board_ignition(hit)
+            confirmed = self._ignition_confirmations(hit)
+            day = datetime.fromtimestamp(hit.detected, ET).date().isoformat()
+            if self.ignition_day["day"] != day:
+                self.ignition_day = {"day": day, "pushed": 0, "shown": 0}
+            if confirmed:
+                await self._publish_ignition(hit, confirmed)
+                continue
+            self.ignition_pending[hit.symbol] = (hit, hit.detected)
+            if self.options_feed is not None:
+                self.options_feed.urgent([hit.symbol], f"igniting: {self._ignition_line(hit)}")
+            if hit.strong and self.ignition_day["shown"] < sc.ignition_daily_shown:
+                self.ignition_day["shown"] += 1
+                alert = self._ignition_alert(hit, [], Severity.MEDIUM)
+                await self.publish(alert)
+                self._maybe_hunt(alert, hit.name)
+        cut = time.time() - 1800
+        for sym, (_, ts) in list(self.ignition_pending.items()):
+            if ts < cut:
+                del self.ignition_pending[sym]
+
+    async def _publish_ignition(self, hit: IgnitionHit, confirmed: list[str]) -> None:
+        sc = self.cfg.smallcap
+        self.ignition_pending.pop(hit.symbol, None)
+        push = self.ignition_day["pushed"] < sc.ignition_daily_pushes
+        if push:
+            self.ignition_day["pushed"] += 1
+        await self.publish(self._ignition_alert(hit, confirmed, Severity.HIGH if push else Severity.MEDIUM))
+
+    def _ignition_confirmations(self, hit: IgnitionHit) -> list[str]:
+        """What backs the move: primes (options bought, an insider buying, a headline that put it
+        on watch), headlines since the last session, and options volume on its side today."""
+        out = list(hit.primed)
+        for c in self.find_catalysts([hit.symbol], hit.detected, overnight=True)[:2]:
+            line = f"news: {c['title'][:110]} ({c['source']}, {c['age']} ago)"
+            if not any(c["title"][:40] in x for x in out):
+                out.append(line)
+        seen = self.options_seen.get(hit.symbol)
+        if seen and hit.detected - seen[0] < 3 * 3600 and seen[1] == hit.direction and seen[2] not in out:
+            out.append(seen[2])
+        return out
+
+    @staticmethod
+    def _ignition_line(hit: IgnitionHit) -> str:
+        if hit.kind == "buildup":
+            return f"{fmt_pct(hit.day_pct)} on the day, at a new session {'high' if hit.direction == 'up' else 'low'}"
+        return f"{fmt_pct(hit.move_pct)} in {window_label(int(hit.window_s))}"
+
+    def _ignition_alert(self, hit: IgnitionHit, confirmed: list[str], severity: Severity) -> Alert:
+        d = hit.to_dict()
+        arrow = "▲" if hit.direction == "up" else "▼"
+        vol = ""
+        if hit.burst is not None:
+            vol = f" on {hit.burst:.0f}× normal volume"
+        elif hit.rvol is not None:
+            vol = f" on {hit.rvol:.1f}× the day's normal volume"
+        what = "igniting" if hit.kind == "ignition" else "building"
+        name = (hit.name or hit.symbol)[:40]
+        title = f"⚡ {arrow} {hit.symbol} {what}: {self._ignition_line(hit)}{vol} · {name} · {d['cap']} {d['band']}"
+        side = "high" if hit.direction == "up" else "low"
+        parts = [
+            f"${hit.price:,.2f} ({fmt_pct(hit.day_pct)} on the day)"
+            + (
+                f", from ${hit.launch:,.2f} {window_label(int(hit.window_s))} ago"
+                if hit.kind == "ignition"
+                else ""
+            )
+            + f": a new session {side}."
+        ]
+        if hit.rvol is not None:
+            parts.append(f"Volume so far {hit.rvol:.1f}× normal for this time of day.")
+        lines = [" ".join(parts)]
+        if confirmed:
+            lines.append("What backs it: " + " · ".join(confirmed[:3]))
+        else:
+            lines.append(
+                "Nothing backs it yet (no headline, insider buy or options flow found): its option chain is "
+                "being read now. On their own, moves like this were a coin flip by the close."
+            )
+        stop_side = "under" if hit.direction == "up" else "over"
+        lines.append(
+            f"If you trade it: the move has failed {stop_side} ${hit.stop:,.2f} (the launch or the VWAP), "
+            f"{hit.risk_pct:.1f}% away. In the study behind this alert (106 stocks, Sep-Oct 2026) the follow-through "
+            "came in the first 15-60 minutes (median +1.3% at best within the hour, -1.0% against); by the close "
+            "half of it was given back. Confirmed moves are the ones that kept going (news drifts, no-news reverses)."
+        )
+        move = PriceMove(
+            hit.symbol,
+            round(hit.move_pct, 3),
+            int(hit.window_s) if hit.kind == "ignition" else 86400,
+            float(hit.price),
+            float(hit.launch),
+            detected=hit.detected,
+        )
+        catalysts = self.find_catalysts([hit.symbol], hit.detected, overnight=True)
+        alert = Alert(
+            kind="price",
+            severity=severity,
+            title=title,
+            body="\n".join(lines),
+            url=catalysts[0]["url"] if catalysts else f"https://finance.yahoo.com/quote/{hit.symbol}",
+            tickers=[hit.symbol],
+            move=move,
+            related=catalysts,
+        )
+        alert.edge["ignition"] = {**d, "confirmed_by": list(confirmed)}
+        alert.edge["smallcap"] = {
+            "symbol": hit.symbol,
+            "name": hit.name,
+            "cap": d["cap"],
+            "band": d["band"],
+            "market_cap": hit.market_cap,
+            "label": "Ignition: confirmed" if confirmed else "Ignition: nothing backs it yet",
+            "direction": hit.direction,
+            "radar": True,
+        }
+        self._track_symbols([hit.symbol])
+        return alert
+
+    def _board_ignition(self, hit: IgnitionHit) -> None:
+        if self.radar is None:
+            return
+        row = self.radar.board.get(hit.symbol, {})
+        self.radar.board[hit.symbol] = {
+            "symbol": hit.symbol,
+            "name": hit.name,
+            "price": hit.price,
+            "prev_close": hit.prev_close,
+            "change_pct": hit.day_pct,
+            "session": "regular",
+            "kind": hit.kind,
+            "level": 0,
+            "market_cap": hit.market_cap,
+            "cap": fmt_cap(hit.market_cap),
+            "band": hit.band,
+            "severity": "MEDIUM",
+            "flags": [],
+            "detected": hit.detected,
+            "source": "tape",
+            **row,
+            "ignition": hit.to_dict(),
+            "updated": hit.detected,
+            "flagged": hit.detected,
+        }
+
+    def _prime(self, alert: Alert) -> None:
+        """What points at a stock before it moves: its first push on volume is read with lower
+        thresholds and the ignition alert says why."""
+        if self.ignition is None or alert.severity < Severity.MEDIUM:
+            return
+        if alert.kind == "news" and alert.item is not None and alert.analysis is not None:
+            ib = alert.item.extra.get("insider_buy")
+            if ib and alert.tickers:
+                why = f"insider: {ib.get('role', 'insider')} {ib.get('owner', '')} bought {fmt_cap(ib.get('value') or 0)} (Form 4)"
+                self.ignition.prime(alert.tickers[0], "up", why, hold_s=3 * 86400.0)
+                return
+            direction = alert.analysis.direction if alert.analysis.direction in ("up", "down") else "either"
+            for sym in alert.edge.get("play", {}).get("direct", [])[:3]:
+                self.ignition.prime(sym, direction, f"news: {alert.title[:100]}")
+
+    def _options_side(self, hit: OptionsHit) -> str:
+        if hit.kind == "blowup":
+            return "up" if hit.side == "calls" else "down"
+        if hit.kind == "spike" and hit.spikes:
+            return "up" if hit.spikes[0].contract.kind == "call" else "down"
+        if hit.call_premium or hit.put_premium:
+            return "up" if hit.call_premium >= hit.put_premium else "down"
+        if hit.flow:
+            calls = sum(r.contract.premium for r in hit.flow if r.contract.kind == "call")
+            puts = sum(r.contract.premium for r in hit.flow if r.contract.kind == "put")
+            return "up" if calls >= puts else "down"
+        return ""
+
+    def _options_prime(self, hit: OptionsHit, alert: Alert) -> IgnitionHit | None:
+        """Options volume on one side: remember it (it confirms an ignition on that side for three
+        hours) and, when the stock hasn't moved yet, put it on watch. Returns a waiting ignition it
+        confirms."""
+        if self.ignition is None or hit.kind not in ("spike", "flow", "blowup", "surge"):
+            return None
+        side = self._options_side(hit)
+        if not side or alert.severity < Severity.MEDIUM:
+            return None
+        money = hit.call_premium if side == "up" else hit.put_premium
+        what = f"options: {'calls' if side == 'up' else 'puts'} {hit.kind}" + (
+            f", {fmt_cap(money)} premium" if money else ""
+        )
+        self.options_seen[hit.symbol] = (hit.detected, side, what)
+        chg = hit.chain.change_pct
+        line = self.ignition.day_threshold(hit.market_cap)
+        if chg is not None and abs(chg) < line / 2:
+            self.ignition.prime(hit.symbol, side, what)
+            alert.body += (
+                f"\nThe stock hasn't moved yet ({fmt_pct(chg)}): it is on watch, and its first push "
+                f"{'up' if side == 'up' else 'down'} on volume alerts at once."
+            )
+        waiting = self.ignition_pending.get(hit.symbol)
+        if waiting and waiting[0].direction == side and hit.detected - waiting[1] < 1800:
+            return waiting[0]
+        return None
+
     # ------------------------------------------------------------------ the options tape
 
     async def on_options(self, hits: list[OptionsHit]) -> None:
         for hit in hits:
             alert = self._options_alert(hit)
+            ignited = self._options_prime(hit, alert)
             await self.publish(alert)
+            if ignited is not None:  # the chain read at ignition found buying on the same side
+                await self._publish_ignition(ignited, self._ignition_confirmations(ignited))
             self._maybe_hunt(alert, hit.to_dict().get("name") or "")
             if self.options_feed is not None and alert.severity >= Severity.MEDIUM:
                 self.options_feed.track(hit)
@@ -1424,6 +1678,7 @@ class Engine:
 
     async def publish(self, alert: Alert, push: bool = True) -> None:
         self.stats["alerts"] += 1
+        self._prime(alert)
         if self.options_feed is not None and alert.kind in ("news", "price"):
             # read their option chains next; news that lands overnight stays hot until two hours
             # into the next session (a 2-hour hold from 18:00 would expire before the open)
@@ -1635,6 +1890,7 @@ class Engine:
                 else {"listings": len(self.universe), "radar": {"enabled": False}}
             ),
             "options": self.options_feed.status() if self.options_feed is not None else {"enabled": False},
+            "tape": self.tape.status() if self.tape is not None else {"enabled": False},
             "why": {"enabled": True, **self.why.stats} if self.why is not None else {"enabled": False},
             "trends": self.trends.status() if self.trends is not None else {"enabled": False},
             "channels": self.dispatcher.describe(),

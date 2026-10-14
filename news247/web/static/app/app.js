@@ -102,6 +102,12 @@ function capRow(a) {
   const s = a.edge?.smallcap;
   if (!s || !(s.material || s.radar)) return "";
   const d = ["up", "down"].includes(s.direction) ? s.direction : "mixed";
+  const ig = a.edge?.ignition;
+  if (ig) {  // a stock starting to move (market/ignition.py): what backs it, or that nothing does yet
+    const by = (ig.confirmed_by || [])[0];
+    const tag = ig.burst ? `${Math.round(ig.burst)}× volume` : ig.rvol ? `${ig.rvol}× day volume` : "";
+    return `<div class="cap ${d}"><span class="capb">⚡ ${ig.kind === "buildup" ? "Building" : "Ignition"}</span><span class="capl">${by ? esc("Backed by " + by.split(":")[0]) : "Nothing backs it yet"}</span>${tag ? `<span class="capx">${esc(tag)}</span>` : ""}</div>`;
+  }
   if (s.radar) {  // the title already names the stock and its size: say what the radar saw
     const r = a.edge.radar || {}, news = (a.related || []).some((x) => x.kind === "news");
     const tag = r.rvol && r.rvol >= 1.5 ? `${Math.round(r.rvol)}× normal volume` : r.session === "pre" ? "pre-market" : r.session === "post" ? "after hours" : "";
@@ -386,6 +392,8 @@ function radarRow(r, i = 0) {
   const bits = [`${esc(r.cap)} ${esc(r.band)}`];
   if (r.dollar_volume) bits.push(`$${r.dollar_volume >= 1e9 ? (r.dollar_volume / 1e9).toFixed(1) + "B" : r.dollar_volume >= 1e6 ? (r.dollar_volume / 1e6).toFixed(r.dollar_volume < 1e7 ? 1 : 0) + "M" : Math.round(r.dollar_volume / 1e3) + "K"} traded`);
   if (r.rvol && r.rvol >= 1.5) bits.push(`${Math.round(r.rvol)}× volume`);
+  const ig = r.ignition;
+  if (ig) bits.unshift(`<b class="${ig.direction === "down" ? "neg" : "pos"}">⚡ ${ig.kind === "buildup" ? "building" : `${pct(ig.move_pct)} in ${Math.round(ig.window_s / 60)}m`}${ig.burst ? ` on ${Math.round(ig.burst)}× vol` : ""}</b>`);
   const why = news ? `<a href="${esc(news.url)}" target="_blank" rel="noopener" class="rnews">${esc(news.title)}</a>`
     : `<span class="rnone">No headline yet</span>`;
   return `<div class="li radar-li${r.flagged ? " hot" : ""}" style="--k:${i}"${r.alert_id ? ` data-id="${esc(r.alert_id)}" role="button"` : ""}><span class="sym" style="width:64px">${r.flagged ? `<i class="ping"></i>` : ""}${esc(r.symbol)}</span>
@@ -496,6 +504,10 @@ async function openSheet(id) {
       ${sc.relative != null ? `<div class="kv"><span>Deal size vs. the company</span><b class="num">${Math.round(sc.relative * 100)}% of market cap</b></div>` : ""}
       ${rd ? `<div class="kv"><span>Price</span><b class="num">$${(rd.price ?? 0).toFixed(2)} <span class="${cls(rd.change_pct)}">${pct(rd.change_pct)}</span></b></div>
         <div class="kv"><span>Traded</span><b class="num">${money(rd.dollar_volume)}${rd.rvol ? ` · ${rd.rvol}× normal volume` : ""}</b></div>` : ""}
+      ${e.ignition ? `<div class="kv"><span>${e.ignition.kind === "buildup" ? "From yesterday's close" : "Launch"}</span><b class="num">$${(+e.ignition.launch).toFixed(2)} → $${(+e.ignition.price).toFixed(2)} <span class="${cls(e.ignition.move_pct)}">${pct(e.ignition.move_pct)}</span></b></div>
+        <div class="kv"><span>The move fails past</span><b class="num">$${(+e.ignition.stop).toFixed(2)} · ${(+e.ignition.risk_pct).toFixed(1)}% away</b></div>
+        <div class="kv"><span>Volume</span><b class="num">${e.ignition.burst ? `${e.ignition.burst}× normal in the push · ` : ""}${e.ignition.rvol != null ? `${e.ignition.rvol}× normal today` : "—"}</b></div>
+        <div class="kv"><span>Backed by</span><b>${(e.ignition.confirmed_by || []).length ? e.ignition.confirmed_by.map(esc).join("<br>") : "nothing yet: its option chain is being read"}</b></div>` : ""}
       ${sc.blocked ? `<div class="sub" style="padding:10px 0 4px">Not boosted: ${esc(sc.blocked)}</div>` : ""}
       ${sc.move_text ? `<div class="sub" style="padding:10px 0 4px">Typical moves are rules of thumb from 2024–26 small-cap history, not a forecast.</div>` : ""}</div>` : "";
   const blocks = [

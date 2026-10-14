@@ -29,6 +29,7 @@ class SourceContext:
     max_item_age_s: float = 1800.0
     data_dir: Path | None = None
     universe: Any = None  # market.universe.Universe: who a filing or release is about, and how big
+    live: Any = None  # market.live.LiveQuotes: the latest live stock prices (insider buys: price now vs paid)
 
 
 @dataclass

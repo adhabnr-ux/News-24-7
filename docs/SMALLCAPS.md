@@ -150,6 +150,49 @@ The price is the first public trace. `news247/market/radar.py`:
   radar before the news."* When the headline then lands, its alert says *"📡 Radar flagged ACMB
   +45% 12m before this headline."*
 
+### Ignition: the move at its start
+
+The ladder above fires when a stock is already 4–35% from yesterday's close. On real tape that
+is late. In a study of 1,455 sessions of 1-minute bars
+([research/radar-ignition-2026-10-14.md](research/radar-ignition-2026-10-14.md)):
+- after the ladder fired, the stock went on in that direction by the close only 37% of the time;
+- 19% of the day's move was left.
+
+`news247/market/ignition.py` reads every $100M+ stock on the live tape (`market/tape.py`) every
+30 s in the session:
+- **with Alpaca keys**: Alpaca snapshots (the price, the day's volume and range, the VWAP);
+- **without keys**: Yahoo quotes, once a minute.
+
+It fires on two triggers:
+
+| Trigger | What it needs |
+|---|---|
+| **Ignition** | In about 5 minutes the stock moves 3% (small cap), 1.5% (mid), 1.0% (large) or 0.6% (mega), on 4×+ the volume normal for that stretch of the day, to a new session high or low, before the day move reaches the ladder's line |
+| **Build-up** | Half-way to the line, at a new session extreme, on 2×+ the day's normal volume so far (the grinders: FIGS +12.5% on Oct 12) |
+
+On the 39 big intraday moves in the study it saw 28 first, a median 20 minutes before the ladder,
+with 40% of the move left.
+
+On its own it does not pick winners: about 56% were further along an hour later, and they were
+flat on average by the close. So:
+- **Pushed (up to 10 a day)**: when something backs it. That is a headline, an insider buy in the
+  last 3 days, or options bought on the same side, including the chain read the ignition itself
+  triggers.
+- **Shown (up to 40 a day)**: strong ones (the day's volume 3×+ normal, the push 8×+) with
+  nothing behind them yet.
+- **On the board**: the rest, at the top of the Watch tab's radar for an hour. Their option chain
+  is read at once.
+- **Primed**: options bought on a stock that hasn't moved, an insider's purchase or a headline
+  put the stock on watch. Its first push then needs 60% of the move and 3× the volume, and the
+  alert says what was already pointing at it.
+
+Each alert gives:
+- the launch price;
+- where the move has failed (past the launch or the VWAP, whichever is nearer) and how far that is;
+- the volume against normal;
+- what backs it;
+- how long the follow-through lasted in the study (the first 15–60 minutes).
+
 ## 4. Knowing earlier than everyone
 
 The radar and the catalyst desk react within minutes. Two more edges get you there before the
@@ -247,11 +290,33 @@ smallcap:
   radar_mega_min_pct: 4         # $200B+
   sweep_size: 400               # largest companies swept for pre/after-hours moves
   sweep_seconds: 60
+  sweep_concurrency: 4          # spark requests in flight at once
+  ignition: true                # SMALLCAP_IGNITION
+  tape_provider: auto           # alpaca (keys) | yahoo | auto
+  tape_seconds: 30
+  tape_min_cap: 100000000
+  ignition_window_s: 300
+  ignition_burst: 4             # primed: ignition_burst_primed 3
+  ignition_pct_small: 3         # mid 1.5, large 1.0, mega 0.6
+  ignition_buildup_frac: 0.5
+  ignition_buildup_rvol: 2
+  ignition_strong_rvol: 3       # "strong": shown in the app even with nothing behind it
+  ignition_strong_burst: 8
+  ignition_prime_s: 7200
+  ignition_prime_factor: 0.6
+  ignition_daily_pushes: 10
+  ignition_daily_shown: 40
+  ignition_min_base_volume: 5000   # thinner on the feed: not read
 ```
 
 API:
 - `GET /api/radar?limit=40` returns the radar board, market phase and feed health.
-- `/api/status` gains a `smallcap` block with listing count, universe age and radar scans/hits.
+- `news247 tape` reads the whole market's tape once from this machine (twice, 30 s apart, by
+  default). It shows the provider, how many stocks it covers, how long a sweep takes, the
+  heaviest volume for the time of day and any ignitions. Run it in the Render shell to check the
+  feed live.
+- `/api/status` gains a `smallcap` block with listing count, universe age and radar scans/hits,
+  and a `tape` block (provider, stocks covered, sweep time, scans, ignitions, primed names).
 
 ## 8. Does it work? The backtest
 

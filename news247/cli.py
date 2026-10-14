@@ -510,6 +510,92 @@ def cmd_options(cfg: Config, args: argparse.Namespace) -> int:
     return asyncio.run(_options(cfg, args.symbols, args.min_pct, args.provider, args.stream))
 
 
+# --------------------------------------------------------------------------- tape
+
+
+async def _tape(cfg: Config, sweeps: int, gap_s: float, limit: int, provider: str | None = None) -> int:
+    """Read the whole market's live tape from this machine: coverage, speed, and what is
+    igniting (market/tape.py, market/ignition.py)."""
+    import dataclasses
+    from datetime import datetime
+
+    from .http import HttpClient
+    from .market.ignition import ET, IgnitionScanner, session_minute, volume_share
+    from .market.options import AlpacaSource
+    from .market.radar import SmallCapFeed
+    from .market.universe import Universe, fmt_cap
+
+    sc = cfg.smallcap if provider is None else dataclasses.replace(cfg.smallcap, tape_provider=provider)
+    uni = SmallCapFeed.load_cached(cfg.data_path) or Universe()
+    if not len(uni):
+        print("  no cached universe yet: run `news247 universe --refresh`")
+        return 1
+    async with HttpClient(cfg.general.user_agent) as http:
+        keys = cfg.options.alpaca_key and cfg.options.alpaca_secret
+        if sc.tape_provider == "alpaca" and not keys:
+            print("  Alpaca needs ALPACA_KEY and ALPACA_SECRET in the environment.")
+            return 2
+        feed = SmallCapFeed(sc, http, uni, None)
+        scanner = IgnitionScanner(sc)
+        from .market.tape import TapeFeed
+
+        tape = TapeFeed(
+            sc, http, uni, scanner, alpaca=AlpacaSource(cfg.options, http) if keys else None,
+            yahoo_json=feed.yahoo_json, data_dir=cfg.data_path,
+        )  # fmt: skip
+        print(
+            f"\n  tape: {tape.provider} · {len(tape.symbols())} stocks of {fmt_cap(sc.tape_min_cap)}+ · every {tape.interval:.0f}s"
+        )
+        hits_all = []
+        rows: dict[str, dict] = {}
+        for k in range(sweeps):
+            if k:
+                await asyncio.sleep(gap_s)
+            t0 = time.time()
+            today = datetime.fromtimestamp(t0, ET).date()
+            syms = tape.symbols()
+            try:
+                rows = (
+                    await tape.read_alpaca(syms, today)
+                    if tape.provider == "alpaca"
+                    else await tape.read_yahoo(syms)
+                )
+            except Exception as exc:  # noqa: BLE001 - report, don't trace
+                print(f"  sweep {k + 1}: failed: {type(exc).__name__}: {exc}")
+                return 1
+            ticks = tape.ticks_from(rows)
+            hits = scanner.observe(ticks, t0)
+            hits_all += hits
+            print(
+                f"  sweep {k + 1}: {len(rows)} quotes in {time.time() - t0:.1f}s, {tape.reads} requests so far, {len(hits)} ignitions"
+            )
+        tape.base.save()
+        m = session_minute(time.time())
+        if m is not None and rows:
+            share = volume_share(0, m)
+            heat = []
+            for sym, r in rows.items():
+                base = r.get("base_volume")
+                if base and r.get("volume") and share > 0 and base >= sc.ignition_min_base_volume:
+                    pct = (r["price"] / r["prev_close"] - 1) * 100 if r.get("prev_close") else 0.0
+                    heat.append((r["volume"] / (base * share), sym, pct))
+            heat.sort(reverse=True)
+            print(f"\n  heaviest volume for this time of day ({len(heat)} with a normal day known):")
+            for rv, sym, pct in heat[:limit]:
+                print(f"    {sym:<6} {rv:5.1f}× normal   {pct:+6.2f}% on the day")
+        else:
+            print("\n  (market closed: volume against normal is read in the regular session)")
+        for h in hits_all:
+            print(
+                f"  ⚡ {h.symbol} {h.kind} {h.direction} {h.move_pct:+.2f}% · burst {h.burst or 0:.1f}× · day {h.day_pct:+.2f}%"
+            )
+    return 0
+
+
+def cmd_tape(cfg: Config, args: argparse.Namespace) -> int:
+    return asyncio.run(_tape(cfg, args.sweeps, args.gap, args.limit, args.provider))
+
+
 # --------------------------------------------------------------------------- test-notify
 
 
@@ -906,6 +992,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="also watch these companies' contracts on Alpaca's options websocket this long (live check)",
     )
 
+    tp = sub.add_parser("tape", help="read the whole market's live tape once: coverage, speed, ignitions")
+    tp.add_argument("--sweeps", type=int, default=2, help="sweeps to run (2+ to see a push form; default 2)")
+    tp.add_argument("--gap", type=float, default=30.0, metavar="SECONDS", help="seconds between sweeps")
+    tp.add_argument("--limit", type=int, default=15, help="rows of heaviest volume to show")
+    tp.add_argument("--provider", choices=["alpaca", "yahoo"], help="read from this source only")
+
     tn = sub.add_parser("test-notify", help="send a test alert to every enabled channel")
     tn.add_argument(
         "--only", action="append", help="test just this channel (repeatable), e.g. --only imessage"
@@ -961,6 +1053,7 @@ COMMANDS = {
     "trends": cmd_trends,
     "universe": cmd_universe,
     "options": cmd_options,
+    "tape": cmd_tape,
 }
 
 

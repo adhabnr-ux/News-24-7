@@ -216,10 +216,39 @@ class SmallCapConfig:
     sweep_size: int = 400
     sweep_rotate: int = 200  # plus this many of the other $2B+ companies in turn each sweep
     sweep_seconds: float = 60.0
+    sweep_concurrency: int = 4  # spark requests in flight at once
     # a big move with no known headline: look up the company's EDGAR filings and a news search
     # at once (market/why.py), at most this many lookups an hour
     why_lookup: bool = True
     why_per_hour: int = 30
+    # ignition (market/ignition.py): a stock starting to move, read on the whole market's live
+    # tape every tape_seconds. Thresholds from the study in docs/research/radar-ignition-2026-10-14.md
+    ignition: bool = True
+    tape_provider: str = "auto"  # "alpaca" (needs keys: price, volume, VWAP), "yahoo" (quotes), "auto"
+    tape_seconds: float = 30.0
+    tape_min_cap: float = 100e6  # the tape reads every stock this big
+    tape_batch: int = 100  # symbols per request
+    ignition_window_s: float = 300.0
+    ignition_burst: float = 4.0  # window volume vs normal for that stretch of the day
+    ignition_pct_small: float = 3.0  # the move over the window, by size
+    ignition_pct_mid: float = 1.5
+    ignition_pct_large: float = 1.0
+    ignition_pct_mega: float = 0.6
+    ignition_start_min: float = 5.0  # minutes after the open before the first ignition
+    ignition_buildup: bool = True
+    ignition_buildup_frac: float = 0.5  # half-way to the radar's day line ...
+    ignition_buildup_rvol: float = 2.0  # ... on 2x the day's normal volume so far
+    ignition_buildup_start_min: float = 15.0
+    ignition_strong_rvol: float = 3.0  # "strong": the day's volume 3x normal and the burst 8x
+    ignition_strong_burst: float = 8.0
+    ignition_prime_s: float = 7200.0  # options flow / an insider buy / a headline primes a stock this long
+    ignition_prime_factor: float = 0.6  # ... and its thresholds drop to this share
+    ignition_burst_primed: float = 3.0
+    ignition_daily_pushes: int = 10  # confirmed ignitions pushed a day at most
+    ignition_daily_shown: int = 40  # strong unconfirmed ignitions shown in the app a day at most
+    ignition_min_base_volume: float = (
+        5000.0  # a normal day under this many shares on the feed: volume too thin to read
+    )
 
     def filters(self) -> dict[str, float]:
         return {
@@ -655,6 +684,21 @@ def build_config(raw: dict[str, Any] | None, path: Path | None = None) -> Config
         raise ConfigError("[smallcap] radar_provider must be 'yahoo' or 'nasdaq'")
     if smallcap.radar_seconds < 20:
         raise ConfigError("[smallcap] radar_seconds must be at least 20 (be polite to free endpoints)")
+    if smallcap.tape_provider not in ("auto", "alpaca", "yahoo"):
+        raise ConfigError("[smallcap] tape_provider must be 'auto', 'alpaca' or 'yahoo'")
+    if smallcap.tape_seconds < 10 or smallcap.tape_batch < 1:
+        raise ConfigError("[smallcap] tape_seconds must be at least 10 and tape_batch at least 1")
+    if (
+        smallcap.ignition_window_s < 60
+        or min(smallcap.ignition_pct_small, smallcap.ignition_pct_mid, smallcap.ignition_pct_large,
+               smallcap.ignition_pct_mega, smallcap.ignition_burst, smallcap.ignition_burst_primed) <= 0
+        or not 0 < smallcap.ignition_prime_factor <= 1
+        or not 0 < smallcap.ignition_buildup_frac < 1
+    ):  # fmt: skip
+        raise ConfigError(
+            "[smallcap] ignition_window_s >= 60, ignition thresholds > 0, ignition_prime_factor in (0, 1], "
+            "ignition_buildup_frac in (0, 1)"
+        )
 
     options = _dataclass_from(OptionsConfig, raw.get("options"), "options")
     trends = _dataclass_from(TrendsConfig, raw.get("trends"), "trends")

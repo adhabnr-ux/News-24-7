@@ -246,11 +246,22 @@ headline the way a small-cap trader does:
   company, ±4% for a mega cap). It flags breakouts **before any headline**, then tells you when the
   news lands that the radar had it first. Post-mortem that shaped it:
   [docs/research/mrna-2026-10-09.md](docs/research/mrna-2026-10-09.md).
+- **Ignition: the move at its start**: every $100M+ stock on the live tape every 30 s (Alpaca
+  snapshots with volume and VWAP, or Yahoo quotes), looking for a 5-minute push on 4× normal
+  volume to a new session high or low. On 1,455 real sessions it saw the big intraday moves a
+  median 20 minutes before the day-move ladder, with 40% of the move left instead of 19%. On its
+  own that is a coin flip, so it pushes only when something backs it: a headline, an insider buy,
+  or options bought on the same side. Options bought on a stock that hasn't moved put it on watch,
+  and its first push is alerted at once, with the launch price and where the move fails
+  ([the study](docs/research/radar-ignition-2026-10-14.md)).
 - **Earlier than the news**: readout, PDUFA and FDA-panel dates announced weeks ahead go on the
   Calendar automatically ("Tomorrow 08:30 ET: KOD · Phase 3 trial readout" in the morning Brief), and
   NVIDIA/Alphabet/Amazon/Berkshire 13F filings are read the hour they're filed, flagging new stakes
   and exits in small caps (SoundHound: +67% on NVIDIA's stake, −28% on its exit). Insiders' own
-  open-market buys (SEC Form 4) are read within 30 s of filing and sized against the company,
+  open-market buys (SEC Form 4) are read within 10 s of filing, sized against the company and the
+  insider's own stake, and told apart as opportunistic or routine from their EDGAR history (only
+  opportunistic buys predicted returns, Cohen-Malloy-Pomorski 2012), with 10b5-1 plans and
+  offerings filtered out,
   and 15 activist short sellers' sites are watched for new reports
   ([where each comes from](docs/WHERE-THE-NEWS-COMES-FROM.md#ahead-of-the-wires-who-knows-first-and-where-they-post-it)).
 - **In Foretape**: a gold SMALL CAP pill with the catalyst and typical move, an All / Small caps

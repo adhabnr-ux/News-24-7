@@ -98,8 +98,9 @@
 # on Nebius came after hours and moved the stock the next morning. 6-K = foreign issuers (TSMC,
 # ASML, Novo); 13D/13G = stakes; SC TO-T = tender offers; 425 = merger communications.
 - {name: sec-8k, type: sec_edgar, forms: ["8-K", "6-K", "SCHEDULE 13D", "SCHEDULE 13G", "SC TO-T", "SC 14D9", "425"], interval: 10}
-# Form 4: insiders buying their own stock on the open market (code P), sized against the company
-- {name: sec-insider-buys, type: sec_insider, interval: 30, min_value: 250000}
+# Form 4: insiders buying their own stock on the open market (code P), sized against the company,
+# their own stake and their history (routine same-month traders vs opportunistic buys)
+- {name: sec-insider-buys, type: sec_insider, interval: 10, min_value: 250000}
 # Regulators whose single decisions move whole groups (towers/carriers, managed care, nuclear)
 - {name: fcc-headlines, type: pagewatch, url: "https://www.fcc.gov/news-events/headlines", link_pattern: 'fcc\.gov/document/[a-z0-9-]+', tier: primary, interval: 60, entities: [FCC]}
 - {name: cms-newsroom, type: pagewatch, url: "https://www.cms.gov/newsroom", link_pattern: 'cms\.gov/newsroom/(press-releases|fact-sheets)/[a-z0-9-]+', tier: primary, interval: 60, entities: [CMS]}

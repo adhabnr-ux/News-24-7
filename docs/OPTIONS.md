@@ -95,6 +95,25 @@ A company is reported when its unusual contracts add up to **$250K or more**. Th
 It pushes at **$1M or more** when the biggest contract is at least 5× its open interest. A
 company is reported again only when its unusual premium doubles.
 
+### Options before the stock
+
+When a stock has barely moved (under half the radar's day line), unusual volume, a spike or a
+blowup on one side means something different. The alert then says *"The stock hasn't moved yet
+(+0.3%): it is on watch, and its first push up on volume alerts at once."*
+
+For the next 2 hours the stock is **primed** on the ignition scanner (the live tape,
+[SMALLCAPS.md](SMALLCAPS.md#ignition-the-move-at-its-start)). A push in the options' direction
+then needs only 60% of the usual move and 3× normal volume. It is pushed with "What backs it:
+options: calls flow, $2.1M premium".
+
+The other way round works too:
+- **An ignition with nothing behind it** has its chain read at once.
+- **Options bought on the same side** in that read, or earlier the same day (within 3 hours),
+  confirm it and push it.
+
+The research behind the pairing: Easley, O'Hara and Srinivas (1998) and Pan and Poteshman (2006)
+found that option volume leads the stock.
+
 ## Company-wide surges
 
 The per-contract rule above misses the most common "unusual options activity": a whole chain

@@ -83,7 +83,12 @@ class HttpClient:
         self.timeout = aiohttp.ClientTimeout(total=timeout_s, sock_connect=min(10.0, timeout_s))
         self._sem = asyncio.Semaphore(max_concurrency)
         self._validators: dict[str, tuple[str | None, str | None]] = {}
-        self._host_min_interval = {"www.sec.gov": 0.15, "efts.sec.gov": 0.15, **(host_min_interval or {})}
+        self._host_min_interval = {
+            "www.sec.gov": 0.15,
+            "efts.sec.gov": 0.15,
+            "data.sec.gov": 0.15,
+            **(host_min_interval or {}),
+        }
         self._host_next: dict[str, float] = {}
         self._host_locks: dict[str, asyncio.Lock] = {}
         self._session: aiohttp.ClientSession | None = None
