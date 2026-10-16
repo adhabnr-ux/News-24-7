@@ -483,7 +483,11 @@ def sectors(engine: Engine, now: float | None = None, max_age_s: float = 900) ->
 # --------------------------------------------------------------------------- search
 
 
-def search(engine: Engine, text: str, now: float | None = None) -> dict[str, Any]:
+def search(
+    engine: Engine, text: str, now: float | None = None, days: float = 30, min_sev: str = "", kind: str = ""
+) -> dict[str, Any]:
+    """Companies, alerts and headlines matching the text; alerts can be narrowed to a severity and
+    up, a kind (news, radar, options, insider, macro, confluence) and a window."""
     now = now or time.time()
     text = (text or "").strip()[:60]
     if len(text) < 2:
@@ -503,7 +507,15 @@ def search(engine: Engine, text: str, now: float | None = None) -> dict[str, Any
         for li in hits[:6]:
             if all(c["symbol"] != li.symbol for c in companies):
                 companies.append({"symbol": li.symbol, "name": li.name, "cap": li.cap_label})
-    found = engine.storage.search(text, since=now - 30 * 86400, limit=25)
+    found = engine.storage.search(text, since=now - days * 86400, limit=80)
+    if min_sev in SEV_W:
+        floor = list(SEV_W).index(min_sev)  # CRITICAL, HIGH, MEDIUM, LOW: lower index = more severe
+        found["alerts"] = [a for a in found["alerts"] if list(SEV_W).index(a.get("severity", "LOW")) <= floor]
+    if kind:
+        found["alerts"] = [a for a in found["alerts"] if alert_category(a) == kind]
+        if kind != "news":
+            found["items"] = []
+    found["alerts"], found["items"] = found["alerts"][:25], found["items"][:25]
     return {
         "query": text,
         "companies": companies[:6],
@@ -1327,7 +1339,9 @@ def portfolio(engine: Engine, device: str, now: float | None = None) -> dict[str
                      "chg": round(chg, 2) if chg is not None else None, "value": round(value, 2) if value is not None else None,
                      "day_pnl": round(dpnl, 2) if dpnl is not None else None, "unreal": round(upnl, 2) if upnl is not None else None,
                      "unreal_pct": round((price / h["cost"] - 1) * 100, 2) if price and h.get("cost") else None,
-                     "sector": (li.sector if li else "") or "Other"})  # fmt: skip
+                     "sector": (li.sector if li else "") or "Other",
+                     "news": next(({"title": w["title"], "url": w["url"], "source": w["source"], "age": w["age"]}
+                                   for w in engine.find_catalysts([sym], now, overnight=True)), None)})  # fmt: skip
         if value is not None:
             total += value
             sectors_[rows[-1]["sector"]] = sectors_.get(rows[-1]["sector"], 0.0) + value

@@ -676,7 +676,20 @@ class WebServer:
     async def api_search(self, request: web.Request) -> web.Response:
         from ..dossier import search
 
-        return _json(search(self.engine, request.query.get("q", "")))
+        q = request.query
+        try:
+            days = max(1.0, min(90.0, float(q.get("days", "30"))))
+        except ValueError:
+            days = 30.0
+        return _json(
+            search(
+                self.engine,
+                q.get("q", ""),
+                days=days,
+                min_sev=q.get("sev", "").upper(),
+                kind=q.get("kind", ""),
+            )
+        )
 
     @staticmethod
     def _device(request: web.Request) -> str:
@@ -748,7 +761,12 @@ class WebServer:
         dev = self._device(request)
         if not dev:
             raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
-        return _json(report_card(self.engine, dev) or {})
+        from ..personal import day_summary
+
+        card = report_card(self.engine, dev) or {}
+        if card:
+            card["summary"] = day_summary(self.engine, dev)
+        return _json(card)
 
     async def api_gaps(self, request: web.Request) -> web.Response:
         from ..dossier import gaps

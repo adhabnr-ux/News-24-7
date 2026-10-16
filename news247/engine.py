@@ -2242,6 +2242,8 @@ class Engine:
                 with contextlib.suppress(Exception):
                     await self.check_followups(now)
                 with contextlib.suppress(Exception):
+                    await self.check_portfolio_risk(now)
+                with contextlib.suppress(Exception):
                     self.save_memory(now)
                 with contextlib.suppress(Exception):
                     self.warm_earnings_week(now)
@@ -2330,7 +2332,7 @@ class Engine:
         sent = 0
         for device, pats in self.desk.keyword_devices().items():
             hit = next((k for k, rx in pats if rx.search(text)), None)
-            if hit is None or (device, story_id) in self._kw_sent:
+            if hit is None or (device, story_id) in self._kw_sent or self.desk.neg_match(device, item.title):
                 continue
             self._kw_sent[(device, story_id)] = now
             self.desk.record_kw_hit(device, {"k": hit, "title": item.title[:200], "url": item.url, "source": item.source,
@@ -2540,6 +2542,42 @@ class Engine:
                 self.desk.save(device)
         if len(self._rule_refs) > 5000:
             self._rule_refs.clear()
+        return sent
+
+    async def check_portfolio_risk(self, now: float | None = None) -> int:
+        """A phone's portfolio up or down its chosen % today: one push at that line and one at twice
+        it, each way, per day; with the dollars and the holdings doing it."""
+        from .dossier import portfolio
+
+        now = now or time.time()
+        if self.calendar.market_status(now).get("phase") == "closed":
+            return 0
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        sent = 0
+        for device, prof in list(self.desk.profiles.items()):
+            line = (prof.get("prefs") or {}).get("port_alert") or 0
+            if not line or not prof.get("holdings"):
+                continue
+            pf = portfolio(self, device, now)
+            pct = pf.get("day_pct")
+            if pct is None:
+                continue
+            for k in (2, 1):
+                if abs(pct) < line * k:
+                    continue
+                way = "up" if pct > 0 else "down"
+                if not self._once(f"portrisk:{day}:{device}:{way}:{k}"):
+                    break
+                who = ", ".join(
+                    f"{c['symbol']} {'+' if c['day_pnl'] >= 0 else '−'}${abs(c['day_pnl']):,.0f}"
+                    for c in pf["contributors"]
+                )
+                payload = {"id": f"pr-{day}-{way}-{k}", "title": f"{'📈' if way == 'up' else '📉'} Your portfolio {pct:+.1f}% today ({'+' if pf['day_pnl'] >= 0 else '−'}${abs(pf['day_pnl']):,.0f})",
+                           "body": (f"Moving it: {who}" if who else "") + f" · your line: ±{line * k:g}%", "severity": "HIGH", "kind": "system",
+                           "tickers": [c["symbol"] for c in pf["contributors"]], "tag": f"pr-{day}", "ts": now, "open": "/app/#a=desk"}  # fmt: skip
+                if await self._to_device(device, payload):
+                    sent += 1
+                break
         return sent
 
     async def check_followups(self, now: float | None = None) -> int:

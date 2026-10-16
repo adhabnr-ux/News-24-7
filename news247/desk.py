@@ -106,6 +106,8 @@ def default_profile() -> dict[str, Any]:
             "close_recap": False,  # the 16:15 ET market recap ("the close")
             "tomorrow": False,  # the 20:00 ET "tomorrow" card
             "followups": False,  # an hour after an alert on your stock: how it played out (2%+ moves)
+            "port_alert": 0,  # %: push when the portfolio is up or down this much today (0 = off)
+            "mute_sources": [],  # sources whose alerts never push to this phone
         },
         "price_alerts": [],
         "tracked": [],
@@ -122,6 +124,7 @@ def default_profile() -> dict[str, Any]:
         "rules_fired": [],  # keys of what each rule already fired on (once per headline / per day)
         "holdings": {},  # symbol -> {"shares", "cost"}
         "taste": {},  # record key -> {"up", "down", "saved", "tracked", "opened"}: what this phone finds useful
+        "kw_neg": [],  # words that keep a headline off this phone (never push), e.g. "crypto", "airdrop"
         "opened": [],  # alert ids recently opened (counted once)
         "follow": {"themes": [], "sectors": []},
         "digest_q": [],  # alerts held for the next digest
@@ -266,6 +269,8 @@ class Desk:
         sev = sev_name
         if self.all_muted(device, alert, now):
             return False
+        if str(sev) != "CRITICAL" and (self.source_muted(p, alert) or self.neg_match(device, alert)):
+            return False
         floor = prefs.get("min_sev")
         if cat != "system" and floor in SEV_RANK and SEV_RANK.get(str(sev), 0) < SEV_RANK[floor]:
             return False
@@ -324,6 +329,28 @@ class Desk:
         code = "".join(secrets.choice(TRANSFER_ALPHABET) for _ in range(8))
         self.transfers[code] = (device, now + TRANSFER_TTL_S)
         return code
+
+    @staticmethod
+    def source_muted(p: dict[str, Any], alert: Any) -> bool:
+        muted = (p.get("prefs") or {}).get("mute_sources") or []
+        if not muted:
+            return False
+        item = alert.get("item") if isinstance(alert, dict) else getattr(alert, "item", None)
+        src = (item.get("source") if isinstance(item, dict) else getattr(item, "source", "")) if item else ""
+        return bool(src) and src in muted
+
+    def neg_match(self, device: str, alert_or_text: Any) -> str | None:
+        """The first of this phone's never-push words in the alert's title (or a text), else None."""
+        neg = (self.profiles.get(device) or {}).get("kw_neg") or []
+        if not neg:
+            return None
+        if isinstance(alert_or_text, str):
+            text = alert_or_text
+        elif isinstance(alert_or_text, dict):
+            text = str(alert_or_text.get("title") or "")
+        else:
+            text = str(getattr(alert_or_text, "title", "") or "")
+        return next((k for k in neg if _kw_pattern(k).search(text)), None)
 
     def keyword_devices(self) -> dict[str, list[tuple[str, re.Pattern[str]]]]:
         """device -> [(keyword, compiled whole-word pattern)] for every phone with keywords."""
@@ -407,6 +434,20 @@ class Desk:
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
+            if "port_alert" in body:
+                try:
+                    v = float(body.get("port_alert") or 0)
+                except (TypeError, ValueError):
+                    v = -1
+                if v not in (0, 1, 2, 3, 5):
+                    raise ValueError("port_alert is 0 (off), 1, 2, 3 or 5")
+                prefs["port_alert"] = v
+            if "mute_source" in body:
+                src = str(body.get("mute_source") or "").strip()[:60]
+                ms = [x for x in prefs.get("mute_sources") or [] if x != src]
+                if src and body.get("on", True):
+                    ms.append(src)
+                prefs["mute_sources"] = ms[:50]
             if "auto_move" in body:
                 try:
                     v = float(body.get("auto_move") or 0)
@@ -625,6 +666,38 @@ class Desk:
             if data.get("name"):
                 for x in syms:
                     p.setdefault("groups", {}).setdefault(x, data["name"][:24])
+        elif action == "hold_import":
+            n = 0
+            for line in str(body.get("text") or "").splitlines()[:200]:
+                parts = [x for x in re.split(r"[,;\t ]+", line.strip()) if x]
+                if not parts or parts[0].lower() in ("symbol", "ticker"):
+                    continue
+                sym = clean_symbol(parts[0])
+                try:
+                    shares = float(parts[1].replace("$", "")) if len(parts) > 1 else 0.0
+                    cost = float(parts[2].replace("$", "")) if len(parts) > 2 else None
+                except ValueError:
+                    continue
+                if not sym or shares <= 0 or (cost is not None and cost <= 0):
+                    continue
+                h = p.setdefault("holdings", {})
+                if len(h) >= 100 and sym not in h:
+                    break
+                h[sym] = {"shares": shares, "cost": cost}
+                n += 1
+            if not n:
+                raise ValueError("no lines like 'AAPL 10 150' (ticker, shares, optional cost) found")
+            p["imported"] = n
+        elif action in ("neg_add", "neg_remove"):
+            k = re.sub(r"\s+", " ", str(body.get("keyword") or "")).strip().lower()
+            neg = [x for x in p.get("kw_neg") or [] if x != k]
+            if action == "neg_add":
+                if not 2 <= len(k) <= 40:
+                    raise ValueError("a word is 2 to 40 characters")
+                if len(neg) >= 30:
+                    raise ValueError("at most 30 never-push words")
+                neg.append(k)
+            p["kw_neg"] = neg
         elif action == "hold_set":
             sym = clean_symbol(body.get("symbol"))
             try:
@@ -786,6 +859,8 @@ class Desk:
             "rules": p.get("rules") or [],
             "holdings": p.get("holdings") or {},
             "taste": taste_rows(p.get("taste") or {}),
+            "kw_neg": p.get("kw_neg") or [],
+            "imported": p.pop("imported", None),
             "follow": p.get("follow") or {"themes": [], "sectors": []},
             "share": p["share"] if (p.get("share") or {}).get("until", 0) > now else None,
             "record": {

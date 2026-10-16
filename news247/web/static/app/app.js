@@ -265,6 +265,36 @@ function edgeScore(a) {
   parts.push(["Severity", sev, 0.2, a.severity]);
   return { score: Math.round(parts.reduce((t, [, v, w]) => t + v * w, 0) * 100), parts };
 }
+// how much of your portfolio an alert is about: holdings among its direct and read-through names
+let portf = null;  // {bySym: {SYM: value}, total}
+async function loadPortf() {
+  try {
+    const r = await api("/api/portfolio");
+    portf = { total: r.value || 0, bySym: Object.fromEntries((r.rows || []).filter((x) => x.value).map((x) => [x.symbol, x.value])) };
+  } catch (_) { portf = null; }
+}
+function exposure(a) {
+  if (!portf?.total) return null;
+  const p = a.edge?.play || {}, direct = new Set([...(a.tickers || []), ...(p.direct || [])]);
+  const d = [...direct].reduce((t, x) => t + (portf.bySym[x] || 0), 0);
+  const r = (p.read_through || []).filter((x) => !direct.has(x)).reduce((t, x) => t + (portf.bySym[x] || 0), 0);
+  return d || r ? { direct: d, related: r, pct: (d / portf.total) * 100, rpct: (r / portf.total) * 100 } : null;
+}
+function expoRow(a) {
+  const e = exposure(a);
+  if (!e) return "";
+  const usd = (v) => "$" + Math.round(v).toLocaleString();
+  return `<div class="expo">💼 ${e.direct ? `Touches <b>${e.pct.toFixed(e.pct < 10 ? 1 : 0)}%</b> of your portfolio (${usd(e.direct)})` : ""}${e.direct && e.related ? " · " : ""}${e.related ? `${e.rpct.toFixed(1)}% more via read-through names` : ""}</div>`;
+}
+// beginner mode: one plain-language line on each card
+function plainLine(a) {
+  if (store.get("ft_beginner") !== "1" || a.kind === "system") return "";
+  const t = (a.edge?.play?.direct || a.tickers || [])[0], d = a.edge?.play?.direction || a.analysis?.direction || a.edge?.confluence?.side;
+  const size = { CRITICAL: "Very big news", HIGH: "Big news", MEDIUM: "Notable news", LOW: "Minor news" }[a.severity] || "News";
+  const what = a.kind === "options" ? "Traders are betting heavily with options" : a.kind === "confluence" ? "Several kinds of evidence agree" : a.edge?.radar || a.edge?.ignition ? "The stock is moving sharply on heavy trading" : size;
+  const way = d === "up" ? "likely to push it up" : d === "down" ? "likely to push it down" : "could move it either way";
+  return t ? `<div class="plain">In plain English: ${esc(what)} on ${esc(t)}, ${way}. Not advice; check the details.</div>` : "";
+}
 function relatedChip(a) {
   const t = (a.tickers || [])[0];
   if (!t || a.kind === "system") return "";
@@ -272,12 +302,18 @@ function relatedChip(a) {
   return n ? `<span class="relc" data-tk="${esc(t)}" role="button">+${n} more on ${esc(t)}</span>` : "";
 }
 let tapeSort = store.get("ft.sort") || "new";
+let collapsedOf = {};
+const expanded = new Set();
+function collapsedChip(a) {
+  const n = collapsedOf[a.id], t = (a.tickers || [])[0];
+  return n ? `<span class="relc" data-act="expand" data-s="${esc(t)}">+${n} earlier on ${esc(t)} this hour</span>` : "";
+}
 function bestScore(a) {
   const rank = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 }[a.severity] || 0;
   const hit = a.edge?.base?.h1?.hit ?? a.edge?.base?.close?.hit;
   const age = Math.max(0, Date.now() / 1000 - a.created) / 3600;
   const taste = (desk?.taste || []).find((t) => t.key === (a.edge?.rk || a.edge?.base?.key));
-  return rank * 2 + (hit != null ? (hit - 0.5) * 6 : 0) + (isMine(a) ? 2 : 0) + (a.edge?.confluence ? 1.5 : 0) + (taste ? taste.score * 3 : 0) - age * 0.6;
+  return rank * 2 + (hit != null ? (hit - 0.5) * 6 : 0) + (isMine(a) ? 2 : 0) + (exposure(a) ? 2 : 0) + (a.edge?.confluence ? 1.5 : 0) + (taste ? taste.score * 3 : 0) - age * 0.6;
 }
 function alertHTML(a, opts = {}) {
   const an = a.analysis || {}, it = a.item || {};
@@ -291,7 +327,7 @@ function alertHTML(a, opts = {}) {
       <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${a.kind !== "system" && a.edge?.base ? `<span class="edge">edge ${edgeScore(a).score}</span>` : ""}${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
-      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${preRow(a)}${baseRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}
+      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${plainLine(a)}${expoRow(a)}${precLine(a)}${preRow(a)}${baseRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}${collapsedChip(a)}
     </div>
   </article>`;
 }
@@ -319,6 +355,19 @@ function renderTape() {
   const f = tapeFilter === "all" ? featured() : null;
   $("featureWrap").innerHTML = f ? alertHTML(f, { feature: true }) : "";
   let rest = pool.filter((a) => a !== f);
+  // several alerts on one stock within the hour: the newest card stands for them ("+2 earlier this hour")
+  collapsedOf = {};
+  if (tapeFilter === "all" && tapeSort !== "best") {
+    const newest = {};
+    rest = rest.filter((a) => {
+      const t = (a.tickers || [])[0];
+      if (!t || a.kind === "system" || expanded.has(t)) return true;
+      const top = newest[t];
+      if (top && top.created - a.created < 3600) { collapsedOf[top.id] = (collapsedOf[top.id] || 0) + 1; return false; }
+      newest[t] = a;
+      return true;
+    });
+  }
   if (tapeSort === "best") rest = [...rest].sort((x, y) => bestScore(y) - bestScore(x));
   $("sortBtn").textContent = tapeSort === "best" ? "Best first" : "Newest";
   const shown = rest.slice(0, showAll ? 150 : 30);   // dozens of blurred glass layers are expensive on a phone: older ones load on demand
@@ -880,6 +929,9 @@ async function loadDesk() {
   deskChanged();
 }
 function deskChanged() {
+  // holdings drive the exposure line on cards: refresh their values, then the tape
+  if (Object.keys(desk?.holdings || {}).length) loadPortf().then(() => { if (tab === "tape") renderTape(); });
+  else portf = null;
   mine = new Set([...(desk?.watchlist || []).map((w) => w.symbol), ...Object.keys(desk?.holdings || {})]);
   renderStrip();
   if (tab === "desk") renderDesk();
@@ -983,7 +1035,7 @@ function renderDesk() {
     <div class="sub" style="padding-top:8px">Display (this phone)</div>
     <div class="row" style="padding:10px 0 4px"><button class="btn ghost small${store.get("ft_clear") === "1" ? "" : " sel"}" data-act="display" data-s="cinema">Cinematic</button><button class="btn ghost small${store.get("ft_clear") === "1" ? " sel" : ""}" data-act="display" data-s="clear">Clear (no 3D, no blur)</button><button class="btn ghost small${store.get("ft_text") === "big" ? " sel" : ""}" data-act="display" data-s="text">Larger text</button>
       <button class="btn ghost small${store.get("ft_light") === "1" ? " sel" : ""}" data-act="display" data-s="light">Light</button><button class="btn ghost small${store.get("ft_compact") === "1" ? " sel" : ""}" data-act="display" data-s="compact">Compact</button>
-      <button class="btn ghost small${store.get("ft_haptic") === "1" ? " sel" : ""}" data-act="display" data-s="haptic">Vibrate on alerts</button><button class="btn ghost small${store.get("ft_chime") === "1" ? " sel" : ""}" data-act="display" data-s="chime">Chime on alerts</button><button class="btn ghost small${store.get("ft_onestock") === "1" ? " sel" : ""}" data-act="display" data-s="onestock">One notification per stock</button></div>
+      <button class="btn ghost small${store.get("ft_haptic") === "1" ? " sel" : ""}" data-act="display" data-s="haptic">Vibrate on alerts</button><button class="btn ghost small${store.get("ft_chime") === "1" ? " sel" : ""}" data-act="display" data-s="chime">Chime on alerts</button><button class="btn ghost small${store.get("ft_beginner") === "1" ? " sel" : ""}" data-act="display" data-s="beginner">Beginner mode</button><button class="btn ghost small${store.get("ft_onestock") === "1" ? " sel" : ""}" data-act="display" data-s="onestock">One notification per stock</button></div>
     <div class="row" style="padding:6px 0 4px"><button class="btn ghost small${localTimes() ? " sel" : ""}" data-act="tz">${localTimes() ? "Times: your time zone" : "Times: ET"}</button><button class="btn ghost small" data-act="glossary">What the terms mean</button><button class="btn ghost small" data-act="links">Shortcuts &amp; links</button></div>
     <div class="kv"><span>Follow-ups<div class="sub">an hour after an alert on a stock you watch or hold, if it moved 2%+: how it played out</div></span><b><button class="btn ghost small${pr.followups ? " sel" : ""}" data-act="flag" data-s="followups">${pr.followups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Tomorrow, 20:00 ET (Sun-Thu)<div class="sub">after-hours movers and why, the next session's reporters (yours first) and events</div></span><b><button class="btn ghost small${pr.tomorrow ? " sel" : ""}" data-act="flag" data-s="tomorrow">${pr.tomorrow ? "On" : "Off"}</button></b></div>
@@ -1021,7 +1073,7 @@ async function loadRecord() {
     const bucketRows = (title, rows) => rows.length ? `<div class="kv head"><span>${title}</span><b>1 hour · close</b></div>` + rows.map((x) => `<div class="kv"><span>${esc(x.bucket)}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("") : "";
     $("dRecord").innerHTML += bucketRows("Already moved before the alert?", r.priced_in || []) + bucketRows("By time of day (ET)", r.by_time || []);
     const src = await api("/api/sources").catch(() => ({ rows: [] }));
-    if (src.rows.length) $("dRecord").innerHTML += `<div class="kv head"><span>By first source</span><b>1 hour · close</b></div>` + src.rows.slice(0, 10).map((x) => `<div class="kv"><span>${esc(outlet(x.source))}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("");
+    if (src.rows.length) $("dRecord").innerHTML += `<div class="kv head"><span>By first source</span><b>1 hour · close</b></div>` + src.rows.slice(0, 10).map((x) => { const m = (desk?.prefs?.mute_sources || []).includes(x.source); return `<div class="kv"><span>${esc(outlet(x.source))}<br><button class="btn ghost small${m ? " sel" : ""}" data-act="src-mute" data-s="${esc(x.source)}" style="margin-top:6px">${m ? "Muted here · unmute" : "Mute on this phone"}</button></span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`; }).join("");
   } catch (_) { $("dRecord").innerHTML = `<div class="li"><span class="muted">Track record unavailable.</span></div>`; }
 }
 
@@ -1054,9 +1106,11 @@ async function loadPortfolio() {
       ${r.unreal != null ? `<div class="kv"><span>Unrealized (where you gave a cost)</span><b class="num ${cls(r.unreal)}">${sgn(r.unreal)} · ${pct(r.unreal_pct)}</b></div>` : ""}
       ${r.contributors.length ? `<div class="kv"><span>Moving it today</span><b class="num">${r.contributors.map((c) => `${esc(c.symbol)} <span class="${cls(c.day_pnl)}">${sgn(c.day_pnl)}</span>`).join(" · ")}</b></div>` : ""}
       ${r.sectors.length ? `<div class="sbar">${r.sectors.map((x, i) => `<i style="flex:${x.weight};--i:${i}" title="${esc(x.sector)} ${x.weight}%"></i>`).join("")}</div><div class="sub" style="padding:4px 0 8px">${r.sectors.slice(0, 5).map((x) => `${esc(x.sector)} ${x.weight}%`).join(" · ")}</div>` : ""}
-      ${r.rows.map((x) => `<div class="li"><span class="sym" style="width:56px" data-tk="${esc(x.symbol)}" role="button">${esc(x.symbol)}</span><div class="grow"><div class="num">${x.shares.toLocaleString()} × ${fmtPx(x.price)} = ${usd(x.value)}</div><div class="sub">${x.weight != null ? x.weight + "% · " : ""}today <span class="${cls(x.day_pnl)}">${sgn(x.day_pnl)}</span>${x.unreal != null ? ` · since cost <span class="${cls(x.unreal)}">${pct(x.unreal_pct)}</span>` : ""}</div></div><span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span><button class="x" data-act="hold-rm" data-s="${esc(x.symbol)}" aria-label="Remove ${esc(x.symbol)}">✕</button></div>`).join("")}`
+      ${r.rows.map((x) => `<div class="li"><span class="sym" style="width:56px" data-tk="${esc(x.symbol)}" role="button">${esc(x.symbol)}</span><div class="grow"><div class="num">${x.shares.toLocaleString()} × ${fmtPx(x.price)} = ${usd(x.value)}</div><div class="sub">${x.weight != null ? x.weight + "% · " : ""}today <span class="${cls(x.day_pnl)}">${sgn(x.day_pnl)}</span>${x.unreal != null ? ` · since cost <span class="${cls(x.unreal)}">${pct(x.unreal_pct)}</span>` : ""}</div>${x.news ? `<div class="sub"><a href="${esc(x.news.url)}" target="_blank" rel="noopener" class="rnews">${esc(x.news.title)}</a></div>` : ""}</div><span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span><button class="x" data-act="hold-rm" data-s="${esc(x.symbol)}" aria-label="Remove ${esc(x.symbol)}">✕</button></div>`).join("")}`
     : `<div class="li"><span class="muted">Add what you hold: live value, today's P&amp;L in dollars, exposure by sector. Held stocks count as yours for alerts (the Mine filter, and pushes even at MEDIUM). Stored for this phone only.</span></div>`)
-    + `<div class="addrow"><input id="hSym" class="key" placeholder="Ticker" autocapitalize="characters" autocomplete="off" spellcheck="false" style="max-width:110px"><input id="hShares" class="key" inputmode="decimal" placeholder="Shares"><input id="hCost" class="key" inputmode="decimal" placeholder="Cost/share (optional)"><button class="btn ghost small" data-act="hold-add">Add</button></div>`;
+    + `<div class="sub" style="padding-top:10px">Push me when the portfolio moves today</div><div class="row" style="padding:8px 0 4px">${[0, 1, 2, 3, 5].map((v) => `<button class="btn ghost small${(desk.prefs.port_alert || 0) === v ? " sel" : ""}" data-act="portalert" data-s="${v}">${v ? `±${v}%` : "Off"}</button>`).join("")}</div>`
+    + `<div class="addrow"><input id="hSym" class="key" placeholder="Ticker" autocapitalize="characters" autocomplete="off" spellcheck="false" style="max-width:110px"><input id="hShares" class="key" inputmode="decimal" placeholder="Shares"><input id="hCost" class="key" inputmode="decimal" placeholder="Cost/share (optional)"><button class="btn ghost small" data-act="hold-add">Add</button></div>
+      <details class="paste"><summary class="sub">Paste a list (one per line: ticker, shares, cost)</summary><textarea id="hPaste" rows="4" placeholder="AAPL 10 150&#10;MSFT, 5&#10;NVDA 2.5 120.50"></textarea><button class="btn ghost small" data-act="hold-import">Import</button></details>`;
 }
 // follow a theme or a sector: its MEDIUM alerts reach this phone like a watched stock's
 let followOpts = null;
@@ -1102,6 +1156,9 @@ function renderKeywords() {
   const kws = desk.keywords || [], hits = desk.kw_hits || [];
   $("dKeys").innerHTML = `<div class="addrow"><input id="kwIn" class="key" placeholder="A word or phrase: tariff, FDA, buyback, Jensen Huang" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="kw-in">Add</button></div>
     ${kws.length ? `<div class="row" style="padding:0 0 12px">${kws.map((k) => `<span class="kwc">${esc(k.k)}<button class="x" data-act="kw-rm" data-s="${esc(k.k)}" aria-label="Remove">✕</button></span>`).join("")}</div>` : `<div class="sub" style="padding:0 0 12px">Any scored headline that names one is pushed to this phone, even under the alert line (once per story; not in quiet hours; not when it's only about stocks you muted).</div>`}
+    <div class="sub" style="padding-top:6px">Never push headlines with…</div>
+    <div class="addrow"><input id="negIn" class="key" placeholder="crypto, airdrop, rumor" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="neg-in">Add</button></div>
+    ${(desk.kw_neg || []).length ? `<div class="row" style="padding:0 0 12px">${desk.kw_neg.map((k) => `<span class="kwc neg">${esc(k)}<button class="x" data-act="neg-rm" data-s="${esc(k)}" aria-label="Remove">✕</button></span>`).join("")}</div>` : ""}
     ${hits.length ? `<div class="sub" style="padding:4px 0">Recent hits</div>` + hits.slice(0, 8).map((h) => `<div class="li"><div class="grow"><div class="sub">🔑 ${esc(h.k)} · ${esc(outlet(h.source))} · ${ago(h.ts)} ago</div><a href="${esc(h.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(h.title)}</a></div></div>`).join("") : ""}`;
   const muted = Object.entries(desk.muted || {});
   $("dMuted").hidden = !muted.length;
@@ -1229,7 +1286,7 @@ async function loadReport() {
   $("dTodayWrap").hidden = !r.date;
   if (!r.date) return;
   const w = r.watch, t = r.tracked, al = r.alerts;
-  $("dToday").innerHTML = [
+  $("dToday").innerHTML = (r.summary ? `<p class="dsum">${esc(r.summary)}</p>` : "") + [
     w.n ? `<div class="kv"><span>Watchlist</span><b class="num">${w.up} of ${w.n} up${w.best ? ` · best <span data-tk="${esc(w.best.symbol)}" role="button">${esc(w.best.symbol)}</span> <span class="${cls(w.best.chg)}">${pct(w.best.chg)}</span>` : ""}${w.worst ? ` · worst <span data-tk="${esc(w.worst.symbol)}" role="button">${esc(w.worst.symbol)}</span> <span class="${cls(w.worst.chg)}">${pct(w.worst.chg)}</span>` : ""}</b></div>` : "",
     t.n ? `<div class="kv"><span>Tracked calls</span><b class="num">${t.n} open · avg <span class="${cls(t.avg)}">${pct(t.avg)}</span></b></div>` : "",
     r.fired.length || r.levels.length ? `<div class="kv"><span>Fired today</span><b class="num">${r.fired.length} price alert${r.fired.length === 1 ? "" : "s"} · ${r.levels.length} stop/target</b></div>` : "",
@@ -1339,10 +1396,37 @@ function tickerHTML(d) {
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
   const implied = `<h4>What options price in ${tip("implied")}</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
-  return [head + relLine + sessLine + earnLine, acts, noteBlock, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
+  return [head + relLine + sessLine + earnLine, acts, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div>` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0, tickerNow = null;
 const impliedNow = {};
+// the stock's session in dollars with its levels: the day's range, VWAP, the 9:35 price, the option
+// walls, and this phone's own entry, stop, target and price-alert lines
+function levelChart(d) {
+  const pts = d.series || [];
+  if (pts.length < 3) return "";
+  const px = d.quote?.price || pts[pts.length - 1][1], ss = d.session || {}, pz = impliedNow[d.symbol]?.positioning || {};
+  const lines = [];
+  const add = (v, label, color, dash) => { if (v && Math.abs(v / px - 1) < 0.15) lines.push({ v: +v, label, color, dash }); };
+  add(ss.s_high || d.range?.high, "day high", "rgba(255,255,255,.35)", "2 4"); add(ss.s_low || d.range?.low, "day low", "rgba(255,255,255,.35)", "2 4");
+  add(ss.vwap, "VWAP", "#9FC6FF", ""); add(ss.first5, "9:35", "rgba(255,217,160,.6)", "4 4");
+  add(pz.call_wall?.strike, "call wall", "#8CEBC4", "6 4"); add(pz.put_wall?.strike, "put wall", "#FF9E86", "6 4");
+  (desk?.tracked || []).filter((t) => t.symbol === d.symbol).forEach((t) => { add(t.entry, "your entry", "#FFD9A0", ""); add(t.stop, "your stop", "#FF9E86", ""); add(t.target, "your target", "#8CEBC4", ""); });
+  (desk?.price_alerts || []).filter((a) => a.symbol === d.symbol && !a.fired && (a.kind === "above" || a.kind === "below")).forEach((a) => add(a.value, `🔔 ${a.kind}`, "#FFD9A0", "1 3"));
+  const vals = [...pts.map((p) => p[1]), ...lines.map((l) => l.v)], lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+  const W = 560, H = 190, padL = 6, padR = 112, t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1;
+  const X = (t) => padL + ((t - t0) / (t1 - t0 || 1)) * (W - padL - padR), Y = (v) => 10 + (1 - (v - lo) / span) * (H - 20);
+  const path = pts.map(([t, p], i) => (i ? "L" : "M") + X(t).toFixed(1) + " " + Y(p).toFixed(1)).join(" ");
+  // labels: in line order, nudged apart so close levels stay readable
+  lines.sort((a, b) => Y(a.v) - Y(b.v));
+  let lastY = -99;
+  lines.forEach((l) => { l.ly = Math.max(Y(l.v) + 3.5, lastY + 11); lastY = l.ly; });
+  const up = pts[pts.length - 1][1] >= pts[0][1];
+  return `<svg viewBox="0 0 ${W} ${H}" class="lvl" role="img" aria-label="${esc(d.symbol)} today with its levels">
+    ${lines.map((l) => `<line x1="${padL}" x2="${W - padR}" y1="${Y(l.v).toFixed(1)}" y2="${Y(l.v).toFixed(1)}" stroke="${l.color}" stroke-dasharray="${l.dash}"/><text x="${W - padR + 4}" y="${l.ly.toFixed(1)}" fill="${l.color}" font-size="10" font-family="Inter">${esc(l.label)} ${l.v >= 1000 ? Math.round(l.v) : l.v.toFixed(2)}</text>`).join("")}
+    <path d="${path}" fill="none" stroke="${up ? "var(--up)" : "var(--down)"}" stroke-width="2"/>
+    <circle cx="${X(pts[pts.length - 1][0]).toFixed(1)}" cy="${Y(pts[pts.length - 1][1]).toFixed(1)}" r="3.5" fill="${up ? "var(--up)" : "var(--down)"}"/></svg>`;
+}
 // one-tap lines for a price alert: the day's high and low, the option walls, the implied-move bounds
 function renderSuggest() {
   const d = tickerNow, im = impliedNow[d?.symbol], el = $("paSug");
@@ -1389,6 +1473,7 @@ async function loadImplied(sym) {  // returns once the panel is filled
   if (!el || $("sheet").dataset.sym !== sym) return;
   if (!r.available) { el.innerHTML = `<div class="li"><span class="muted">${esc(r.why || "Not available.")}</span></div>`; return; }
   impliedNow[sym] = r;
+  if (tickerNow?.symbol === sym && $("lvlChart")) $("lvlChart").innerHTML = levelChart(tickerNow);
   const dt = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   el.innerHTML = r.rows.map((x) => `<div class="kv"><span>By ${esc(dt(x.expiry))} <span class="sub">${x.dte}d${x.earnings ? ` · <span class="gold">earnings inside</span>` : ""}</span></span>
       <b class="num">±${x.move_pct.toFixed(1)}% <span class="sub">${fmtPx(x.low)} – ${fmtPx(x.high)}</span></b></div>`).join("")
@@ -1482,6 +1567,13 @@ async function onAct(el) {
   else if (a === "wsort") { store.set("ft.wsort", s); renderDesk(); }
   else if (a === "cat-off") { if (await deskEdit("prefs", { cats: { [s]: false } })) toast("Turned off for this phone (Desk → What reaches you to turn back on)"); }
   else if (a === "links") openLinks();
+  else if (a === "expand") { expanded.add(s); renderTape(); }
+  else if (a === "neg-in") { const v = $("negIn").value.trim(); if (v && await deskEdit("neg_add", { keyword: v })) $("negIn").value = ""; }
+  else if (a === "neg-rm") await deskEdit("neg_remove", { keyword: s });
+  else if (a === "src-mute") { const on = !(desk.prefs.mute_sources || []).includes(s); if (await deskEdit("prefs", { mute_source: s, on })) { toast(on ? `${outlet(s)} won't push to this phone` : `${outlet(s)} unmuted`); loadRecord(); } }
+  else if (a === "portalert") await deskEdit("prefs", { port_alert: +s });
+  else if (a === "hold-import") { const r = await deskEdit("hold_import", { text: $("hPaste").value }); if (r) { toast(`Imported ${r.imported} holding${r.imported === 1 ? "" : "s"}`); } }
+  else if (a === "sfilter") { searchF[el.dataset.k] = s; renderFilters(); runSearch(); }
   else if (a === "copy") { try { await navigator.clipboard.writeText(s); toast("Copied"); } catch (_) { toast(s); } }
   else if (a === "hold-add") {
     const sym = syms($("hSym").value)[0];
@@ -1500,6 +1592,7 @@ async function onAct(el) {
     if (s === "text") store.set("ft_text", store.get("ft_text") === "big" ? "" : "big");
     else if (s === "light") flip("ft_light");
     else if (s === "compact") flip("ft_compact");
+    else if (s === "beginner") { flip("ft_beginner"); renderTape(); }
     else if (s === "chime") { flip("ft_chime"); if (store.get("ft_chime") === "1") chime("HIGH"); }
     else if (s === "haptic") { flip("ft_haptic"); if (store.get("ft_haptic") === "1") navigator.vibrate?.(30); }
     else if (s === "onestock") { flip("ft_onestock"); navigator.serviceWorker?.ready.then((r) => r.active?.postMessage({ type: "onestock", on: store.get("ft_onestock") === "1" })); }
@@ -1564,11 +1657,17 @@ async function onAct(el) {
 
 // ------------------------------------------------------------------ search: tickers, companies, alerts, headlines
 let qTimer = 0;
+const searchF = { days: "30", sev: "", kind: "" };
+function renderFilters() {
+  const chip = (k, v, l) => `<button class="btn ghost small${searchF[k] === v ? " sel" : ""}" data-act="sfilter" data-k="${k}" data-s="${v}">${l}</button>`;
+  $("sFilters").innerHTML = [chip("days", "1", "Today"), chip("days", "7", "7 days"), chip("days", "30", "30 days"), chip("sev", "", "Any"), chip("sev", "HIGH", "HIGH+"),
+    chip("kind", "", "All kinds"), chip("kind", "news", "Headlines"), chip("kind", "options", "Options"), chip("kind", "radar", "Radar"), chip("kind", "insider", "Insider"), chip("kind", "confluence", "Confluence")].join("");
+}
 async function runSearch() {
   const q = $("q").value.trim();
   if (q.length < 2) { $("searchRes").innerHTML = ""; return; }
   let r;
-  try { r = await api("/api/search?q=" + encodeURIComponent(q)); } catch (_) { return; }
+  try { r = await api("/api/search?q=" + encodeURIComponent(q) + `&days=${searchF.days}&sev=${searchF.sev}&kind=${searchF.kind}`); } catch (_) { return; }
   if ($("q").value.trim() !== q) return;  // typed on
   const bare = syms(q).length === 1 && q.replace(/^\$/, "").length <= 6 ? syms(q)[0] : "";
   const co = r.companies.map((c) => `<div class="li" data-tk="${esc(c.symbol)}" role="button"><span class="sym" style="width:64px">${esc(c.symbol)}</span><div class="grow"><div style="font-weight:600">${esc(c.name)}</div><div class="sub">${esc(c.cap || "")}</div></div><span class="faint">›</span></div>`);
@@ -1978,7 +2077,7 @@ function go(name) {
   scrollTo(0, 0);
   Fx.dirty = true;
   if (name === "desk") load().catch(() => {});
-  if (name === "tape") requestAnimationFrame(placeThumb);
+  if (name === "tape") { renderTape(); requestAnimationFrame(placeThumb); }  // desk changes (holdings, taste) show on return
   Promise.resolve(LOADERS[name]?.()).catch(() => {}).then(() => requestAnimationFrame(() => Fx.observe(document.querySelector(".view.on"))));
   Fx.observe(document.querySelector(".view.on"));
 }
@@ -1991,7 +2090,8 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { markSeen(); return; }
   if (TOKEN) { navigator.clearAppBadge?.(); Promise.all([load(), loadDesk()]).then(renderAway).catch(() => {}); }
 });
-$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 220); });
+$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 220); $("sFilters").hidden = $("q").value.trim().length < 2; });
+renderFilters();
 $("q").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   const v = $("q").value.trim(), one = syms(v);

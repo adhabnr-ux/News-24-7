@@ -551,3 +551,50 @@ def week_push(card: dict[str, Any]) -> dict[str, Any] | None:
         return None
     return {"id": f"wk-{card['week_of']}", "title": "🗓 Your week", "body": "\n".join(lines)[:600], "severity": "MEDIUM",
             "kind": "system", "tickers": [], "tag": f"wk-{card['week_of']}", "ts": time.time(), "open": "/app/#a=desk"}  # fmt: skip
+
+
+# --------------------------------------------------------------------------- your day in a paragraph
+
+
+def day_summary(engine: Engine, device: str, now: float | None = None) -> str:
+    """This phone's day in plain English, from the same numbers as the report card and the close."""
+    from .dossier import breadth, portfolio, regime, sectors
+
+    now = now or time.time()
+    parts = []
+    card = report_card(engine, device, now)
+    if card and card["watch"]["n"]:
+        w = card["watch"]
+        s = f"{w['up']} of your {w['n']} watched stocks rose"
+        if w["best"]:
+            s += f"; {w['best']['symbol']} led ({w['best']['chg']:+.1f}%)"
+            why = engine.find_catalysts([w["best"]["symbol"]], now, overnight=True)
+            if why:
+                s += f" on “{why[0]['title'][:90]}”"
+        if w["worst"] and w["worst"]["chg"] < 0:
+            s += f", {w['worst']['symbol']} lagged ({w['worst']['chg']:+.1f}%)"
+        parts.append(s + ".")
+    pf = portfolio(engine, device, now)
+    if pf["rows"] and pf["day_pct"] is not None:
+        parts.append(
+            f"Your portfolio is {pf['day_pct']:+.1f}% today ({'+' if pf['day_pnl'] >= 0 else '−'}${abs(pf['day_pnl']):,.0f})."
+        )
+    b = breadth(engine, now, max_age_s=6 * 3600)
+    if b.get("n"):
+        spy = engine.price_of("SPY", 6 * 3600, now=now)
+        r = regime(engine, now)
+        lead = (sectors(engine, now, max_age_s=6 * 3600)["rows"] or [None])[0]
+        s = f"The market: {b['pct_up']:.0f}% of stocks up"
+        if spy and spy[2] is not None:
+            s = f"The market: SPY {spy[2]:+.1f}%, {b['pct_up']:.0f}% of stocks up"
+        if r["label"] not in ("unknown", "mixed"):
+            s += f", {r['label']}"
+        if lead:
+            s += f", {lead['sector']} led ({lead['chg']:+.1f}%)"
+        parts.append(s + ".")
+    if card and card["alerts"]["graded"]:
+        a = card["alerts"]
+        parts.append(
+            f"Of the alerts on your stocks graded at the close, {a['right']} of {a['graded']} went their way."
+        )
+    return " ".join(parts)
