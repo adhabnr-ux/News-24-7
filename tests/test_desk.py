@@ -110,7 +110,13 @@ def test_watchlist_prefs_alerts_and_tracked_calls(tmp_path):
     assert (
         len(v["tracked"]) == 1
         and v["closed"][0]["pnl_pct"] == 5.0
-        and v["record"] == {"closed": 1, "wins": 1, "avg_pnl_pct": 5.0}
+        and v["record"]
+        == {
+            "closed": 1,
+            "wins": 1,
+            "avg_pnl_pct": 5.0,
+            "by_tag": [{"tag": "untagged", "n": 1, "wins": 1, "avg": 5.0}],
+        }
     )
     with pytest.raises(ValueError, match="unknown action"):
         d.apply(DEV, "launch_rockets", {})

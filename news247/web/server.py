@@ -109,6 +109,12 @@ class WebServer:
         app.router.add_get("/api/implied/{sym}", self.api_implied)
         app.router.add_get("/api/peers/{sym}", self.api_peers)
         app.router.add_get("/api/report", self.api_report)
+        app.router.add_get("/api/gaps", self.api_gaps)
+        app.router.add_get("/api/sector", self.api_sector)
+        app.router.add_get("/api/halts", self.api_halts)
+        app.router.add_get("/api/worth", self.api_worth)
+        app.router.add_get("/api/earnings/{sym}", self.api_earnings)
+        app.router.add_get("/api/calendar.ics", self.api_ics)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
         app.router.add_post("/api/push/test", self.api_push_test)
@@ -713,6 +719,53 @@ class WebServer:
         if not dev:
             raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
         return _json(report_card(self.engine, dev) or {})
+
+    async def api_gaps(self, request: web.Request) -> web.Response:
+        from ..dossier import gaps
+
+        try:
+            pct = max(1.0, min(50.0, float(request.query.get("min", "3"))))
+        except ValueError:
+            pct = 3.0
+        return _json(gaps(self.engine, min_pct=pct))
+
+    async def api_sector(self, request: web.Request) -> web.Response:
+        from ..dossier import sector_detail
+
+        return _json(sector_detail(self.engine, request.query.get("name", "")[:60]))
+
+    async def api_halts(self, request: web.Request) -> web.Response:
+        from ..dossier import halts_board
+
+        return _json(halts_board(self.engine))
+
+    async def api_worth(self, request: web.Request) -> web.Response:
+        """Peers of this phone's watchlist that are doing something today."""
+        from ..dossier import worth_a_look
+
+        dev = self._device(request)
+        return _json({"rows": worth_a_look(self.engine, dev) if dev else []})
+
+    async def api_earnings(self, request: web.Request) -> web.Response:
+        from ..desk import clean_symbol
+        from ..personal import earnings_reactions
+
+        sym = clean_symbol(request.match_info["sym"])
+        if not sym:
+            raise web.HTTPBadRequest(text="not a symbol")
+        return _json(await earnings_reactions(self.engine, sym))
+
+    async def api_ics(self, request: web.Request) -> web.Response:
+        """The catalyst calendar (and this phone's earnings dates) for a calendar app to subscribe to:
+        ``webcal://host/api/calendar.ics?token=…&device=…``."""
+        from ..personal import calendar_ics
+
+        return web.Response(
+            text=calendar_ics(self.engine, self._device(request)),
+            content_type="text/calendar",
+            charset="utf-8",
+            headers={"Content-Disposition": 'inline; filename="foretape.ics"', "Cache-Control": "no-store"},
+        )
 
     async def api_record(self, request: web.Request) -> web.Response:
         from ..dossier import track_record

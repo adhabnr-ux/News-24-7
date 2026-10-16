@@ -462,7 +462,7 @@ async function loadRadar() {
 // the radar board is live: while Watch is on screen it refreshes every 30 s
 setInterval(() => { if (tab === "watch" && !document.hidden && !sheetOpen) loadRadar(); }, 30000);
 async function loadWatch() {
-  loadRadar(); loadSmart(); loadSectors();
+  loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -631,12 +631,13 @@ document.addEventListener("click", (e) => {
     try { localStorage.setItem("ft.tape", tapeFilter); } catch (_) { /* private mode */ }
     renderTape(); return;
   }
-  const act = e.target.closest("[data-act]");
-  if (act) { onAct(act); return; }
-  const tk = e.target.closest("[data-tk]");
-  if (tk && !e.target.closest("a")) { openTicker(tk.dataset.tk); return; }
-  const el = e.target.closest("[data-id]");
-  if (el && !e.target.closest("a")) openSheet(el.dataset.id);
+  // the nearest target wins: a ticker chip inside a tappable card opens the ticker, not the card
+  const el = e.target.closest("[data-act],[data-tk],[data-id]");
+  if (!el) return;
+  if (el.dataset.act) { onAct(el); return; }
+  if (e.target.closest("a")) return;  // links open their page
+  if (el.dataset.tk) openTicker(el.dataset.tk);
+  else openSheet(el.dataset.id);
 });
 
 // ------------------------------------------------------------------ your desk (this phone's, kept on the server)
@@ -690,12 +691,14 @@ function renderDesk() {
   $("dTracked").innerHTML = (tr.length ? tr.map((t) => `<div class="li"><span class="sym" style="width:64px" data-tk="${esc(t.symbol)}" role="button">${esc(t.symbol)}</span>
       <div class="grow"><div><span class="${t.direction === "long" ? "pos" : "neg"}">${t.direction === "long" ? "▲ Long" : "▼ Short"}</span> from ${fmtPx(t.entry)} · now ${fmtPx(t.price)}</div>
       <div class="sub">${ago(t.ts)} ago${t.alert_id ? ` · <span data-id="${esc(t.alert_id)}" role="button" class="lnk">from an alert</span>` : ""}${t.note ? " · " + esc(t.note) : ""}${levelsText(t)}</div></div>
-      <span class="chg num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</span><div class="col"><button class="btn ghost small" data-act="tr-levels" data-s="${esc(t.id)}">Levels</button><button class="btn ghost small" data-act="tr-close" data-s="${esc(t.id)}">Close</button></div></div>`).join("")
+      <span class="chg num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</span><div class="col"><button class="btn ghost small" data-act="tr-levels" data-s="${esc(t.id)}">Levels</button><button class="btn ghost small" data-act="tr-journal" data-s="${esc(t.id)}">Journal</button><button class="btn ghost small" data-act="tr-close" data-s="${esc(t.id)}">Close</button></div></div>`).join("")
     : `<div class="li"><span class="muted">No open calls. Tap ▲ Track on an alert or a stock's page: it takes the live price as entry and follows the P&amp;L, so you learn which of your reads actually work. Paper only.</span></div>`)
     + (rec.closed ? `<div class="kv"><span>Closed calls</span><b class="num">${rec.closed} · ${rec.wins} won (${Math.round(rec.wins / rec.closed * 100)}%) · avg <span class="${cls(rec.avg_pnl_pct)}">${pct(rec.avg_pnl_pct)}</span></b></div>`
       + desk.closed.slice(0, 8).map((c) => `<div class="li done"><span class="sym" style="width:64px" data-tk="${esc(c.symbol)}" role="button">${esc(c.symbol)}</span>
-        <div class="grow"><div>${c.direction === "long" ? "▲" : "▼"} ${fmtPx(c.entry)} → ${fmtPx(c.exit)}</div><div class="sub">closed ${ago(c.closed)} ago · held ${dur(c.closed - c.ts).replace(/ \d+s$/, "")}</div></div>
-        <span class="chg num ${cls(c.pnl_pct)}">${pct(c.pnl_pct)}</span></div>`).join("") : "");
+        <div class="grow"><div>${c.direction === "long" ? "▲" : "▼"} ${fmtPx(c.entry)} → ${fmtPx(c.exit)}</div><div class="sub">closed ${ago(c.closed)} ago · held ${dur(c.closed - c.ts).replace(/ \d+s$/, "")}${(c.tags || []).length ? " · " + c.tags.map((x) => "#" + esc(x)).join(" ") : ""}</div>${c.lesson ? `<div class="sub gold">${esc(c.lesson)}</div>` : ""}</div>
+        <span class="chg num ${cls(c.pnl_pct)}">${pct(c.pnl_pct)}</span><button class="x" data-act="tr-journal" data-s="${esc(c.id)}" aria-label="Journal">✎</button></div>`).join("")
+      + (rec.by_tag?.length > 1 || rec.by_tag?.[0]?.tag !== "untagged" ? `<div class="sub" style="padding:12px 0 4px">By tag</div>` + rec.by_tag.map((g) => `<div class="kv"><span>#${esc(g.tag)}</span><b class="num">${g.wins} of ${g.n} won · avg <span class="${cls(g.avg)}">${pct(g.avg)}</span></b></div>`).join("") : "") : "");
+  renderKeywords();
   const pr = desk.prefs, q = pr.quiet || {};
   $("dPrefs").innerHTML = `<div class="sub" style="padding-top:12px">What may push to this phone</div>
     <div class="row" style="padding:10px 0 4px">${CATS.map(([k, l]) => `<button class="btn ghost small${pr.cats[k] !== false ? " sel" : ""}" data-act="cat" data-s="${k}" aria-pressed="${pr.cats[k] !== false}">${l}</button>`).join("")}</div>
@@ -716,6 +719,27 @@ async function loadRecord() {
       + `<div class="sub" style="padding:10px 0 14px">${esc(r.note)} Hit = the stock went the alert's way.</div>`
       : `<div class="li"><span class="muted">Every alert is graded an hour later and at its session's close, against its own reference price. The first grades land after the next session; this fills in on its own.</span></div>`;
   } catch (_) { $("dRecord").innerHTML = `<div class="li"><span class="muted">Track record unavailable.</span></div>`; }
+}
+
+const icsUrl = (scheme) => `${scheme === "webcal" ? "webcal:" : location.protocol}//${location.host}/api/calendar.ics?token=${encodeURIComponent(TOKEN)}&device=${encodeURIComponent(DEVICE)}`;
+// keywords: your own words, pushed to this phone when a scored headline names one
+function renderKeywords() {
+  if (!desk) return;
+  const kws = desk.keywords || [], hits = desk.kw_hits || [];
+  $("dKeys").innerHTML = `<div class="addrow"><input id="kwIn" class="key" placeholder="A word or phrase: tariff, FDA, buyback, Jensen Huang" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="kw-in">Add</button></div>
+    ${kws.length ? `<div class="row" style="padding:0 0 12px">${kws.map((k) => `<span class="kwc">${esc(k.k)}<button class="x" data-act="kw-rm" data-s="${esc(k.k)}" aria-label="Remove">✕</button></span>`).join("")}</div>` : `<div class="sub" style="padding:0 0 12px">Any scored headline that names one is pushed to this phone, even under the alert line (once per story; not in quiet hours; not when it's only about stocks you muted).</div>`}
+    ${hits.length ? `<div class="sub" style="padding:4px 0">Recent hits</div>` + hits.slice(0, 8).map((h) => `<div class="li"><div class="grow"><div class="sub">🔑 ${esc(h.k)} · ${esc(outlet(h.source))} · ${ago(h.ts)} ago</div><a href="${esc(h.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(h.title)}</a></div></div>`).join("") : ""}`;
+  const muted = Object.entries(desk.muted || {});
+  $("dMuted").hidden = !muted.length;
+  $("dMuted").innerHTML = muted.map(([sym, until]) => `<div class="kv"><span>🔕 <span data-tk="${esc(sym)}" role="button">${esc(sym)}</span> <span class="sub">for ${esc(dur(until - Date.now() / 1000).replace(/ \d+s$/, ""))} more</span></span><b><button class="btn ghost small" data-act="unmute" data-s="${esc(sym)}">Unmute</button></b></div>`).join("");
+}
+async function loadWorth() {
+  try {
+    const r = await api("/api/worth");
+    $("dWorthWrap").hidden = !r.rows.length;
+    $("dWorth").innerHTML = r.rows.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span>
+      <div class="grow"><div>${esc(x.name)}</div><div class="sub">${x.why.map(esc).join(" · ")} · peer of ${esc(x.peer_of)}</div></div><span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("");
+  } catch (_) { /* optional panel */ }
 }
 
 // the Desk's "Today": this phone's day so far (also pushed at 16:05 ET as the report card)
@@ -783,7 +807,8 @@ function tickerHTML(d) {
     <button class="btn ghost small" data-act="pa-form">🔔 Price alert</button>
     <button class="btn ghost small" data-act="track" data-s="${sym}" data-dir="long">▲ Track</button>
     <button class="btn ghost small" data-act="track" data-s="${sym}" data-dir="short">▼ Short</button>
-    <button class="btn ghost small" data-act="share-t" data-s="${sym}" data-title="${esc(d.symbol + (d.name ? " · " + d.name : ""))}">Share ↗</button></div>
+    <button class="btn ghost small" data-act="share-t" data-s="${sym}" data-title="${esc(d.symbol + (d.name ? " · " + d.name : ""))}">Share ↗</button>
+    ${(desk?.muted || {})[d.symbol] > Date.now() / 1000 ? `<button class="btn ghost small sel" data-act="unmute" data-s="${sym}">🔕 Muted · unmute</button>` : `<button class="btn ghost small" data-act="mute" data-s="${sym}" data-h="4">🔕 Mute 4h</button>`}</div>
     <div class="panel glass padded paform" id="paForm" hidden>
       <div class="addrow"><select id="paKind"><option value="above">Above $</option><option value="below">Below $</option><option value="move">Moves ±% today</option><option value="trail">Falls % from high</option></select>
       <input id="paVal" class="key" inputmode="decimal" placeholder="${q ? q.price.toFixed(2) : "value"}"><button class="btn ghost small sel" data-act="pa-save" data-s="${sym}">Set</button></div>
@@ -819,7 +844,8 @@ function tickerHTML(d) {
     ${d.market_cap ? `<div class="kv"><span>Market cap</span><b class="num">${esc(d.cap)} · ${esc(d.band)}</b></div>` : ""}
     ${d.industry || d.sector ? `<div class="kv"><span>Industry</span><b>${esc(d.industry || d.sector)}</b></div>` : ""}
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
-  const implied = `<h4>What options price in</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>`;
+  const implied = `<h4>What options price in</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
+    <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
   return [head + relLine + earnLine, acts, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0;
@@ -833,10 +859,23 @@ async function openTicker(sym) {
   if (n !== tickerReq) return;  // a newer tap won
   showSheet(tickerHTML(d));
   $("sheet").dataset.sym = d.symbol;
-  loadImplied(d.symbol);
+  loadImplied(d.symbol).finally(() => loadEarnings(d.symbol));
+}
+// the last reports: EPS vs the estimate and the two-day move around each, against what options price now
+async function loadEarnings(sym) {
+  let r;
+  try { r = await api("/api/earnings/" + encodeURIComponent(sym)); } catch (_) { r = { available: false, why: "Couldn't read it." }; }
+  const el = $("pastEarn");
+  if (!el || $("sheet").dataset.sym !== sym) return;
+  if (!r.available) { el.innerHTML = `<div class="li"><span class="muted">${esc(r.why || "Not available.")}</span></div>`; return; }
+  const im = r.implied;
+  el.innerHTML = (r.avg_abs_move != null ? `<div class="kv"><span>Average move on a report (2 days)</span><b class="num">±${r.avg_abs_move.toFixed(1)}% · beat ${r.beat} of ${r.reported}</b></div>` : "")
+    + (im ? `<div class="kv"><span>Options price for the next one</span><b class="num">±${im.move_pct.toFixed(1)}% <span class="${im.ratio > 1.15 ? "neg" : im.ratio < 0.85 ? "pos" : ""}">(${im.ratio}× its usual move)</span></b></div>` : "")
+    + r.rows.map((x) => `<div class="kv"><span>${esc(x.quarter || x.date)} <span class="sub">${esc(prettyDate(x.date))}</span></span><b class="num">${x.surprise_pct != null ? `<span class="${cls(x.surprise_pct)}">EPS ${x.surprise_pct > 0 ? "+" : ""}${x.surprise_pct.toFixed(1)}% vs est</span> · ` : ""}<span class="${cls(x.move_pct)}">${x.move_pct != null ? pct(x.move_pct) : "—"}</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">The move is the close before the report day to the close after it. Nasdaq's earnings table, Yahoo daily closes.${im ? " Above 1× means options price a bigger move than usual." : ""}</div>`;
 }
 // the at-the-money straddle by expiry: the move the options market is paying for
-async function loadImplied(sym) {
+async function loadImplied(sym) {  // returns once the panel is filled
   let r;
   try { r = await api("/api/implied/" + encodeURIComponent(sym)); } catch (_) { r = { available: false, why: "Couldn't read it." }; }
   const el = $("implied");
@@ -878,7 +917,24 @@ async function onAct(el) {
     const r = await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid || "" });
     if (r) { const t = r.tracked[r.tracked.length - 1]; toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s} from ${fmtPx(t?.entry)} · on your desk`); refreshTickerSheet(); }
   }
-  else if (a === "tr-close") { const r = await deskEdit("track_close", { id: s }); const c = r?.closed?.[0]; if (c) toast(`Closed ${c.symbol} ${pct(c.pnl_pct)}`); }
+  else if (a === "tr-close") {
+    const lesson = prompt("Closing at the live price. A lesson for your journal? (optional)", "");
+    if (lesson == null) return;
+    const r = await deskEdit("track_close", { id: s, lesson }); const c = r?.closed?.[0]; if (c) toast(`Closed ${c.symbol} ${pct(c.pnl_pct)}`);
+  }
+  else if (a === "tr-journal") {
+    const t = [...desk.tracked, ...desk.closed].find((x) => x.id === s);
+    if (!t) return;
+    const v = prompt(`${t.symbol}: your thesis or notes. Add #tags (#earnings #options #momentum…) to read your record by tag.`, t.note || "");
+    if (v != null && await deskEdit("track_journal", { id: s, note: v })) toast("Journal saved");
+  }
+  else if (a === "kw-in") { const v = $("kwIn").value.trim(); if (v && await deskEdit("kw_add", { keyword: v })) $("kwIn").value = ""; }
+  else if (a === "kw-rm") await deskEdit("kw_remove", { keyword: s });
+  else if (a === "mute") { if (await deskEdit("mute", { symbol: s, hours: +el.dataset.h || 4 })) { toast(`🔕 ${s} muted on this phone for ${el.dataset.h || 4}h`); refreshTickerSheet(); } }
+  else if (a === "unmute") { await deskEdit("unmute", { symbol: s }); refreshTickerSheet(); }
+  else if (a === "ics") { location.href = icsUrl("webcal"); }
+  else if (a === "ics-copy") { try { await navigator.clipboard.writeText(icsUrl("https")); toast("Calendar link copied. In Google Calendar: Other calendars → From URL."); } catch (_) { toast(icsUrl("https")); } }
+  else if (a === "sector") openSector(s);
   else if (a === "cat") { const on = desk.prefs.cats[s] !== false; await deskEdit("prefs", { cats: { [s]: !on } }); }
   else if (a === "wpush") await deskEdit("prefs", { watch_push: !desk.prefs.watch_push });
   else if (a === "floor") await deskEdit("prefs", { min_sev: s || null });
@@ -919,6 +975,39 @@ async function runSearch() {
 }
 
 // ------------------------------------------------------------------ smart money + market map (the Watch tab)
+// the gap board: every $300M+ company moving 3%+ on the whole-market tape, with the reason when there is one
+function gapRow(x) {
+  return `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span>
+    <div class="grow"><div class="rname">${esc(x.name)}</div><div class="sub">${esc(x.cap)} ${esc(x.band)}${x.sector ? " · " + esc(x.sector) : ""}</div>
+    <div class="sub">${x.why ? `<a href="${esc(x.why.url)}" target="_blank" rel="noopener" class="rnews">${esc(x.why.title)}</a> <span class="faint">· ${esc(outlet(x.why.source))}, ${esc(x.why.age)} ago</span>` : `<span class="rnone">No headline found</span>`}</div></div>
+    <span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`;
+}
+async function loadGaps() {
+  try {
+    const r = await api("/api/gaps");
+    $("gapSub").textContent = r.phase === "pre-market" ? "pre-market gappers · $300M+" : r.phase === "closed" ? "last session · $300M+" : "moving 3%+ today · $300M+";
+    const both = [...r.up.slice(0, 10), ...r.down.slice(0, 10)];
+    $("gaps").innerHTML = both.length ? (r.up.length ? `<div class="sub sh">Up</div>${r.up.slice(0, 10).map(gapRow).join("")}` : "") + (r.down.length ? `<div class="sub sh">Down</div>${r.down.slice(0, 10).map(gapRow).join("")}` : "")
+      : `<div class="li"><span class="muted">Nothing worth $300M+ is moving 3% or more on the live tape right now.</span></div>`;
+  } catch (_) { $("gaps").innerHTML = ""; }
+}
+async function loadHalts() {
+  try {
+    const r = await api("/api/halts");
+    $("haltsWrap").hidden = !r.rows.length;
+    $("halts").innerHTML = r.rows.slice(0, 15).map((x) => `<div class="li" ${x.symbol ? `data-tk="${esc(x.symbol)}" role="button"` : ""}><span class="sym" style="width:64px">${esc(x.symbol || "MKT")}</span>
+      <div class="grow"><div>${esc(x.reason || x.title)} <span class="faint">${esc(x.code)}</span></div><div class="sub">halted ${ago(x.halted)} ago${x.market ? " · " + esc(x.market) : ""}</div></div>
+      <span class="chg" style="width:auto">${x.resume ? `<small class="pos">resumes ${esc(x.resume)}</small>` : `<small class="faint">halted</small>`}</span></div>`).join("");
+  } catch (_) { /* optional */ }
+}
+// one sector of the market map: its industries and every stock in it
+async function openSector(name) {
+  let r;
+  try { r = await api("/api/sector?name=" + encodeURIComponent(name)); } catch (_) { return; }
+  showSheet(`<div class="meta"><span class="src">Market map · ${r.n} stocks · $300M+</span></div><h2>${esc(name)}</h2>
+    <h4>Industries</h4><div class="panel glass">${r.industries.map((x) => `<div class="kv"><span>${esc(x.industry)} <span class="sub">${x.up}/${x.n} up</span></span><b class="num ${cls(x.chg)}">${pct(x.chg)}</b></div>`).join("")}</div>
+    <h4>Every stock, best to worst</h4><div class="panel glass">${r.stocks.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span><div class="grow"><div>${esc(x.name)}</div><div class="sub">${esc(x.cap)} · ${esc(x.industry)}</div></div>${barHTML(x.chg)}<span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("")}</div>`);
+}
 const SM_ICON = { options: "◈", insider: "✦", ignition: "⚡" };
 async function loadSmart() {
   try {
@@ -936,7 +1025,7 @@ async function loadSectors() {
     const max = Math.max(1, ...r.rows.map((x) => Math.abs(x.chg)));
     $("sectors").innerHTML = r.rows.length ? r.rows.map((x) => {
       const k = Math.min(1, Math.abs(x.chg) / max);
-      return `<div class="smap glass" style="--h:${x.chg >= 0 ? "150" : "8"};--a:${(0.1 + 0.35 * k).toFixed(2)}">
+      return `<div class="smap glass" data-act="sector" data-s="${esc(x.sector)}" role="button" style="--h:${x.chg >= 0 ? "150" : "8"};--a:${(0.1 + 0.35 * k).toFixed(2)}">
         <div class="sname">${esc(x.sector)}</div><div class="num big ${cls(x.chg)}">${pct(x.chg)}</div>
         <div class="sub">${x.up}/${x.n} up</div>
         <div class="tks">${x.leaders.slice(0, 2).map((l) => `<span class="tk" data-tk="${esc(l.symbol)}" role="button">${esc(l.symbol)} <small class="${cls(l.chg)}">${pct(l.chg)}</small></span>`).join("")}
@@ -963,6 +1052,11 @@ function connect() {
     if (!document.hidden && tab !== "tape" && (a.severity === "HIGH" || a.severity === "CRITICAL")) {
       toast((a.edge?.radar ? "◉ " : a.severity === "CRITICAL" ? "🔴 " : "🟠 ") + a.title.slice(0, 140), a.id);
     }
+  });
+  es.addEventListener("kw_hit", (e) => {
+    const d = JSON.parse(e.data);
+    if (d.device !== DEVICE) return;
+    toast(`🔑 ${d.k}: ${d.title}`.slice(0, 160)); loadDesk();
   });
   es.addEventListener("price_alert", (e) => {
     const d = JSON.parse(e.data);
@@ -1198,7 +1292,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -1255,6 +1349,8 @@ $("unlock").onclick = async () => {
   try { await start(); } catch (e) { toast("That key didn't work"); }
 };
 function route() {
+  const q = location.hash.match(/q=([^&]+)/);
+  if (q) { go("tape"); $("q").value = decodeURIComponent(q[1]); runSearch(); setTimeout(() => $("q").scrollIntoView({ block: "start", behavior: "smooth" }), 300); return; }
   const t = location.hash.match(/t=\$?([A-Za-z][A-Za-z0-9.-]{0,9})/);
   if (t) return openTicker(t[1]);
   const m = location.hash.match(/a=([\w-]+)/);

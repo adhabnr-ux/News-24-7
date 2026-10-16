@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import math
+import re
 import statistics as st
 import time
 from datetime import datetime, timedelta
@@ -628,3 +629,134 @@ def relative_strength(
     else:
         out["read"] = "In line"
     return out
+
+
+# --------------------------------------------------------------------------- gaps, sector drill-down, halts
+
+
+def gaps(
+    engine: Engine, now: float | None = None, min_pct: float = 3.0, max_age_s: float = 900, limit: int = 25
+) -> dict[str, Any]:
+    """Every company worth $300M+ moving ``min_pct``% or more on the whole-market tape, each with
+    the headline behind it (overnight news counts: it's the reason for a morning gap). Before the
+    open these are the pre-market gappers."""
+    now = now or time.time()
+    up, down = [], []
+    for sym, q in list(engine.live_quotes.quotes.items()):
+        if now - q.ts > max_age_s or q.change_pct is None or abs(q.change_pct) < min_pct:
+            continue
+        li = engine.universe.get(sym)
+        if li is None or not li.common or (li.market_cap or 0) < 300e6:
+            continue
+        row = {"symbol": sym, "name": li.name, "cap": li.cap_label, "band": li.band, "sector": li.sector,
+               "price": q.price, "chg": round(q.change_pct, 2)}  # fmt: skip
+        (up if q.change_pct > 0 else down).append(row)
+    up.sort(key=lambda r: -r["chg"])
+    down.sort(key=lambda r: r["chg"])
+    up, down = up[:limit], down[:limit]
+    for r in up + down:
+        why = engine.find_catalysts([r["symbol"]], now, overnight=True)
+        r["why"] = (
+            {"title": why[0]["title"], "source": why[0]["source"], "url": why[0]["url"], "age": why[0]["age"]}
+            if why
+            else None
+        )
+    status = engine.calendar.market_status(now)
+    return {"up": up, "down": down, "phase": status.get("phase"), "market": status, "min_pct": min_pct}
+
+
+def sector_detail(
+    engine: Engine, name: str, now: float | None = None, max_age_s: float = 900
+) -> dict[str, Any]:
+    """One sector of the market map: each industry's cap-weighted move and every stock in it."""
+    now = now or time.time()
+    stocks = []
+    for sym, q in list(engine.live_quotes.quotes.items()):
+        if now - q.ts > max_age_s or q.change_pct is None:
+            continue
+        li = engine.universe.get(sym)
+        if li is None or li.sector != name or not li.common or (li.market_cap or 0) < 300e6:
+            continue
+        stocks.append({"symbol": sym, "name": li.name, "industry": li.industry or "Other", "cap": li.cap_label,
+                       "mcap": li.market_cap, "chg": round(q.change_pct, 2)})  # fmt: skip
+    inds: dict[str, list[dict[str, Any]]] = {}
+    for s in stocks:
+        inds.setdefault(s["industry"], []).append(s)
+    industries = []
+    for ind, xs in inds.items():
+        cap = sum(x["mcap"] for x in xs)
+        industries.append({"industry": ind, "n": len(xs), "chg": round(sum(x["chg"] * x["mcap"] for x in xs) / cap, 2),
+                           "up": sum(1 for x in xs if x["chg"] > 0)})  # fmt: skip
+    industries.sort(key=lambda r: -r["chg"])
+    stocks.sort(key=lambda r: -r["chg"])
+    for s in stocks:
+        s.pop("mcap")
+    return {"sector": name, "industries": industries, "stocks": stocks[:80], "n": len(stocks)}
+
+
+HALT_TITLE = re.compile(
+    r"— (.+?) \[([A-Z0-9]+)\]\s*$"
+)  # sources/halts.py: "TRADING HALT SYM (Name) — Label [CODE]"
+
+
+def halts_board(engine: Engine, now: float | None = None, hours: float = 24) -> dict[str, Any]:
+    """Trading halts from Nasdaq's feed (all US exchanges), newest first, with the reason and the
+    resumption time when the feed gave one."""
+    now = now or time.time()
+    rows = []
+    for it in engine.storage.items_from("nasdaq-halts", since=now - hours * 3600, limit=60):
+        summ = it.get("summary") or ""
+        m = HALT_TITLE.search(it["title"])
+        mk = re.search(r"Market: ([^.]*)\.", summ)
+        resume = re.search(r"Resumes ([^E]+?) ET", summ)
+        rows.append({"symbol": (it.get("tickers") or [""])[0], "title": it["title"], "code": m.group(2) if m else "",
+                     "reason": m.group(1) if m else "", "market": mk.group(1) if mk else "",
+                     "halted": it.get("published") or it["detected"], "resume": resume.group(1).strip() if resume else "",
+                     "url": it.get("url")})  # fmt: skip
+    return {"rows": rows, "hours": hours}
+
+
+def worth_a_look(
+    engine: Engine, device: str, now: float | None = None, limit: int = 8
+) -> list[dict[str, Any]]:
+    """Stocks next to yours that are doing something today: peers of your watchlist (not on it)
+    that moved 3%+, are on the radar, or drew options flow or a confluence alert today."""
+    now = now or time.time()
+    p = engine.desk.profiles.get(device) or {}
+    mine = set(p.get("watchlist") or [])
+    if not mine:
+        return []
+    radar = engine.radar.board if engine.radar is not None else {}
+    flow = (
+        {r["symbol"]: r for r in engine.options_radar.snapshot(200)}
+        if engine.options_radar is not None
+        else {}
+    )
+    day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    conf = {
+        t for a in engine.storage.recent_alerts(200, since=day0) if a.get("kind") == "confluence" for t in a.get("tickers") or []
+    }  # fmt: skip
+    seen: dict[str, dict[str, Any]] = {}
+    for sym in list(mine)[:15]:
+        for r in peers(engine, sym, now, limit=10)["rows"]:
+            s = r["symbol"]
+            if s in mine or s in seen:
+                continue
+            why, score = [], 0.0
+            if s in conf:
+                why.append("confluence alert")
+                score += 4
+            f = flow.get(s)
+            if f and (f.get("detected") or 0) >= day0:
+                why.append("options flow")
+                score += 2
+            rd = radar.get(s)
+            if rd and (rd.get("ignition") or rd.get("flagged")):
+                why.append("on the radar")
+                score += 2
+            if r["chg"] is not None and abs(r["chg"]) >= 3:
+                why.append(f"{r['chg']:+.1f}% today")
+                score += abs(r["chg"]) / 3
+            if why:
+                seen[s] = {**r, "peer_of": sym, "why": why, "score": round(score, 2)}
+    return sorted(seen.values(), key=lambda r: -r["score"])[:limit]

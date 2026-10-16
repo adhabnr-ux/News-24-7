@@ -14,6 +14,7 @@ and (for any stock) the move the options market is pricing.
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
@@ -245,3 +246,173 @@ def report_push(card: dict[str, Any]) -> dict[str, Any] | None:
         "id": f"eod-{card['date']}", "title": "📋 Your day", "body": "\n".join(lines)[:600], "severity": "MEDIUM",
         "kind": "system", "tickers": [], "tag": f"eod-{card['date']}", "ts": time.time(), "open": "/app/#a=desk",
     }  # fmt: skip
+
+
+# --------------------------------------------------------------------------- earnings reactions
+
+SURPRISE_URL = "https://api.nasdaq.com/api/company/{symbol}/earnings-surprise"
+EARNINGS_TTL_S = 12 * 3600.0
+
+
+def _num(v: Any) -> float | None:
+    try:
+        return float(str(v).replace("$", "").replace("%", "").replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_surprises(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Nasdaq's earnings-surprise table: one row per reported quarter, newest first."""
+    rows = ((((data or {}).get("data") or {}).get("earningsSurpriseTable") or {}).get("rows")) or []
+    out = []
+    for r in rows:
+        try:
+            d = datetime.strptime(str(r.get("dateReported", "")).strip(), "%m/%d/%Y").date()
+        except ValueError:
+            continue
+        out.append({
+            "date": d.isoformat(), "quarter": str(r.get("fiscalQtrEnd") or ""),
+            "eps": _num(r.get("eps")), "consensus": _num(r.get("consensusForecast")),
+            "surprise_pct": _num(r.get("percentageSurprise")),
+        })  # fmt: skip
+    return sorted(out, key=lambda x: x["date"], reverse=True)
+
+
+def reactions(reports: list[dict[str, Any]], bars: list[tuple[float, float]]) -> list[dict[str, Any]]:
+    """Each report's two-day move: the close before the report day to the close after it. That
+    window holds the reaction whether the report came before the open or after the close."""
+    days = [(datetime.fromtimestamp(t, ET).date().isoformat(), p) for t, p in bars]
+    out = []
+    for r in reports:
+        before = [p for d, p in days if d < r["date"]]
+        after = [p for d, p in days if d > r["date"]]
+        move = round((after[0] / before[-1] - 1.0) * 100.0, 2) if before and after and before[-1] else None
+        out.append({**r, "move_pct": move})
+    return out
+
+
+async def earnings_reactions(engine: Engine, sym: str, now: float | None = None) -> dict[str, Any]:
+    """How the stock moved on its last reports (Nasdaq's surprise table + Yahoo daily closes),
+    against what options price in for the next one (when the implied move was read)."""
+    from .camillo import NASDAQ_HEADERS
+    from .market.prices import CHART_URL, parse_chart
+
+    now = now or time.time()
+    hit = engine.earnings_cache.get(sym)
+    if hit and now - hit[0] < EARNINGS_TTL_S:
+        return hit[1]
+    try:
+        resp = await engine.http.get(SURPRISE_URL.format(symbol=sym), headers=NASDAQ_HEADERS, timeout_s=20)
+        reports = parse_surprises(resp.json())
+    except Exception as exc:  # noqa: BLE001 - an answer, not a crash
+        return {
+            "symbol": sym,
+            "available": False,
+            "why": f"Nasdaq's earnings table didn't answer ({type(exc).__name__}).",
+        }
+    if not reports:
+        out: dict[str, Any] = {"symbol": sym, "available": False, "why": "No reported quarters on Nasdaq."}
+    else:
+        try:
+            resp = await engine.http.get(
+                CHART_URL.format(symbol=sym), params={"range": "2y", "interval": "1d"}, timeout_s=20
+            )
+            bars = (parse_chart(resp.json()) or {}).get("points") or []
+        except Exception:  # noqa: BLE001 - the table alone is still worth showing
+            bars = []
+        rows = reactions(reports, bars)
+        moves = [abs(r["move_pct"]) for r in rows if r["move_pct"] is not None]
+        beats = [r for r in rows if r["surprise_pct"] is not None]
+        out = {
+            "symbol": sym, "available": True, "rows": rows,
+            "avg_abs_move": round(sum(moves) / len(moves), 2) if moves else None,
+            "beat": sum(1 for r in beats if r["surprise_pct"] > 0), "reported": len(beats),
+            "next": None,
+        }  # fmt: skip
+        book = getattr(engine.trends, "earnings", None) if engine.trends is not None else None
+        if book is not None:
+            out["next"] = book.lookup(sym)
+        implied = (engine.implied_cache.get(sym) or (0, {}))[1]
+        nxt = next((r for r in implied.get("rows") or [] if r.get("earnings")), None)
+        if nxt and out["avg_abs_move"]:
+            out["implied"] = {"expiry": nxt["expiry"], "move_pct": nxt["move_pct"],
+                              "ratio": round(nxt["move_pct"] / out["avg_abs_move"], 2)}  # fmt: skip
+    engine.earnings_cache[sym] = (now, out)
+    return out
+
+
+# --------------------------------------------------------------------------- the calendar feed
+
+
+def _ics_text(s: str) -> str:
+    return str(s).replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _fold(line: str) -> str:
+    """RFC 5545: lines longer than 75 octets continue on the next line after a space."""
+    raw = line.encode()
+    if len(raw) <= 75:
+        return line
+    parts, cur = [], b""
+    for ch in line:
+        b = ch.encode()
+        if len(cur) + len(b) > (75 if not parts else 74):
+            parts.append(cur.decode())
+            cur = b""
+        cur += b
+    parts.append(cur.decode())
+    return "\r\n ".join(parts)
+
+
+def calendar_ics(engine: Engine, device: str = "", now: float | None = None, days: int = 60) -> str:
+    """The catalyst calendar (and this phone's watchlist earnings dates) as an iCalendar feed that
+    Apple, Google and Outlook calendars can subscribe to."""
+    import hashlib
+
+    now = now or time.time()
+    stamp = datetime.fromtimestamp(now, ZoneInfo("UTC")).strftime("%Y%m%dT%H%M%SZ")
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//News247//Foretape//EN", "CALSCALE:GREGORIAN",
+             "METHOD:PUBLISH", "X-WR-CALNAME:Foretape catalysts", "X-WR-TIMEZONE:America/New_York",
+             "REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H"]  # fmt: skip
+
+    def event(uid_basis: str, day: str, hhmm: str | None, title: str, desc: str, url: str = "") -> None:
+        uid = hashlib.sha1(uid_basis.encode()).hexdigest()[:20] + "@foretape"
+        lines.extend(["BEGIN:VEVENT", f"UID:{uid}", f"DTSTAMP:{stamp}"])
+        d = date.fromisoformat(day)
+        if hhmm and ":" in hhmm:
+            h, m = (int(x) for x in hhmm.split(":")[:2])
+            start = datetime(d.year, d.month, d.day, h, m, tzinfo=ET).astimezone(ZoneInfo("UTC"))
+            end = datetime.fromtimestamp(start.timestamp() + 1800, ZoneInfo("UTC"))
+            lines.extend([f"DTSTART:{start:%Y%m%dT%H%M%SZ}", f"DTEND:{end:%Y%m%dT%H%M%SZ}"])
+        else:
+            nxt = date.fromordinal(d.toordinal() + 1)
+            lines.extend([f"DTSTART;VALUE=DATE:{d:%Y%m%d}", f"DTEND;VALUE=DATE:{nxt:%Y%m%d}"])
+        lines.extend([f"SUMMARY:{_ics_text(title)}", f"DESCRIPTION:{_ics_text(desc)}"])
+        if url:
+            lines.append(f"URL:{url}")
+        lines.append("END:VEVENT")
+
+    for e in engine.calendar.upcoming(days=days, now=now):
+        t = str(e.get("time") or "")
+        when = t if re.fullmatch(r"\d{1,2}:\d{2}", t) else None
+        desc = " · ".join(
+            x
+            for x in (str(e.get("kind") or ""), str(e.get("note") or ""), f"impact {e.get('impact') or 1}/3")
+            if x
+        )
+        event(f"cal|{e['date']}|{e['title']}", e["date"], when, e["title"], desc, str(e.get("url") or ""))
+    p = engine.desk.profiles.get(device) if device else None
+    book = getattr(engine.trends, "earnings", None) if engine.trends is not None else None
+    if p and book is not None:
+        for sym in p.get("watchlist") or []:
+            nxt = book.lookup(sym)
+            if nxt and nxt["in_days"] <= days:
+                event(
+                    f"earn|{sym}|{nxt['date']}",
+                    nxt["date"],
+                    None,
+                    f"{sym} reports earnings",
+                    f"{nxt.get('when') or ''} · on your Foretape watchlist",
+                )
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(_fold(x) for x in lines) + "\r\n"

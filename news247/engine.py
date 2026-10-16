@@ -12,6 +12,7 @@ import time
 from collections import deque
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import quote
 
 from .analysis.catalyst_dates import extract_event
 from .analysis.dedup import Story, StoryClusterer
@@ -43,6 +44,7 @@ log = logging.getLogger(__name__)
 
 BACKFILL_PUSH_MAX_AGE = 300.0  # at start-up, only push items published in the last 5 minutes
 CONFIRM_BONUS, CONFIRM_CAP = 6.0, 18.0
+KW_MIN_SCORE = 12.0  # a keyword push still needs a headline the scorer found some substance in
 CATALYST_MIN_SCORE = 25.0
 OVERNIGHT_MIN_SCORE = 35.0  # MEDIUM and up: kept back to the previous session for the radar/options
 MULTI_MOVE_MIN = 3
@@ -233,6 +235,9 @@ class Engine:
         ] = {}  # record_key -> graded stats (dossier.track_record), for each new alert
         self.implied_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # symbol -> (when, implied move)
         self.confluence_day: dict[str, Any] = {"day": "", "fired": [], "pushed": 0}
+        self.earnings_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # symbol -> (when, reactions)
+        self._kw_sent: dict[tuple[str, int], float] = {}  # (device, story id) -> when a keyword push went
+        self._board_seen: dict[str, Any] = {"day": "", "keys": []}  # watchlist board pushes sent today
         if self.webpush is not None:
             self.webpush.allow = lambda sub, alert: self.desk.allows(sub.device, alert)  # type: ignore[attr-defined]
         self._load_phone_controls()
@@ -372,6 +377,11 @@ class Engine:
             if touched:
                 self._spawn(self._trend_check(touched))
         self._broadcast("item", {"item": item.to_dict(), "analysis": analysis.to_dict(), "story": story.id})
+        if not item.extra.get("backfill"):
+            if self.desk.profiles and any(p.get("keywords") for p in self.desk.profiles.values()):
+                self._spawn(self._keyword_push(item, analysis, story.id))
+            if item.extra.get("halt_code") and item.tickers:
+                self._spawn(self._halt_watch(item, analysis))
 
         if self.llm and analysis.score >= self.cfg.llm.min_score and not self.llm.busy:
             task = self._spawn(self.llm.assess(item, analysis))
@@ -2185,6 +2195,8 @@ class Engine:
                     await self.check_confluence(now)
                 except Exception as exc:  # noqa: BLE001 - never stop the desk loop
                     log.warning("confluence scan failed: %s", exc)
+                with contextlib.suppress(Exception):
+                    await self.check_board_watch(now)
                 if self._eod_due(now):
                     with contextlib.suppress(Exception):
                         await self.send_report_cards(now)
@@ -2243,6 +2255,138 @@ class Engine:
                        "tickers": [t["symbol"]], "tag": f"lv-{t['id']}", "ts": now, "open": f"/app/#t={t['symbol']}"}  # fmt: skip
             await self._to_device(device, payload)
         return [(d, a) for d, a, _ in fired]
+
+    async def _keyword_push(self, item: NewsItem, analysis: Analysis, story_id: int) -> int:
+        """A scored headline naming a phone's keyword goes to that phone, even below the alert
+        line: once per story per phone, not in its quiet hours, not about only muted stocks, and
+        not when the story is HIGH+ (the alert itself is on its way)."""
+        from .desk import in_quiet
+
+        if analysis.score < KW_MIN_SCORE or any(r.startswith("muted") for r in analysis.reasons):
+            return 0
+        text = f"{item.title}\n{item.summary or ''}"
+        now = time.time()
+        loud = self.cfg.scoring.severity_for(analysis.score) >= Severity.HIGH
+        sent = 0
+        for device, pats in self.desk.keyword_devices().items():
+            hit = next((k for k, rx in pats if rx.search(text)), None)
+            if hit is None or (device, story_id) in self._kw_sent:
+                continue
+            self._kw_sent[(device, story_id)] = now
+            self.desk.record_kw_hit(device, {"k": hit, "title": item.title[:200], "url": item.url, "source": item.source,
+                                             "ts": now, "score": round(analysis.score), "tickers": analysis.tickers[:4]})  # fmt: skip
+            self._broadcast("kw_hit", {"device": device, "k": hit, "title": item.title[:200]})
+            prefs = self.desk.get(device).get("prefs") or {}
+            if (
+                loud
+                or in_quiet(prefs.get("quiet"), now)
+                or self.desk.all_muted(device, {"tickers": analysis.tickers}, now)
+            ):
+                continue
+            tick = f" · {' '.join(analysis.tickers[:4])}" if analysis.tickers else ""
+            payload = {"id": f"kw-{item.uid[:20]}", "title": f"🔑 {hit}: {item.title[:150]}",
+                       "body": f"{item.source} · score {analysis.score:.0f}{tick} · your keyword", "severity": "MEDIUM",
+                       "kind": "system", "tickers": analysis.tickers[:4], "url": item.url, "tag": f"kw-{item.uid[:24]}",
+                       "ts": now, "open": "/app/#q=" + quote(hit)}  # fmt: skip
+            if await self._to_device(device, payload, urgency="normal"):
+                sent += 1
+        if len(self._kw_sent) > 5000:
+            for k, _ in sorted(self._kw_sent.items(), key=lambda kv: kv[1])[:2500]:
+                del self._kw_sent[k]
+        return sent
+
+    async def _halt_watch(self, item: NewsItem, analysis: Analysis) -> int:
+        """A trading halt on a stock someone watches reaches their phone, even when the halt itself
+        scored under the alert line (a MEDIUM or higher one already goes to watchers)."""
+        if self.cfg.scoring.severity_for(analysis.score) >= Severity.MEDIUM:
+            return 0
+        probe = {"kind": "news", "severity": "HIGH", "tickers": item.tickers}
+        sent = 0
+        for device in self.desk.watchers(item.tickers):
+            if not self.desk.allows(device, probe):
+                continue
+            payload = {"id": f"halt-{item.uid[-20:]}", "title": f"⏸ {item.title[:160]}", "body": (item.summary or "")[:300],
+                       "severity": "HIGH", "kind": "system", "tickers": item.tickers[:2], "url": item.url,
+                       "tag": f"halt-{item.tickers[0]}", "ts": time.time(), "open": f"/app/#t={item.tickers[0]}"}  # fmt: skip
+            if await self._to_device(device, payload):
+                sent += 1
+        return sent
+
+    async def check_board_watch(self, now: float | None = None) -> int:
+        """A watched stock that lands on the radar or the options board, with no alert of that kind
+        on it today, reaches its watchers' phones: once per phone, stock and board a day."""
+        now = now or time.time()
+        if self.webpush is None:
+            return 0
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        st = self._board_seen
+        if st["day"] != day:
+            saved = self.storage.get_setting(f"boardwatch:{day}")
+            st.update(json.loads(saved) if saved else {"day": day, "keys": []})
+        watched = {s for p in self.desk.profiles.values() for s in p.get("watchlist") or []}
+        if not watched:
+            return 0
+        day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        events: list[tuple[str, str, str, str]] = []
+        if self.radar is not None:
+            for sym, r in list(self.radar.board.items()):
+                if sym in watched and (r.get("flagged") or r.get("ignition")):
+                    ig = r.get("ignition") or {}
+                    what = (
+                        f"igniting {ig['move_pct']:+.1f}%"
+                        if ig.get("move_pct") is not None
+                        else f"{(r.get('change_pct') or 0):+.1f}%"
+                    )
+                    vol = (
+                        f" on {round(ig.get('burst') or r.get('rvol') or 0)}× volume"
+                        if (ig.get("burst") or r.get("rvol"))
+                        else ""
+                    )
+                    events.append((sym, "radar", f"★ {sym} on the radar: {what}{vol}", "radar"))
+        if self.options_radar is not None:
+            for r in self.options_radar.snapshot(200):
+                if r["symbol"] in watched and (r.get("detected") or 0) >= day0:
+                    calls, puts = r.get("call_premium") or 0, r.get("put_premium") or 0
+                    events.append(
+                        (
+                            r["symbol"],
+                            "options",
+                            f"★ {r['symbol']} on the options board: {r.get('kind', 'flow')} · calls ${calls / 1e6:.1f}M · puts ${puts / 1e6:.1f}M",
+                            "options",
+                        )
+                    )
+        sent = 0
+        for sym, board, title, cat in events:
+            had = {self._cat_of(a) for a in self.storage.alerts_for_ticker(sym, since=day0, limit=30)}
+            if cat in had:
+                continue  # an alert of that kind already went out on it
+            probe = {
+                "kind": "price" if cat == "radar" else "options",
+                "severity": "MEDIUM",
+                "tickers": [sym],
+                "edge": {"radar": True} if cat == "radar" else {},
+            }
+            for device in self.desk.watchers([sym]):
+                key = f"{device}:{sym}:{board}"
+                if key in st["keys"]:
+                    continue
+                st["keys"].append(key)
+                prefs = self.desk.get(device).get("prefs") or {}
+                if not prefs.get("watch_push", True) or not self.desk.allows(device, probe, now):
+                    continue
+                payload = {"id": f"bw-{sym}-{board}-{day}", "title": title, "body": "On your watchlist · no alert on it yet today",
+                           "severity": "MEDIUM", "kind": "system", "tickers": [sym], "tag": f"bw-{sym}-{board}", "ts": now,
+                           "open": f"/app/#t={sym}"}  # fmt: skip
+                if await self._to_device(device, payload, urgency="normal"):
+                    sent += 1
+        self.storage.set_setting(f"boardwatch:{day}", json.dumps(st))
+        return sent
+
+    @staticmethod
+    def _cat_of(a: dict[str, Any]) -> str:
+        from .desk import alert_category
+
+        return alert_category(a)
 
     async def check_confluence(self, now: float | None = None) -> list[Alert]:
         """When independent kinds of evidence line up on one side of a stock (dossier.py), say so

@@ -12,8 +12,13 @@ with each request. Its profile holds:
   since I set this" (trailing), checked against the live price every 15 seconds and pushed to this
   phone only, once.
 * **tracked calls**: a paper position taken from an alert or a ticker page, at the live price,
-  with its P&L since, an optional stop and target (each pushed once when hit); closed when you say
-  so. The system never trades.
+  with its P&L since, an optional stop and target (each pushed once when hit), and a journal (a
+  note and #tags, so the record can be read by tag); closed when you say so. The system never
+  trades.
+* **keywords**: up to 20 words or phrases; any scored headline that names one is pushed to this
+  phone alone, even below the alert line (the last 30 hits are kept).
+* **muted**: stocks silenced on this phone for a while (an alert only about muted stocks stays in
+  the app).
 
 Profiles live in SQLite (``profiles`` table) and, when ``STATE_DB`` is set, in the state database
 too, so a fresh container on a free host keeps them.
@@ -37,6 +42,9 @@ SEV_RANK = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 MAX_WATCH = 60
 MAX_PRICE_ALERTS = 40
 MAX_TRACKED = 40
+MAX_KEYWORDS = 20
+MAX_MUTE_H = 72.0
+TAG_RE = re.compile(r"#([a-z][a-z0-9-]{1,19})")
 MACRO_TICKERS = {
     "SPY",
     "QQQ",
@@ -68,6 +76,9 @@ def default_profile() -> dict[str, Any]:
         "price_alerts": [],
         "tracked": [],
         "closed": [],
+        "keywords": [],  # [{"k": "tariff", "since": ts}]
+        "kw_hits": [],  # newest first: {"k", "title", "url", "source", "ts", "score"}
+        "muted": {},  # symbol -> until (epoch)
         "created": time.time(),
     }
 
@@ -185,10 +196,36 @@ class Desk:
             if isinstance(alert, dict)
             else getattr(getattr(alert, "severity", None), "name", "")
         )
+        if self.all_muted(device, alert, now):
+            return False
         floor = prefs.get("min_sev")
         if cat != "system" and floor in SEV_RANK and SEV_RANK.get(str(sev), 0) < SEV_RANK[floor]:
             return False
         return not (in_quiet(prefs.get("quiet"), now) and str(sev) != "CRITICAL")
+
+    def all_muted(self, device: str, alert: Any, now: float | None = None) -> bool:
+        """Is every stock this alert is about muted on this phone? (No stocks: never muted.)"""
+        muted = (self.profiles.get(device) or {}).get("muted") or {}
+        if not muted:
+            return False
+        tickers = alert.get("tickers") if isinstance(alert, dict) else getattr(alert, "tickers", None)
+        now = now or time.time()
+        tickers = [t for t in (tickers or []) if t]
+        return bool(tickers) and all(muted.get(t, 0) > now for t in tickers)
+
+    def keyword_devices(self) -> dict[str, list[tuple[str, re.Pattern[str]]]]:
+        """device -> [(keyword, compiled whole-word pattern)] for every phone with keywords."""
+        out = {}
+        for d, p in self.profiles.items():
+            kws = p.get("keywords") or []
+            if kws:
+                out[d] = [(k["k"], _kw_pattern(k["k"])) for k in kws]
+        return out
+
+    def record_kw_hit(self, device: str, hit: dict[str, Any]) -> None:
+        p = self.get(device)
+        p["kw_hits"] = ([hit] + (p.get("kw_hits") or []))[:30]
+        self.save(device)
 
     # ------------------------------------------------------------------ edits
 
@@ -279,6 +316,7 @@ class Desk:
                 "target": None,
             }
             _set_levels(t, body)
+            _journal(t, body)
             p["tracked"].append(t)
         elif action == "track_levels":
             tid = str(body.get("id") or "")
@@ -286,6 +324,12 @@ class Desk:
             if t is None:
                 raise ValueError("no such tracked call")
             _set_levels(t, body)
+        elif action == "track_journal":
+            tid = str(body.get("id") or "")
+            t = next((x for x in [*p["tracked"], *p["closed"]] if x["id"] == tid), None)
+            if t is None:
+                raise ValueError("no such call")
+            _journal(t, body)
         elif action == "track_close":
             tid = str(body.get("id") or "")
             keep = []
@@ -296,8 +340,37 @@ class Desk:
                 q = price_of(t["symbol"]) if price_of else None
                 exit_ = q[1] if q else None
                 pnl = _pnl(t, exit_)
-                p["closed"] = ([{**t, "exit": exit_, "closed": now, "pnl_pct": pnl}] + p["closed"])[:50]
+                done = {**t, "exit": exit_, "closed": now, "pnl_pct": pnl}
+                if body.get("lesson"):
+                    done["lesson"] = str(body["lesson"])[:200]
+                p["closed"] = ([done] + p["closed"])[:50]
             p["tracked"] = keep
+        elif action == "kw_add":
+            k = re.sub(r"\s+", " ", str(body.get("keyword") or "")).strip().lower()
+            if not 2 <= len(k) <= 40:
+                raise ValueError("a keyword is 2 to 40 characters")
+            kws = p.setdefault("keywords", [])
+            if all(x["k"] != k for x in kws):
+                if len(kws) >= MAX_KEYWORDS:
+                    raise ValueError(f"at most {MAX_KEYWORDS} keywords")
+                kws.append({"k": k, "since": now})
+        elif action == "kw_remove":
+            k = str(body.get("keyword") or "").strip().lower()
+            p["keywords"] = [x for x in p.get("keywords") or [] if x["k"] != k]
+        elif action == "mute":
+            sym = clean_symbol(body.get("symbol"))
+            try:
+                hours = float(body.get("hours") or 4)
+            except (TypeError, ValueError):
+                raise ValueError("hours must be a number") from None
+            if not sym or not 0 < hours <= MAX_MUTE_H:
+                raise ValueError(f"need a symbol and 0-{MAX_MUTE_H:g} hours")
+            muted = {s: u for s, u in (p.get("muted") or {}).items() if u > now}  # forget expired ones
+            muted[sym] = now + hours * 3600
+            p["muted"] = muted
+        elif action == "unmute":
+            sym = clean_symbol(body.get("symbol"))
+            p["muted"] = {s: u for s, u in (p.get("muted") or {}).items() if s != sym and u > now}
         else:
             raise ValueError(f"unknown action {action!r}")
         self.save(device)
@@ -322,6 +395,11 @@ class Desk:
             tracked.append({**t, "price": q[1] if q else None, "pnl_pct": _pnl(t, q[1] if q else None)})
         closed = p.get("closed") or []
         wins = [c for c in closed if (c.get("pnl_pct") or 0) > 0]
+        by_tag: dict[str, list[float]] = {}
+        for c in closed:
+            for tag in c.get("tags") or ["untagged"]:
+                by_tag.setdefault(tag, []).append(c.get("pnl_pct") or 0.0)
+        now = time.time()
         return {
             "device": device,
             "watchlist": watch,
@@ -329,12 +407,27 @@ class Desk:
             "price_alerts": alerts,
             "tracked": tracked,
             "closed": closed[:20],
+            "keywords": p.get("keywords") or [],
+            "kw_hits": (p.get("kw_hits") or [])[:15],
+            "muted": {s: u for s, u in (p.get("muted") or {}).items() if u > now},
             "record": {
                 "closed": len(closed),
                 "wins": len(wins),
                 "avg_pnl_pct": round(sum(c.get("pnl_pct") or 0 for c in closed) / len(closed), 2)
                 if closed
                 else None,
+                "by_tag": sorted(
+                    (
+                        {
+                            "tag": t,
+                            "n": len(xs),
+                            "wins": sum(1 for x in xs if x > 0),
+                            "avg": round(sum(xs) / len(xs), 2),
+                        }
+                        for t, xs in by_tag.items()
+                    ),
+                    key=lambda r: -r["n"],
+                ),
             },
         }
 
@@ -399,6 +492,23 @@ class Desk:
             if changed:
                 self.save(device)
         return out
+
+
+def _kw_pattern(k: str) -> re.Pattern[str]:
+    """Whole words, any case: "fda" matches "FDA approves", not "FDAX"; a phrase matches across
+    any whitespace."""
+    words = [re.escape(w) for w in k.split()]
+    return re.compile(r"(?<![\w$])" + r"\s+".join(words) + r"(?!\w)", re.IGNORECASE)
+
+
+def _journal(t: dict[str, Any], body: dict[str, Any]) -> None:
+    """A call's note and #tags (from the note, or a ``tags`` list): lowercase, at most 5."""
+    if "note" in body:
+        t["note"] = str(body.get("note") or "")[:200]
+    tags = [str(x).lower().lstrip("#") for x in body.get("tags") or []]
+    tags += TAG_RE.findall(str(body.get("note") or "").lower())
+    if "note" in body or "tags" in body:
+        t["tags"] = list(dict.fromkeys(x for x in tags if re.fullmatch(r"[a-z][a-z0-9-]{1,19}", x)))[:5]
 
 
 def _under(t: dict[str, Any], which: str) -> bool:
