@@ -68,6 +68,54 @@ def straddles(
     return rows
 
 
+def positioning(
+    chain: Any, today: date, price: float | None = None, max_dte: int = 45
+) -> dict[str, Any] | None:
+    """How the options market is positioned, from one chain read: today's put/call volume, and
+    for the nearest expiry with open interest, the "walls" (the call strike above the stock and the
+    put strike below it with the most open interest) and max pain (the strike where option holders,
+    in total, would collect the least at expiry). Open interest the feed didn't give is left out,
+    never read as zero."""
+    px = price or chain.price
+    near = [c for c in chain.contracts if c.expiry >= today and (c.expiry - today).days <= max_dte]
+    if not px or not near:
+        return None
+    cv = sum(c.volume for c in near if c.cp == "C")
+    pv = sum(c.volume for c in near if c.cp == "P")
+    out: dict[str, Any] = {
+        "call_volume": cv,
+        "put_volume": pv,
+        "pc_volume": round(pv / cv, 2) if cv else None,
+    }
+    with_oi = sorted({c.expiry for c in near if c.open_interest})
+    if not with_oi:
+        return out
+    exp = with_oi[0]
+    legs = [c for c in near if c.expiry == exp and c.open_interest]
+    calls = [c for c in legs if c.cp == "C" and c.strike >= px]
+    puts = [c for c in legs if c.cp == "P" and c.strike <= px]
+    coi = sum(c.open_interest or 0 for c in legs if c.cp == "C")
+    poi = sum(c.open_interest or 0 for c in legs if c.cp == "P")
+    strikes = sorted({c.strike for c in legs})
+
+    def payout(s: float) -> float:
+        return sum(
+            (c.open_interest or 0) * (max(0.0, s - c.strike) if c.cp == "C" else max(0.0, c.strike - s))
+            for c in legs
+        )
+
+    pain = min(strikes, key=payout) if strikes else None
+    cw = max(calls, key=lambda c: c.open_interest or 0) if calls else None
+    pw = max(puts, key=lambda c: c.open_interest or 0) if puts else None
+    out.update({
+        "expiry": exp.isoformat(), "dte": (exp - today).days,
+        "call_wall": {"strike": cw.strike, "oi": cw.open_interest} if cw else None,
+        "put_wall": {"strike": pw.strike, "oi": pw.open_interest} if pw else None,
+        "max_pain": pain, "pc_oi": round(poi / coi, 2) if coi else None,
+    })  # fmt: skip
+    return out
+
+
 async def implied_move(engine: Engine, sym: str, now: float | None = None) -> dict[str, Any]:
     now = now or time.time()
     cache = engine.implied_cache
@@ -97,6 +145,7 @@ async def implied_move(engine: Engine, sym: str, now: float | None = None) -> di
         out = {
             "symbol": sym, "available": bool(rows), "price": price, "rows": rows, "earnings": earn,
             "iv30": round(chain.iv30 * 100, 1) if chain.iv30 else None, "source": chain.source,
+            "positioning": positioning(chain, today, price),
             "why": "" if rows else "No expiry in the next 60 days has both sides priced.",
         }  # fmt: skip
     cache[sym] = (now, out)

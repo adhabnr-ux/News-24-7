@@ -19,6 +19,10 @@ with each request. Its profile holds:
   phone alone, even below the alert line (the last 30 hits are kept).
 * **muted**: stocks silenced on this phone for a while (an alert only about muted stocks stays in
   the app).
+* **digest**: instead of one push per alert, this phone can get one push every 15 or 60 minutes
+  listing what came in (CRITICAL still comes at once; price alerts and levels too).
+* **notes** on any stock, and a **group** for each watched stock.
+* **transfer**: a one-time code (15 minutes) that copies this desk to another phone.
 
 Profiles live in SQLite (``profiles`` table) and, when ``STATE_DB`` is set, in the state database
 too, so a fresh container on a free host keeps them.
@@ -43,6 +47,9 @@ MAX_WATCH = 60
 MAX_PRICE_ALERTS = 40
 MAX_TRACKED = 40
 MAX_KEYWORDS = 20
+TRANSFER_TTL_S = 900.0
+TRANSFER_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L: read aloud or typed by hand
+DIGEST_MINUTES = (0, 15, 60)
 MAX_MUTE_H = 72.0
 TAG_RE = re.compile(r"#([a-z][a-z0-9-]{1,19})")
 MACRO_TICKERS = {
@@ -72,6 +79,9 @@ def default_profile() -> dict[str, Any]:
             "watch_push": True,
             "min_sev": None,  # None: whatever the server sends; else this phone's own floor
             "eod": True,  # the end-of-day report card
+            "digest": 0,  # minutes: 0 = push each alert; 15 or 60 = one push listing them
+            "earn_remind": True,  # a push before a watched stock reports
+            "open_plan": True,  # the 9:20 ET open plan
         },
         "price_alerts": [],
         "tracked": [],
@@ -79,6 +89,11 @@ def default_profile() -> dict[str, Any]:
         "keywords": [],  # [{"k": "tariff", "since": ts}]
         "kw_hits": [],  # newest first: {"k", "title", "url", "source", "ts", "score"}
         "muted": {},  # symbol -> until (epoch)
+        "notes": {},  # symbol -> {"text", "ts"}
+        "groups": {},  # watched symbol -> group name
+        "votes": {},  # alert id -> +1 / -1 (was it useful)
+        "digest_q": [],  # alerts held for the next digest
+        "digest_at": 0.0,  # when the last digest went
         "created": time.time(),
     }
 
@@ -213,6 +228,50 @@ class Desk:
         tickers = [t for t in (tickers or []) if t]
         return bool(tickers) and all(muted.get(t, 0) > now for t in tickers)
 
+    def hold(self, device: str, alert: Any, now: float | None = None) -> bool:
+        """In digest mode, keep a non-CRITICAL alert for this phone's next digest instead of pushing
+        it now. Returns True when held."""
+        p = self.profiles.get(device)
+        if not p or not (p.get("prefs") or {}).get("digest"):
+            return False
+        get = (lambda k: alert.get(k)) if isinstance(alert, dict) else (lambda k: getattr(alert, k, None))
+        sev = get("severity")
+        sev = sev if isinstance(sev, str) else getattr(sev, "name", "")
+        if sev == "CRITICAL":
+            return False
+        q = p.setdefault("digest_q", [])
+        aid = str(get("id") or "")
+        if aid and any(x["id"] == aid for x in q):
+            return True
+        q.append({"id": aid, "title": str(get("title") or "")[:160], "severity": sev, "tickers": list(get("tickers") or [])[:4],
+                  "ts": now or time.time()})  # fmt: skip
+        del q[:-50]
+        self._dirty = True
+        return True
+
+    def due_digests(self, now: float | None = None) -> list[tuple[str, list[dict[str, Any]]]]:
+        """(device, held alerts) for every phone whose digest is due; empties their queues."""
+        now = now or time.time()
+        out = []
+        for device, p in self.profiles.items():
+            mins = (p.get("prefs") or {}).get("digest") or 0
+            q = p.get("digest_q") or []
+            if not q:
+                continue
+            if mins and now - (p.get("digest_at") or 0) < mins * 60:
+                continue
+            out.append((device, list(q)))
+            p["digest_q"], p["digest_at"] = [], now
+            self.save(device)
+        return out
+
+    def new_transfer(self, device: str, now: float | None = None) -> str:
+        now = now or time.time()
+        self.transfers = {c: v for c, v in getattr(self, "transfers", {}).items() if v[1] > now}
+        code = "".join(secrets.choice(TRANSFER_ALPHABET) for _ in range(8))
+        self.transfers[code] = (device, now + TRANSFER_TTL_S)
+        return code
+
     def keyword_devices(self) -> dict[str, list[tuple[str, re.Pattern[str]]]]:
         """device -> [(keyword, compiled whole-word pattern)] for every phone with keywords."""
         out = {}
@@ -262,8 +321,19 @@ class Desk:
             if "min_sev" in body:
                 floor = body.get("min_sev")
                 prefs["min_sev"] = floor if floor in SEV_RANK else None
-            if "eod" in body:
-                prefs["eod"] = bool(body["eod"])
+            for flag in ("eod", "earn_remind", "open_plan"):
+                if flag in body:
+                    prefs[flag] = bool(body[flag])
+            if "digest" in body:
+                try:
+                    mins = int(body.get("digest") or 0)
+                except (TypeError, ValueError):
+                    mins = -1
+                if mins not in DIGEST_MINUTES:
+                    raise ValueError("digest is 0, 15 or 60 minutes")
+                prefs["digest"] = mins
+                if not mins:
+                    p["digest_at"] = 0.0  # what's held goes out on the next pass
         elif action == "alert_add":
             sym = clean_symbol(body.get("symbol"))
             kind = str(body.get("kind") or "")
@@ -345,6 +415,55 @@ class Desk:
                     done["lesson"] = str(body["lesson"])[:200]
                 p["closed"] = ([done] + p["closed"])[:50]
             p["tracked"] = keep
+        elif action == "note":
+            sym = clean_symbol(body.get("symbol"))
+            if not sym:
+                raise ValueError("no valid symbol")
+            text = str(body.get("text") or "").strip()[:500]
+            notes = p.setdefault("notes", {})
+            if text:
+                notes[sym] = {"text": text, "ts": now}
+            else:
+                notes.pop(sym, None)
+        elif action == "watch_group":
+            sym = clean_symbol(body.get("symbol"))
+            if not sym or sym not in p["watchlist"]:
+                raise ValueError("not on your watchlist")
+            g = re.sub(r"\s+", " ", str(body.get("group") or "")).strip()[:24]
+            groups = p.setdefault("groups", {})
+            if g:
+                groups[sym] = g
+            else:
+                groups.pop(sym, None)
+        elif action == "vote":
+            aid = str(body.get("id") or "")[:40]
+            v = int(body.get("v") or 0)
+            if not aid or v not in (-1, 0, 1):
+                raise ValueError("need an alert id and v of 1, -1 or 0")
+            votes = p.setdefault("votes", {})
+            before = votes.get(aid, 0)
+            if v:
+                votes[aid] = v
+            else:
+                votes.pop(aid, None)
+            if len(votes) > 400:
+                for k in list(votes)[:100]:
+                    del votes[k]
+            self._tally_vote(aid, before, v)
+        elif action == "transfer_out":
+            p["transfer"] = {"code": self.new_transfer(device, now), "until": now + TRANSFER_TTL_S}
+        elif action == "transfer_in":
+            code = str(body.get("code") or "").strip().upper().replace(" ", "").replace("-", "")
+            hit = getattr(self, "transfers", {}).get(code)
+            if not hit or hit[1] < now:
+                raise ValueError("that code is wrong or expired: make a new one on the other phone")
+            src, _ = hit
+            del self.transfers[code]
+            if src == device:
+                raise ValueError("that code is from this phone")
+            copied = json.loads(json.dumps(self.profiles[src]))
+            copied["digest_q"], copied["created"] = [], p.get("created", now)
+            self.profiles[device] = p = self._merge(copied)
         elif action == "kw_add":
             k = re.sub(r"\s+", " ", str(body.get("keyword") or "")).strip().lower()
             if not 2 <= len(k) <= 40:
@@ -375,6 +494,20 @@ class Desk:
             raise ValueError(f"unknown action {action!r}")
         self.save(device)
         return p
+
+    def _tally_vote(self, aid: str, before: int, after: int) -> None:
+        """Keep the alert's own count of 👍/👎 (all phones) in its edge, for the record."""
+        if before == after or not hasattr(self.storage, "get_alert"):
+            return
+        a = self.storage.get_alert(aid)
+        if a is None:
+            return
+        fb = dict((a.get("edge") or {}).get("feedback") or {"up": 0, "down": 0})
+        for v, d in ((before, -1), (after, 1)):
+            if v:
+                k = "up" if v > 0 else "down"
+                fb[k] = max(0, fb.get(k, 0) + d)
+        self.storage.update_alert_edge(aid, {"feedback": fb})
 
     # ------------------------------------------------------------------ live views
 
@@ -410,6 +543,11 @@ class Desk:
             "keywords": p.get("keywords") or [],
             "kw_hits": (p.get("kw_hits") or [])[:15],
             "muted": {s: u for s, u in (p.get("muted") or {}).items() if u > now},
+            "notes": p.get("notes") or {},
+            "groups": p.get("groups") or {},
+            "votes": p.get("votes") or {},
+            "held": len(p.get("digest_q") or []),
+            "transfer": p["transfer"] if (p.get("transfer") or {}).get("until", 0) > now else None,
             "record": {
                 "closed": len(closed),
                 "wins": len(wins),

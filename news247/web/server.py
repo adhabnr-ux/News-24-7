@@ -115,6 +115,7 @@ class WebServer:
         app.router.add_get("/api/worth", self.api_worth)
         app.router.add_get("/api/earnings/{sym}", self.api_earnings)
         app.router.add_get("/api/calendar.ics", self.api_ics)
+        app.router.add_post("/api/why/{sym}", self.api_why)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
         app.router.add_post("/api/push/test", self.api_push_test)
@@ -754,6 +755,15 @@ class WebServer:
         if not sym:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(await earnings_reactions(self.engine, sym))
+
+    async def api_why(self, request: web.Request) -> web.Response:
+        """Look for why a stock is moving, now (EDGAR + news search, rate-limited per stock)."""
+        from ..desk import clean_symbol
+
+        sym = clean_symbol(request.match_info["sym"])
+        if not sym:
+            raise web.HTTPBadRequest(text="not a symbol")
+        return _json(await self.engine.find_why(sym))
 
     async def api_ics(self, request: web.Request) -> web.Response:
         """The catalyst calendar (and this phone's earnings dates) for a calendar app to subscribe to:

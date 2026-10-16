@@ -773,6 +773,7 @@ class WebPushNotifier(Notifier):
         self.last_sent: float | None = None
         self.removed = 0
         self.allow: Any = None  # (subscription, alert) -> bool: each phone's desk preferences
+        self.hold: Any = None  # (subscription, alert) -> bool: True when that phone's digest keeps it
         self.filtered = 0
 
     # ------------------------------------------------------------------ setup
@@ -933,6 +934,8 @@ class WebPushNotifier(Notifier):
         only = None
         if self.allow is not None:  # each phone's own preferences (desk.py): categories, quiet hours
             only = [s.endpoint for s in self.subs.values() if self.allow(s, alert)]
+            if self.hold is not None:  # digest mode: held for that phone's next digest instead
+                only = [e for e in only if not self.hold(self.subs[e], alert)]
             self.filtered += len(self.subs) - len(only)
             if not only:
                 self.last_sent = time.time()

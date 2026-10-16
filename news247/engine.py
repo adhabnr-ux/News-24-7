@@ -240,6 +240,7 @@ class Engine:
         self._board_seen: dict[str, Any] = {"day": "", "keys": []}  # watchlist board pushes sent today
         if self.webpush is not None:
             self.webpush.allow = lambda sub, alert: self.desk.allows(sub.device, alert)  # type: ignore[attr-defined]
+            self.webpush.hold = lambda sub, alert: self.desk.hold(sub.device, alert)  # type: ignore[attr-defined]
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         # meaningful news kept back to the previous session, so a move at 09:45 can cite the
@@ -2164,7 +2165,9 @@ class Engine:
             return  # the phone floor is at MEDIUM: it went to everyone already
         devices = {
             d for d in self.desk.watchers(alert.tickers[:6])
-            if (self.desk.get(d).get("prefs") or {}).get("watch_push", True) and self.desk.allows(d, alert)
+            if (self.desk.get(d).get("prefs") or {}).get("watch_push", True)
+            and self.desk.allows(d, alert)
+            and not self.desk.hold(d, alert)
         }  # fmt: skip
         only = [s.endpoint for s in wp.subs.values() if s.device in devices]  # type: ignore[attr-defined]
         if not only:
@@ -2185,6 +2188,8 @@ class Engine:
             now = time.time()
             with contextlib.suppress(Exception):
                 await self.check_price_alerts(now)
+            with contextlib.suppress(Exception):
+                await self.send_digests(now)
             if now - last_outcomes >= 60:
                 last_outcomes = now
                 with contextlib.suppress(Exception):
@@ -2197,6 +2202,10 @@ class Engine:
                     log.warning("confluence scan failed: %s", exc)
                 with contextlib.suppress(Exception):
                     await self.check_board_watch(now)
+                with contextlib.suppress(Exception):
+                    await self.send_earnings_reminders(now)
+                with contextlib.suppress(Exception):
+                    await self.send_open_plans(now)
                 if self._eod_due(now):
                     with contextlib.suppress(Exception):
                         await self.send_report_cards(now)
@@ -2288,6 +2297,8 @@ class Engine:
                        "body": f"{item.source} · score {analysis.score:.0f}{tick} · your keyword", "severity": "MEDIUM",
                        "kind": "system", "tickers": analysis.tickers[:4], "url": item.url, "tag": f"kw-{item.uid[:24]}",
                        "ts": now, "open": "/app/#q=" + quote(hit)}  # fmt: skip
+            if self.desk.hold(device, payload, now):
+                continue
             if await self._to_device(device, payload, urgency="normal"):
                 sent += 1
         if len(self._kw_sent) > 5000:
@@ -2377,10 +2388,172 @@ class Engine:
                 payload = {"id": f"bw-{sym}-{board}-{day}", "title": title, "body": "On your watchlist · no alert on it yet today",
                            "severity": "MEDIUM", "kind": "system", "tickers": [sym], "tag": f"bw-{sym}-{board}", "ts": now,
                            "open": f"/app/#t={sym}"}  # fmt: skip
+                if self.desk.hold(device, payload, now):
+                    continue
                 if await self._to_device(device, payload, urgency="normal"):
                     sent += 1
         self.storage.set_setting(f"boardwatch:{day}", json.dumps(st))
         return sent
+
+    async def send_digests(self, now: float | None = None) -> int:
+        """Phones in digest mode: what was held since the last one, in one push."""
+        now = now or time.time()
+        sent = 0
+        rank = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
+        for device, held in self.desk.due_digests(now):
+            top = sorted(held, key=lambda a: (-rank.get(a["severity"], 0), -a["ts"]))
+            lines = [f"• {a['title']}" for a in top[:4]] + (
+                [f"+ {len(top) - 4} more in the app"] if len(top) > 4 else []
+            )
+            n_high = sum(1 for a in held if a["severity"] == "HIGH")
+            mins = (self.desk.get(device).get("prefs") or {}).get("digest") or 0
+            payload = {"id": f"dg-{device[:8]}-{int(now)}", "title": f"📬 {len(held)} alert{'s' if len(held) > 1 else ''}"
+                       + (f" ({n_high} HIGH)" if n_high else "") + (f" · last {mins} min" if mins else ""),
+                       "body": "\n".join(lines)[:600], "severity": "MEDIUM", "kind": "system", "tickers": [],
+                       "tag": f"dg-{device[:8]}", "ts": now, "open": "/app/"}  # fmt: skip
+            if await self._to_device(device, payload, urgency="normal"):
+                sent += 1
+        return sent
+
+    def _once(self, key: str) -> bool:
+        """True the first time ``key`` is seen (kept in the settings table: survives restarts)."""
+        if self.storage.get_setting(key):
+            return False
+        self.storage.set_setting(key, "1")
+        return True
+
+    async def send_earnings_reminders(self, now: float | None = None) -> int:
+        """A watched stock reporting today: a push before it does (08:30-09:25 ET for a report
+        before the open, 15:30-15:55 for one after the close, 09:00-09:25 when the time isn't
+        known), with what options price and its usual move when those are known."""
+        from .personal import earnings_reactions, implied_move
+
+        now = now or time.time()
+        book = getattr(self.trends, "earnings", None) if self.trends is not None else None
+        if book is None or self.webpush is None:
+            return 0
+        dt = datetime.fromtimestamp(now, ET)
+        if dt.weekday() >= 5 or dt.date().isoformat() in self.calendar.holidays:
+            return 0
+        hm = (dt.hour, dt.minute)
+        sent = 0
+        devices = {s.device for s in self.webpush.subs.values() if s.device}  # type: ignore[attr-defined]
+        for device in devices:
+            p = self.desk.profiles.get(device)
+            if not p or not (p.get("prefs") or {}).get("earn_remind", True):
+                continue
+            for sym in p.get("watchlist") or []:
+                e = book.lookup(sym, dt.date())
+                if not e or e["in_days"] != 0:
+                    continue
+                when = str(e.get("when") or "").lower()
+                window = (
+                    ((15, 30), (15, 56))
+                    if "after" in when
+                    else ((8, 30), (9, 26))
+                    if "before" in when
+                    else ((9, 0), (9, 26))
+                )
+                if not (window[0] <= hm < window[1]) or not self._once(f"remind:{dt.date()}:{device}:{sym}"):
+                    continue
+                bits = []
+                with contextlib.suppress(Exception):
+                    im = await implied_move(self, sym, now)
+                    nxt = next((r for r in im.get("rows") or [] if r.get("earnings")), None)
+                    if nxt:
+                        bits.append(f"options price ±{nxt['move_pct']:.1f}% by {nxt['expiry'][5:]}")
+                with contextlib.suppress(Exception):
+                    er = await earnings_reactions(self, sym, now)
+                    if er.get("avg_abs_move"):
+                        bits.append(
+                            f"it moved ±{er['avg_abs_move']:.1f}% on its last {len(er['rows'])} reports"
+                        )
+                title = f"📅 {sym} reports {'after the close' if 'after' in when else 'before the open' if 'before' in when else 'today'}"
+                payload = {"id": f"er-{sym}-{dt.date()}", "title": title, "body": (" · ".join(bits) or "On your watchlist")[:300],
+                           "severity": "MEDIUM", "kind": "system", "tickers": [sym], "tag": f"er-{sym}", "ts": now,
+                           "open": f"/app/#t={sym}"}  # fmt: skip
+                if await self._to_device(device, payload, urgency="normal"):
+                    sent += 1
+        return sent
+
+    async def send_open_plans(self, now: float | None = None) -> int:
+        """09:20-09:29 ET on market days: each phone with a watchlist gets the open in one push:
+        its stocks moving pre-market, the top gappers with a reason, today's timed events."""
+        from .dossier import gaps
+
+        now = now or time.time()
+        if self.webpush is None:
+            return 0
+        dt = datetime.fromtimestamp(now, ET)
+        if (
+            dt.weekday() >= 5
+            or dt.date().isoformat() in self.calendar.holidays
+            or not ((9, 20) <= (dt.hour, dt.minute) < (9, 30))
+        ):
+            return 0
+        board = gaps(self, now)
+        movers = [r for r in board["up"] + board["down"] if r["why"]]
+        movers.sort(key=lambda r: -abs(r["chg"]))
+        events = [
+            e
+            for e in self.calendar.upcoming(days=1, now=now)
+            if e.get("in_days") == 0 and e.get("time") and (e.get("impact") or 1) >= 2
+        ]
+        sent = 0
+        for device in {s.device for s in self.webpush.subs.values() if s.device}:  # type: ignore[attr-defined]
+            p = self.desk.profiles.get(device)
+            if not p or not p.get("watchlist") or not (p.get("prefs") or {}).get("open_plan", True):
+                continue
+            if not self._once(f"openplan:{dt.date()}:{device}"):
+                continue
+            mine = []
+            for sym in p["watchlist"]:
+                q = self.price_of(sym, 3600, now=now)
+                if q and q[2] is not None and abs(q[2]) >= 1:
+                    mine.append((sym, q[2]))
+            mine.sort(key=lambda x: -abs(x[1]))
+            lines = []
+            if mine:
+                lines.append("★ " + ", ".join(f"{s} {c:+.1f}%" for s, c in mine[:4]))
+            for r in movers[:2]:
+                lines.append(f"{r['symbol']} {r['chg']:+.1f}%: {r['why']['title'][:90]}")
+            for e in events[:2]:
+                lines.append(f"{e['time']} ET: {e['title'][:80]}")
+            if not lines:
+                continue
+            payload = {"id": f"op-{dt.date()}", "title": "🔔 The open in 10 minutes", "body": "\n".join(lines)[:600],
+                       "severity": "MEDIUM", "kind": "system", "tickers": [s for s, _ in mine[:4]], "tag": "openplan",
+                       "ts": now, "open": "/app/"}  # fmt: skip
+            if await self._to_device(device, payload, urgency="normal"):
+                sent += 1
+        return sent
+
+    async def find_why(self, sym: str, now: float | None = None) -> dict[str, Any]:
+        """Look for the reason a stock is moving, now: today's filings and news for it (EDGAR and a
+        news search), each scored like any other item. Rate-limited per stock."""
+        now = now or time.time()
+        if self.why is None:
+            return {"symbol": sym, "available": False, "why": "The why-lookup is off on this server."}
+        if not self.why.allow(sym, now):
+            return {"symbol": sym, "available": True, "busy": True, "found": [],
+                    "why": "Looked for this stock a moment ago (or the hourly budget is used up); try again shortly."}  # fmt: skip
+        li = self.universe.get(sym)
+        since = Calendar.last_close(now, self.calendar.holidays) - 6 * 3600
+        items = await self.why.hunt(sym, (li.name if li is not None else "") or sym, since)
+        found = []
+        for it in items:
+            an = await self.on_item(it)
+            if an is None:
+                an = self.scorer.score(it)
+            found.append({"title": it.title, "source": it.source, "url": it.url, "score": round(an.score),
+                          "published": it.published, "detected": it.detected})  # fmt: skip
+        found.sort(key=lambda x: -x["score"])
+        return {
+            "symbol": sym,
+            "available": True,
+            "found": found[:8],
+            "searched": ["EDGAR filings", "news search"],
+        }
 
     @staticmethod
     def _cat_of(a: dict[str, Any]) -> str:

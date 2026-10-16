@@ -149,7 +149,7 @@ function baseRow(a) {
   if (!b) return "";
   const bits = [b.h1 && `<b class="${b.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(b.h1.hit * 100)}%</b> in 1h`, b.close && `<b class="${b.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(b.close.hit * 100)}%</b> by the close`].filter(Boolean);
   const n = Math.max(b.h1?.n || 0, b.close?.n || 0);
-  return `<div class="base">Alerts like this went their way ${bits.join(", ")} <span class="faint">· ${n} graded</span></div>`;
+  return `<div class="base">${b.fades ? `<b class="neg">⚠ Historically fades:</b> alerts like this went their way only ` : "Alerts like this went their way "}${bits.join(", ")} <span class="faint">· ${n} graded</span></div>`;
 }
 const CONF_KIND = { news: "Headlines", options: "Options", insider: "Insider", tape: "Tape", macro: "Macro" };
 function confRow(a) {
@@ -578,8 +578,17 @@ async function openSheet(id) {
     an.reasons?.length ? `<h4>Why Foretape flagged it</h4><details><summary>Score ${Math.round(an.score)} / 100 — show the breakdown</summary><ul class="reasons" style="margin-top:10px">${an.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></details>` : "",
     a.url ? `<div style="margin-top:26px"><a class="btn primary" href="${esc(a.url)}" target="_blank" rel="noopener">${rd && !rel.length ? "Open the quote" : "Open the source"} ↗</a></div>` : "",
     alertActions(a),
+    voteRow(a),
   ].filter(Boolean);
   showSheet(blocks.join(""));
+}
+// was it useful? one vote per phone; the counts are every phone's
+function voteRow(a) {
+  if (a.kind === "system") return "";
+  const mineV = (desk?.votes || {})[a.id] || 0, fb = a.edge?.feedback || {};
+  return `<div class="vote"><span class="sub">Was this alert useful?</span>
+    <button class="btn ghost small${mineV === 1 ? " sel" : ""}" data-act="vote" data-s="${esc(a.id)}" data-v="${mineV === 1 ? 0 : 1}">👍 ${fb.up || ""}</button>
+    <button class="btn ghost small${mineV === -1 ? " sel" : ""}" data-act="vote" data-s="${esc(a.id)}" data-v="${mineV === -1 ? 0 : -1}">👎 ${fb.down || ""}</button></div>`;
 }
 // the stocks an alert is about, each a door to its page; share it; paper-track it from here
 function alertActions(a) {
@@ -671,13 +680,19 @@ const CATS = [["news", "Headlines"], ["radar", "Radar & ignition"], ["options", 
 const FLOORS = [["", "All the server sends"], ["HIGH", "HIGH and up"], ["CRITICAL", "CRITICAL only"]];
 const KIND_LABEL = { news: "Headline", radar: "Radar", options: "Options", insider: "Insider buy", macro: "Macro", tape: "Tape", system: "System", ignition: "Ignition", confluence: "Confluence" };
 
+// the watchlist in its groups (ungrouped first), each group in the order its stocks were added
+function groupedWatch(wl) {
+  const groups = desk.groups || {}, out = new Map([["", []]]);
+  wl.forEach((w) => { const g = groups[w.symbol] || ""; if (!out.has(g)) out.set(g, []); out.get(g).push(w); });
+  return [...out.entries()].filter(([, rows]) => rows.length);
+}
 function renderDesk() {
   if (!desk) return;
   const wl = desk.watchlist;
   $("dWatch").innerHTML = `<div class="addrow"><input id="wlIn" class="key" placeholder="Add tickers: NVDA, AMD, PLTR" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="wl-in">Add</button></div>`
-    + (wl.length ? wl.map((w) => `<div class="li"><span class="sym" style="width:64px" data-tk="${esc(w.symbol)}" role="button">${esc(w.symbol)}</span>
+    + (wl.length ? groupedWatch(wl).map(([g, rows]) => (g ? `<div class="sub sh">${esc(g)}</div>` : "") + rows.map((w) => `<div class="li"><span class="sym" style="width:64px" data-tk="${esc(w.symbol)}" role="button">${esc(w.symbol)}${(desk.notes || {})[w.symbol] ? ` <small title="note">📝</small>` : ""}</span>
         <span class="grow num">${fmtPx(w.price)}</span>${w.chg_day != null ? barHTML(w.chg_day) : ""}<span class="chg num ${cls(w.chg_day)}">${pct(w.chg_day)}</span>
-        <button class="x" data-act="wl-rm" data-s="${esc(w.symbol)}" aria-label="Remove ${esc(w.symbol)}">✕</button></div>`).join("")
+        <button class="x" data-act="wl-group" data-s="${esc(w.symbol)}" aria-label="Group ${esc(w.symbol)}">⋯</button><button class="x" data-act="wl-rm" data-s="${esc(w.symbol)}" aria-label="Remove ${esc(w.symbol)}">✕</button></div>`).join("")).join("")
       : `<div class="li"><span class="muted">Empty. Add tickers above, or tap ☆ Watch on any stock's page. Alerts on your stocks get the <b>Mine</b> filter on the tape, and reach your lock screen even at MEDIUM.</span></div>`);
   const pa = desk.price_alerts;
   $("dAlerts").innerHTML = pa.length ? pa.map((a) => {
@@ -699,11 +714,19 @@ function renderDesk() {
         <span class="chg num ${cls(c.pnl_pct)}">${pct(c.pnl_pct)}</span><button class="x" data-act="tr-journal" data-s="${esc(c.id)}" aria-label="Journal">✎</button></div>`).join("")
       + (rec.by_tag?.length > 1 || rec.by_tag?.[0]?.tag !== "untagged" ? `<div class="sub" style="padding:12px 0 4px">By tag</div>` + rec.by_tag.map((g) => `<div class="kv"><span>#${esc(g.tag)}</span><b class="num">${g.wins} of ${g.n} won · avg <span class="${cls(g.avg)}">${pct(g.avg)}</span></b></div>`).join("") : "") : "");
   renderKeywords();
+  const tr2 = desk.transfer;
+  $("dMove").innerHTML = `<div class="sub" style="margin-bottom:12px">Your desk lives with this phone. To use it on another phone or browser, make a code here and enter it there within 15 minutes: watchlist, alerts, calls, journal, keywords and settings are copied.</div>
+    ${tr2 ? `<div class="code">${esc(tr2.code.slice(0, 4))}-${esc(tr2.code.slice(4))}</div><div class="sub">valid for ${esc(dur(tr2.until - Date.now() / 1000).replace(/ \d+s$/, ""))}, once</div>` : `<button class="btn ghost small" data-act="xfer-out">Make a code</button>`}
+    <div class="addrow" style="margin-top:8px"><input id="xferIn" class="key" placeholder="Have a code? XXXX-XXXX" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="xfer-in">Copy here</button></div>`;
   const pr = desk.prefs, q = pr.quiet || {};
   $("dPrefs").innerHTML = `<div class="sub" style="padding-top:12px">What may push to this phone</div>
     <div class="row" style="padding:10px 0 4px">${CATS.map(([k, l]) => `<button class="btn ghost small${pr.cats[k] !== false ? " sel" : ""}" data-act="cat" data-s="${k}" aria-pressed="${pr.cats[k] !== false}">${l}</button>`).join("")}</div>
     <div class="sub" style="padding-top:8px">This phone's floor</div>
     <div class="row" style="padding:10px 0 4px">${FLOORS.map(([k, l]) => `<button class="btn ghost small${(pr.min_sev || "") === k ? " sel" : ""}" data-act="floor" data-s="${k}">${l}</button>`).join("")}</div>
+    <div class="sub" style="padding-top:8px">How pushes arrive${desk.held ? ` · <span class="gold">${desk.held} held for the next digest</span>` : ""}</div>
+    <div class="row" style="padding:10px 0 4px">${[[0, "Each alert"], [15, "Digest · 15 min"], [60, "Digest · hourly"]].map(([k, l]) => `<button class="btn ghost small${(pr.digest || 0) === k ? " sel" : ""}" data-act="digest" data-s="${k}">${l}</button>`).join("")}</div>
+    <div class="kv"><span>Earnings-day reminders<div class="sub">before a stock you watch reports: what options price, its usual move</div></span><b><button class="btn ghost small${pr.earn_remind !== false ? " sel" : ""}" data-act="flag" data-s="earn_remind">${pr.earn_remind !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>The open plan, 9:20 ET<div class="sub">your stocks pre-market, the top gappers and why, today's timed events</div></span><b><button class="btn ghost small${pr.open_plan !== false ? " sel" : ""}" data-act="flag" data-s="open_plan">${pr.open_plan !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>End-of-day report card<div class="sub">16:05 ET: your watchlist's day, your calls, what fired, how the alerts did</div></span><b><button class="btn ghost small${pr.eod !== false ? " sel" : ""}" data-act="eod">${pr.eod !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Watchlist pushes<div class="sub">a MEDIUM alert on a stock you watch still reaches your lock screen</div></span><b><button class="btn ghost small${pr.watch_push ? " sel" : ""}" data-act="wpush">${pr.watch_push ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Quiet hours (ET)<div class="sub">${pr.quiet ? `only CRITICAL between ${esc(q.start)} and ${esc(q.end)}` : "off: everything you allow, any hour"}</div></span>
@@ -824,7 +847,10 @@ function tickerHTML(d) {
     ${pr.laggards?.length ? `<div class="sub" style="padding:12px 0 4px">${esc(d.symbol)} is ${pct(pr.me)}; these haven't moved yet: <b class="gold">${pr.laggards.map((x) => esc(x.symbol)).join(", ")}</b>. Where a sympathy move would come from, if it comes.</div>` : ""}
     ${pr.rows.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span><div class="grow"><div>${esc(x.name)}</div><div class="sub">${esc(x.cap)}${(pr.laggards || []).some((l) => l.symbol === x.symbol) ? ` · <span class="gold">not moved yet</span>` : ""}</div></div>${x.chg != null ? barHTML(x.chg) : ""}<span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("")}
     ${pr.avg != null ? `<div class="kv"><span>Peers on average</span><b class="num ${cls(pr.avg)}">${pct(pr.avg)}</b></div>` : ""}</div>` : "";
-  const why = (d.why || []).length ? `<h4>Why it's moving</h4><div class="panel glass">${d.why.map((x) => `<div class="li"><div class="grow"><a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a><div class="sub">${esc(outlet(x.source))} · ${esc(x.age)} ago</div></div></div>`).join("")}</div>` : "";
+  const why = `<h4>Why it's moving</h4><div class="panel glass" id="whyBox">${(d.why || []).length ? d.why.map((x) => `<div class="li"><div class="grow"><a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a><div class="sub">${esc(outlet(x.source))} · ${esc(x.age)} ago</div></div></div>`).join("")
+    : `<div class="li"><span class="muted grow">No headline on it since the last session.</span><button class="btn ghost small" data-act="why" data-s="${sym}">Find why now</button></div>`}</div>`;
+  const note = (desk?.notes || {})[d.symbol];
+  const noteBlock = `<div class="note glass" data-act="note" data-s="${sym}" role="button">${note ? `<span>📝 ${esc(note.text)}</span><small class="faint">${ago(note.ts)} ago · edit</small>` : `<span class="faint">📝 Add a note on ${sym}</span>`}</div>`;
   const ign = d.radar?.ignition, o = d.options;
   const tape = ign || d.radar?.change_pct != null || o ? `<h4>On the tape</h4><div class="panel glass">
     ${ign ? `<div class="kv"><span>⚡ ${ign.kind === "buildup" ? "Building" : "Ignition"} ${ago(ign.detected)} ago</span><b class="num ${cls(ign.move_pct)}">${pct(ign.move_pct)}${ign.burst ? ` · ${Math.round(ign.burst)}× vol` : ""}</b></div>` : ""}
@@ -846,7 +872,7 @@ function tickerHTML(d) {
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
   const implied = `<h4>What options price in</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
-  return [head + relLine + earnLine, acts, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
+  return [head + relLine + earnLine, acts, noteBlock, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0;
 async function openTicker(sym) {
@@ -884,7 +910,19 @@ async function loadImplied(sym) {  // returns once the panel is filled
   const dt = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   el.innerHTML = r.rows.map((x) => `<div class="kv"><span>By ${esc(dt(x.expiry))} <span class="sub">${x.dte}d${x.earnings ? ` · <span class="gold">earnings inside</span>` : ""}</span></span>
       <b class="num">±${x.move_pct.toFixed(1)}% <span class="sub">${fmtPx(x.low)} – ${fmtPx(x.high)}</span></b></div>`).join("")
+    + positioningRows(r.positioning)
     + `<div class="sub" style="padding:4px 0 12px">The at-the-money straddle (the $${esc(String(r.rows[0].strike))} call + put)${r.iv30 ? `; 30-day implied vol ${r.iv30}%` : ""}. ${r.rows.some((x) => !x.quoted) ? "Some from last trades, not live quotes. " : ""}${esc(r.source || "")}.</div>`;
+}
+// where the options market is leaning: today's put/call volume, the open-interest walls, max pain
+function positioningRows(p) {
+  if (!p) return "";
+  const dt = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return [
+    p.pc_volume != null ? `<div class="kv"><span>Put/call volume today <span class="sub">${(p.put_volume || 0).toLocaleString()} puts · ${(p.call_volume || 0).toLocaleString()} calls</span></span><b class="num ${p.pc_volume > 1.2 ? "neg" : p.pc_volume < 0.6 ? "pos" : ""}">${p.pc_volume.toFixed(2)}</b></div>` : "",
+    p.call_wall ? `<div class="kv"><span>Call wall <span class="sub">most call open interest above, ${esc(dt(p.expiry))}</span></span><b class="num">$${esc(String(p.call_wall.strike))} <span class="sub">${p.call_wall.oi.toLocaleString()} OI</span></b></div>` : "",
+    p.put_wall ? `<div class="kv"><span>Put wall <span class="sub">most put open interest below</span></span><b class="num">$${esc(String(p.put_wall.strike))} <span class="sub">${p.put_wall.oi.toLocaleString()} OI</span></b></div>` : "",
+    p.max_pain != null ? `<div class="kv"><span>Max pain, ${esc(dt(p.expiry))} <span class="sub">where holders collect least</span></span><b class="num">$${esc(String(p.max_pain))}</b></div>` : "",
+  ].join("");
 }
 function levelsText(t) {
   const bit = (w) => t[w] != null ? ` · ${w} ${fmtPx(t[w])}${t[w + "_hit"] ? " ✓" : ""}` : "";
@@ -935,6 +973,35 @@ async function onAct(el) {
   else if (a === "ics") { location.href = icsUrl("webcal"); }
   else if (a === "ics-copy") { try { await navigator.clipboard.writeText(icsUrl("https")); toast("Calendar link copied. In Google Calendar: Other calendars → From URL."); } catch (_) { toast(icsUrl("https")); } }
   else if (a === "sector") openSector(s);
+  else if (a === "why") {
+    el.disabled = true; el.textContent = "Searching filings and news…";
+    let r;
+    try { r = await api("/api/why/" + encodeURIComponent(s), { method: "POST", body: "{}" }); } catch (e) { r = { available: false, why: e.message }; }
+    const box = $("whyBox");
+    if (!box) return;
+    box.innerHTML = !r.available || r.busy ? `<div class="li"><span class="muted">${esc(r.why || "Not available.")}</span></div>`
+      : r.found.length ? r.found.map((x) => `<div class="li"><div class="grow"><a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a><div class="sub">${esc(outlet(x.source))} · score ${x.score}${x.published ? ` · ${ago(x.published)} ago` : ""}</div></div></div>`).join("")
+      : `<div class="li"><span class="muted">Searched ${esc((r.searched || []).join(" and "))}: nothing on it since the last session. A move with no news is its own signal.</span></div>`;
+  }
+  else if (a === "note") {
+    const cur = (desk?.notes || {})[s]?.text || "";
+    const v = prompt(`Your note on ${s} (this phone only; empty removes it):`, cur);
+    if (v != null && await deskEdit("note", { symbol: s, text: v })) refreshTickerSheet();
+  }
+  else if (a === "wl-group") {
+    const v = prompt(`Group for ${s} (e.g. Earnings plays, Semis; empty: no group):`, (desk.groups || {})[s] || "");
+    if (v != null) await deskEdit("watch_group", { symbol: s, group: v });
+  }
+  else if (a === "vote") {
+    if (await deskEdit("vote", { id: s, v: +el.dataset.v })) { toast(+el.dataset.v ? "Thanks: counted" : "Vote removed"); openSheet(s); }
+  }
+  else if (a === "digest") await deskEdit("prefs", { digest: +s });
+  else if (a === "flag") await deskEdit("prefs", { [s]: desk.prefs[s] === false });
+  else if (a === "xfer-out") await deskEdit("transfer_out", {});
+  else if (a === "xfer-in") {
+    const code = $("xferIn").value.trim();
+    if (code && confirm("Replace this phone's desk with the one from the other phone?") && await deskEdit("transfer_in", { code })) toast("Desk copied to this phone");
+  }
   else if (a === "cat") { const on = desk.prefs.cats[s] !== false; await deskEdit("prefs", { cats: { [s]: !on } }); }
   else if (a === "wpush") await deskEdit("prefs", { watch_push: !desk.prefs.watch_push });
   else if (a === "floor") await deskEdit("prefs", { min_sev: s || null });

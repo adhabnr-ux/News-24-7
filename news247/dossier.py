@@ -320,8 +320,11 @@ def base_rate(rates: dict[str, Any], alert: Any, min_n: int = 8) -> dict[str, An
         return None
     cat, _, sev = key.partition(":")
     label = RECORD_LABEL.get(cat, cat.title()) + (f" · {sev}" if sev else "")
-    return {"key": key, "label": label, "h1": h1 if h1 and h1["n"] >= min_n else None,
-            "close": close if close and close["n"] >= min_n else None}  # fmt: skip
+    out = {"key": key, "label": label, "h1": h1 if h1 and h1["n"] >= min_n else None,
+           "close": close if close and close["n"] >= min_n else None}  # fmt: skip
+    # a group that went the wrong way most of the time, on enough alerts to mean something
+    out["fades"] = any(x and x["n"] >= 20 and x["hit"] <= 0.4 for x in (out["h1"], out["close"]))
+    return out
 
 
 def base_line(base: dict[str, Any] | None) -> str:
@@ -334,7 +337,8 @@ def base_line(base: dict[str, Any] | None) -> str:
     if base.get("close"):
         bits.append(f"{round(base['close']['hit'] * 100)}% by the close")
     n = max((base.get(k) or {}).get("n", 0) for k in ("h1", "close"))
-    return f"Alerts like this ({base['label']}): {', '.join(bits)} · {n} graded"
+    fades = " · historically fades" if base.get("fades") else ""
+    return f"Alerts like this ({base['label']}): {', '.join(bits)} · {n} graded{fades}"
 
 
 def track_record(engine: Engine, days: float = 30, now: float | None = None) -> dict[str, Any]:
