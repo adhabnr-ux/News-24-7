@@ -756,19 +756,31 @@ HALT_TITLE = re.compile(
 )  # sources/halts.py: "TRADING HALT SYM (Name) — Label [CODE]"
 
 
+RESUME_TITLE = re.compile(r"^▶ (\S+) resumes trading at (\S+) ET")
+
+
 def halts_board(engine: Engine, now: float | None = None, hours: float = 24) -> dict[str, Any]:
     """Trading halts from Nasdaq's feed (all US exchanges), newest first, with the reason and the
     resumption time when the feed gave one."""
     now = now or time.time()
     rows = []
-    for it in engine.storage.items_from("nasdaq-halts", since=now - hours * 3600, limit=60):
+    items = engine.storage.items_from("nasdaq-halts", since=now - hours * 3600, limit=120)
+    resumed = {}  # symbol -> "10:35:00", from the resumption items (newest first, so the latest wins)
+    for it in items:
+        m = RESUME_TITLE.match(it["title"])
+        if m:
+            resumed.setdefault(m.group(1), m.group(2))
+    for it in items:
+        if RESUME_TITLE.match(it["title"]):
+            continue
         summ = it.get("summary") or ""
         m = HALT_TITLE.search(it["title"])
         mk = re.search(r"Market: ([^.]*)\.", summ)
         resume = re.search(r"Resumes ([^E]+?) ET", summ)
         rows.append({"symbol": (it.get("tickers") or [""])[0], "title": it["title"], "code": m.group(2) if m else "",
                      "reason": m.group(1) if m else "", "market": mk.group(1) if mk else "",
-                     "halted": it.get("published") or it["detected"], "resume": resume.group(1).strip() if resume else "",
+                     "halted": it.get("published") or it["detected"],
+                     "resume": resume.group(1).strip() if resume else resumed.get((it.get("tickers") or [""])[0], ""),
                      "url": it.get("url")})  # fmt: skip
     return {"rows": rows, "hours": hours}
 

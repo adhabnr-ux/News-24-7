@@ -248,33 +248,95 @@ class Desk:
     def allows(self, device: str, alert: Any, now: float | None = None) -> bool:
         """May this alert push to this phone? Its category must be on, and in quiet hours only
         CRITICAL gets through. A phone with no profile gets everything (as before)."""
+        return self.block_reason(device, alert, now) is None
+
+    def shared_list(self, code: str, now: float | None = None) -> dict[str, Any] | None:
+        """A shared watchlist by its code (dashes and case don't matter): {symbols, name, until}, or
+        None when the code is wrong or expired."""
+        code = str(code or "").strip().upper().replace(" ", "").replace("-", "")
+        if not code or not hasattr(self.storage, "get_setting"):
+            return None
+        raw = self.storage.get_setting(f"share:{code}")
+        data = json.loads(raw) if raw else None
+        if not data or data.get("until", 0) < (now or time.time()):
+            return None
+        syms = [x for x in (clean_symbol(s) for s in data.get("symbols") or []) if x]
+        return {"symbols": syms, "name": data.get("name") or "", "until": data["until"]}
+
+    def block_reason(self, device: str, alert: Any, now: float | None = None) -> str | None:
+        """Why this phone's settings keep this alert from pushing, in plain words (None: they don't)."""
+        b = self.block(device, alert, now)
+        return b["text"] if b else None
+
+    def block(self, device: str, alert: Any, now: float | None = None) -> dict[str, Any] | None:
+        """The first of this phone's settings that keeps this alert from pushing: {code, text, fix},
+        where fix is the desk action (and body) that would let it through. The same checks, in the
+        same order, as `allows`."""
         p = self.profiles.get(device)
         if p is None:
-            return True
+            return None
         prefs = p.get("prefs") or {}
         cat = alert_category(alert)
+
+        def out(code: str, text: str, label: str, action: str, body: dict[str, Any]) -> dict[str, Any]:
+            return {"code": code, "text": text, "fix": {"label": label, "action": action, "body": body}}
+
         if cat != "system" and not (prefs.get("cats") or {}).get(cat, True):
-            return False
+            return out(
+                "category",
+                f"you turned {cat} alerts off",
+                f"Turn {cat} alerts on",
+                "prefs",
+                {"cats": {cat: True}},
+            )
         sev_name = (
             alert.get("severity")
             if isinstance(alert, dict)
             else getattr(getattr(alert, "severity", None), "name", "")
         )
-        if str(sev_name) != "CRITICAL":
+        sev = str(sev_name)
+        if sev != "CRITICAL":
             if (p.get("snooze") or {}).get(cat, 0) > (now or time.time()):
-                return False
+                return out(
+                    "snooze",
+                    f"{cat} alerts were snoozed",
+                    "End the snooze",
+                    "snooze",
+                    {"cat": cat, "hours": 0},
+                )
             edge = (alert.get("edge") if isinstance(alert, dict) else getattr(alert, "edge", None)) or {}
             if prefs.get("skip_fades") and (edge.get("base") or {}).get("fades"):
-                return False
-        sev = sev_name
+                return out("fades", "alerts like this usually fade, and you skip those",
+                           "Stop skipping fades", "prefs", {"skip_fades": False})  # fmt: skip
         if self.all_muted(device, alert, now):
-            return False
-        if str(sev) != "CRITICAL" and (self.source_muted(p, alert) or self.neg_match(device, alert)):
-            return False
+            tickers = alert.get("tickers") if isinstance(alert, dict) else getattr(alert, "tickers", None)
+            sym = (tickers or [""])[0]
+            return out(
+                "muted", f"you muted {sym or 'this stock'}", f"Unmute {sym}", "unmute", {"symbol": sym}
+            )
+        if sev != "CRITICAL":
+            if self.source_muted(p, alert):
+                src = _source_of(alert)
+                return out("source", f"you muted its source ({src})", f"Unmute {src}", "prefs",
+                           {"mute_source": src, "on": False})  # fmt: skip
+            word = self.neg_match(device, alert)
+            if word:
+                return out("word", f"it has your never-push word “{word}”", f"Remove “{word}”",
+                           "neg_remove", {"keyword": word})  # fmt: skip
         floor = prefs.get("min_sev")
-        if cat != "system" and floor in SEV_RANK and SEV_RANK.get(str(sev), 0) < SEV_RANK[floor]:
-            return False
-        return not (in_quiet(prefs.get("quiet"), now) and str(sev) != "CRITICAL")
+        if cat != "system" and floor in SEV_RANK and SEV_RANK.get(sev, 0) < SEV_RANK[floor]:
+            return out(
+                "floor",
+                f"it's {sev}, under your {floor} floor",
+                "Remove the floor",
+                "prefs",
+                {"min_sev": None},
+            )
+        if in_quiet(prefs.get("quiet"), now) and sev != "CRITICAL":
+            return out(
+                "quiet", "it came in your quiet hours", "Turn quiet hours off", "prefs", {"quiet": None}
+            )
+        return None
 
     def all_muted(self, device: str, alert: Any, now: float | None = None) -> bool:
         """Is every stock this alert is about muted on this phone? (No stocks: never muted.)"""
@@ -335,8 +397,7 @@ class Desk:
         muted = (p.get("prefs") or {}).get("mute_sources") or []
         if not muted:
             return False
-        item = alert.get("item") if isinstance(alert, dict) else getattr(alert, "item", None)
-        src = (item.get("source") if isinstance(item, dict) else getattr(item, "source", "")) if item else ""
+        src = _source_of(alert)
         return bool(src) and src in muted
 
     def neg_match(self, device: str, alert_or_text: Any) -> str | None:
@@ -656,13 +717,13 @@ class Desk:
                 )
             p["share"] = {"code": code, "until": now + SHARE_TTL_S, "n": len(p["watchlist"]), "name": name}
         elif action == "import_list":
-            code = str(body.get("code") or "").strip().upper().replace(" ", "").replace("-", "")
-            raw = self.storage.get_setting(f"share:{code}") if hasattr(self.storage, "get_setting") else None
-            data = json.loads(raw) if raw else None
-            if not data or data.get("until", 0) < now:
+            data = self.shared_list(str(body.get("code") or ""), now)
+            if data is None:
                 raise ValueError("that list code is wrong or expired")
-            syms = [x for x in (clean_symbol(s) for s in data.get("symbols") or []) if x]
+            syms = data["symbols"]
+            before = set(p["watchlist"])
             p["watchlist"] = list(dict.fromkeys([*p["watchlist"], *syms]))[:MAX_WATCH]
+            p["imported"] = len(set(p["watchlist"]) - before)
             if data.get("name"):
                 for x in syms:
                     p.setdefault("groups", {}).setdefault(x, data["name"][:24])
@@ -1057,6 +1118,13 @@ def forward_request(fw: dict[str, str] | None, payload: dict[str, Any]) -> tuple
             },
         }
     return None
+
+
+def _source_of(alert: Any) -> str:
+    item = alert.get("item") if isinstance(alert, dict) else getattr(alert, "item", None)
+    return str(
+        (item.get("source") if isinstance(item, dict) else getattr(item, "source", "")) if item else ""
+    )
 
 
 def _kw_pattern(k: str) -> re.Pattern[str]:

@@ -24,6 +24,7 @@ const standalone = matchMedia("(display-mode: standalone)").matches || navigator
 const pushCapable = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let alerts = [], app = {}, tab = "tape", unread = 0, showAll = false, sheetOpen = false;
+let sheetAlert = null;  // the alert open in the sheet (copy as text, why-push)
 let desk = null, mine = new Set();  // this phone's desk (watchlist, price alerts, tracked calls) and its watched symbols
 const seen = new Set();
 
@@ -728,6 +729,7 @@ async function openSheet(id) {
   let a;
   try { a = await api("/api/alert/" + encodeURIComponent(id)); } catch (_) { a = alerts.find((x) => x.id === id); }
   if (!a) return;
+  sheetAlert = a;
   const an = a.analysis || {}, it = a.item || {}, e = a.edge || {}, p = e.play || {}, since = a.since || {};
   const lag = it.published && it.detected ? Math.max(0, it.detected - it.published) : null;
   const tl = (a.story_sources || []).map((s, i) => `<div class="li"><div class="grow"><b>${esc(s.source)}</b>
@@ -848,7 +850,10 @@ function alertActions(a) {
   const track = syms[0] && a.kind !== "system" ? dirs.map((d) => `<button class="btn ghost small" data-act="track" data-s="${esc(syms[0])}" data-dir="${d}" data-aid="${esc(a.id)}">${d === "long" ? "▲" : "▼"} Track ${esc(syms[0])} ${d}</button>`).join("") : "";
   return `<h4>Act on it</h4><div class="acts">${syms.map((s) => `<button class="btn ghost small" data-tk="${esc(s)}">${esc(s)} page ›</button>`).join("")}${track}
     <button class="btn ghost small" data-act="share-a" data-s="${esc(a.id)}" data-title="${esc(a.title)}">Share ↗</button>
-    ${(desk?.saved || []).includes(a.id) ? `<button class="btn ghost small sel" data-act="unsave" data-s="${esc(a.id)}">★ Saved</button>` : `<button class="btn ghost small" data-act="save" data-s="${esc(a.id)}">☆ Save</button>`}</div>
+    ${(desk?.saved || []).includes(a.id) ? `<button class="btn ghost small sel" data-act="unsave" data-s="${esc(a.id)}">★ Saved</button>` : `<button class="btn ghost small" data-act="save" data-s="${esc(a.id)}">☆ Save</button>`}
+    <button class="btn ghost small" data-act="copy-a">⧉ Copy as text</button>
+    <button class="btn ghost small" data-act="why-push" data-s="${esc(a.id)}">📲 Did this reach my phone?</button></div>
+    <div id="whyPush"></div>
     ${track ? `<div class="sub" style="margin-top:8px">Tracking takes the live price as your entry and keeps the P&amp;L on your desk. Paper only: the system never trades.</div>` : ""}`;
 }
 function showSheet(html) {
@@ -891,7 +896,8 @@ document.addEventListener("keydown", (e) => {
 });
 // keyboard (desktop): Esc closes, / searches, 1-6 switch tabs, w watches the open stock, ? lists them
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { closeSheet(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); Palette.toggle(); return; }
+  if (e.key === "Escape") { if (Palette.open) { Palette.hide(); return; } closeSheet(); return; }
   if (e.target.closest?.("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "/") { e.preventDefault(); closeSheet(); go("tape"); setTimeout(() => $("q").focus(), 50); }
   else if (/^[1-6]$/.test(e.key)) { closeSheet(); go(TABS[+e.key - 1]); }
@@ -905,7 +911,7 @@ document.addEventListener("keydown", (e) => {
     cards[i].classList.add("kfocus"); cards[i].scrollIntoView({ block: "center", behavior: "smooth" });
   }
   else if (e.key === "o" && !sheetOpen) { const c = document.querySelector(".stage .alert.kfocus"); if (c) openSheet(c.dataset.id); }
-  else if (e.key === "?") toast("Keys: / search · 1-6 tabs · j/k move through the tape · o open · w watch the open stock · Esc close", null, 7000);
+  else if (e.key === "?") toast("Keys: ⌘K / Ctrl-K jump anywhere · / search · 1-6 tabs · j/k move through the tape · o open · w watch the open stock · Esc close", null, 7000);
 });
 document.addEventListener("click", (e) => {
   const seg = e.target.closest("#tapeSeg button");
@@ -929,6 +935,7 @@ async function loadDesk() {
   deskChanged();
 }
 function deskChanged() {
+  setTimeout(prefetchWatch, 1500);
   // holdings drive the exposure line on cards: refresh their values, then the tape
   if (Object.keys(desk?.holdings || {}).length) loadPortf().then(() => { if (tab === "tape") renderTape(); });
   else portf = null;
@@ -1017,6 +1024,7 @@ function renderDesk() {
   const sh = desk.share;
   $("dShare").innerHTML = `<div class="sub" style="margin-bottom:12px">Share your watchlist: a code anyone can use for 7 days to add your stocks to theirs (a copy; nothing else of yours is shared).</div>
     ${sh ? `<div class="code">${esc(sh.code.slice(0, 4))}-${esc(sh.code.slice(4))}</div><div class="sub">${sh.n} stocks · valid ${esc(dur(sh.until - Date.now() / 1000).replace(/ \d+[ms]$/, ""))}</div>` : `<button class="btn ghost small" data-act="share-list">Make a share code</button>`}
+    ${sh ? `<div class="row" style="margin-top:8px"><button class="btn ghost small" data-act="list-link">Share as a link ↗</button></div>` : ""}
     <div class="addrow" style="margin-top:8px"><input id="listIn" class="key" placeholder="Got a list code? XXXX-XXXX" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="import-list">Add those stocks</button></div>`;
   // the heatmap: your stocks at a glance, colored by today's move
   const hm = desk.watchlist.filter((w) => w.chg_day != null);
@@ -1396,7 +1404,7 @@ function tickerHTML(d) {
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
   const implied = `<h4>What options price in ${tip("implied")}</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
-  return [head + relLine + sessLine + earnLine, acts, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div>` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
+  return [head + relLine + sessLine + earnLine, acts, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0, tickerNow = null;
 const impliedNow = {};
@@ -1422,7 +1430,7 @@ function levelChart(d) {
   let lastY = -99;
   lines.forEach((l) => { l.ly = Math.max(Y(l.v) + 3.5, lastY + 11); lastY = l.ly; });
   const up = pts[pts.length - 1][1] >= pts[0][1];
-  return `<svg viewBox="0 0 ${W} ${H}" class="lvl" role="img" aria-label="${esc(d.symbol)} today with its levels">
+  return `<svg viewBox="0 0 ${W} ${H}" class="lvl" role="img" aria-label="${esc(d.symbol)} today with its levels. Tap a level to set a price alert there." data-lo="${lo}" data-span="${span}" data-h="${H}" data-w="${W - padR}" data-px="${px}" data-s="${esc(d.symbol)}">
     ${lines.map((l) => `<line x1="${padL}" x2="${W - padR}" y1="${Y(l.v).toFixed(1)}" y2="${Y(l.v).toFixed(1)}" stroke="${l.color}" stroke-dasharray="${l.dash}"/><text x="${W - padR + 4}" y="${l.ly.toFixed(1)}" fill="${l.color}" font-size="10" font-family="Inter">${esc(l.label)} ${l.v >= 1000 ? Math.round(l.v) : l.v.toFixed(2)}</text>`).join("")}
     <path d="${path}" fill="none" stroke="${up ? "var(--up)" : "var(--down)"}" stroke-width="2"/>
     <circle cx="${X(pts[pts.length - 1][0]).toFixed(1)}" cy="${Y(pts[pts.length - 1][1]).toFixed(1)}" r="3.5" fill="${up ? "var(--up)" : "var(--down)"}"/></svg>`;
@@ -1444,13 +1452,58 @@ async function openTicker(sym) {
   if (!sym) return;
   $("toast").classList.remove("show");
   const n = ++tickerReq;
+  const hit = tickerCache.get(sym);
+  if (hit && Date.now() - hit.at < 180e3) {  // prefetched: show it now, then bring it up to date in place
+    tickerNow = hit.d; showSheet(tickerHTML(hit.d)); $("sheet").dataset.sym = hit.d.symbol; noteRecent(hit.d);
+    loadImplied(hit.d.symbol).finally(() => loadEarnings(hit.d.symbol));
+    api("/api/ticker/" + encodeURIComponent(sym)).then((d) => {
+      tickerCache.set(sym, { d, at: Date.now() });
+      if (n !== tickerReq || $("sheet").dataset.sym !== d.symbol) return;
+      tickerNow = d;
+      const y = $("sheet").scrollTop, imp = $("implied")?.innerHTML, pe = $("pastEarn")?.innerHTML;
+      $("sheetBody").innerHTML = tickerHTML(d);
+      if (imp && $("implied")) $("implied").innerHTML = imp;
+      if (pe && $("pastEarn")) $("pastEarn").innerHTML = pe;
+      $("sheet").scrollTop = y;
+    }).catch(() => {});
+    return;
+  }
   let d;
   try { d = await api("/api/ticker/" + encodeURIComponent(sym)); } catch (_) { toast(`No page for ${sym}`); return; }
   if (n !== tickerReq) return;  // a newer tap won
+  tickerCache.set(sym, { d, at: Date.now() });
   tickerNow = d;
   showSheet(tickerHTML(d));
   $("sheet").dataset.sym = d.symbol;
+  noteRecent(d);
   loadImplied(d.symbol).finally(() => loadEarnings(d.symbol));
+}
+// stock pages open instantly for the stocks you watch: fetched quietly in the background, kept 3 minutes
+const tickerCache = new Map();
+let prefetching = false;
+async function prefetchWatch() {
+  if (prefetching || document.hidden || navigator.connection?.saveData) return;
+  prefetching = true;
+  try {
+    for (const w of (desk?.watchlist || []).slice(0, 8)) {
+      const c = tickerCache.get(w.symbol);
+      if (c && Date.now() - c.at < 120e3) continue;
+      try { tickerCache.set(w.symbol, { d: await api("/api/ticker/" + encodeURIComponent(w.symbol)), at: Date.now() }); } catch (_) { break; }
+      await new Promise((r) => setTimeout(r, 400));  // gently: one at a time
+    }
+  } finally { prefetching = false; }
+}
+// recently viewed stocks: under the search box, one tap back to them
+function noteRecent(d) {
+  const r = (store.get("ft_recent") || "").split(",").filter((x) => x && x !== d.symbol);
+  store.set("ft_recent", [d.symbol, ...r].slice(0, 10).join(","));
+  renderRecent();
+}
+function renderRecent() {
+  const r = (store.get("ft_recent") || "").split(",").filter(Boolean), el = $("recentRow");
+  if (!el) return;
+  el.hidden = !r.length || $("q").value.trim().length >= 2;
+  el.innerHTML = r.length ? `<span class="sub">Recent</span>${r.map((x) => `<button class="tk" data-tk="${esc(x)}">${esc(x)}</button>`).join("")}<button class="x" data-act="recent-clear" aria-label="Clear recent stocks">✕</button>` : "";
 }
 // the last reports: EPS vs the estimate and the two-day move around each, against what options price now
 async function loadEarnings(sym) {
@@ -1652,7 +1705,25 @@ async function onAct(el) {
   else if (a === "quiet-off") await deskEdit("prefs", { quiet: null });
   else if (a === "share-a") share(el.dataset.title || "Foretape alert", location.origin + "/app/#a=" + s);
   else if (a === "share-t") share(el.dataset.title || s, location.origin + "/app/#t=" + s);
-  else if (a === "search-clear") { $("q").value = ""; $("searchRes").innerHTML = ""; }
+  else if (a === "search-clear") { $("q").value = ""; $("searchRes").innerHTML = ""; renderRecent(); }
+  else if (a === "close") closeSheet();
+  else if (a === "why-push") whyPush(s);
+  else if (a === "push-fix") {
+    const fx = JSON.parse(el.dataset.fix || "{}");
+    if (fx.app === "push-on") { if (await pushOn()) whyPush(el.dataset.aid); return; }
+    if (fx.action && await deskEdit(fx.action, fx.body || {})) { toast("Done: " + fx.label); whyPush(el.dataset.aid); }
+  }
+  else if (a === "copy-a") copyAlert(sheetAlert);
+  else if (a === "push-log") openPushLog();
+  else if (a === "health") openHealth();
+  else if (a === "recent-clear") { store.set("ft_recent", ""); renderRecent(); }
+  else if (a === "palette") Palette.show();
+  else if (a === "list-link") { const c = desk?.share?.code; if (c) share(`${desk.share.n} stocks on my Foretape watchlist`, location.origin + "/app/#list=" + c.slice(0, 4) + "-" + c.slice(4)); }
+  else if (a === "list-add") {
+    const r = await deskEdit("import_list", { code: s });
+    if (r) { closeSheet(); toast(r.imported ? `Added ${r.imported} stock${r.imported === 1 ? "" : "s"} to your watchlist` : "You already watch all of them"); go("desk"); }
+  }
+  else if (a === "lvl-set") { const k = el.dataset.k, v = +el.dataset.v; if (await deskEdit("alert_add", { symbol: s, kind: k, value: v })) { toast(`🔔 Set: ${s} ${k} ${fmtPx(v)}`); refreshTickerSheet(); } }
 }
 
 // ------------------------------------------------------------------ search: tickers, companies, alerts, headlines
@@ -2050,6 +2121,156 @@ const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, ca
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
 let refreshing = false;
+// ------------------------------------------------------------------ is my phone getting what it should?
+// why one alert did or didn't reach this phone, gate by gate, with the one tap that changes it
+async function whyPush(id) {
+  const el = $("whyPush");
+  if (!el || !id) return;
+  el.innerHTML = `<div class="panel glass"><div class="li"><span class="muted">Checking this phone…</span></div></div>`;
+  let r;
+  try { r = await api("/api/why-push/" + encodeURIComponent(id)); } catch (e) { el.innerHTML = `<div class="panel glass"><div class="li"><span class="muted">${esc(e.message || "Couldn't check.")}</span></div></div>`; return; }
+  const icon = (ok) => ok === true ? `<i class="ok">✓</i>` : ok === false ? `<i class="no">✕</i>` : `<i class="mid">•</i>`;
+  el.innerHTML = `<div class="panel glass padded whyp ${r.got ? "got" : r.got === false ? "not" : ""}">
+    <div class="wverdict">${r.got ? "Delivered" : r.got === false ? "Not delivered" : "Should have arrived"}</div><p>${esc(r.verdict)}</p>
+    <div class="wsteps">${r.steps.map((st) => `<div class="wstep">${icon(st.ok)}<span>${esc(st.text)}</span></div>`).join("")}</div>
+    ${r.fix ? `<button class="btn primary small" data-act="push-fix" data-aid="${esc(id)}" data-fix="${esc(JSON.stringify(r.fix))}">${esc(r.fix.label)}</button>` : ""}
+    ${r.settings_now ? `<div class="sub" style="margin-top:10px">Worked out from your settings as they are now: this alert isn't in the push log.</div>` : ""}
+    <div class="row" style="margin-top:10px"><button class="btn ghost small" data-act="push-log">This phone's push log</button><button class="btn ghost small" data-act="health">Is it working?</button></div></div>`;
+}
+// turn alerts on from anywhere (the fix buttons): asks for permission straight from the tap
+async function pushOn() {
+  if (!pushCapable) { toast(isIOS && !standalone ? "On iPhone: Share → Add to Home Screen, then open Foretape from there" : "This browser can't show notifications", null, 6000); return false; }
+  try {
+    const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (perm !== "granted") { toast("Notifications are blocked for this app: allow them in your phone's settings", null, 6000); refreshPushUI(); return false; }
+    await subscribe(true); refreshPushUI(); toast("Alerts are on"); return true;
+  } catch (e) { toast("Couldn't turn on alerts: " + e.message); return false; }
+}
+const LOG_LABEL = { sent: ["✓", "ok", "delivered"], held: ["⏸", "mid", "kept for your digest"], filtered: ["⦸", "mid", "kept back"], failed: ["✕", "no", "failed"], gone: ["✕", "no", "subscription expired"] };
+async function openPushLog() {
+  let r;
+  try { r = await api("/api/push-log"); } catch (e) { toast(e.message); return; }
+  const today = Object.entries(r.today).map(([k, n]) => `${n} ${(LOG_LABEL[k] || [, , k])[2]}`).join(" · ");
+  showSheet(`<h2>Push log</h2><p class="muted">The last ${r.size} pushes meant for this phone: what was delivered, what your settings kept back and why, and what the push service answered.</p>
+    ${today ? `<div class="sub" style="margin:10px 0 2px">Today: ${esc(today)}</div>` : ""}
+    <div class="panel glass plog">${r.rows.length ? r.rows.map((x) => {
+      const [ic, c, l] = LOG_LABEL[x.status] || ["•", "mid", x.status], alert = /^[0-9a-f]{16}$/.test(x.id);
+      return `<div class="li"${alert ? ` data-id="${esc(x.id)}" role="button"` : ""}><i class="${c}">${ic}</i><div class="grow"><div style="font-weight:600">${esc(x.title)}</div>
+        <div class="sub">${esc(etTime(x.ts))} · ${esc(l)}${x.detail ? ": " + esc(x.detail) : ""}</div></div>${alert ? `<span class="faint">›</span>` : ""}</div>`;
+    }).join("") : `<div class="li"><span class="muted">Nothing pushed to this phone yet${pushCapable && Notification.permission === "granted" ? "" : " (alerts aren't on here)"}.</span></div>`}</div>
+    <div class="row" style="margin-top:14px"><button class="btn ghost small" data-act="health">Is it working?</button></div>`);
+}
+// is it working? each link from the news feeds to this lock screen
+async function openHealth() {
+  let r;
+  try { r = await api("/api/phone-health"); } catch (e) { toast(e.message); return; }
+  const local = [];
+  if (pushCapable) local.push({ ok: Notification.permission === "granted", title: "Notifications on this device", text: Notification.permission === "granted" ? "Allowed." : Notification.permission === "denied" ? "Blocked: allow them for this app in your phone's settings." : "Not asked yet.", fix: Notification.permission === "granted" ? null : { label: "Turn on alerts", app: "push-on" } });
+  else local.push({ ok: false, title: "Notifications on this device", text: isIOS && !standalone ? "On iPhone they work once Foretape is on your Home Screen (Share → Add to Home Screen)." : "This browser can't show notifications." });
+  if (!navigator.onLine) local.push({ ok: false, title: "Connection", text: "This device is offline." });
+  const rows = [...r.checks, ...local];
+  const bad = rows.filter((c) => c.ok === false);
+  showSheet(`<h2>Is it working?</h2><p class="muted">${bad.length ? `${bad.length} thing${bad.length > 1 ? "s" : ""} to look at.` : "Everything from the news feeds to this phone checks out."}</p>
+    <div class="panel glass health">${rows.map((c) => `<div class="li"><i class="${c.ok === true ? "ok" : c.ok === false ? "no" : "mid"}">${c.ok === true ? "✓" : c.ok === false ? "✕" : "•"}</i><div class="grow"><div style="font-weight:600">${esc(c.title)}</div><div class="sub">${esc(c.text)}</div>
+      ${c.fix ? `<button class="btn ghost small" style="margin-top:8px" data-act="push-fix" data-fix="${esc(JSON.stringify(c.fix))}">${esc(c.fix.label)}</button>` : ""}</div></div>`).join("")}</div>
+    <div class="row" style="margin-top:14px"><button class="btn ghost small" data-act="push-log">Push log</button><button class="btn ghost small" id="hTest">Send a test alert</button></div>`);
+  $("hTest").onclick = () => $("testBtn").click();
+}
+// an alert as plain text, for a group chat or a note
+async function copyAlert(a) {
+  if (!a) return;
+  const e = a.edge || {}, b = e.base, since = a.since || {};
+  const lines = [a.title, `${a.severity} · ${KIND_LABEL[a.kind] || a.kind} · ${etTime(a.created)}`];
+  if (a.analysis?.summary) lines.push(a.analysis.summary);
+  const mv = Object.entries(since).filter(([, v]) => v != null).map(([t, v]) => `${t} ${pct(v)} since the alert`);
+  if (mv.length) lines.push(mv.join(" · "));
+  if (b?.h1?.n) lines.push(`Alerts like this: ${Math.round(b.h1.hit * 100)}% went their way within an hour (median ${pct(b.h1.median)}, ${b.h1.n} graded)`);
+  if (a.url) lines.push(a.url);
+  lines.push("via Foretape · " + location.origin + "/app/#a=" + a.id);
+  const text = lines.join("\n");
+  try { await navigator.clipboard.writeText(text); toast("Copied as text"); } catch (_) { prompt("Copy this:", text); }
+}
+// a shared watchlist link (#list=CODE): see the stocks first, then add them
+async function openSharedList(code) {
+  let r;
+  try { r = await api("/api/list/" + encodeURIComponent(code)); } catch (_) { toast("That list link is wrong or has expired", null, 5000); return; }
+  showSheet(`<h2>A shared watchlist${r.name ? `: ${esc(r.name)}` : ""}</h2><p class="muted">${r.rows.length} stock${r.rows.length === 1 ? "" : "s"}${r.new < r.rows.length ? `, ${r.rows.length - r.new} already on yours` : ""}. Adding them copies the symbols to your watchlist; nothing of yours is shared back.</p>
+    <div class="panel glass">${r.rows.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span><div class="grow">${esc(x.name || "")}</div>${x.mine ? `<span class="sub">watching</span>` : ""}</div>`).join("")}</div>
+    <div class="row" style="margin-top:16px">${r.new ? `<button class="btn primary" data-act="list-add" data-s="${esc(code)}">Add ${r.new} to my watchlist</button>` : `<span class="sub">You already watch all of them.</span>`}<button class="btn ghost" data-act="close">Not now</button></div>`);
+}
+// tap the level chart at a price: a price alert there, above or below where it trades now
+document.addEventListener("click", (e) => {
+  const svg = e.target.closest?.("svg.lvl");
+  if (!svg) return;
+  const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const m = svg.getScreenCTM();
+  if (!m) return;
+  const p = pt.matrixTransform(m.inverse()), H = +svg.dataset.h, lo = +svg.dataset.lo, span = +svg.dataset.span, px = +svg.dataset.px;
+  if (p.x > +svg.dataset.w) return;  // the label column
+  let v = lo + (1 - (p.y - 10) / (H - 20)) * span;
+  v = v >= 100 ? Math.round(v * 4) / 4 : v >= 10 ? Math.round(v * 20) / 20 : Math.round(v * 100) / 100;  // a tidy level
+  if (!(v > 0) || !px) return;
+  const kind = v >= px ? "above" : "below", sym = svg.dataset.s, y = 10 + (1 - (v - lo) / span) * (H - 20);
+  svg.querySelector(".tapline")?.remove();
+  svg.insertAdjacentHTML("beforeend", `<g class="tapline"><line x1="6" x2="${svg.dataset.w}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#FFD9A0" stroke-dasharray="2 3"/><circle cx="${p.x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="#FFD9A0"/></g>`);
+  const box = $("lvlAsk") || (() => { $("lvlChart").insertAdjacentHTML("afterend", `<div id="lvlAsk" class="lvlask glass"></div>`); return $("lvlAsk"); })();
+  box.innerHTML = `<span>🔔 Alert when ${esc(sym)} goes <b>${kind}</b> <b class="num">${fmtPx(v)}</b> <span class="sub">(${pct((v / px - 1) * 100)} from here)</span></span>
+    <button class="btn primary small" data-act="lvl-set" data-s="${esc(sym)}" data-k="${kind}" data-v="${v}">Set it</button>`;
+});
+// the command palette (⌘K / Ctrl-K, or the ⌘ button): any page, stock, alert or setting by typing
+const Palette = {
+  open: false, sel: 0, items: [],
+  show() {
+    if (!TOKEN || $("main").hidden) return;
+    this.open = true; $("pal").hidden = false; $("palIn").value = ""; this.render(); requestAnimationFrame(() => $("palIn").focus());
+  },
+  hide() { this.open = false; $("pal").hidden = true; },
+  toggle() { this.open ? this.hide() : this.show(); },
+  build(q) {
+    const Q = q.trim().toLowerCase(), out = [], has = (t) => !Q || t.toLowerCase().includes(Q);
+    // best match first: a title that starts with what you typed, then a word in it, then anywhere
+    const rank = (t) => !Q ? 0 : t.toLowerCase().startsWith(Q) ? 3 : new RegExp("\\b" + Q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(t.toLowerCase()) ? 2 : 1;
+    const sym = syms(q).length === 1 && /^\$?[A-Za-z][A-Za-z0-9.-]{0,5}$/.test(q.trim()) ? syms(q)[0] : "";
+    // typed in capitals or with a $, it's surely a ticker; in lowercase, a matching page or setting comes first
+    if (sym) out.push({ ic: "◎", t: `Open ${sym}`, sub: "stock page", run: () => openTicker(sym), r: /^\$|^[A-Z0-9.-]+$/.test(q.trim()) ? 5 : 2.5 });
+    const seen = new Set(sym ? [sym] : []);
+    const stocks = [...(desk?.watchlist || []).map((w) => [w.symbol, "on your watchlist"]), ...(store.get("ft_recent") || "").split(",").filter(Boolean).map((x) => [x, "recently viewed"])];
+    stocks.forEach(([x, why]) => { if (!seen.has(x) && has(x)) { seen.add(x); out.push({ ic: "★", t: x, sub: why, run: () => openTicker(x), r: x.toLowerCase() === Q ? 6 : rank(x) + 0.5 }); } });
+    const pages = [["The tape", "tape"], ["The brief", "brief"], ["Calendar", "calendar"], ["Watch: market map, radar, options", "watch"], ["Camillo desk", "camillo"], ["Your desk", "desk"]];
+    pages.forEach(([t, v]) => { if (has(t)) out.push({ ic: "▤", t, sub: "page", run: () => { closeSheet(); go(v); }, r: rank(t) }); });
+    const acts = [
+      ["Is it working?", "check feeds, prices and this phone", openHealth], ["Push log", "the last pushes to this phone", openPushLog],
+      ["Send a test alert", "to this phone", () => $("testBtn").click()], ["Turn on alerts", "on this device", pushOn],
+      ["Glossary", "what every term means", openGlossary], ["Links", "every page in one place", openLinks],
+      ["Export my alerts (CSV)", "", () => exportDesk("csv")], ["First-run setup", "pick what you care about", openOnboard],
+    ];
+    acts.forEach(([t, sub, fn]) => { if (has(t)) out.push({ ic: "⚙", t, sub, run: fn, r: rank(t) }); });
+    if (Q.length >= 2) {
+      alerts.filter((a) => a.title.toLowerCase().includes(Q) || (a.tickers || []).some((t) => t.toLowerCase() === Q)).slice(0, 6)
+        .forEach((a) => out.push({ ic: "◆", t: a.title, sub: `${a.severity} · ${ago(a.created)} ago`, run: () => openSheet(a.id), r: 0.5 }));
+      out.push({ r: 0, ic: "⌕", t: `Search everything for “${q.trim()}”`, sub: "alerts and headlines, 30 days", run: () => { closeSheet(); go("tape"); $("q").value = q.trim(); runSearch(); setTimeout(() => $("q").scrollIntoView({ block: "start", behavior: "smooth" }), 250); } });
+    }
+    return out.map((x, i) => [x, i]).sort((a, b) => (b[0].r || 0) - (a[0].r || 0) || a[1] - b[1]).map(([x]) => x).slice(0, 14);
+  },
+  render() {
+    this.items = this.build($("palIn").value); this.sel = 0; this.paint();
+  },
+  paint() {
+    $("palList").innerHTML = this.items.length ? this.items.map((x, i) => `<div class="pi${i === this.sel ? " on" : ""}" data-pi="${i}" role="option" aria-selected="${i === this.sel}"><span class="pic">${x.ic}</span><span class="grow">${esc(x.t)}${x.sub ? `<small>${esc(x.sub)}</small>` : ""}</span></div>`).join("")
+      : `<div class="pi"><span class="muted">Nothing matches.</span></div>`;
+    $("palList").querySelector(".pi.on")?.scrollIntoView({ block: "nearest" });
+  },
+  run(i) { const x = this.items[i]; if (!x) return; this.hide(); x.run(); },
+};
+$("palIn").addEventListener("input", () => Palette.render());
+$("palIn").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); Palette.sel = (Palette.sel + (e.key === "ArrowDown" ? 1 : -1) + Palette.items.length) % Math.max(1, Palette.items.length); Palette.paint(); }
+  else if (e.key === "Enter") { e.preventDefault(); Palette.run(Palette.sel); }
+  else if (e.key === "Escape") Palette.hide();
+});
+$("palList").addEventListener("click", (e) => { const el = e.target.closest("[data-pi]"); if (el) Palette.run(+el.dataset.pi); });
+$("pal").addEventListener("click", (e) => { if (e.target.id === "pal") Palette.hide(); });
+
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
@@ -2090,7 +2311,8 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) { markSeen(); return; }
   if (TOKEN) { navigator.clearAppBadge?.(); Promise.all([load(), loadDesk()]).then(renderAway).catch(() => {}); }
 });
-$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 220); $("sFilters").hidden = $("q").value.trim().length < 2; });
+$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 220); $("sFilters").hidden = $("q").value.trim().length < 2; renderRecent(); });
+renderRecent();
 renderFilters();
 $("q").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
@@ -2103,6 +2325,8 @@ $("unlock").onclick = async () => {
   try { await start(); } catch (e) { toast("That key didn't work"); }
 };
 function route() {
+  const lst = location.hash.match(/list=([A-Za-z0-9-]{8,9})/);
+  if (lst) { history.replaceState(null, "", location.pathname + location.search); return openSharedList(lst[1]); }
   const q = location.hash.match(/q=([^&]+)/);
   if (q) { go("tape"); $("q").value = decodeURIComponent(q[1]); runSearch(); setTimeout(() => $("q").scrollIntoView({ block: "start", behavior: "smooth" }), 300); return; }
   const t = location.hash.match(/t=\$?([A-Za-z][A-Za-z0-9.-]{0,9})/);

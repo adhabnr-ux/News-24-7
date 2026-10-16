@@ -190,13 +190,15 @@ async def test_sec_uses_contact_user_agent(server, http, tmp_path):
 def test_halts_parse():
     src = TradingHaltsSource({"name": "halts"}, ctx())
     items = src.parse(fixture_text("nasdaq_halts.xml").encode())
-    assert len(items) == 2  # IPO1 skipped
-    nv, ab = items
+    assert len(items) == 3  # IPO1 skipped; the LUDP pause already has a resumption time
+    nv, ab, resume = items
     assert nv.title == "TRADING HALT NVDA (NVIDIA Corporation Common Stock) — News Pending [T1]"
     assert nv.tickers == ["NVDA"] and nv.extra["boost"] == 30
     assert nv.published == pytest.approx(1791484172, abs=1)  # 14:29:32 ET
     assert nv.uid == "halt:NVDA:10/08/2026:14:29:32.000:T1"
     assert "Resumes 14:25:00" in ab.summary and ab.extra["halt_code"] == "LUDP"
+    assert resume.title.startswith(f"▶ {ab.tickers[0]} resumes trading at 14:25:00 ET")
+    assert resume.extra["halt_resume"] == "LUDP" and "halt_code" not in resume.extra
 
 
 def test_circuit_breaker_title():

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import html
+import json as _json
 import logging
 import os
 import platform
@@ -13,6 +14,7 @@ import smtplib
 import subprocess
 import sys
 import time
+from collections import deque
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -775,7 +777,13 @@ class WebPushNotifier(Notifier):
         self.allow: Any = None  # (subscription, alert) -> bool: each phone's desk preferences
         self.hold: Any = None  # (subscription, alert) -> bool: True when that phone's digest keeps it
         self.forward: Any = None  # (device, payload) -> None: that phone's own Discord/Telegram/ntfy copy
+        self.why: Any = None  # (subscription, alert) -> str | None: why that phone's settings held it back
         self.filtered = 0
+        # each phone's last pushes: what was sent, held for its digest or kept back (and why), and
+        # what the push service answered; saved with the settings so it survives a restart
+        self.log: dict[str, deque[dict[str, Any]]] = {}
+        self.log_dirty = False
+        self.gone: dict[str, str] = {}  # endpoint -> device, for subscriptions dropped as expired
 
     # ------------------------------------------------------------------ setup
 
@@ -804,6 +812,66 @@ class WebPushNotifier(Notifier):
                 self.subs[sub.endpoint] = sub
             except TypeError:
                 continue
+        self.load_log()
+
+    # ------------------------------------------------------------------ the push log
+
+    LOG_SIZE = 40
+
+    def note(
+        self, device: str, payload: dict[str, Any], status: str, detail: str = "", ts: float | None = None
+    ) -> None:
+        """Remember what happened to one push for one phone (sent, failed, gone, held, filtered)."""
+        if not device:
+            return
+        q = self.log.setdefault(device, deque(maxlen=self.LOG_SIZE))
+        entry = {
+            "ts": ts or time.time(),
+            "id": str(payload.get("id") or "")[:60],
+            "title": str(payload.get("title") or "")[:160],
+            "status": status,
+            "detail": detail[:200],
+        }
+        if q and q[0]["id"] == entry["id"] and q[0]["status"] == status:
+            return  # one entry per push, however many browsers the phone has
+        q.appendleft(entry)
+        self.log_dirty = True
+
+    def note_results(self, payload: dict[str, Any], results: dict[str, str]) -> None:
+        """Log a push's answers per phone: sent when any of that phone's subscriptions took it."""
+        by_dev: dict[str, list[str]] = {}
+        for endpoint, r in results.items():
+            sub = self.subs.get(endpoint)
+            dev = getattr(sub, "device", "") if sub is not None else self.gone.get(endpoint, "")
+            if not dev and r == "gone":
+                continue
+            by_dev.setdefault(dev, []).append(r)
+        for dev, rs in by_dev.items():
+            if "ok" in rs:
+                self.note(dev, payload, "sent")
+            elif all(r == "gone" for r in rs):
+                self.note(dev, payload, "gone", "the phone's subscription has expired: turn alerts on again")
+            else:
+                self.note(dev, payload, "failed", next(r for r in rs if r != "ok"))
+
+    def load_log(self) -> None:
+        if self.storage is None:
+            return
+        raw = self.storage.get_setting("push_log")
+        if not raw:
+            return
+        try:
+            data = _json.loads(raw)
+        except ValueError:
+            return
+        self.log = {d: deque(rows[: self.LOG_SIZE], maxlen=self.LOG_SIZE) for d, rows in data.items()}
+
+    def save_log(self) -> bool:
+        if self.storage is None or not self.log_dirty:
+            return False
+        self.storage.set_setting("push_log", _json.dumps({d: list(q) for d, q in self.log.items()}))
+        self.log_dirty = False
+        return True
 
     async def restore(self) -> None:
         """On a fresh container, take the subscriptions back from the state database."""
@@ -850,8 +918,13 @@ class WebPushNotifier(Notifier):
         return sub
 
     async def unsubscribe(self, endpoint: str) -> bool:
-        if self.subs.pop(endpoint, None) is None:
+        sub = self.subs.pop(endpoint, None)
+        if sub is None:
             return False
+        if sub.device:  # so the push log can still say whose subscription expired
+            self.gone[endpoint] = sub.device
+            while len(self.gone) > 200:
+                self.gone.pop(next(iter(self.gone)))
         self.storage.push_delete(endpoint)
         await self._persist()
         return True
@@ -936,16 +1009,23 @@ class WebPushNotifier(Notifier):
             )
         urgency = "high" if alert.severity >= Severity.HIGH else "normal"
         only = None
+        payload = self.payload(alert)
         if self.allow is not None:  # each phone's own preferences (desk.py): categories, quiet hours
-            only = [s.endpoint for s in self.subs.values() if self.allow(s, alert)]
-            if self.hold is not None:  # digest mode: held for that phone's next digest instead
-                only = [e for e in only if not self.hold(self.subs[e], alert)]
+            only = []
+            for s in self.subs.values():
+                if not self.allow(s, alert):
+                    why = self.why(s, alert) if self.why is not None else None
+                    self.note(s.device, payload, "filtered", why or "your settings")
+                elif self.hold is not None and self.hold(s, alert):  # held for that phone's digest
+                    self.note(s.device, payload, "held", "kept for your digest")
+                else:
+                    only.append(s.endpoint)
             self.filtered += len(self.subs) - len(only)
             if not only:
                 self.last_sent = time.time()
                 return
-        payload = self.payload(alert)
         results = await self.push(payload, urgency=urgency, only=only)
+        self.note_results(payload, results)
         if self.forward is not None:
             for device in {
                 s.device for s in self.subs.values() if (only is None or s.endpoint in only) and s.device

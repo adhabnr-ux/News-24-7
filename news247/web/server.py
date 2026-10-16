@@ -134,6 +134,10 @@ class WebServer:
         app.router.add_get("/api/export", self.api_export)
         app.router.add_get("/api/sources", self.api_sources)
         app.router.add_get("/api/week", self.api_week)
+        app.router.add_get("/api/why-push/{id}", self.api_why_push)
+        app.router.add_get("/api/push-log", self.api_push_log)
+        app.router.add_get("/api/list/{code}", self.api_list)
+        app.router.add_get("/api/phone-health", self.api_phone_health)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
         app.router.add_post("/api/push/test", self.api_push_test)
@@ -858,6 +862,43 @@ class WebServer:
         if alert is None:
             raise web.HTTPNotFound(text="no such alert")
         return _json(similar_alerts(self.engine, alert))
+
+    def _need_device(self, request: web.Request) -> str:
+        dev = self._device(request)
+        if not dev:
+            raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
+        return dev
+
+    async def api_why_push(self, request: web.Request) -> web.Response:
+        """Did this alert reach this phone, and if not, what stopped it (and the tap that fixes it)."""
+        from ..pushcheck import why_push
+
+        out = why_push(self.engine, self._need_device(request), request.match_info["id"])
+        if out is None:
+            raise web.HTTPNotFound(text="no such alert")
+        return _json(out)
+
+    async def api_list(self, request: web.Request) -> web.Response:
+        """A shared watchlist, read before adding it (the #list=CODE link)."""
+        data = self.engine.desk.shared_list(request.match_info["code"])
+        if data is None:
+            raise web.HTTPNotFound(text="that list code is wrong or expired")
+        mine = set((self.engine.desk.profiles.get(self._device(request)) or {}).get("watchlist") or [])
+        rows = []
+        for s in data["symbols"][:60]:
+            li = self.engine.universe.get(s)
+            rows.append({"symbol": s, "name": li.name if li is not None else "", "mine": s in mine})
+        return _json({**data, "rows": rows, "new": sum(1 for r in rows if not r["mine"])})
+
+    async def api_push_log(self, request: web.Request) -> web.Response:
+        from ..pushcheck import push_log
+
+        return _json(push_log(self.engine, self._need_device(request)))
+
+    async def api_phone_health(self, request: web.Request) -> web.Response:
+        from ..pushcheck import phone_health
+
+        return _json(phone_health(self.engine, self._need_device(request)))
 
     async def api_earnings_week(self, request: web.Request) -> web.Response:
         from ..dossier import earnings_week

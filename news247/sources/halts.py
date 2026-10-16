@@ -6,6 +6,7 @@ halt is a market-wide circuit breaker. Both are among the fastest public signals
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -60,6 +61,11 @@ def _halt_ts(date_s: str, time_s: str) -> float | None:
     return None
 
 
+def _hhmm(t: str) -> str:
+    """09:58:12.345 -> 09:58:12; anything else as given."""
+    return t.strip().split(".")[0]
+
+
 class TradingHaltsSource(PollingSource):
     type_name = "halts"
     default_interval = 15.0
@@ -85,7 +91,40 @@ class TradingHaltsSource(PollingSource):
             item = self.entry_to_item(e)
             if item:
                 out.append(item)
+                again = self.resume_item(e, item)
+                if again:
+                    out.append(again)
         return out
+
+    def resume_item(self, e: Any, halt: NewsItem) -> NewsItem | None:
+        """Once Nasdaq posts a resumption time for a stock's halt, a second item says when it trades
+        again: watchers get it on their phone, and it replaces the halt notification there."""
+        resume = (e.get("ndaq_resumptiontradetime") or "").strip()
+        if not resume or not halt.tickers:
+            return None
+        sym = halt.tickers[0]
+        code = halt.extra.get("halt_code", "")
+        hdate, htime = e.get("ndaq_haltdate", ""), e.get("ndaq_halttime", "")
+        rdate = (e.get("ndaq_resumptiondate") or hdate or "").strip()
+        quotes = (e.get("ndaq_resumptionquotetime") or "").strip()
+        at = _halt_ts(rdate, resume)
+        now = time.time()
+        title = f"▶ {sym} resumes trading at {_hhmm(resume)} ET"
+        summary = (
+            f"Halted {_hhmm(htime)} ET for {halt.extra.get('halt_reason', code)} [{code}]."
+            + (f" Quotes from {_hhmm(quotes)} ET," if quotes else "")
+            + f" trades from {_hhmm(resume)} ET."
+        )
+        item = self.make_item(
+            title=title,
+            url=halt.url,
+            summary=summary,
+            published=min(at, now) if at else now,
+            uid=f"resume:{sym}:{hdate}:{htime}",
+            tickers=[sym],
+        )
+        item.extra.update({"halt_resume": code, "resume_at": at})
+        return item
 
     def entry_to_item(self, e: Any) -> NewsItem | None:
         sym = (e.get("ndaq_issuesymbol") or e.get("title") or "").strip().upper()

@@ -249,6 +249,7 @@ class Engine:
             self.webpush.allow = lambda sub, alert: self.desk.allows(sub.device, alert)  # type: ignore[attr-defined]
             self.webpush.hold = lambda sub, alert: self.desk.hold(sub.device, alert)  # type: ignore[attr-defined]
             self.webpush.forward = lambda device, payload: self._spawn(self._forward(device, payload))  # type: ignore[attr-defined]
+            self.webpush.why = lambda sub, alert: self.desk.block_reason(sub.device, alert)  # type: ignore[attr-defined]
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         # meaningful news kept back to the previous session, so a move at 09:45 can cite the
@@ -389,7 +390,7 @@ class Engine:
         if not item.extra.get("backfill"):
             if self.desk.profiles and any(p.get("keywords") for p in self.desk.profiles.values()):
                 self._spawn(self._keyword_push(item, analysis, story.id))
-            if item.extra.get("halt_code") and item.tickers:
+            if (item.extra.get("halt_code") or item.extra.get("halt_resume")) and item.tickers:
                 self._spawn(self._halt_watch(item, analysis))
 
         if self.llm and analysis.score >= self.cfg.llm.min_score and not self.llm.busy:
@@ -2188,21 +2189,27 @@ class Engine:
             for li in (self.universe.get(t) for t in alert.tickers[:6])
             if li is not None and li.sector
         ]
-        devices = {
-            d for d in self.desk.watchers(alert.tickers[:6]) + self.desk.followers(themes, secs)
-            if (self.desk.get(d).get("prefs") or {}).get("watch_push", True)
-            and self.desk.allows(d, alert)
-            and not self.desk.hold(d, alert)
-        }  # fmt: skip
+        payload = wp.payload(alert)  # type: ignore[attr-defined]
+        payload["title"] = "★ " + payload["title"]
+        devices = set()
+        for d in dict.fromkeys(self.desk.watchers(alert.tickers[:6]) + self.desk.followers(themes, secs)):
+            if not (self.desk.get(d).get("prefs") or {}).get("watch_push", True):
+                continue
+            why = self.desk.block_reason(d, alert)
+            if why:
+                wp.note(d, payload, "filtered", why)  # type: ignore[attr-defined]
+            elif self.desk.hold(d, alert):
+                wp.note(d, payload, "held", "kept for your digest")  # type: ignore[attr-defined]
+            else:
+                devices.add(d)
         only = [s.endpoint for s in wp.subs.values() if s.device in devices]  # type: ignore[attr-defined]
         if not only:
             return
-        payload = wp.payload(alert)  # type: ignore[attr-defined]
-        payload["title"] = "★ " + payload["title"]
         for d in devices:
             self._spawn(self._forward(d, payload))
         with contextlib.suppress(Exception):
-            await wp.push(payload, urgency="normal", only=only)  # type: ignore[attr-defined]
+            results = await wp.push(payload, urgency="normal", only=only)  # type: ignore[attr-defined]
+            wp.note_results(payload, results)  # type: ignore[attr-defined]
 
     async def _desk_loop(self, stop: asyncio.Event) -> None:
         """Every 15 s: price alerts that came true go to their phone. Every minute: alert outcomes
@@ -2227,6 +2234,9 @@ class Engine:
                     record_outcomes(self, now)
                 with contextlib.suppress(Exception):
                     await self.desk.persist()
+                if self.webpush is not None:
+                    with contextlib.suppress(Exception):
+                        self.webpush.save_log()  # type: ignore[attr-defined]
                 try:
                     await self.check_confluence(now)
                 except Exception as exc:  # noqa: BLE001 - never stop the desk loop
@@ -2277,8 +2287,10 @@ class Engine:
             return False
         try:
             results = await wp.push(payload, urgency=urgency, only=only)  # type: ignore[attr-defined]
-        except Exception:  # noqa: BLE001 - one phone must never stop the loop
+        except Exception as exc:  # noqa: BLE001 - one phone must never stop the loop
+            wp.note(device, payload, "failed", f"{type(exc).__name__}: {exc}")  # type: ignore[attr-defined]
             return False
+        wp.note_results(payload, results)  # type: ignore[attr-defined]
         return any(r == "ok" for r in results.values())
 
     async def check_price_alerts(self, now: float | None = None) -> list[tuple[str, dict[str, Any]]]:
@@ -2361,15 +2373,18 @@ class Engine:
 
     async def _halt_watch(self, item: NewsItem, analysis: Analysis) -> int:
         """A trading halt on a stock someone watches reaches their phone, even when the halt itself
-        scored under the alert line (a MEDIUM or higher one already goes to watchers)."""
-        if self.cfg.scoring.severity_for(analysis.score) >= Severity.MEDIUM:
+        scored under the alert line (a MEDIUM or higher one already goes to watchers), and so does
+        its resumption, which replaces the halt notification."""
+        resume = bool(item.extra.get("halt_resume"))
+        if not resume and self.cfg.scoring.severity_for(analysis.score) >= Severity.MEDIUM:
             return 0
         probe = {"kind": "news", "severity": "HIGH", "tickers": item.tickers}
         sent = 0
         for device in self.desk.watchers(item.tickers):
             if not self.desk.allows(device, probe):
                 continue
-            payload = {"id": f"halt-{item.uid[-20:]}", "title": f"⏸ {item.title[:160]}", "body": (item.summary or "")[:300],
+            title = item.title[:160] if resume else f"⏸ {item.title[:160]}"
+            payload = {"id": f"halt-{item.uid[-20:]}", "title": title, "body": (item.summary or "")[:300],
                        "severity": "HIGH", "kind": "system", "tickers": item.tickers[:2], "url": item.url,
                        "tag": f"halt-{item.tickers[0]}", "ts": time.time(), "open": f"/app/#t={item.tickers[0]}"}  # fmt: skip
             if await self._to_device(device, payload):
