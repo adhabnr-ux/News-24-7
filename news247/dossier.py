@@ -764,3 +764,67 @@ def worth_a_look(
             if why:
                 seen[s] = {**r, "peer_of": sym, "why": why, "score": round(score, 2)}
     return sorted(seen.values(), key=lambda r: -r["score"])[:limit]
+
+
+# --------------------------------------------------------------------------- the day in one screen, sources
+
+
+def day_timeline(engine: Engine, now: float | None = None) -> dict[str, Any]:
+    """Today's alerts on a time axis (ET), with how each was graded, and the S&P 500's path (SPY,
+    sampled every 5 minutes while the server ran)."""
+    now = now or time.time()
+    d0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0)
+    t0 = d0.timestamp()
+    rows = []
+    for a in engine.storage.recent_alerts(400, since=t0):
+        if a.get("kind") == "system":
+            continue
+        out = (a.get("edge") or {}).get("outcome") or {}
+        g = next(iter(out.values()), None) if out else None
+        rows.append({
+            "id": a["id"], "t": a["created"], "severity": a["severity"], "kind": alert_category(a),
+            "title": a["title"][:140], "tickers": (a.get("tickers") or [])[:3], "direction": _direction(a), "grade": g,
+        })  # fmt: skip
+    rows.sort(key=lambda r: r["t"])
+    spy = [(t, p) for t, p in engine.day_marks.get("SPY", []) if t >= t0]
+    counts = {s: sum(1 for r in rows if r["severity"] == s) for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW")}
+    return {"date": d0.date().isoformat(), "start": t0, "rows": rows, "spy": spy, "counts": counts,
+            "market": engine.calendar.market_status(now)}  # fmt: skip
+
+
+def source_record(
+    engine: Engine, days: float = 60, now: float | None = None, min_n: int = 3
+) -> dict[str, Any]:
+    """Which sources' alerts went their way: each first-to-publish source's graded headline alerts
+    (an hour later and at the close), in the alert's own direction."""
+    now = now or time.time()
+    groups: dict[str, dict[str, list[float]]] = {}
+    for a in engine.storage.recent_alerts(3000, since=now - days * 86400):
+        src = ((a.get("item") or {}).get("source")) or ""
+        out = (a.get("edge") or {}).get("outcome") or {}
+        if a.get("kind") != "news" or not src or not out:
+            continue
+        row = next(iter(out.values()))
+        sign = row.get("sign") or 0
+        if not sign:
+            continue
+        g = groups.setdefault(src, {"h1": [], "close": []})
+        for k in ("h1", "close"):
+            if row.get(k) is not None:
+                g[k].append(sign * row[k])
+
+    def stats(xs: list[float]) -> dict[str, Any] | None:
+        return (
+            {
+                "n": len(xs),
+                "hit": round(sum(x > 0 for x in xs) / len(xs), 2),
+                "median": round(st.median(xs), 2),
+            }
+            if xs
+            else None
+        )
+
+    rows = [{"source": s, "h1": stats(g["h1"]), "close": stats(g["close"])} for s, g in groups.items()]
+    rows = [r for r in rows if max((r["h1"] or {}).get("n", 0), (r["close"] or {}).get("n", 0)) >= min_n]
+    rows.sort(key=lambda r: -max((r["h1"] or {}).get("n", 0), (r["close"] or {}).get("n", 0)))
+    return {"days": days, "rows": rows}

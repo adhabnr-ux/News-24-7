@@ -116,6 +116,9 @@ class WebServer:
         app.router.add_get("/api/earnings/{sym}", self.api_earnings)
         app.router.add_get("/api/calendar.ics", self.api_ics)
         app.router.add_post("/api/why/{sym}", self.api_why)
+        app.router.add_get("/api/day", self.api_day)
+        app.router.add_get("/api/sources", self.api_sources)
+        app.router.add_get("/api/week", self.api_week)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
         app.router.add_post("/api/push/test", self.api_push_test)
@@ -755,6 +758,24 @@ class WebServer:
         if not sym:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(await earnings_reactions(self.engine, sym))
+
+    async def api_day(self, request: web.Request) -> web.Response:
+        from ..dossier import day_timeline
+
+        return _json(day_timeline(self.engine))
+
+    async def api_sources(self, request: web.Request) -> web.Response:
+        from ..dossier import source_record
+
+        return _json(source_record(self.engine))
+
+    async def api_week(self, request: web.Request) -> web.Response:
+        from ..personal import week_card
+
+        dev = self._device(request)
+        if not dev:
+            raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
+        return _json(week_card(self.engine, dev) or {})
 
     async def api_why(self, request: web.Request) -> web.Response:
         """Look for why a stock is moving, now (EDGAR + news search, rate-limited per stock)."""

@@ -96,7 +96,7 @@
       <div id="searchRes"></div>
       <div class="away" id="away" hidden></div>
       <div id="featureWrap"></div>
-      <div class="sec-title rv"><h2>The tape</h2><div class="seg" id="tapeSeg" role="tablist" aria-label="Filter the tape"><i class="thumb" aria-hidden="true"></i><button data-f="all" class="on" role="tab" aria-selected="true">All</button><button data-f="mine" role="tab" aria-selected="false">Mine</button><button data-f="small" role="tab" aria-selected="false">Small caps</button></div></div>
+      <div class="sec-title rv"><h2>The tape</h2><button class="sortb" id="sortBtn" data-act="sort" aria-label="Sort the tape">Newest</button><div class="seg" id="tapeSeg" role="tablist" aria-label="Filter the tape"><i class="thumb" aria-hidden="true"></i><button data-f="all" class="on" role="tab" aria-selected="true">All</button><button data-f="mine" role="tab" aria-selected="false">Mine</button><button data-f="small" role="tab" aria-selected="false">Small caps</button></div></div>
       <div id="alerts"></div>
     </div>
   </section>
@@ -111,6 +111,7 @@
     <div class="stage">
       <div class="sec-title rv"><h2>Overnight</h2><span>since the last close</span></div>
       <div class="panel glass tilt rv" id="bOvernight"></div>
+      <div id="bDayWrap" hidden><div class="sec-title"><h2>The day so far</h2><span>alerts over the S&amp;P 500</span></div><div class="panel glass tilt" id="bDay"></div></div>
       <div id="bMineWrap" hidden><div class="sec-title"><h2>Your stocks</h2><span>this morning</span></div><div class="panel glass tilt" id="bMine"></div></div>
       <div id="bThemesWrap" class="rv"><div class="sec-title"><h2>In focus</h2></div><div class="row" id="bThemes"></div></div>
       <div class="sec-title rv"><h2>The market</h2><span id="bMkt"></span></div>
@@ -187,6 +188,7 @@
       <h1 class="display">The <em>desk</em></h1>
     </div></div>
     <div class="stage">
+      <div id="dWeekWrap" hidden><div class="sec-title"><h2>This week</h2><span>yours, so far</span></div><div class="panel glass tilt" id="dWeek"></div></div>
       <div id="dTodayWrap" hidden><div class="sec-title"><h2>Today</h2><span>your day so far</span></div><div class="panel glass tilt" id="dToday"></div></div>
       <div class="sec-title rv"><h2>Watchlist</h2><span>live</span></div>
       <div class="panel glass tilt rv" id="dWatch"></div>
@@ -202,6 +204,7 @@
       <div class="sec-title rv"><h2>What reaches you</h2></div>
       <div class="panel glass tilt rv" id="dPrefs"></div>
       <div class="panel glass tilt" id="dMuted" hidden></div>
+      <div class="row" style="justify-content:center;margin:18px 0 0"><button class="btn ghost small" data-act="onboard">Set up from scratch: stocks, words, push style</button></div>
       <div class="sec-title rv"><h2>Move your desk</h2><span>to another phone</span></div>
       <div class="panel glass tilt rv padded" id="dMove"></div>
       <div class="sec-title rv"><h2>Your calendar</h2><span>catalysts + your earnings dates</span></div>

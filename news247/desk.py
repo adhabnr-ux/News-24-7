@@ -82,6 +82,7 @@ def default_profile() -> dict[str, Any]:
             "digest": 0,  # minutes: 0 = push each alert; 15 or 60 = one push listing them
             "earn_remind": True,  # a push before a watched stock reports
             "open_plan": True,  # the 9:20 ET open plan
+            "week": True,  # Friday's "your week"
         },
         "price_alerts": [],
         "tracked": [],
@@ -321,7 +322,7 @@ class Desk:
             if "min_sev" in body:
                 floor = body.get("min_sev")
                 prefs["min_sev"] = floor if floor in SEV_RANK else None
-            for flag in ("eod", "earn_remind", "open_plan"):
+            for flag in ("eod", "earn_remind", "open_plan", "week"):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
             if "digest" in body:

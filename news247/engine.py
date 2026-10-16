@@ -238,6 +238,9 @@ class Engine:
         self.earnings_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # symbol -> (when, reactions)
         self._kw_sent: dict[tuple[str, int], float] = {}  # (device, story id) -> when a keyword push went
         self._board_seen: dict[str, Any] = {"day": "", "keys": []}  # watchlist board pushes sent today
+        self.day_marks: dict[
+            str, list[tuple[float, float]]
+        ] = {}  # SPY/QQQ every 5 minutes today (the day timeline)
         if self.webpush is not None:
             self.webpush.allow = lambda sub, alert: self.desk.allows(sub.device, alert)  # type: ignore[attr-defined]
             self.webpush.hold = lambda sub, alert: self.desk.hold(sub.device, alert)  # type: ignore[attr-defined]
@@ -2203,7 +2206,12 @@ class Engine:
                 with contextlib.suppress(Exception):
                     await self.check_board_watch(now)
                 with contextlib.suppress(Exception):
+                    self.mark_day(now)
+                with contextlib.suppress(Exception):
                     await self.send_earnings_reminders(now)
+                if self._week_due(now):
+                    with contextlib.suppress(Exception):
+                        await self.send_week_cards(now)
                 with contextlib.suppress(Exception):
                     await self.send_open_plans(now)
                 if self._eod_due(now):
@@ -2393,6 +2401,41 @@ class Engine:
                 if await self._to_device(device, payload, urgency="normal"):
                     sent += 1
         self.storage.set_setting(f"boardwatch:{day}", json.dumps(st))
+        return sent
+
+    def mark_day(self, now: float | None = None, every_s: float = 300.0) -> None:
+        """Keep SPY's and QQQ's price every 5 minutes today, for the day-in-one-screen timeline."""
+        now = now or time.time()
+        day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        for sym in ("SPY", "QQQ"):
+            marks = [m for m in self.day_marks.get(sym, []) if m[0] >= day0]
+            q = self.price_of(sym, 900, now=now)
+            if q and q[1] and (not marks or q[0] - marks[-1][0] >= every_s):
+                marks.append((q[0], q[1]))
+            self.day_marks[sym] = marks
+
+    def _week_due(self, now: float) -> bool:
+        dt = datetime.fromtimestamp(now, ET)
+        if dt.weekday() != 4 or not ((16, 30) <= (dt.hour, dt.minute) < (18, 0)):  # Friday after the close
+            return False
+        return self.storage.get_setting("week_sent") != dt.date().isoformat()
+
+    async def send_week_cards(self, now: float | None = None) -> int:
+        from .personal import week_card, week_push
+
+        now = now or time.time()
+        self.storage.set_setting("week_sent", datetime.fromtimestamp(now, ET).date().isoformat())
+        if self.webpush is None or self.dispatcher.paused:
+            return 0
+        sent = 0
+        for device in {s.device for s in self.webpush.subs.values() if s.device}:  # type: ignore[attr-defined]
+            prof = self.desk.profiles.get(device)
+            if not prof or not (prof.get("prefs") or {}).get("week", True):
+                continue
+            card = week_card(self, device, now)
+            payload = week_push(card) if card else None
+            if payload and await self._to_device(device, payload, urgency="normal"):
+                sent += 1
         return sent
 
     async def send_digests(self, now: float | None = None) -> int:

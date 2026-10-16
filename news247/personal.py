@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -465,3 +465,89 @@ def calendar_ics(engine: Engine, device: str = "", now: float | None = None, day
                 )
     lines.append("END:VCALENDAR")
     return "\r\n".join(_fold(x) for x in lines) + "\r\n"
+
+
+# --------------------------------------------------------------------------- your week
+
+
+def week_card(engine: Engine, device: str, now: float | None = None) -> dict[str, Any] | None:
+    """This phone's week (Monday on): calls closed and their record, open calls, how the alerts on
+    its stocks did at the close; and next week for its stocks: earnings and high-impact events."""
+    now = now or time.time()
+    p = engine.desk.profiles.get(device)
+    if not p or not (p.get("watchlist") or p.get("tracked") or p.get("closed")):
+        return None
+    dt = datetime.fromtimestamp(now, ET)
+    w0 = (dt - timedelta(days=dt.weekday())).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    closed = [c for c in p.get("closed") or [] if (c.get("closed") or 0) >= w0]
+    wins = [c for c in closed if (c.get("pnl_pct") or 0) > 0]
+    best = max(closed, key=lambda c: c.get("pnl_pct") or 0, default=None)
+    open_ = []
+    for t in p.get("tracked") or []:
+        q = engine.price_of(t["symbol"], 6 * 3600, now=now)
+        if q and t.get("entry"):
+            r = (q[1] / t["entry"] - 1.0) * 100.0
+            open_.append(r if t["direction"] == "long" else -r)
+    mine = set(p.get("watchlist") or []) | {t["symbol"] for t in p.get("tracked") or []}
+    graded = right = 0
+    for a in engine.storage.recent_alerts(2000, since=w0):
+        for sym, row in ((a.get("edge") or {}).get("outcome") or {}).items():
+            if sym in mine and row.get("close") is not None and row.get("sign"):
+                graded += 1
+                right += row["sign"] * row["close"] > 0
+                break
+    book = getattr(engine.trends, "earnings", None) if engine.trends is not None else None
+    earnings = []
+    if book is not None:
+        for sym in p.get("watchlist") or []:
+            e = book.lookup(sym, dt.date())
+            if e and e["in_days"] <= 9:
+                earnings.append(
+                    {"symbol": sym, "date": e["date"], "when": e.get("when") or "", "in_days": e["in_days"]}
+                )
+    earnings.sort(key=lambda e: e["date"])
+    events = [{"title": e["title"], "date": e["date"], "time": e.get("time")} for e in engine.calendar.upcoming(days=9, now=now)
+              if (e.get("impact") or 1) >= 3 and e.get("in_days", 0) >= 1][:6]  # fmt: skip
+    return {
+        "week_of": datetime.fromtimestamp(w0, ET).date().isoformat(),
+        "closed": {"n": len(closed), "wins": len(wins), "avg": round(sum(c.get("pnl_pct") or 0 for c in closed) / len(closed), 2) if closed else None,
+                   "best": {"symbol": best["symbol"], "pnl_pct": best.get("pnl_pct")} if best else None},
+        "open": {"n": len(open_), "avg": round(sum(open_) / len(open_), 2) if open_ else None},
+        "alerts": {"graded": graded, "right": right},
+        "next": {"earnings": earnings, "events": events},
+    }  # fmt: skip
+
+
+def week_push(card: dict[str, Any]) -> dict[str, Any] | None:
+    lines = []
+    c, o, a = card["closed"], card["open"], card["alerts"]
+    if c["n"]:
+        lines.append(
+            f"Closed {c['n']} call(s): {c['wins']} won, avg {c['avg']:+.1f}%"
+            + (f" · best {c['best']['symbol']} {c['best']['pnl_pct']:+.1f}%" if c["best"] else "")
+        )
+    if o["n"]:
+        lines.append(f"Open: {o['n']} call(s), avg {o['avg']:+.1f}%")
+    if a["graded"]:
+        lines.append(f"Alerts on your stocks: {a['right']} of {a['graded']} went their way by the close")
+    nxt = card["next"]
+    if nxt["earnings"]:
+        lines.append(
+            "Next: "
+            + ", ".join(
+                f"{e['symbol']} reports {datetime.fromisoformat(e['date']).strftime('%a')}"
+                for e in nxt["earnings"][:4]
+            )
+        )
+    if nxt["events"]:
+        lines.append(
+            "Also: "
+            + ", ".join(
+                f"{e['title'][:40]} ({datetime.fromisoformat(e['date']).strftime('%a')})"
+                for e in nxt["events"][:2]
+            )
+        )
+    if not lines:
+        return None
+    return {"id": f"wk-{card['week_of']}", "title": "🗓 Your week", "body": "\n".join(lines)[:600], "severity": "MEDIUM",
+            "kind": "system", "tickers": [], "tag": f"wk-{card['week_of']}", "ts": time.time(), "open": "/app/#a=desk"}  # fmt: skip

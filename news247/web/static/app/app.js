@@ -29,12 +29,31 @@ const seen = new Set();
 
 function setManifest() { $("manifest").href = "/app/manifest.webmanifest" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""); }
 setManifest();
-function toast(msg, id) {
+function toast(msg, id, ms) {
   // an alert toast is tappable: it opens that alert's dossier (the global [data-id] handler)
   const t = $("toast"); t.textContent = msg;
   if (id) t.dataset.id = id; else delete t.dataset.id;
-  t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), id ? 5200 : 3200);
+  t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), ms || (id ? 5200 : 3200));
 }
+// ⓘ: what a term means, for anyone new to it
+const GLOSSARY = {
+  implied: "Implied move: what the options market is paying for. The at-the-money call + put (the straddle) for an expiry, as a % of the stock: roughly the move priced in by that date, up or down.",
+  callwall: "Call wall: the strike above the stock with the most call open interest. Dealers hedging those calls can make it act like a ceiling into expiry; a clean break through it can speed up.",
+  putwall: "Put wall: the strike below the stock with the most put open interest. It often acts like a floor into expiry.",
+  maxpain: "Max pain: the strike where option holders, in total, would collect the least at expiry. Some traders watch for the stock to drift toward it into expiry; it's a tendency, not a rule.",
+  pcratio: "Put/call volume: puts traded today ÷ calls traded. Above ~1.2 is heavy put buying (bearish or hedging); under ~0.6 is call-heavy.",
+  evidence: "The evidence tally: every signal on the stock, weighted (one-sided options ×2, an opportunistic insider buy ×3, alerts by severity, headlines ×0.5, tape ignition ×1-1.5). It leans one way only when that side is at least twice the other.",
+  base: "Base rate: how alerts of the same kind did, graded an hour later and at the close on their own stock. 50% is a coin flip; under 40% on 20+ graded means they tend to fade.",
+  confluence: "Confluence: 3+ independent kinds of evidence (headlines, options flow, insider buying, the tape) on the same side of one stock. Pushed when the combined weight reaches 7.",
+  sympathy: "Sympathy move: when one stock jumps on news, its peers often follow. Peers that haven't moved yet are where that would show up, if it comes.",
+  rel: "Relative strength: the stock's move minus the S&P 500's and its sector's. A big gap means the move is its own (news), not the market's.",
+  ignition: "Ignition: a stock starting to move on a burst of volume (several times its normal pace) within minutes. Caught a median 20 minutes before it shows up as a big mover; on its own it's a coin flip, so pushes need confirmation.",
+  gap: "Gap: a move from yesterday's close, often made before the open on overnight news. The board shows companies worth $300M+ moving 3%+.",
+  halt: "Halt: the exchange stops trading in a stock. T1 = news pending, LUDP = a 5-minute volatility pause (limit up/limit down), H10 = SEC suspension. It reopens at the resumption time.",
+  smart: "Smart money: options bought hard on one side, insiders buying with their own cash (Form 4), and stocks igniting on volume, in one feed.",
+  digest: "Digest: instead of one push per alert, one push every 15 minutes or hour listing them. CRITICAL alerts and your own price alerts still come at once.",
+};
+const tip = (k) => `<button class="tip" data-act="term" data-s="${k}" aria-label="What is this?">ⓘ</button>`;
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN, "X-Device": DEVICE, ...(opts.headers || {}) } });
   if (r.status === 401) { showLock(); throw new Error("access key needed"); }
@@ -157,6 +176,27 @@ function confRow(a) {
   if (!c) return "";
   return `<div class="conf"><span class="dir ${c.side}">${c.side === "up" ? "▲ Bullish" : "▼ Bearish"}</span>${c.kinds.map((k) => `<span class="ck">${esc(CONF_KIND[k] || k)}</span>`).join("")}<span class="faint num">weight ${c.weight}${c.against ? ` vs ${c.against}` : ""}</span></div>`;
 }
+// how the alert played out: its stock an hour later and at the close, from its own reference price
+function gradeRow(a) {
+  const g = Object.entries(a.edge?.outcome || {}).find(([, r]) => r.sign);
+  if (!g) return "";
+  const [sym, r] = g, mark = (v) => (v == null ? "" : r.sign * v > 0 ? `<b class="pos">✓</b>` : `<b class="neg">✗</b>`);
+  const bit = (k, label) => r[k] != null ? `${label} <span class="num ${cls(r[k])}">${pct(r[k])}</span> ${mark(r[k])}` : "";
+  return `<div class="grade">${esc(sym)}: ${[bit("h1", "1h"), bit("close", "close")].filter(Boolean).join(" · ")}</div>`;
+}
+function relatedChip(a) {
+  const t = (a.tickers || [])[0];
+  if (!t || a.kind === "system") return "";
+  const n = alerts.filter((x) => x !== a && x.id !== a.id && (x.tickers || []).includes(t) && Math.abs(x.created - a.created) < 86400).length;
+  return n ? `<span class="relc" data-tk="${esc(t)}" role="button">+${n} more on ${esc(t)}</span>` : "";
+}
+let tapeSort = store.get("ft.sort") || "new";
+function bestScore(a) {
+  const rank = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 }[a.severity] || 0;
+  const hit = a.edge?.base?.h1?.hit ?? a.edge?.base?.close?.hit;
+  const age = Math.max(0, Date.now() / 1000 - a.created) / 3600;
+  return rank * 2 + (hit != null ? (hit - 0.5) * 6 : 0) + (isMine(a) ? 2 : 0) + (a.edge?.confluence ? 1.5 : 0) - age * 0.6;
+}
 function alertHTML(a, opts = {}) {
   const an = a.analysis || {}, it = a.item || {};
   const src = a.edge?.radar ? "RADAR" : a.kind === "price" ? "PRICE ACTION" : a.kind === "system" ? "FORETAPE" : (it.source || a.kind).toUpperCase();
@@ -169,7 +209,7 @@ function alertHTML(a, opts = {}) {
       <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
-      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${baseRow(a)}${footRow(a)}
+      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${baseRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}
     </div>
   </article>`;
 }
@@ -196,7 +236,9 @@ function renderTape() {
   const pool = tapeFilter === "small" ? alerts.filter(isSmall) : tapeFilter === "mine" ? alerts.filter(isMine) : alerts;
   const f = tapeFilter === "all" ? featured() : null;
   $("featureWrap").innerHTML = f ? alertHTML(f, { feature: true }) : "";
-  const rest = pool.filter((a) => a !== f);
+  let rest = pool.filter((a) => a !== f);
+  if (tapeSort === "best") rest = [...rest].sort((x, y) => bestScore(y) - bestScore(x));
+  $("sortBtn").textContent = tapeSort === "best" ? "Best first" : "Newest";
   const shown = rest.slice(0, showAll ? 150 : 30);   // dozens of blurred glass layers are expensive on a phone: older ones load on demand
   $("alerts").innerHTML = rest.length ? shown.map((a) => alertHTML(a)).join("") + (rest.length > shown.length ? `<button class="more" id="moreBtn">Show ${rest.length - shown.length} older</button>` : "")
     : f ? "" : emptyHTML(tapeFilter === "mine"
@@ -283,6 +325,7 @@ async function loadBrief() {
     ["Stories you had before the mainstream", e.stories], ["Median head start", e.median_lead_s != null ? dur(e.median_lead_s) : "—"],
     ["Biggest head start", e.best_lead_s != null ? dur(e.best_lead_s) : "—"],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("") + scoreRows(b.scorecard);
+  loadDay();
   Fx.observe($("main"));
 }
 // the scorecard: last session's big moves, and whether we had each one before the price
@@ -561,9 +604,9 @@ async function openSheet(id) {
         ${p.direct?.length ? `<div class="sub" style="margin-top:14px">Direct</div><div class="tks" style="margin-top:7px">${p.direct.map((t) => `<span class="tk">${esc(t)}${since[t] != null ? ` <small class="${cls(since[t])}">${pct(since[t])} since alert</small>` : ""}</span>`).join("")}</div>` : ""}
         ${p.read_through?.length ? `<div class="sub" style="margin-top:14px">Read-through</div><div class="tks" style="margin-top:7px">${p.read_through.map((t) => `<span class="tk rt">${esc(t)}</span>`).join("")}</div>` : ""}
         ${p.themes?.length ? `<div class="sub" style="margin-top:14px">${esc(p.themes.join(" · "))}</div>` : ""}</div>` : "",
-    e.confluence ? `<h4>What lines up</h4><div class="panel glass padded">${confRow(a)}${e.confluence.signals.map((x) => `<div class="sig"${x.id ? ` data-id="${esc(x.id)}" role="button"` : ""}><span class="${x.side === "up" ? "pos" : "neg"}">${x.side === "up" ? "▲" : "▼"}</span><div class="grow"><div>${esc(x.label)}</div><div class="sub">${esc(KIND_LABEL[x.kind] || x.kind)} · weighs ${x.weight}${x.ts ? ` · ${ago(x.ts)} ago` : ""}</div></div></div>`).join("")}
+    e.confluence ? `<h4>What lines up ${tip("confluence")}</h4><div class="panel glass padded">${confRow(a)}${e.confluence.signals.map((x) => `<div class="sig"${x.id ? ` data-id="${esc(x.id)}" role="button"` : ""}><span class="${x.side === "up" ? "pos" : "neg"}">${x.side === "up" ? "▲" : "▼"}</span><div class="grow"><div>${esc(x.label)}</div><div class="sub">${esc(KIND_LABEL[x.kind] || x.kind)} · weighs ${x.weight}${x.ts ? ` · ${ago(x.ts)} ago` : ""}</div></div></div>`).join("")}
       <div class="sub" style="margin-top:10px">Fires when 3+ independent kinds of evidence line up on one side (weight 4+, at least one from the last 2 hours); pushed at weight 7+. Each stock and side once a day.</div></div>` : "",
-    e.base ? `<h4>How alerts like this did</h4><div class="panel glass">
+    e.base ? `<h4>How alerts like this did ${tip("base")}</h4><div class="panel glass">
       ${e.base.h1 ? `<div class="kv"><span>An hour later</span><b class="num"><span class="${e.base.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.h1.hit * 100)}%</span> went its way · median ${pct(e.base.h1.median)} · ${e.base.h1.n} graded</b></div>` : ""}
       ${e.base.close ? `<div class="kv"><span>At the close</span><b class="num"><span class="${e.base.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.close.hit * 100)}%</span> went its way · median ${pct(e.base.close.median)} · ${e.base.close.n} graded</b></div>` : ""}
       <div class="sub" style="padding:4px 0 12px">${esc(e.base.label)} alerts over the last 60 days, each graded on its own stock from its own reference price. A base rate, not a forecast.</div></div>` : "",
@@ -632,7 +675,15 @@ $("scrim").onclick = closeSheet; $("closeSheet").onclick = closeSheet;
   };
   sh.addEventListener("touchend", end); sh.addEventListener("touchcancel", end);
 })();
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+// keyboard (desktop): Esc closes, / searches, 1-6 switch tabs, w watches the open stock, ? lists them
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeSheet(); return; }
+  if (e.target.closest?.("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "/") { e.preventDefault(); closeSheet(); go("tape"); setTimeout(() => $("q").focus(), 50); }
+  else if (/^[1-6]$/.test(e.key)) { closeSheet(); go(TABS[+e.key - 1]); }
+  else if (e.key === "w" && sheetOpen) document.querySelector("#sheetBody [data-act=watch]")?.click();
+  else if (e.key === "?") toast("Keys: / search · 1-6 tabs · w watch the open stock · Esc close", null, 6000);
+});
 document.addEventListener("click", (e) => {
   const seg = e.target.closest("#tapeSeg button");
   if (seg) {
@@ -723,10 +774,11 @@ function renderDesk() {
     <div class="row" style="padding:10px 0 4px">${CATS.map(([k, l]) => `<button class="btn ghost small${pr.cats[k] !== false ? " sel" : ""}" data-act="cat" data-s="${k}" aria-pressed="${pr.cats[k] !== false}">${l}</button>`).join("")}</div>
     <div class="sub" style="padding-top:8px">This phone's floor</div>
     <div class="row" style="padding:10px 0 4px">${FLOORS.map(([k, l]) => `<button class="btn ghost small${(pr.min_sev || "") === k ? " sel" : ""}" data-act="floor" data-s="${k}">${l}</button>`).join("")}</div>
-    <div class="sub" style="padding-top:8px">How pushes arrive${desk.held ? ` · <span class="gold">${desk.held} held for the next digest</span>` : ""}</div>
+    <div class="sub" style="padding-top:8px">How pushes arrive ${tip("digest")}${desk.held ? ` · <span class="gold">${desk.held} held for the next digest</span>` : ""}</div>
     <div class="row" style="padding:10px 0 4px">${[[0, "Each alert"], [15, "Digest · 15 min"], [60, "Digest · hourly"]].map(([k, l]) => `<button class="btn ghost small${(pr.digest || 0) === k ? " sel" : ""}" data-act="digest" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="kv"><span>Earnings-day reminders<div class="sub">before a stock you watch reports: what options price, its usual move</div></span><b><button class="btn ghost small${pr.earn_remind !== false ? " sel" : ""}" data-act="flag" data-s="earn_remind">${pr.earn_remind !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The open plan, 9:20 ET<div class="sub">your stocks pre-market, the top gappers and why, today's timed events</div></span><b><button class="btn ghost small${pr.open_plan !== false ? " sel" : ""}" data-act="flag" data-s="open_plan">${pr.open_plan !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Your week, Friday 16:30 ET<div class="sub">your calls, how the alerts on your stocks did, next week's reports and big dates</div></span><b><button class="btn ghost small${pr.week !== false ? " sel" : ""}" data-act="flag" data-s="week">${pr.week !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>End-of-day report card<div class="sub">16:05 ET: your watchlist's day, your calls, what fired, how the alerts did</div></span><b><button class="btn ghost small${pr.eod !== false ? " sel" : ""}" data-act="eod">${pr.eod !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Watchlist pushes<div class="sub">a MEDIUM alert on a stock you watch still reaches your lock screen</div></span><b><button class="btn ghost small${pr.watch_push ? " sel" : ""}" data-act="wpush">${pr.watch_push ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Quiet hours (ET)<div class="sub">${pr.quiet ? `only CRITICAL between ${esc(q.start)} and ${esc(q.end)}` : "off: everything you allow, any hour"}</div></span>
@@ -741,6 +793,8 @@ async function loadRecord() {
     $("dRecord").innerHTML = r.rows.length ? `<div class="kv head"><span>Alert kind</span><b>1 hour later · at the close</b></div>` + r.rows.map((x) => `<div class="kv"><span>${esc(label(x.kind))}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("")
       + `<div class="sub" style="padding:10px 0 14px">${esc(r.note)} Hit = the stock went the alert's way.</div>`
       : `<div class="li"><span class="muted">Every alert is graded an hour later and at its session's close, against its own reference price. The first grades land after the next session; this fills in on its own.</span></div>`;
+    const src = await api("/api/sources").catch(() => ({ rows: [] }));
+    if (src.rows.length) $("dRecord").innerHTML += `<div class="kv head"><span>By first source</span><b>1 hour · close</b></div>` + src.rows.slice(0, 10).map((x) => `<div class="kv"><span>${esc(outlet(x.source))}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("");
   } catch (_) { $("dRecord").innerHTML = `<div class="li"><span class="muted">Track record unavailable.</span></div>`; }
 }
 
@@ -763,6 +817,73 @@ async function loadWorth() {
     $("dWorth").innerHTML = r.rows.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span>
       <div class="grow"><div>${esc(x.name)}</div><div class="sub">${x.why.map(esc).join(" · ")} · peer of ${esc(x.peer_of)}</div></div><span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("");
   } catch (_) { /* optional panel */ }
+}
+
+// the Desk's "This week" (pushed Friday 16:30 ET as "your week")
+async function loadWeek() {
+  let r;
+  try { r = await api("/api/week"); } catch (_) { return; }
+  $("dWeekWrap").hidden = !r.week_of;
+  if (!r.week_of) return;
+  const c = r.closed, o = r.open, al = r.alerts, nx = r.next;
+  const day = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" });
+  $("dWeek").innerHTML = [
+    `<div class="kv"><span>Calls closed</span><b class="num">${c.n ? `${c.wins} of ${c.n} won · avg <span class="${cls(c.avg)}">${pct(c.avg)}</span>${c.best ? ` · best ${esc(c.best.symbol)} <span class="${cls(c.best.pnl_pct)}">${pct(c.best.pnl_pct)}</span>` : ""}` : "none yet"}</b></div>`,
+    o.n ? `<div class="kv"><span>Open calls</span><b class="num">${o.n} · avg <span class="${cls(o.avg)}">${pct(o.avg)}</span></b></div>` : "",
+    `<div class="kv"><span>Alerts on your stocks</span><b class="num">${al.graded ? `${al.right} of ${al.graded} went their way by the close` : "none graded yet"}</b></div>`,
+    nx.earnings.length ? `<div class="kv"><span>Reporting next</span><b>${nx.earnings.map((e) => `<span data-tk="${esc(e.symbol)}" role="button">${esc(e.symbol)}</span> ${esc(day(e.date))}`).join(" · ")}</b></div>` : "",
+    nx.events.length ? `<div class="kv"><span>Big dates</span><b>${nx.events.slice(0, 3).map((e) => `${esc(e.title)} (${esc(day(e.date))})`).join("<br>")}</b></div>` : "",
+  ].join("");
+}
+// the Brief's "day in one screen": today's alerts on a time axis, over SPY
+async function loadDay() {
+  let r;
+  try { r = await api("/api/day"); } catch (_) { return; }
+  $("bDayWrap").hidden = !r.rows.length && !r.spy.length;
+  if ($("bDayWrap").hidden) return;
+  const W = 560, H = 150, pad = 8, t0 = r.start + 4 * 3600, t1 = r.start + 20 * 3600;
+  const X = (t) => pad + Math.max(0, Math.min(1, (t - t0) / (t1 - t0))) * (W - 2 * pad);
+  const ps = r.spy.map(([, p]) => p), lo = Math.min(...ps, Infinity), hi = Math.max(...ps, -Infinity), span = hi - lo || 1;
+  const Y = (p) => 26 + (1 - (p - lo) / span) * (H - 50);
+  const line = r.spy.length >= 2 ? `<path d="${r.spy.map(([t, p], i) => (i ? "L" : "M") + X(t).toFixed(1) + " " + Y(p).toFixed(1)).join(" ")}" fill="none" stroke="rgba(159,198,255,.8)" stroke-width="2"/>` : "";
+  const lane = { CRITICAL: 10, HIGH: 16, MEDIUM: H - 14, LOW: H - 8 };
+  const dots = r.rows.map((a) => `<circle data-id="${esc(a.id)}" cx="${X(a.t).toFixed(1)}" cy="${lane[a.severity] || H - 10}" r="${a.severity === "CRITICAL" ? 6 : a.severity === "HIGH" ? 5 : 3.5}" fill="${SEV[a.severity] || SEV.LOW}" stroke="rgba(0,0,0,.35)"><title>${esc(a.title)}</title></circle>`).join("");
+  const tick = (h, m, label) => { const x = X(r.start + h * 3600 + m * 60); return `<line x1="${x}" x2="${x}" y1="22" y2="${H - 20}" stroke="rgba(255,255,255,.12)"/><text x="${x}" y="${H - 22}" fill="rgba(255,255,255,.5)" font-size="10" text-anchor="middle" font-family="Inter">${label}</text>`; };
+  const spyChg = r.spy.length >= 2 ? (r.spy[r.spy.length - 1][1] / r.spy[0][1] - 1) * 100 : null;
+  $("bDay").innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="dayline">${tick(9, 30, "9:30")}${tick(12, 0, "12:00")}${tick(16, 0, "16:00")}${line}${dots}</svg>
+    <div class="sub" style="padding:8px 0 12px">${["CRITICAL", "HIGH", "MEDIUM"].filter((k) => r.counts[k]).map((k) => `<span style="color:${SEV[k]}">●</span> ${r.counts[k]} ${k}`).join(" · ") || "No alerts yet today"}${spyChg != null ? ` · <span style="color:#9FC6FF">SPY</span> <span class="${cls(spyChg)}">${pct(spyChg)}</span> since the first mark` : ""}. Tap a dot for its alert.</div>`;
+}
+// first run: make it yours in one sheet
+const POPULAR = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AMD", "AVGO", "NFLX", "PLTR", "COIN", "JPM", "BAC", "XOM", "LLY", "UNH", "COST", "WMT", "DIS", "BA", "INTC", "SMCI", "MSTR"];
+const KW_IDEAS = ["tariff", "FDA", "buyback", "guidance", "acquisition", "bankruptcy", "Fed", "CPI", "short report", "export controls", "antitrust", "layoffs"];
+function openOnboard() {
+  showSheet(`<div class="meta"><span class="src">Takes 20 seconds</span></div><h2>Make Foretape yours</h2>
+    <p class="muted">Everything here lives on this phone and can be changed on the Desk any time.</p>
+    <h4>Stocks you follow</h4><div class="row" id="obSyms">${POPULAR.map((t) => `<button class="btn ghost small" data-act="ob-tog" data-s="${t}">${t}</button>`).join("")}</div>
+    <div class="addrow"><input id="obMore" class="key" placeholder="Others: tickers, comma separated" autocapitalize="characters" autocomplete="off" spellcheck="false"></div>
+    <h4>Words that matter to you</h4><div class="row" id="obKws">${KW_IDEAS.map((k) => `<button class="btn ghost small" data-act="ob-tog" data-s="${esc(k)}">${esc(k)}</button>`).join("")}</div>
+    <div class="sub" style="margin-top:8px">A scored headline naming one is pushed to you, even under the alert line.</div>
+    <h4>How much to push</h4><div class="row" id="obStyle">
+      <button class="btn ghost small" data-act="ob-style" data-s="few">Only the big ones</button>
+      <button class="btn ghost small sel" data-act="ob-style" data-s="normal">Normal</button>
+      <button class="btn ghost small" data-act="ob-style" data-s="digest">Everything, in a 15-min digest</button></div>
+    <div class="row" style="margin-top:24px"><button class="btn primary" data-act="ob-save">Save</button></div>
+    <div style="text-align:center;margin-top:10px"><button class="btn ghost small" data-act="ob-skip">Skip for now</button></div>`);
+}
+async function saveOnboard() {
+  const picked = [...document.querySelectorAll("#obSyms .sel")].map((b) => b.dataset.s).concat(syms($("obMore").value));
+  const kws = [...document.querySelectorAll("#obKws .sel")].map((b) => b.dataset.s);
+  const style = document.querySelector("#obStyle .sel")?.dataset.s || "normal";
+  if (picked.length) await deskEdit("watch_add", { symbols: picked });
+  for (const k of kws) await deskEdit("kw_add", { keyword: k });
+  await deskEdit("prefs", style === "few" ? { min_sev: "CRITICAL", digest: 0 } : style === "digest" ? { min_sev: null, digest: 15 } : { min_sev: null, digest: 0 });
+  store.set("ft_onboarded", "1");
+  closeSheet();
+  toast(picked.length ? `Following ${picked.length} stock${picked.length > 1 ? "s" : ""}. Their alerts are under Mine.` : "Saved");
+}
+function maybeOnboard() {
+  if (store.get("ft_onboarded") || !desk || desk.watchlist.length || (desk.keywords || []).length || sheetOpen || location.hash) return;
+  openOnboard();
 }
 
 // the Desk's "Today": this phone's day so far (also pushed at 16:05 ET as the report card)
@@ -809,7 +930,7 @@ const LEAN = { bullish: ["pos", "▲ Evidence leans bullish"], bearish: ["neg", 
 function tallyBlock(t) {
   if (!t || !(t.bull || t.bear)) return `<h4>The evidence</h4><div class="panel glass padded"><div class="sub">Nothing directional on it lately: no scored headline in 3 days, no one-sided options today, no insider buy in 90 days, no ignition on the tape.</div></div>`;
   const [c, l] = LEAN[t.lean] || LEAN.none, share = t.share_bull ?? 0.5;
-  return `<h4>The evidence</h4><div class="panel glass padded">
+  return `<h4>The evidence ${tip("evidence")}</h4><div class="panel glass padded">
     <div class="lean ${c}">${l}</div>
     <div class="tally"><span class="pos num">${t.bull}</span><div class="tbar"><i style="width:${Math.round(share * 100)}%"></i></div><span class="neg num">${t.bear}</span></div>
     ${t.signals.map((x) => `<div class="sig"${x.id ? ` data-id="${esc(x.id)}" role="button"` : ""}><span class="${x.side === "up" ? "pos" : "neg"}">${x.side === "up" ? "▲" : "▼"}</span>
@@ -835,16 +956,16 @@ function tickerHTML(d) {
     <div class="panel glass padded paform" id="paForm" hidden>
       <div class="addrow"><select id="paKind"><option value="above">Above $</option><option value="below">Below $</option><option value="move">Moves ±% today</option><option value="trail">Falls % from high</option></select>
       <input id="paVal" class="key" inputmode="decimal" placeholder="${q ? q.price.toFixed(2) : "value"}"><button class="btn ghost small sel" data-act="pa-save" data-s="${sym}">Set</button></div>
-      <div class="sub">Checked every 15 seconds against the live price; pushed to this phone only, once.</div></div>
+      <div class="row sug" id="paSug"></div><div class="sub">Checked every 15 seconds against the live price; pushed to this phone only, once.</div></div>
     ${mine_pa.length || mine_tr.length ? `<div class="panel glass">${mine_pa.map((a) => `<div class="kv"><span>🔔 ${a.kind === "move" ? `±${a.value}% on the day` : a.kind === "trail" ? `falls ${a.value}% from its high` : `${a.kind} ${fmtPx(a.value)}`}</span><b><button class="x" data-act="pa-rm" data-s="${esc(a.id)}">✕</button></b></div>`).join("")}
       ${mine_tr.map((t) => `<div class="kv"><span>${t.direction === "long" ? "▲ Long" : "▼ Short"} from ${fmtPx(t.entry)} · ${ago(t.ts)} ago${levelsText(t)}</span><b class="num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</b></div>`).join("")}</div>` : ""}`;
   const chart = (d.series || []).length >= 3 ? sparkline({ [d.symbol]: d.series }, -1) : "";
   const rel = d.rel, er = d.earnings;
-  const relLine = rel && (rel.spy != null || rel.sector != null) ? `<div class="rel"><span>vs S&amp;P <b class="num ${cls(rel.vs_spy)}">${rel.vs_spy != null ? (rel.vs_spy > 0 ? "+" : "") + rel.vs_spy.toFixed(1) : "—"}</b></span>${rel.sector != null ? `<span>vs ${esc(rel.sector_name)} <b class="num ${cls(rel.vs_sector)}">${(rel.vs_sector > 0 ? "+" : "") + rel.vs_sector.toFixed(1)}</b></span>` : ""}${rel.read ? `<span class="rread">${esc(rel.read)}</span>` : ""}</div>` : "";
+  const relLine = rel && (rel.spy != null || rel.sector != null) ? `<div class="rel"><span>vs S&amp;P <b class="num ${cls(rel.vs_spy)}">${rel.vs_spy != null ? (rel.vs_spy > 0 ? "+" : "") + rel.vs_spy.toFixed(1) : "—"}</b></span>${rel.sector != null ? `<span>vs ${esc(rel.sector_name)} <b class="num ${cls(rel.vs_sector)}">${(rel.vs_sector > 0 ? "+" : "") + rel.vs_sector.toFixed(1)}</b></span>` : ""}${rel.read ? `<span class="rread">${esc(rel.read)}</span>` : ""}${tip("rel")}</div>` : "";
   const earnLine = er ? `<div class="sub gold" style="margin-top:6px">Reports ${esc(prettyDate(er.date))}${er.when ? ", " + esc(er.when) : ""} · ${inDays(er.in_days)}</div>` : "";
   const pr = d.peers || {};
   const peerBlock = (pr.rows || []).length ? `<h4>Peers · ${esc(pr.group || "")}</h4><div class="panel glass">
-    ${pr.laggards?.length ? `<div class="sub" style="padding:12px 0 4px">${esc(d.symbol)} is ${pct(pr.me)}; these haven't moved yet: <b class="gold">${pr.laggards.map((x) => esc(x.symbol)).join(", ")}</b>. Where a sympathy move would come from, if it comes.</div>` : ""}
+    ${pr.laggards?.length ? `<div class="sub" style="padding:12px 0 4px">${esc(d.symbol)} is ${pct(pr.me)}; these haven't moved yet: <b class="gold">${pr.laggards.map((x) => esc(x.symbol)).join(", ")}</b>. Where a sympathy move would come from, if it comes. ${tip("sympathy")}</div>` : ""}
     ${pr.rows.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span><div class="grow"><div>${esc(x.name)}</div><div class="sub">${esc(x.cap)}${(pr.laggards || []).some((l) => l.symbol === x.symbol) ? ` · <span class="gold">not moved yet</span>` : ""}</div></div>${x.chg != null ? barHTML(x.chg) : ""}<span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("")}
     ${pr.avg != null ? `<div class="kv"><span>Peers on average</span><b class="num ${cls(pr.avg)}">${pct(pr.avg)}</b></div>` : ""}</div>` : "";
   const why = `<h4>Why it's moving</h4><div class="panel glass" id="whyBox">${(d.why || []).length ? d.why.map((x) => `<div class="li"><div class="grow"><a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a><div class="sub">${esc(outlet(x.source))} · ${esc(x.age)} ago</div></div></div>`).join("")
@@ -870,11 +991,24 @@ function tickerHTML(d) {
     ${d.market_cap ? `<div class="kv"><span>Market cap</span><b class="num">${esc(d.cap)} · ${esc(d.band)}</b></div>` : ""}
     ${d.industry || d.sector ? `<div class="kv"><span>Industry</span><b>${esc(d.industry || d.sector)}</b></div>` : ""}
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
-  const implied = `<h4>What options price in</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
+  const implied = `<h4>What options price in ${tip("implied")}</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
   return [head + relLine + earnLine, acts, noteBlock, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
-let tickerReq = 0;
+let tickerReq = 0, tickerNow = null;
+const impliedNow = {};
+// one-tap lines for a price alert: the day's high and low, the option walls, the implied-move bounds
+function renderSuggest() {
+  const d = tickerNow, im = impliedNow[d?.symbol], el = $("paSug");
+  if (!d || !el) return;
+  const px = d.quote?.price, out = [];
+  const add = (label, v) => { if (v && px && Math.abs(v / px - 1) > 0.002) out.push(`<button class="btn ghost small" data-act="pa-sug" data-k="${v > px ? "above" : "below"}" data-v="${(+v).toFixed(2)}">${label} ${fmtPx(v)}</button>`); };
+  add("Day high", d.range?.high); add("Day low", d.range?.low);
+  const pz = im?.positioning;
+  add("Call wall", pz?.call_wall?.strike); add("Put wall", pz?.put_wall?.strike);
+  if (im?.rows?.[0]) { add(`+${im.rows[0].move_pct.toFixed(1)}% implied`, im.rows[0].high); add(`−${im.rows[0].move_pct.toFixed(1)}% implied`, im.rows[0].low); }
+  el.innerHTML = out.join("");
+}
 async function openTicker(sym) {
   sym = String(sym || "").trim().toUpperCase().replace(/^\$/, "");
   if (!sym) return;
@@ -883,6 +1017,7 @@ async function openTicker(sym) {
   let d;
   try { d = await api("/api/ticker/" + encodeURIComponent(sym)); } catch (_) { toast(`No page for ${sym}`); return; }
   if (n !== tickerReq) return;  // a newer tap won
+  tickerNow = d;
   showSheet(tickerHTML(d));
   $("sheet").dataset.sym = d.symbol;
   loadImplied(d.symbol).finally(() => loadEarnings(d.symbol));
@@ -907,6 +1042,7 @@ async function loadImplied(sym) {  // returns once the panel is filled
   const el = $("implied");
   if (!el || $("sheet").dataset.sym !== sym) return;
   if (!r.available) { el.innerHTML = `<div class="li"><span class="muted">${esc(r.why || "Not available.")}</span></div>`; return; }
+  impliedNow[sym] = r;
   const dt = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   el.innerHTML = r.rows.map((x) => `<div class="kv"><span>By ${esc(dt(x.expiry))} <span class="sub">${x.dte}d${x.earnings ? ` · <span class="gold">earnings inside</span>` : ""}</span></span>
       <b class="num">±${x.move_pct.toFixed(1)}% <span class="sub">${fmtPx(x.low)} – ${fmtPx(x.high)}</span></b></div>`).join("")
@@ -918,10 +1054,10 @@ function positioningRows(p) {
   if (!p) return "";
   const dt = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return [
-    p.pc_volume != null ? `<div class="kv"><span>Put/call volume today <span class="sub">${(p.put_volume || 0).toLocaleString()} puts · ${(p.call_volume || 0).toLocaleString()} calls</span></span><b class="num ${p.pc_volume > 1.2 ? "neg" : p.pc_volume < 0.6 ? "pos" : ""}">${p.pc_volume.toFixed(2)}</b></div>` : "",
-    p.call_wall ? `<div class="kv"><span>Call wall <span class="sub">most call open interest above, ${esc(dt(p.expiry))}</span></span><b class="num">$${esc(String(p.call_wall.strike))} <span class="sub">${p.call_wall.oi.toLocaleString()} OI</span></b></div>` : "",
-    p.put_wall ? `<div class="kv"><span>Put wall <span class="sub">most put open interest below</span></span><b class="num">$${esc(String(p.put_wall.strike))} <span class="sub">${p.put_wall.oi.toLocaleString()} OI</span></b></div>` : "",
-    p.max_pain != null ? `<div class="kv"><span>Max pain, ${esc(dt(p.expiry))} <span class="sub">where holders collect least</span></span><b class="num">$${esc(String(p.max_pain))}</b></div>` : "",
+    p.pc_volume != null ? `<div class="kv"><span>Put/call volume ${tip("pcratio")} <span class="sub">${(p.put_volume || 0).toLocaleString()} puts · ${(p.call_volume || 0).toLocaleString()} calls</span></span><b class="num ${p.pc_volume > 1.2 ? "neg" : p.pc_volume < 0.6 ? "pos" : ""}">${p.pc_volume.toFixed(2)}</b></div>` : "",
+    p.call_wall ? `<div class="kv"><span>Call wall ${tip("callwall")} <span class="sub">most call open interest above, ${esc(dt(p.expiry))}</span></span><b class="num">$${esc(String(p.call_wall.strike))} <span class="sub">${p.call_wall.oi.toLocaleString()} OI</span></b></div>` : "",
+    p.put_wall ? `<div class="kv"><span>Put wall ${tip("putwall")} <span class="sub">most put open interest below</span></span><b class="num">$${esc(String(p.put_wall.strike))} <span class="sub">${p.put_wall.oi.toLocaleString()} OI</span></b></div>` : "",
+    p.max_pain != null ? `<div class="kv"><span>Max pain ${tip("maxpain")}, ${esc(dt(p.expiry))} <span class="sub">where holders collect least</span></span><b class="num">$${esc(String(p.max_pain))}</b></div>` : "",
   ].join("");
 }
 function levelsText(t) {
@@ -944,7 +1080,15 @@ async function onAct(el) {
   else if (a === "wl-add") { const v = prompt("Add to your watchlist (tickers, comma separated):"); if (v && syms(v).length) { await deskEdit("watch_add", { symbols: syms(v) }); } }
   else if (a === "wl-in") { const v = syms($("wlIn").value); if (v.length) { if (await deskEdit("watch_add", { symbols: v })) $("wlIn").value = ""; } }
   else if (a === "wl-rm") await deskEdit("watch_remove", { symbol: s });
-  else if (a === "pa-form") { const f = $("paForm"); f.hidden = !f.hidden; if (!f.hidden) $("paVal").focus(); }
+  else if (a === "pa-form") { const f = $("paForm"); f.hidden = !f.hidden; if (!f.hidden) { renderSuggest(); $("paVal").focus(); } }
+  else if (a === "pa-sug") { $("paKind").value = el.dataset.k; $("paVal").value = el.dataset.v; }
+  else if (a === "term") toast(GLOSSARY[s] || s, null, 9000);
+  else if (a === "sort") { tapeSort = tapeSort === "best" ? "new" : "best"; store.set("ft.sort", tapeSort); renderTape(); }
+  else if (a === "ob-tog") el.classList.toggle("sel");
+  else if (a === "ob-style") { el.parentElement.querySelectorAll("button").forEach((b) => b.classList.toggle("sel", b === el)); }
+  else if (a === "ob-skip") { store.set("ft_onboarded", "1"); closeSheet(); }
+  else if (a === "onboard") openOnboard();
+  else if (a === "ob-save") saveOnboard();
   else if (a === "pa-save") {
     const kind = $("paKind").value, value = parseFloat($("paVal").value);
     if (!(value > 0)) { toast("Enter a price (or a % for a move)"); return; }
@@ -1359,7 +1503,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth(), loadWeek()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -1434,7 +1578,7 @@ async function start() {
   $("lock").hidden = true; $("main").hidden = false; $("dock").hidden = false;
   Fx.split(); Fx.observe(document);
   connect();
-  loadDesk().then(renderAway);
+  loadDesk().then(() => { renderAway(); maybeOnboard(); });
   if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" });
   navigator.clearAppBadge?.();
   refreshPushUI();
