@@ -571,3 +571,28 @@ body.big .stage, body.big .sheet .inner { zoom: 1.12; }
 .rank { width: 18px; flex: none; text-align: right; font: 600 12px var(--mono); color: var(--faint); }
 .offline { position: fixed; z-index: 40; left: 50%; top: calc(58px + env(safe-area-inset-top)); transform: translateX(-50%); padding: 7px 14px; border-radius: 999px;
   font: 600 12.5px var(--sans); color: #1B1206; background: linear-gradient(180deg, #FFE2B4, #F6B36A); box-shadow: 0 8px 24px -10px rgba(0, 0, 0, .6); }
+/* run 9: portfolio bar, edge chip, compact, light */
+.sbar { display: flex; height: 8px; gap: 2px; margin: 12px 0 4px; border-radius: 99px; overflow: hidden; }
+.sbar i { display: block; background: hsl(calc(30 + var(--i) * 47), 70%, 62%); }
+.edge { font: 600 10.5px var(--mono); letter-spacing: .04em; color: var(--gold); padding: 2px 7px; border-radius: 99px; background: rgba(255, 217, 160, .1); }
+body.compact .alert .why, body.compact .alert .prec, body.compact .alert .base, body.compact .alert .pre, body.compact .alert .play .conv { display: none; }
+body.compact .alert .glass { padding: 12px 14px; }
+body.compact .alert h3 { font-size: 15px; margin: 4px 0; }
+body.compact .li { padding: 9px 0; }
+body.compact .sec-title { margin: 22px 4px 10px; }
+body.light { --text: #16213B; --cream: #16213B; --muted: rgba(22, 33, 59, .74); --faint: rgba(22, 33, 59, .52); --gold: #9A5A12; --up: #0B7F55; --down: #C03A26; --ice: #2D5DA8;
+  --night: #F3F0E9; --hair: rgba(22, 33, 59, .14); background: #F3F0E9 !important; }
+html:has(body.light) { background: #F3F0E9; }
+body.light .glass { background: #FFFFFF !important; box-shadow: 0 1px 0 rgba(22, 33, 59, .05), 0 10px 26px -18px rgba(22, 33, 59, .45), inset 0 0 0 1px rgba(22, 33, 59, .08) !important; color: var(--text); }
+body.light .sheet { background: #FBFAF6 !important; color: var(--text); }
+body.light .li, body.light .kv, body.light .sig, body.light .chk { border-top-color: rgba(22, 33, 59, .09); }
+body.light .btn.ghost, body.light .x, body.light .seg, body.light .sortb, body.light .wlc, body.light .addrow .key, body.light .addrow select, body.light .search { background: rgba(22, 33, 59, .06) !important; box-shadow: inset 0 0 0 1px rgba(22, 33, 59, .12) !important; color: var(--text); }
+body.light .btn.sel { background: rgba(154, 90, 18, .14) !important; box-shadow: inset 0 0 0 1px rgba(154, 90, 18, .45) !important; color: #6A3C08; }
+body.light .tk { background: rgba(22, 33, 59, .06); color: var(--text); }
+body.light .bar, body.light .dock .in { background: rgba(255, 255, 255, .92) !important; color: var(--text); }
+body.light .display, body.light .sec-title h2, body.light h2, body.light h3 { color: var(--text); text-shadow: none; }
+body.light .hero, body.light .thero { color: var(--text); }
+body.light .lede { color: var(--muted); text-shadow: none; }
+body.light .toast { background: #16213B; color: #FFF; }
+body.light, body.light * { text-shadow: none !important; }
+body.light .chip { background: rgba(22, 33, 59, .08) !important; color: var(--text); }

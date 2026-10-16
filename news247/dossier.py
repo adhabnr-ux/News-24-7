@@ -1295,3 +1295,153 @@ def similar_alerts(
         else None
     )
     return {"symbol": sym, "key": key, "rows": rows[:limit], "stats": stats}
+
+
+# --------------------------------------------------------------------------- portfolio, tomorrow, rule preview
+
+
+def portfolio(engine: Engine, device: str, now: float | None = None) -> dict[str, Any]:
+    """This phone's holdings, live: value, today's P&L in dollars, unrealized P&L against cost,
+    exposure by sector, and the biggest contributors today."""
+    now = now or time.time()
+    p = engine.desk.profiles.get(device) or {}
+    rows: list[dict[str, Any]] = []
+    sectors_: dict[str, float] = {}
+    total = day = unreal = cost_basis = 0.0
+    for sym, h in (p.get("holdings") or {}).items():
+        q = engine.price_of(sym, 6 * 3600, now=now)
+        li = engine.universe.get(sym)
+        price = q[1] if q else None
+        chg = q[2] if q else None
+        value = price * h["shares"] if price else None
+        dpnl = value - value / (1 + chg / 100) if value is not None and chg is not None else None
+        upnl = (price - h["cost"]) * h["shares"] if price and h.get("cost") else None
+        rows.append({"symbol": sym, "name": li.name if li else "", "shares": h["shares"], "cost": h.get("cost"), "price": price,
+                     "chg": round(chg, 2) if chg is not None else None, "value": round(value, 2) if value is not None else None,
+                     "day_pnl": round(dpnl, 2) if dpnl is not None else None, "unreal": round(upnl, 2) if upnl is not None else None,
+                     "unreal_pct": round((price / h["cost"] - 1) * 100, 2) if price and h.get("cost") else None,
+                     "sector": (li.sector if li else "") or "Other"})  # fmt: skip
+        if value is not None:
+            total += value
+            sectors_[rows[-1]["sector"]] = sectors_.get(rows[-1]["sector"], 0.0) + value
+            if dpnl is not None:
+                day += dpnl
+            if upnl is not None:
+                unreal += upnl
+                cost_basis += h["cost"] * h["shares"]
+    rows.sort(key=lambda r: -(r["value"] or 0))
+    for r in rows:
+        r["weight"] = round(r["value"] / total * 100, 1) if total and r["value"] is not None else None
+    movers = sorted((r for r in rows if r["day_pnl"] is not None), key=lambda r: -abs(r["day_pnl"]))[:3]
+    prev = total - day
+    return {
+        "rows": rows, "value": round(total, 2), "day_pnl": round(day, 2), "day_pct": round(day / prev * 100, 2) if prev else None,
+        "unreal": round(unreal, 2) if cost_basis else None, "unreal_pct": round(unreal / cost_basis * 100, 2) if cost_basis else None,
+        "sectors": sorted(({"sector": k, "weight": round(v / total * 100, 1)} for k, v in sectors_.items()), key=lambda r: -r["weight"]) if total else [],
+        "contributors": [{"symbol": r["symbol"], "day_pnl": r["day_pnl"]} for r in movers],
+    }  # fmt: skip
+
+
+def tomorrow(engine: Engine, device: str = "", now: float | None = None) -> dict[str, Any]:
+    """The next session, the evening before: after-hours movers with their reasons, the companies
+    worth $2B+ reporting that day (this phone's first) and the scheduled events."""
+    now = now or time.time()
+    nxt = datetime.fromtimestamp(session_closes(now, 1, engine.calendar.holidays)[0], ET).date()
+    if datetime.fromtimestamp(now, ET).hour < 16 and datetime.fromtimestamp(now, ET).date() == nxt:
+        nxt = datetime.fromtimestamp(session_closes(now + 86400, 1, engine.calendar.holidays)[0], ET).date()
+    g = gaps(engine, now, max_age_s=4 * 3600, limit=5)
+    p = engine.desk.profiles.get(device) or {}
+    mine = set(p.get("watchlist") or []) | set(p.get("holdings") or {})
+    reports = []
+    book = getattr(engine.trends, "earnings", None) if engine.trends is not None else None
+    if book is not None:
+        for sym in list(book.next):
+            e = book.lookup(sym)
+            if not e or e["date"] != nxt.isoformat():
+                continue
+            li = engine.universe.get(sym)
+            if sym in mine or (li is not None and (li.market_cap or 0) >= 2e9):
+                reports.append(
+                    {
+                        "symbol": sym,
+                        "when": e.get("when") or "",
+                        "mine": sym in mine,
+                        "mcap": (li.market_cap if li else 0) or 0,
+                    }
+                )
+    reports.sort(key=lambda r: (not r["mine"], -r["mcap"]))
+    for r in reports:
+        r.pop("mcap")
+    events = [{"title": e["title"], "time": e.get("time"), "impact": e.get("impact") or 1} for e in engine.calendar.upcoming(days=5, now=now)
+              if e["date"] == nxt.isoformat() and (e.get("impact") or 1) >= 2]  # fmt: skip
+    return {
+        "date": nxt.isoformat(),
+        "movers": g["up"][:4] + g["down"][:4],
+        "reports": reports[:20],
+        "events": events,
+    }
+
+
+def tomorrow_push(t: dict[str, Any]) -> dict[str, Any] | None:
+    lines = []
+    for r in t["movers"][:3]:
+        lines.append(
+            f"{r['symbol']} {r['chg']:+.1f}%" + (f": {r['why']['title'][:80]}" if r.get("why") else "")
+        )
+    if t["reports"]:
+        lines.append(
+            "Reporting: " + ", ".join(("★" if r["mine"] else "") + r["symbol"] for r in t["reports"][:8])
+        )
+    for e in t["events"][:2]:
+        lines.append(f"{e['time'] + ' ET: ' if e.get('time') else ''}{e['title'][:70]}")
+    if not lines:
+        return None
+    day = datetime.fromisoformat(t["date"]).strftime("%A")
+    return {"id": f"tm-{t['date']}", "title": f"🌙 {day}: what to know", "body": "\n".join(lines)[:600], "severity": "MEDIUM",
+            "kind": "system", "tickers": [], "tag": f"tm-{t['date']}", "ts": time.time(), "open": "/app/#a=brief"}  # fmt: skip
+
+
+def rule_preview(
+    engine: Engine, device: str, rule: dict[str, Any], now: float | None = None, days: int = 30
+) -> dict[str, Any]:
+    """How often a smart alert would have fired over the last ``days`` days. Headline rules are
+    replayed against stored headlines; the move in "headline, then a move" is checked on the
+    headlines that became graded alerts (their move an hour later); tape rules (volume, VWAP, gaps)
+    need prices the server didn't keep, so they aren't replayed."""
+    now = now or time.time()
+    kind, v = rule.get("kind"), float(rule.get("value") or 0)
+    p = engine.desk.profiles.get(device) or {}
+    syms = (
+        (p.get("watchlist") or [])[:60]
+        if rule.get("symbol") == "*"
+        else [str(rule.get("symbol") or "").upper()]
+    )
+    if kind not in ("headline", "news_move"):
+        return {
+            "replayable": False,
+            "why": "Tape rules (volume, VWAP, gaps) need intraday prices the server doesn't keep, so they can't be replayed.",
+        }
+    since = now - days * 86400
+    heads = 0
+    for sym in syms:
+        heads += len(
+            engine.storage.items_for_ticker(
+                sym, since=since, limit=500, min_score=v if kind == "headline" else 20
+            )
+        )
+    out: dict[str, Any] = {
+        "replayable": True,
+        "days": days,
+        "headlines": heads,
+        "per_week": round(heads / days * 7, 1),
+    }
+    if kind == "news_move":
+        graded = moved = 0
+        for sym in syms:
+            for a in engine.storage.alerts_for_ticker(sym, since=since, limit=300):
+                row = ((a.get("edge") or {}).get("outcome") or {}).get(sym)
+                if row and row.get("h1") is not None:
+                    graded += 1
+                    moved += abs(row["h1"]) >= v
+        out.update({"graded": graded, "moved": moved})
+    return out

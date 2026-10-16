@@ -2171,12 +2171,23 @@ class Engine:
         """A MEDIUM alert (shown in the app, not pushed) on a stock someone watches: push it to
         those phones, with their preferences (category, quiet hours) respected."""
         wp = self.webpush
-        if wp is None or alert.severity != Severity.MEDIUM or not alert.tickers or self.dispatcher.paused:
+        themes = list(alert.analysis.themes) if alert.analysis is not None else []
+        if (
+            wp is None
+            or alert.severity != Severity.MEDIUM
+            or not (alert.tickers or themes)
+            or self.dispatcher.paused
+        ):
             return
         if any(ch.name == "webpush" for ch in self.dispatcher.targets(alert)):
             return  # the phone floor is at MEDIUM: it went to everyone already
+        secs = [
+            li.sector
+            for li in (self.universe.get(t) for t in alert.tickers[:6])
+            if li is not None and li.sector
+        ]
         devices = {
-            d for d in self.desk.watchers(alert.tickers[:6])
+            d for d in self.desk.watchers(alert.tickers[:6]) + self.desk.followers(themes, secs)
             if (self.desk.get(d).get("prefs") or {}).get("watch_push", True)
             and self.desk.allows(d, alert)
             and not self.desk.hold(d, alert)
@@ -2226,6 +2237,9 @@ class Engine:
                     await self.auto_why(now)
                 with contextlib.suppress(Exception):
                     await self.send_earnings_reminders(now)
+                if self._tomorrow_due(now):
+                    with contextlib.suppress(Exception):
+                        await self.send_tomorrow(now)
                 if self._close_due(now):
                     with contextlib.suppress(Exception):
                         await self.send_close(now)
@@ -2518,6 +2532,29 @@ class Engine:
                 self.desk.save(device)
         if len(self._rule_refs) > 5000:
             self._rule_refs.clear()
+        return sent
+
+    def _tomorrow_due(self, now: float) -> bool:
+        dt = datetime.fromtimestamp(now, ET)
+        if dt.weekday() in (4, 5) or not ((20, 0) <= (dt.hour, dt.minute) < (20, 45)):  # Sun-Thu evenings
+            return False
+        return self.storage.get_setting("tomorrow_sent") != dt.date().isoformat()
+
+    async def send_tomorrow(self, now: float | None = None) -> int:
+        """20:00 ET, Sunday to Thursday: the next session, to every phone that turned it on."""
+        from .dossier import tomorrow, tomorrow_push
+
+        now = now or time.time()
+        self.storage.set_setting("tomorrow_sent", datetime.fromtimestamp(now, ET).date().isoformat())
+        if self.webpush is None or self.dispatcher.paused:
+            return 0
+        sent = 0
+        for d in {s.device for s in self.webpush.subs.values() if s.device}:  # type: ignore[attr-defined]
+            if not ((self.desk.profiles.get(d) or {}).get("prefs") or {}).get("tomorrow"):
+                continue
+            payload = tomorrow_push(tomorrow(self, d, now))
+            if payload and await self._to_device(d, payload, urgency="normal"):
+                sent += 1
         return sent
 
     def _close_due(self, now: float) -> bool:

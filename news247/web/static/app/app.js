@@ -29,8 +29,10 @@ const seen = new Set();
 
 // display: "clear" (no 3D scene, no glass blur: legible and light on the battery) and larger text
 function applyDisplay() {
-  const clear = store.get("ft_clear") === "1", big = store.get("ft_text") === "big";
+  const light = store.get("ft_light") === "1", clear = light || store.get("ft_clear") === "1", big = store.get("ft_text") === "big";
   document.body.classList.toggle("clear", clear);
+  document.body.classList.toggle("light", light);
+  document.body.classList.toggle("compact", store.get("ft_compact") === "1");
   document.body.classList.toggle("big", big);
   try { Scene.setClear?.(clear); } catch (_) { /* the scene loads after this file on some paths */ }
 }
@@ -216,6 +218,20 @@ function preRow(a) {
   const way = d === "up" ? (x > 0 ? "its way" : "against it") : d === "down" ? (x < 0 ? "its way" : "against it") : "";
   return `<div class="pre">${esc(sym)} had already moved <b class="${cls(x)}">${pct(x)}</b> in the 15 minutes before${way ? ` (${way})` : ""}</div>`;
 }
+// the edge score: one 0-100 composite of the alert's own measured stats, with its parts shown
+function edgeScore(a) {
+  const e = a.edge || {}, parts = [];
+  const hits = [e.base?.h1?.hit, e.base?.close?.hit].filter((x) => x != null);
+  const hit = hits.length ? hits.reduce((x, y) => x + y, 0) / hits.length : null;
+  parts.push(["Base rate", hit != null ? hit : 0.5, 0.45, hit != null ? `${Math.round(hit * 100)}% went their way` : "not enough graded yet (neutral)"]);
+  const pre = e.pre ? Object.values(e.pre)[0] : null, d = e.play?.direction || a.analysis?.direction || e.confluence?.side;
+  const y = pre != null && (d === "up" || d === "down") ? pre * (d === "up" ? 1 : -1) : null;
+  parts.push(["Freshness", y == null ? 0.6 : Math.abs(y) < 1 ? 1 : y > 0 ? 0.35 : 0.6, 0.2, y == null ? "no pre-alert tape" : Math.abs(y) < 1 ? "the stock hadn't moved yet" : y > 0 ? `already moved ${pct(pre)} its way` : `moved ${pct(pre)} against it first`]);
+  parts.push(["Confluence", e.confluence ? 1 : 0.4, 0.15, e.confluence ? `${e.confluence.kinds.length} kinds of evidence line up` : "one kind of evidence"]);
+  const sev = { CRITICAL: 1, HIGH: 0.75, MEDIUM: 0.5, LOW: 0.25 }[a.severity] ?? 0.5;
+  parts.push(["Severity", sev, 0.2, a.severity]);
+  return { score: Math.round(parts.reduce((t, [, v, w]) => t + v * w, 0) * 100), parts };
+}
 function relatedChip(a) {
   const t = (a.tickers || [])[0];
   if (!t || a.kind === "system") return "";
@@ -238,7 +254,7 @@ function alertHTML(a, opts = {}) {
   return `<article class="alert ${a.edge?.radar ? "radar " : ""}${opts.feature ? "feature " : ""}${known || a._new ? "" : "rv "}${state}" data-id="${esc(a.id)}">
     <div class="glass tilt" style="--sev:${SEV[a.severity] || SEV.LOW}"><i class="sevbar"></i>
       ${opts.feature ? `<div class="eyebrow" style="color:var(--gold);margin-bottom:12px">Top of the tape</div>` : ""}
-      <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
+      <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${a.kind !== "system" && a.edge?.base ? `<span class="edge">edge ${edgeScore(a).score}</span>` : ""}${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
       ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${preRow(a)}${baseRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}
@@ -369,7 +385,7 @@ async function loadBrief() {
     ["Stories you had before the mainstream", e.stories], ["Median head start", e.median_lead_s != null ? dur(e.median_lead_s) : "—"],
     ["Biggest head start", e.best_lead_s != null ? dur(e.best_lead_s) : "—"],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("") + scoreRows(b.scorecard);
-  loadDay(); loadClose();
+  loadDay(); loadClose(); loadTomorrow();
   Fx.observe($("main"));
 }
 // the scorecard: last session's big moves, and whether we had each one before the price
@@ -669,6 +685,7 @@ async function openSheet(id) {
         ${p.themes?.length ? `<div class="sub" style="margin-top:14px">${esc(p.themes.join(" · "))}</div>` : ""}</div>` : "",
     e.confluence ? `<h4>What lines up ${tip("confluence")}</h4><div class="panel glass padded">${confRow(a)}${e.confluence.signals.map((x) => `<div class="sig"${x.id ? ` data-id="${esc(x.id)}" role="button"` : ""}><span class="${x.side === "up" ? "pos" : "neg"}">${x.side === "up" ? "▲" : "▼"}</span><div class="grow"><div>${esc(x.label)}</div><div class="sub">${esc(KIND_LABEL[x.kind] || x.kind)} · weighs ${x.weight}${x.ts ? ` · ${ago(x.ts)} ago` : ""}</div></div></div>`).join("")}
       <div class="sub" style="margin-top:10px">Fires when 3+ independent kinds of evidence line up on one side (weight 4+, at least one from the last 2 hours); pushed at weight 7+. Each stock and side once a day.</div></div>` : "",
+    a.kind !== "system" ? (() => { const es = edgeScore(a); return `<h4>Edge score</h4><div class="panel glass"><div class="kv"><span>Composite of the stats on this page</span><b class="num ${es.score >= 60 ? "pos" : es.score < 45 ? "neg" : ""}">${es.score} / 100</b></div>${es.parts.map(([n, v, w, why]) => `<div class="kv"><span>${n} <span class="sub">× ${Math.round(w * 100)}% · ${esc(why)}</span></span><b class="num">${Math.round(v * 100)}</b></div>`).join("")}<div class="sub" style="padding:4px 0 12px">A weighted summary of measured facts (how alerts like it did, whether the stock had already moved, how much evidence agrees, severity), not a forecast.</div></div>`; })() : "",
     priceInBlock(a),
     e.base ? `<h4>How alerts like this did ${tip("base")}</h4><div class="panel glass">
       ${e.base.h1 ? `<div class="kv"><span>An hour later</span><b class="num"><span class="${e.base.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.h1.hit * 100)}%</span> went its way · median ${pct(e.base.h1.median)} · ${e.base.h1.n} graded</b></div>` : ""}
@@ -783,6 +800,11 @@ $("scrim").onclick = closeSheet; $("closeSheet").onclick = closeSheet;
   };
   sh.addEventListener("touchend", end); sh.addEventListener("touchcancel", end);
 })();
+// keyboard and screen readers: every tappable row is focusable and opens with Enter or Space
+new MutationObserver(() => document.querySelectorAll('[role="button"]:not([tabindex])').forEach((el) => el.setAttribute("tabindex", "0"))).observe(document.body, { childList: true, subtree: true });
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.('[role="button"]')) { e.preventDefault(); e.target.click(); }
+});
 // keyboard (desktop): Esc closes, / searches, 1-6 switch tabs, w watches the open stock, ? lists them
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { closeSheet(); return; }
@@ -814,7 +836,7 @@ async function loadDesk() {
   deskChanged();
 }
 function deskChanged() {
-  mine = new Set((desk?.watchlist || []).map((w) => w.symbol));
+  mine = new Set([...(desk?.watchlist || []).map((w) => w.symbol), ...Object.keys(desk?.holdings || {})]);
   renderStrip();
   if (tab === "desk") renderDesk();
   if (tapeFilter === "mine" && tab === "tape") renderTape();
@@ -875,6 +897,8 @@ function renderDesk() {
   renderKeywords();
   loadSaved();
   renderRules();
+  loadPortfolio();
+  renderFollow();
   const sh = desk.share;
   $("dShare").innerHTML = `<div class="sub" style="margin-bottom:12px">Share your watchlist: a code anyone can use for 7 days to add your stocks to theirs (a copy; nothing else of yours is shared).</div>
     ${sh ? `<div class="code">${esc(sh.code.slice(0, 4))}-${esc(sh.code.slice(4))}</div><div class="sub">${sh.n} stocks · valid ${esc(dur(sh.until - Date.now() / 1000).replace(/ \d+[ms]$/, ""))}</div>` : `<button class="btn ghost small" data-act="share-list">Make a share code</button>`}
@@ -894,8 +918,11 @@ function renderDesk() {
     <div class="row" style="padding:10px 0 4px">${CATS.map(([k, l]) => { const until = (desk.snooze || {})[k]; return `<button class="btn ghost small${until ? " sel" : ""}" data-act="snooze" data-s="${k}">${until ? `💤 ${l} until ${new Date(until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : l}</button>`; }).join("")}</div>
     <div class="kv"><span>Skip what fades ${tip("base")}<div class="sub">don't push alert kinds that went their way 40% of the time or less over 20+ graded (CRITICAL still comes)</div></span><b><button class="btn ghost small${pr.skip_fades ? " sel" : ""}" data-act="flag" data-s="skip_fades">${pr.skip_fades ? "On" : "Off"}</button></b></div>
     <div class="sub" style="padding-top:8px">Display (this phone)</div>
-    <div class="row" style="padding:10px 0 4px"><button class="btn ghost small${store.get("ft_clear") === "1" ? "" : " sel"}" data-act="display" data-s="cinema">Cinematic</button><button class="btn ghost small${store.get("ft_clear") === "1" ? " sel" : ""}" data-act="display" data-s="clear">Clear (no 3D, no blur)</button><button class="btn ghost small${store.get("ft_text") === "big" ? " sel" : ""}" data-act="display" data-s="text">Larger text</button></div>
+    <div class="row" style="padding:10px 0 4px"><button class="btn ghost small${store.get("ft_clear") === "1" ? "" : " sel"}" data-act="display" data-s="cinema">Cinematic</button><button class="btn ghost small${store.get("ft_clear") === "1" ? " sel" : ""}" data-act="display" data-s="clear">Clear (no 3D, no blur)</button><button class="btn ghost small${store.get("ft_text") === "big" ? " sel" : ""}" data-act="display" data-s="text">Larger text</button>
+      <button class="btn ghost small${store.get("ft_light") === "1" ? " sel" : ""}" data-act="display" data-s="light">Light</button><button class="btn ghost small${store.get("ft_compact") === "1" ? " sel" : ""}" data-act="display" data-s="compact">Compact</button>
+      <button class="btn ghost small${store.get("ft_haptic") === "1" ? " sel" : ""}" data-act="display" data-s="haptic">Vibrate on alerts</button><button class="btn ghost small${store.get("ft_onestock") === "1" ? " sel" : ""}" data-act="display" data-s="onestock">One notification per stock</button></div>
     <div class="row" style="padding:6px 0 4px"><button class="btn ghost small${localTimes() ? " sel" : ""}" data-act="tz">${localTimes() ? "Times: your time zone" : "Times: ET"}</button><button class="btn ghost small" data-act="glossary">What the terms mean</button></div>
+    <div class="kv"><span>Tomorrow, 20:00 ET (Sun-Thu)<div class="sub">after-hours movers and why, the next session's reporters (yours first) and events</div></span><b><button class="btn ghost small${pr.tomorrow ? " sel" : ""}" data-act="flag" data-s="tomorrow">${pr.tomorrow ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The close, 16:15 ET<div class="sub">a market recap: indexes, breadth, sectors, the biggest movers and why, how the alerts did</div></span><b><button class="btn ghost small${pr.close_recap ? " sel" : ""}" data-act="flag" data-s="close_recap">${pr.close_recap ? "On" : "Off"}</button></b></div>
     <div class="sub" style="padding-top:8px">A move alert for every stock you add</div>
     <div class="row" style="padding:10px 0 4px">${[0, 3, 5, 8, 10].map((v) => `<button class="btn ghost small${(pr.auto_move || 0) === v ? " sel" : ""}" data-act="automove" data-s="${v}">${v ? `±${v}%` : "Off"}</button>`).join("")}</div>
@@ -952,6 +979,31 @@ async function loadSaved() {
   $("dSaved").innerHTML = got.filter(Boolean).map((a) => `<div class="li" data-id="${esc(a.id)}" role="button"><span class="dot-sev" style="background:${SEV[a.severity]};color:${SEV[a.severity]}"></span><div class="grow"><div style="font-weight:600;line-height:1.35">${esc(a.title)}</div><div class="sub">${esc(a.severity)} · ${ago(a.created)} ago</div>${gradeRow(a)}</div><button class="x" data-act="unsave" data-s="${esc(a.id)}" aria-label="Remove">✕</button></div>`).join("");
 }
 const icsUrl = (scheme) => `${scheme === "webcal" ? "webcal:" : location.protocol}//${location.host}/api/calendar.ics?token=${encodeURIComponent(TOKEN)}&device=${encodeURIComponent(DEVICE)}`;
+// the portfolio: holdings with shares (and cost), live
+async function loadPortfolio() {
+  let r;
+  try { r = await api("/api/portfolio"); } catch (_) { return; }
+  const usd = (v) => v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2 });
+  const sgn = (v) => v == null ? "—" : (v > 0 ? "+" : "") + usd(v);
+  $("dPort").innerHTML = (r.rows.length ? `<div class="kv"><span>Value</span><b class="num">${usd(r.value)}</b></div>
+      <div class="kv"><span>Today</span><b class="num ${cls(r.day_pnl)}">${sgn(r.day_pnl)}${r.day_pct != null ? ` · ${pct(r.day_pct)}` : ""}</b></div>
+      ${r.unreal != null ? `<div class="kv"><span>Unrealized (where you gave a cost)</span><b class="num ${cls(r.unreal)}">${sgn(r.unreal)} · ${pct(r.unreal_pct)}</b></div>` : ""}
+      ${r.contributors.length ? `<div class="kv"><span>Moving it today</span><b class="num">${r.contributors.map((c) => `${esc(c.symbol)} <span class="${cls(c.day_pnl)}">${sgn(c.day_pnl)}</span>`).join(" · ")}</b></div>` : ""}
+      ${r.sectors.length ? `<div class="sbar">${r.sectors.map((x, i) => `<i style="flex:${x.weight};--i:${i}" title="${esc(x.sector)} ${x.weight}%"></i>`).join("")}</div><div class="sub" style="padding:4px 0 8px">${r.sectors.slice(0, 5).map((x) => `${esc(x.sector)} ${x.weight}%`).join(" · ")}</div>` : ""}
+      ${r.rows.map((x) => `<div class="li"><span class="sym" style="width:56px" data-tk="${esc(x.symbol)}" role="button">${esc(x.symbol)}</span><div class="grow"><div class="num">${x.shares.toLocaleString()} × ${fmtPx(x.price)} = ${usd(x.value)}</div><div class="sub">${x.weight != null ? x.weight + "% · " : ""}today <span class="${cls(x.day_pnl)}">${sgn(x.day_pnl)}</span>${x.unreal != null ? ` · since cost <span class="${cls(x.unreal)}">${pct(x.unreal_pct)}</span>` : ""}</div></div><span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span><button class="x" data-act="hold-rm" data-s="${esc(x.symbol)}" aria-label="Remove ${esc(x.symbol)}">✕</button></div>`).join("")}`
+    : `<div class="li"><span class="muted">Add what you hold: live value, today's P&amp;L in dollars, exposure by sector. Held stocks count as yours for alerts (the Mine filter, and pushes even at MEDIUM). Stored for this phone only.</span></div>`)
+    + `<div class="addrow"><input id="hSym" class="key" placeholder="Ticker" autocapitalize="characters" autocomplete="off" spellcheck="false" style="max-width:110px"><input id="hShares" class="key" inputmode="decimal" placeholder="Shares"><input id="hCost" class="key" inputmode="decimal" placeholder="Cost/share (optional)"><button class="btn ghost small" data-act="hold-add">Add</button></div>`;
+}
+// follow a theme or a sector: its MEDIUM alerts reach this phone like a watched stock's
+let followOpts = null;
+const prettyTheme = (t) => t.replace(/_/g, " ").replace(/\bai\b/g, "AI").replace(/\bfda\b/g, "FDA").replace(/\bgse\b/g, "GSE").replace(/^./, (c) => c.toUpperCase());
+async function renderFollow() {
+  if (!followOpts) { try { followOpts = await api("/api/follow-options"); } catch (_) { return; } }
+  const f = desk.follow || { themes: [], sectors: [] };
+  const chips = (kind, list, label) => list.map((n) => `<button class="btn ghost small${(f[kind] || []).includes(n) ? " sel" : ""}" data-act="follow" data-k="${kind}" data-s="${esc(n)}">${esc(label(n))}</button>`).join("");
+  $("dFollow").innerHTML = `<div class="sub" style="padding-top:12px">Sectors</div><div class="row" style="padding:8px 0">${chips("sectors", followOpts.sectors, (x) => x)}</div>
+    <div class="sub">Themes (as the scorer tags headlines)</div><div class="row" style="padding:8px 0 14px">${chips("themes", followOpts.themes, prettyTheme)}</div>`;
+}
 // smart alerts: this phone's own triggers
 const RULE_TEXT = {
   headline: (r) => `a headline on ${r.symbol === "*" ? "any stock you watch" : r.symbol} scoring ${r.value}+`,
@@ -960,12 +1012,25 @@ const RULE_TEXT = {
   vwap: (r) => `${r.symbol === "*" ? "any stock you watch" : r.symbol} crosses ${r.dir} VWAP`,
   gap: (r) => `${r.symbol === "*" ? "any stock you watch" : r.symbol} gaps ${r.value}%+ pre-market`,
 };
+// how often a rule would have fired over the last 30 days
+async function previewRule() {
+  let kind = $("ruleKind").value;
+  if (kind.startsWith("vwap_")) kind = "vwap";
+  const defaults = { headline: 20, news_move: 3, volume: 5, gap: 4, vwap: 0 };
+  const body = { kind, symbol: $("ruleSym").value.trim() || "*", value: $("ruleVal").value.trim() || defaults[kind] };
+  let r;
+  try { r = await api("/api/rule-preview", { method: "POST", body: JSON.stringify(body) }); } catch (e) { $("rulePrev").textContent = e.message; return; }
+  $("rulePrev").innerHTML = !r.replayable ? esc(r.why)
+    : kind === "headline" ? `Over the last ${r.days} days: <b>${r.headlines}</b> headline${r.headlines === 1 ? "" : "s"} would have fired it (about ${r.per_week} a week).`
+    : `Over the last ${r.days} days: <b>${r.headlines}</b> headlines could have started it; of ${r.graded} that became graded alerts, <b>${r.moved}</b> moved ${esc(String(body.value))}%+ within the hour.`;
+}
 function renderRules() {
   const rules = desk.rules || [];
   $("dRules").innerHTML = (rules.length ? rules.map((r) => `<div class="li"><div class="grow">⚡ ${esc(RULE_TEXT[r.kind]?.(r) || r.kind)}</div><button class="x" data-act="rule-rm" data-s="${esc(r.id)}" aria-label="Remove">✕</button></div>`).join("")
     : `<div class="li"><span class="muted">Your own triggers, pushed to this phone only, each once per headline or once a day. Add one below, or from any stock's page (⚡ Smart alert).</span></div>`)
     + `<div class="addrow"><select id="ruleKind"><option value="news_move">Headline, then a move of %</option><option value="headline">Headline scoring at least</option><option value="volume">Volume, × normal</option><option value="gap">Pre-market gap of %</option><option value="vwap_above">Crosses above VWAP</option><option value="vwap_below">Loses VWAP</option></select></div>
-      <div class="addrow" style="padding-top:0"><input id="ruleSym" class="key" placeholder="Ticker, or * for all you watch" autocapitalize="characters" autocomplete="off" spellcheck="false" value="*"><input id="ruleVal" class="key" inputmode="decimal" placeholder="value" style="max-width:90px"><button class="btn ghost small" data-act="rule-add">Add</button></div>`;
+      <div class="addrow" style="padding-top:0"><input id="ruleSym" class="key" placeholder="Ticker, or * for all you watch" autocapitalize="characters" autocomplete="off" spellcheck="false" value="*"><input id="ruleVal" class="key" inputmode="decimal" placeholder="value" style="max-width:90px"><button class="btn ghost small" data-act="rule-prev">Preview</button><button class="btn ghost small" data-act="rule-add">Add</button></div>
+      <div class="sub" id="rulePrev" style="padding-bottom:12px"></div>`;
 }
 // keywords: your own words, pushed to this phone when a scored headline names one
 function renderKeywords() {
@@ -1020,6 +1085,18 @@ async function loadDay() {
   const spyChg = r.spy.length >= 2 ? (r.spy[r.spy.length - 1][1] / r.spy[0][1] - 1) * 100 : null;
   $("bDay").innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="dayline">${tick(9, 30, "9:30")}${tick(12, 0, "12:00")}${tick(16, 0, "16:00")}${line}${dots}</svg>
     <div class="sub" style="padding:8px 0 12px">${["CRITICAL", "HIGH", "MEDIUM"].filter((k) => r.counts[k]).map((k) => `<span style="color:${SEV[k]}">●</span> ${r.counts[k]} ${k}`).join(" · ") || "No alerts yet today"}${spyChg != null ? ` · <span style="color:#9FC6FF">SPY</span> <span class="${cls(spyChg)}">${pct(spyChg)}</span> since the first mark` : ""}. Tap a dot for its alert.</div>`;
+}
+// the Brief's "Tomorrow": after the close, the next session ahead
+async function loadTomorrow() {
+  const etH = etNowMinutes() / 60;
+  if (etH < 16) { $("bTomWrap").hidden = true; return; }
+  let t;
+  try { t = await api("/api/tomorrow"); } catch (_) { return; }
+  $("bTomWrap").hidden = !(t.movers.length || t.reports.length || t.events.length);
+  $("bTomSub").textContent = prettyDate(t.date);
+  $("bTom").innerHTML = t.movers.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:56px">${esc(x.symbol)}</span><div class="grow"><div class="sub">${x.why ? esc(x.why.title) : "No headline found"}</div></div><span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("")
+    + (t.reports.length ? `<div class="kv"><span>Reporting</span><b>${t.reports.map((r) => `<span data-tk="${esc(r.symbol)}" role="button" class="${r.mine ? "gold" : ""}">${r.mine ? "★" : ""}${esc(r.symbol)}</span>${/before/i.test(r.when) ? " ☀" : /after/i.test(r.when) ? " ☾" : ""}`).join(" · ")}</b></div>` : "")
+    + t.events.map((e) => `<div class="kv"><span>${esc(e.title)}</span><b class="num">${e.time ? esc(showTime(t.date, e.time)) + (localTimes() ? "" : " ET") : ""}</b></div>`).join("");
 }
 // the Brief's "The close": shown once the regular session is over
 async function loadClose() {
@@ -1322,13 +1399,26 @@ async function onAct(el) {
     if (await deskEdit("rule_add", { kind, dir, symbol: $("ruleSym").value.trim() || "*", value: $("ruleVal").value.trim() })) toast("⚡ Smart alert added");
   }
   else if (a === "rule-rm") await deskEdit("rule_remove", { id: s });
+  else if (a === "hold-add") {
+    const sym = syms($("hSym").value)[0];
+    if (!sym) { toast("Enter a ticker"); return; }
+    if (await deskEdit("hold_set", { symbol: sym, shares: $("hShares").value.trim(), cost: $("hCost").value.trim() })) toast(`${sym} added to your portfolio`);
+  }
+  else if (a === "hold-rm") await deskEdit("hold_set", { symbol: s, shares: 0 });
+  else if (a === "follow") { const on = !(desk.follow?.[el.dataset.k] || []).includes(s); await deskEdit("follow", { kind: el.dataset.k, name: s, on }); }
+  else if (a === "rule-prev") previewRule();
   else if (a === "share-list") await deskEdit("share_list", {});
   else if (a === "import-list") { const code = $("listIn").value.trim(); if (code && await deskEdit("import_list", { code })) toast("Stocks added to your watchlist"); }
   else if (a === "glossary") openGlossary();
   else if (a === "tz") { store.set("ft_tz", localTimes() ? "" : "local"); renderDesk(); renderTop(); toast(localTimes() ? "Times now in your time zone" : "Times now in ET"); }
   else if (a === "display") {
+    const flip = (k) => store.set(k, store.get(k) === "1" ? "" : "1");
     if (s === "text") store.set("ft_text", store.get("ft_text") === "big" ? "" : "big");
-    else store.set("ft_clear", s === "clear" ? "1" : "");
+    else if (s === "light") flip("ft_light");
+    else if (s === "compact") flip("ft_compact");
+    else if (s === "haptic") { flip("ft_haptic"); if (store.get("ft_haptic") === "1") navigator.vibrate?.(30); }
+    else if (s === "onestock") { flip("ft_onestock"); navigator.serviceWorker?.ready.then((r) => r.active?.postMessage({ type: "onestock", on: store.get("ft_onestock") === "1" })); }
+    else { store.set("ft_clear", s === "clear" ? "1" : ""); if (s === "cinema") store.set("ft_light", ""); }
     applyDisplay(); renderDesk();
   }
   else if (a === "automove") { if (await deskEdit("prefs", { auto_move: +s })) toast(+s ? `New stocks you watch get a ±${s}% move alert` : "Off"); }
@@ -1361,7 +1451,7 @@ async function onAct(el) {
     if (await deskEdit("vote", { id: s, v: +el.dataset.v })) { toast(+el.dataset.v ? "Thanks: counted" : "Vote removed"); openSheet(s); }
   }
   else if (a === "digest") await deskEdit("prefs", { digest: +s });
-  else if (a === "flag") await deskEdit("prefs", { [s]: ["skip_fades", "close_recap"].includes(s) ? !desk.prefs[s] : desk.prefs[s] === false });
+  else if (a === "flag") await deskEdit("prefs", { [s]: ["skip_fades", "close_recap", "tomorrow"].includes(s) ? !desk.prefs[s] : desk.prefs[s] === false });
   else if (a === "xfer-out") await deskEdit("transfer_out", {});
   else if (a === "xfer-in") {
     const code = $("xferIn").value.trim();
@@ -1521,6 +1611,7 @@ function connect() {
   es.onerror = () => { dropped = true; live.classList.remove("live"); };
   es.addEventListener("alert", (e) => {
     const a = JSON.parse(e.data); a._new = true; a.since = a.since || {};
+    if (store.get("ft_haptic") === "1" && !document.hidden && (a.severity === "HIGH" || a.severity === "CRITICAL" || isMine(a))) navigator.vibrate?.(a.severity === "CRITICAL" ? [40, 60, 40, 60, 80] : [30, 40, 30]);
     alerts = [a, ...alerts.filter((x) => x.id !== a.id)].slice(0, 150);
     renderTape();
     Scene.pulse?.();
@@ -1860,7 +1951,7 @@ let lifted = false;
 const lift = () => { if (lifted) return; lifted = true; $("curtain").classList.add("off"); Scene.ignite(); };
 Scene.onReady = () => requestAnimationFrame(lift);
 setTimeout(lift, 9000);   // never leave someone on a black screen if the photo is slow
-if (store.get("ft_clear") === "1") requestAnimationFrame(lift);  // clear mode renders no scene: nothing to wait for
+if (store.get("ft_clear") === "1" || store.get("ft_light") === "1") requestAnimationFrame(lift);  // clear mode renders no scene: nothing to wait for
 Scene.start($("scene"));
 Fx.tick();
 start().catch(() => {});

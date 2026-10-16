@@ -121,6 +121,10 @@ class WebServer:
         app.router.add_get("/api/breadth", self.api_breadth)
         app.router.add_get("/api/earnings-week", self.api_earnings_week)
         app.router.add_get("/api/inplay", self.api_inplay)
+        app.router.add_get("/api/portfolio", self.api_portfolio)
+        app.router.add_get("/api/tomorrow", self.api_tomorrow)
+        app.router.add_get("/api/follow-options", self.api_follow_options)
+        app.router.add_post("/api/rule-preview", self.api_rule_preview)
         app.router.add_get("/api/regime", self.api_regime)
         app.router.add_get("/api/close", self.api_close)
         app.router.add_get("/api/similar/{id}", self.api_similar)
@@ -769,6 +773,34 @@ class WebServer:
         if not sym:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(await earnings_reactions(self.engine, sym))
+
+    async def api_portfolio(self, request: web.Request) -> web.Response:
+        from ..dossier import portfolio
+
+        dev = self._device(request)
+        if not dev:
+            raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
+        return _json(portfolio(self.engine, dev))
+
+    async def api_tomorrow(self, request: web.Request) -> web.Response:
+        from ..dossier import tomorrow
+
+        return _json(tomorrow(self.engine, self._device(request)))
+
+    async def api_follow_options(self, request: web.Request) -> web.Response:
+        """What can be followed: the scorer's themes and the universe's sectors."""
+        themes = sorted(t.name for t in self.engine.scorer.themes)
+        sectors = sorted({li.sector for li in self.engine.universe.by_symbol.values() if li.sector})
+        return _json({"themes": themes, "sectors": sectors})
+
+    async def api_rule_preview(self, request: web.Request) -> web.Response:
+        from ..dossier import rule_preview
+
+        try:
+            body = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="json body needed") from None
+        return _json(rule_preview(self.engine, self._device(request), body if isinstance(body, dict) else {}))
 
     async def api_inplay(self, request: web.Request) -> web.Response:
         from ..dossier import in_play

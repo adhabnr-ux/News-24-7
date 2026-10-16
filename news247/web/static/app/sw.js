@@ -1,6 +1,6 @@
 /* Foretape service worker: shows pushed alerts, opens the app on tap, keeps the app shell
    available offline, and re-subscribes if the browser rotates the push subscription. */
-const SHELL = "foretape-shell-v23";
+const SHELL = "foretape-shell-v24";
 const CONF = "foretape-conf";
 const SHELL_FILES = [
   "/app/", "/app/app.css", "/app/app.js", "/app/scene.js", "/app/launch.webp", "/app/depth.png", "/app/logo.svg", "/app/icon-192.png", "/app/badge-96.png",
@@ -39,6 +39,7 @@ self.addEventListener("fetch", (e) => {
 self.addEventListener("message", (e) => {
   if (e.data?.type === "token") caches.open(CONF).then((c) => c.put("/token", new Response(e.data.token)));
   if (e.data?.type === "device") caches.open(CONF).then((c) => c.put("/device", new Response(e.data.device)));
+  if (e.data?.type === "onestock") caches.open(CONF).then((c) => c.put("/onestock", new Response(e.data.on ? "1" : "")));
 });
 
 async function bumpBadge() {
@@ -69,7 +70,11 @@ self.addEventListener("push", (e) => {
     actions: [...(d.url ? [{ action: "source", title: "Open source" }] : []), ...(d.mute ? [{ action: "mute", title: `Mute ${d.mute} 4h` }] : [])],
   };
   e.waitUntil(Promise.all([
-    self.registration.showNotification(title, options),  // iOS requires a visible notification for every push
+    // one notification per stock (a Desk setting): a newer alert on the same stock replaces the older one
+    caches.open(CONF).then((c) => c.match("/onestock")).then((r) => r?.text()).catch(() => "").then((one) => {
+      if (one === "1" && d.tickers?.[0] && d.kind !== "system") options.tag = "sym-" + d.tickers[0];
+      return self.registration.showNotification(title, options);  // iOS requires a visible notification for every push
+    }),
     bumpBadge(),
     self.clients.matchAll({ type: "window" }).then((ws) => ws.forEach((w) => w.postMessage({ type: "push", payload: d }))),
   ]));

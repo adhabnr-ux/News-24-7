@@ -27,6 +27,10 @@ with each request. Its profile holds:
   headline scoring N+, a headline followed by an N% move within the hour, N times normal volume,
   a VWAP cross, an N% pre-market gap. Each fires once per headline (or once a day).
 * **share**: a code (7 days, any number of uses) that copies this watchlist into someone else's.
+* **holdings**: shares (and an optional cost) per stock: the portfolio view; held stocks count as
+  watched for pushes.
+* **follow**: themes (the scorer's: AI launches, export controls, FDA actions...) and sectors;
+  MEDIUM alerts on them reach this phone like a watched stock's.
 
 Profiles live in SQLite (``profiles`` table) and, when ``STATE_DB`` is set, in the state database
 too, so a fresh container on a free host keeps them.
@@ -100,6 +104,7 @@ def default_profile() -> dict[str, Any]:
             "auto_move": 0,  # %: a "moves ±N% on the day" price alert for every stock added (0 = off)
             "forward": None,  # this phone's own copy: {"kind": "discord"|"telegram"|"ntfy", ...}
             "close_recap": False,  # the 16:15 ET market recap ("the close")
+            "tomorrow": False,  # the 20:00 ET "tomorrow" card
         },
         "price_alerts": [],
         "tracked": [],
@@ -114,6 +119,8 @@ def default_profile() -> dict[str, Any]:
         "saved": [],  # alert ids, newest first
         "rules": [],  # smart alerts: {"id", "kind", "symbol" ("*" = every watched stock), "value", "dir"}
         "rules_fired": [],  # keys of what each rule already fired on (once per headline / per day)
+        "holdings": {},  # symbol -> {"shares", "cost"}
+        "follow": {"themes": [], "sectors": []},
         "digest_q": [],  # alerts held for the next digest
         "digest_at": 0.0,  # when the last digest went
         "created": time.time(),
@@ -216,7 +223,21 @@ class Desk:
     def watchers(self, symbols: list[str]) -> list[str]:
         """Devices whose watchlist has any of these symbols."""
         want = {s.upper() for s in symbols}
-        return [d for d, p in self.profiles.items() if want & set(p.get("watchlist") or [])]
+        return [
+            d
+            for d, p in self.profiles.items()
+            if want & (set(p.get("watchlist") or []) | set(p.get("holdings") or {}))
+        ]
+
+    def followers(self, themes: list[str], sectors: list[str]) -> list[str]:
+        """Devices following any of these themes or sectors."""
+        th, se = set(themes), set(sectors)
+        out = []
+        for d, p in self.profiles.items():
+            f = p.get("follow") or {}
+            if th & set(f.get("themes") or []) or se & set(f.get("sectors") or []):
+                out.append(d)
+        return out
 
     def allows(self, device: str, alert: Any, now: float | None = None) -> bool:
         """May this alert push to this phone? Its category must be on, and in quiet hours only
@@ -371,7 +392,7 @@ class Desk:
             if "min_sev" in body:
                 floor = body.get("min_sev")
                 prefs["min_sev"] = floor if floor in SEV_RANK else None
-            for flag in ("eod", "earn_remind", "open_plan", "week", "skip_fades", "close_recap"):
+            for flag in ("eod", "earn_remind", "open_plan", "week", "skip_fades", "close_recap", "tomorrow"):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
             if "auto_move" in body:
@@ -584,6 +605,36 @@ class Desk:
             if data.get("name"):
                 for x in syms:
                     p.setdefault("groups", {}).setdefault(x, data["name"][:24])
+        elif action == "hold_set":
+            sym = clean_symbol(body.get("symbol"))
+            try:
+                shares = float(body.get("shares") or 0)
+                cost = float(body["cost"]) if body.get("cost") not in (None, "") else None
+            except (TypeError, ValueError):
+                raise ValueError("shares and cost are numbers") from None
+            if not sym or shares < 0 or (cost is not None and cost <= 0):
+                raise ValueError(
+                    "need a symbol, shares (0 removes it) and an optional positive cost per share"
+                )
+            h = p.setdefault("holdings", {})
+            if shares == 0:
+                h.pop(sym, None)
+            else:
+                if len(h) >= 100 and sym not in h:
+                    raise ValueError("at most 100 holdings")
+                h[sym] = {"shares": shares, "cost": cost}
+        elif action == "follow":
+            kind = str(body.get("kind") or "")
+            name = str(body.get("name") or "").strip()[:60]
+            if kind not in ("themes", "sectors") or not name:
+                raise ValueError("follow needs kind themes|sectors and a name")
+            f = p.setdefault("follow", {"themes": [], "sectors": []})
+            cur = f.setdefault(kind, [])
+            if body.get("on", True):
+                if name not in cur and len(cur) < 30:
+                    cur.append(name)
+            else:
+                f[kind] = [x for x in cur if x != name]
         elif action == "snooze":
             cat = str(body.get("cat") or "")
             try:
@@ -690,6 +741,8 @@ class Desk:
             "transfer": p["transfer"] if (p.get("transfer") or {}).get("until", 0) > now else None,
             "forward": _mask_forward((p.get("prefs") or {}).get("forward")),
             "rules": p.get("rules") or [],
+            "holdings": p.get("holdings") or {},
+            "follow": p.get("follow") or {"themes": [], "sectors": []},
             "share": p["share"] if (p.get("share") or {}).get("until", 0) > now else None,
             "record": {
                 "closed": len(closed),

@@ -111,6 +111,7 @@
     <div class="stage">
       <div class="sec-title rv"><h2>Overnight</h2><span>since the last close</span></div>
       <div class="panel glass tilt rv" id="bOvernight"></div>
+      <div id="bTomWrap" hidden><div class="sec-title"><h2>Tomorrow</h2><span id="bTomSub"></span></div><div class="panel glass tilt" id="bTom"></div></div>
       <div id="bCloseWrap" hidden><div class="sec-title"><h2>The close</h2><span>today's session</span></div><div class="panel glass tilt" id="bClose"></div></div>
       <div id="bDayWrap" hidden><div class="sec-title"><h2>The day so far</h2><span>alerts over the S&amp;P 500</span></div><div class="panel glass tilt" id="bDay"></div></div>
       <div id="bMineWrap" hidden><div class="sec-title"><h2>Your stocks</h2><span>this morning</span></div><div class="panel glass tilt" id="bMine"></div></div>
@@ -200,6 +201,10 @@
       <div class="panel glass tilt rv" id="dWatch"></div>
       <div id="dSavedWrap" hidden><div class="sec-title"><h2>Saved</h2><span>alerts you kept</span></div><div class="panel glass tilt" id="dSaved"></div></div>
       <div id="dWorthWrap" hidden><div class="sec-title"><h2>Worth a look</h2><span>next to your stocks, moving today</span></div><div class="panel glass tilt" id="dWorth"></div></div>
+      <div class="sec-title rv"><h2>Portfolio</h2><span>what you hold, live</span></div>
+      <div class="panel glass tilt rv" id="dPort"></div>
+      <div class="sec-title rv"><h2>Follow</h2><span>whole sectors and themes</span></div>
+      <div class="panel glass tilt rv" id="dFollow"></div>
       <div class="sec-title rv"><h2>Smart alerts</h2><span>your own triggers</span></div>
       <div class="panel glass tilt rv" id="dRules"></div>
       <div class="sec-title rv"><h2>Keywords</h2><span>your words, pushed</span></div>
@@ -266,7 +271,7 @@
 
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="grab"></div><button class="close" id="closeSheet" aria-label="Close">✕</button><div class="inner" id="sheetBody"></div></div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="offline" id="offline" hidden></div>
 
 <script src="/app/scene.js"></script>
