@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from .desk import alert_category, clean_symbol
+from .market.universe import band as band_of
+from .market.universe import fmt_cap
 
 if TYPE_CHECKING:
     from .engine import Engine
@@ -245,11 +247,14 @@ def _earnings(engine: Engine, sym: str) -> dict[str, Any] | None:
 
 
 def record_outcomes(engine: Engine, now: float | None = None) -> int:
-    """Stamp each recent alert with its move an hour later and at its session's close, per
-    reference symbol, in the alert's direction (+ = it went the alert's way). Returns stamps made."""
+    """Stamp each recent alert with its move an hour later, at its session's close, at the next
+    session's close (d1) and five sessions on (d5), per reference symbol, in the alert's direction
+    (+ = it went the alert's way). A stamp needs a quote within 3 hours of its moment. Returns
+    alerts stamped."""
     now = now or time.time()
     made = 0
-    for a in engine.storage.recent_alerts(400, since=now - 3 * 86400):
+    holidays = engine.calendar.holidays
+    for a in engine.storage.recent_alerts(1500, since=now - 10 * 86400):
         e = a.get("edge") or {}
         refs = dict(e.get("refs") or {})
         mv = a.get("move") or {}
@@ -260,7 +265,10 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
         sign = {"up": 1, "down": -1}.get(_direction(a), 0)
         out = dict(e.get("outcome") or {})
         created = float(a.get("created", 0))
-        close_ts = _session_close(created)
+        closes = session_closes(created, 6, holidays)
+        close_ts = closes[0]
+        if all(k in r for r in out.values() for k in ("h1", "close", "d1", "d5")) and out:
+            continue  # fully graded
         changed = False
         for sym, ref in list(refs.items())[:3]:
             if not ref:
@@ -276,12 +284,32 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
             if "close" not in row and now >= close_ts and abs(q[0] - close_ts) < 3 * 3600:
                 row["close"] = round(move, 2)
                 changed = True
+            for key, ts in (("d1", closes[1]), ("d5", closes[5])):
+                if key not in row and now >= ts and abs(q[0] - ts) < 3 * 3600:
+                    row[key] = round(move, 2)
+                    changed = True
             row["sign"] = sign
             out[sym] = row
         if changed:
             engine.storage.update_alert_edge(a["id"], {"outcome": out})
             made += 1
     return made
+
+
+def session_closes(ts: float, n: int, holidays: set[str] | None = None) -> list[float]:
+    """The close of the session an alert belongs to (the next one after 16:00), then the ``n - 1``
+    sessions after it, skipping weekends and market holidays."""
+    hol = holidays or set()
+    d = datetime.fromtimestamp(ts, ET)
+    close = d.replace(hour=16, minute=0, second=0, microsecond=0)
+    if d >= close:
+        close += timedelta(days=1)
+    out = []
+    while len(out) < n:
+        if close.weekday() < 5 and close.date().isoformat() not in hol:
+            out.append(close.timestamp())
+        close += timedelta(days=1)
+    return out
 
 
 def _session_close(ts: float) -> float:
@@ -353,8 +381,8 @@ def track_record(engine: Engine, days: float = 30, now: float | None = None) -> 
         sign = row.get("sign") or 0
         if not sign:
             continue
-        g = groups.setdefault(key, {"h1": [], "close": []})
-        for k in ("h1", "close"):
+        g = groups.setdefault(key, {"h1": [], "close": [], "d1": [], "d5": []})
+        for k in ("h1", "close", "d1", "d5"):
             if row.get(k) is not None:
                 g[k].append(sign * row[k])
     rows = []
@@ -369,7 +397,15 @@ def track_record(engine: Engine, days: float = 30, now: float | None = None) -> 
                 "median": round(st.median(xs), 2),
             }
 
-        rows.append({"kind": key, "h1": stats(g["h1"]), "close": stats(g["close"])})
+        rows.append(
+            {
+                "kind": key,
+                "h1": stats(g["h1"]),
+                "close": stats(g["close"]),
+                "d1": stats(g["d1"]),
+                "d5": stats(g["d5"]),
+            }
+        )
     rows.sort(key=lambda r: -((r["close"] or r["h1"] or {}).get("n") or 0))
     return {
         "days": days,
@@ -828,3 +864,95 @@ def source_record(
     rows = [r for r in rows if max((r["h1"] or {}).get("n", 0), (r["close"] or {}).get("n", 0)) >= min_n]
     rows.sort(key=lambda r: -max((r["h1"] or {}).get("n", 0), (r["close"] or {}).get("n", 0)))
     return {"days": days, "rows": rows}
+
+
+# --------------------------------------------------------------------------- breadth, volume, buzz
+
+
+def breadth(engine: Engine, now: float | None = None, max_age_s: float = 900) -> dict[str, Any]:
+    """The market under the index: how many companies worth $300M+ are up and down on the live tape,
+    the cap-weighted move of all of them, big movers each way, and the split by size."""
+    now = now or time.time()
+    rows = []
+    for sym, q in list(engine.live_quotes.quotes.items()):
+        if now - q.ts > max_age_s or q.change_pct is None:
+            continue
+        li = engine.universe.get(sym)
+        if li is None or not li.common or (li.market_cap or 0) < 300e6:
+            continue
+        rows.append((q.change_pct, li.market_cap, li.band))
+    if not rows:
+        return {"n": 0, "market": engine.calendar.market_status(now)}
+    up = sum(1 for c, _, _ in rows if c > 0.05)
+    down = sum(1 for c, _, _ in rows if c < -0.05)
+    cap = sum(m for _, m, _ in rows)
+    bands: dict[str, list[tuple[float, float]]] = {}
+    for c, m, b in rows:
+        bands.setdefault(b, []).append((c, m))
+    order = ["mega cap", "large cap", "mid cap", "small cap", "micro cap", "nano cap"]
+    by_band = [
+        {"band": b, "n": len(xs), "up": sum(1 for c, _ in xs if c > 0.05),
+         "chg": round(sum(c * m for c, m in xs) / sum(m for _, m in xs), 2)}
+        for b, xs in sorted(bands.items(), key=lambda kv: order.index(kv[0]) if kv[0] in order else 99)
+    ]  # fmt: skip
+    return {
+        "n": len(rows), "up": up, "down": down, "flat": len(rows) - up - down,
+        "pct_up": round(up / len(rows) * 100, 1), "cap_weighted": round(sum(c * m for c, m, _ in rows) / cap, 2),
+        "equal_weighted": round(sum(c for c, _, _ in rows) / len(rows), 2),
+        "up5": sum(1 for c, _, _ in rows if c >= 5), "down5": sum(1 for c, _, _ in rows if c <= -5),
+        "bands": by_band, "market": engine.calendar.market_status(now),
+    }  # fmt: skip
+
+
+def volume_leaders(
+    engine: Engine, now: float | None = None, min_rvol: float = 3.0, limit: int = 25
+) -> dict[str, Any]:
+    """Stocks trading several times their normal volume for this time of day (the ignition
+    scanner's read of the whole-market tape), with the headline behind each when there is one."""
+    now = now or time.time()
+    if engine.ignition is None:
+        return {"enabled": False, "rows": []}
+    rows = []
+    for r in engine.ignition.volume_board(now, min_rvol):
+        li = engine.universe.get(r["symbol"])
+        if li is not None and not li.common:
+            continue
+        cap = (li.market_cap if li is not None else None) or r["market_cap"]
+        why = engine.find_catalysts([r["symbol"]], now, overnight=True)
+        rows.append({**r, "name": (li.name if li is not None else "") or r["name"], "cap": fmt_cap(cap), "band": band_of(cap),
+                     "why": {"title": why[0]["title"], "source": why[0]["source"], "url": why[0]["url"], "age": why[0]["age"]} if why else None})  # fmt: skip
+        if len(rows) >= limit:
+            break
+    return {"enabled": True, "rows": rows, "min_rvol": min_rvol, "market": engine.calendar.market_status(now)}
+
+
+def buzz(
+    engine: Engine, now: float | None = None, window_s: float = 3600, min_items: int = 3, limit: int = 20
+) -> dict[str, Any]:
+    """Stocks the news is suddenly about: headlines naming them in the last hour (from 2+ sources)
+    against their usual hourly count over the past week."""
+    now = now or time.time()
+    week = now - 7 * 86400
+    recent: dict[str, list[dict[str, Any]]] = {}
+    usual: dict[str, int] = {}
+    for it in engine.storage.items_with_tickers(since=week):
+        for t in it["tickers"][:4]:
+            if t in MACRO:
+                continue
+            if it["detected"] >= now - window_s:
+                recent.setdefault(t, []).append(it)
+            else:
+                usual[t] = usual.get(t, 0) + 1
+    rows = []
+    hours = max(1.0, (now - window_s - week) / 3600)
+    for t, items in recent.items():
+        sources = {i["source"] for i in items}
+        if len(items) < min_items or len(sources) < 2:
+            continue
+        base = usual.get(t, 0) / hours
+        top = max(items, key=lambda i: i.get("score") or 0)
+        rows.append({"symbol": t, "n": len(items), "sources": len(sources), "usual_per_hour": round(base, 2),
+                     "ratio": round(len(items) / max(base, 0.1), 1),
+                     "top": {"title": top["title"], "source": top["source"], "url": top.get("url"), "score": top.get("score")}})  # fmt: skip
+    rows.sort(key=lambda r: (-r["ratio"], -r["n"]))
+    return {"rows": rows[:limit], "window_s": window_s}

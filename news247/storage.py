@@ -342,6 +342,15 @@ class Storage:
         ]
         return {"alerts": alerts, "items": items}
 
+    def items_with_tickers(self, since: float, limit: int = 20000) -> list[dict[str, Any]]:
+        """Items naming at least one ticker since ``since`` (light columns, for counting)."""
+        rows = self.db.execute(
+            "SELECT title, url, source, detected, score, tickers FROM items"
+            " WHERE detected >= ? AND tickers IS NOT NULL AND tickers != '[]' ORDER BY detected DESC LIMIT ?",
+            (since, limit),
+        )
+        return [{**dict(r), "tickers": json.loads(r["tickers"] or "[]")} for r in rows]
+
     def items_from(self, source: str, since: float | None = None, limit: int = 50) -> list[dict[str, Any]]:
         q, args = "SELECT * FROM items WHERE source = ?", [source]
         if since:

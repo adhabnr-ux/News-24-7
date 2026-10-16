@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from importlib import resources
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
@@ -117,6 +118,10 @@ class WebServer:
         app.router.add_get("/api/calendar.ics", self.api_ics)
         app.router.add_post("/api/why/{sym}", self.api_why)
         app.router.add_get("/api/day", self.api_day)
+        app.router.add_get("/api/breadth", self.api_breadth)
+        app.router.add_get("/api/volume", self.api_volume)
+        app.router.add_get("/api/buzz", self.api_buzz)
+        app.router.add_get("/api/export", self.api_export)
         app.router.add_get("/api/sources", self.api_sources)
         app.router.add_get("/api/week", self.api_week)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
@@ -758,6 +763,81 @@ class WebServer:
         if not sym:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(await earnings_reactions(self.engine, sym))
+
+    async def api_breadth(self, request: web.Request) -> web.Response:
+        from ..dossier import breadth
+
+        return _json(breadth(self.engine))
+
+    async def api_volume(self, request: web.Request) -> web.Response:
+        from ..dossier import volume_leaders
+
+        return _json(volume_leaders(self.engine))
+
+    async def api_buzz(self, request: web.Request) -> web.Response:
+        from ..dossier import buzz
+
+        return _json(buzz(self.engine))
+
+    async def api_export(self, request: web.Request) -> web.Response:
+        """This phone's desk as a JSON backup, or its calls and journal as CSV (``?format=csv``)."""
+        import csv
+        import io
+
+        dev = self._device(request)
+        if not dev:
+            raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
+        p = self.engine.desk.get(dev)
+        if request.query.get("format") == "csv":
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(
+                [
+                    "status",
+                    "symbol",
+                    "direction",
+                    "entry",
+                    "exit",
+                    "pnl_pct",
+                    "opened_utc",
+                    "closed_utc",
+                    "stop",
+                    "target",
+                    "tags",
+                    "note",
+                    "lesson",
+                ]
+            )
+            utc = lambda t: datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d %H:%M") if t else ""  # noqa: E731
+            for t in p.get("tracked") or []:
+                w.writerow(
+                    [
+                        "open",
+                        t["symbol"],
+                        t["direction"],
+                        t["entry"],
+                        "",
+                        "",
+                        utc(t.get("ts")),
+                        "",
+                        t.get("stop") or "",
+                        t.get("target") or "",
+                        " ".join(t.get("tags") or []),
+                        t.get("note") or "",
+                        "",
+                    ]
+                )
+            for c in p.get("closed") or []:
+                w.writerow(["closed", c["symbol"], c["direction"], c["entry"], c.get("exit") or "", c.get("pnl_pct") if c.get("pnl_pct") is not None else "", utc(c.get("ts")), utc(c.get("closed")),
+                            c.get("stop") or "", c.get("target") or "", " ".join(c.get("tags") or []), c.get("note") or "", c.get("lesson") or ""])  # fmt: skip
+            return web.Response(
+                text=buf.getvalue(),
+                content_type="text/csv",
+                headers={"Content-Disposition": 'attachment; filename="foretape-calls.csv"'},
+            )
+        data = {k: v for k, v in p.items() if k not in ("digest_q", "transfer")}
+        return web.Response(text=json.dumps({"foretape_desk": 1, "exported": time.time(), "desk": data}, indent=1), content_type="application/json",
+                            headers={"Content-Disposition": 'attachment; filename="foretape-desk.json"'})  # fmt: skip
 
     async def api_day(self, request: web.Request) -> web.Response:
         from ..dossier import day_timeline

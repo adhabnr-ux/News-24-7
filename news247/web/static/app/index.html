@@ -140,10 +140,13 @@
       <h1 class="display">The <em>board</em></h1>
     </div></div>
     <div class="stage">
+      <div id="breadthWrap" hidden><div class="sec-title"><h2>Breadth</h2><span>the market under the index</span></div><div class="panel glass tilt" id="breadth"></div></div>
       <div class="sec-title rv"><h2><span class="sweep" aria-hidden="true"><i></i></span>The radar</h2><span id="radarSub">moving before the news</span></div>
       <div class="panel glass tilt rv" id="radar"></div>
       <div class="sec-title rv"><h2>Gappers</h2><span id="gapSub">moving 3%+ today · $300M+</span></div>
       <div class="panel glass tilt rv sres" id="gaps"></div>
+      <div id="volWrap" hidden><div class="sec-title"><h2>Unusual volume</h2><span>3×+ normal for the time of day</span></div><div class="panel glass tilt" id="vol"></div></div>
+      <div id="buzzWrap" hidden><div class="sec-title"><h2>Buzz</h2><span>the news is suddenly about them</span></div><div class="panel glass tilt" id="buzz"></div></div>
       <div id="haltsWrap" hidden><div class="sec-title"><h2>Halts</h2><span>last 24 hours · all US exchanges</span></div><div class="panel glass tilt" id="halts"></div></div>
       <div class="sec-title rv"><h2>Smart money</h2><span>options · insiders · ignitions</span></div>
       <div class="panel glass tilt rv" id="smart"></div>
@@ -191,7 +194,9 @@
       <div id="dWeekWrap" hidden><div class="sec-title"><h2>This week</h2><span>yours, so far</span></div><div class="panel glass tilt" id="dWeek"></div></div>
       <div id="dTodayWrap" hidden><div class="sec-title"><h2>Today</h2><span>your day so far</span></div><div class="panel glass tilt" id="dToday"></div></div>
       <div class="sec-title rv"><h2>Watchlist</h2><span>live</span></div>
+      <div class="heat" id="dHeat" hidden></div>
       <div class="panel glass tilt rv" id="dWatch"></div>
+      <div id="dSavedWrap" hidden><div class="sec-title"><h2>Saved</h2><span>alerts you kept</span></div><div class="panel glass tilt" id="dSaved"></div></div>
       <div id="dWorthWrap" hidden><div class="sec-title"><h2>Worth a look</h2><span>next to your stocks, moving today</span></div><div class="panel glass tilt" id="dWorth"></div></div>
       <div class="sec-title rv"><h2>Keywords</h2><span>your words, pushed</span></div>
       <div class="panel glass tilt rv" id="dKeys"></div>
@@ -207,6 +212,9 @@
       <div class="row" style="justify-content:center;margin:18px 0 0"><button class="btn ghost small" data-act="onboard">Set up from scratch: stocks, words, push style</button></div>
       <div class="sec-title rv"><h2>Move your desk</h2><span>to another phone</span></div>
       <div class="panel glass tilt rv padded" id="dMove"></div>
+      <div class="sec-title rv"><h2>Your data</h2><span>yours to keep</span></div>
+      <div class="panel glass tilt rv padded"><div class="sub" style="margin-bottom:12px">Download everything on this desk as a backup, or your tracked and closed calls with the journal as a spreadsheet.</div>
+        <div class="row"><button class="btn ghost small" data-act="export" data-f="json">Backup (JSON)</button><button class="btn ghost small" data-act="export" data-f="csv">Calls (CSV)</button></div></div>
       <div class="sec-title rv"><h2>Your calendar</h2><span>catalysts + your earnings dates</span></div>
       <div class="panel glass tilt rv padded"><div class="sub" style="margin-bottom:12px">Subscribe once: FOMC, jobs reports, expiries, holidays, binary events, and the report dates of the stocks you watch, kept up to date in Apple, Google or Outlook Calendar. The link carries your access key: keep it to yourself.</div>
         <div class="row"><button class="btn ghost small" data-act="ics">Add to Calendar</button><button class="btn ghost small" data-act="ics-copy">Copy the link</button></div></div>

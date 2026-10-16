@@ -182,7 +182,7 @@ function gradeRow(a) {
   if (!g) return "";
   const [sym, r] = g, mark = (v) => (v == null ? "" : r.sign * v > 0 ? `<b class="pos">✓</b>` : `<b class="neg">✗</b>`);
   const bit = (k, label) => r[k] != null ? `${label} <span class="num ${cls(r[k])}">${pct(r[k])}</span> ${mark(r[k])}` : "";
-  return `<div class="grade">${esc(sym)}: ${[bit("h1", "1h"), bit("close", "close")].filter(Boolean).join(" · ")}</div>`;
+  return `<div class="grade">${esc(sym)}: ${[bit("h1", "1h"), bit("close", "close"), bit("d1", "next day"), bit("d5", "5 days")].filter(Boolean).join(" · ")}</div>`;
 }
 function relatedChip(a) {
   const t = (a.tickers || [])[0];
@@ -505,7 +505,7 @@ async function loadRadar() {
 // the radar board is live: while Watch is on screen it refreshes every 30 s
 setInterval(() => { if (tab === "watch" && !document.hidden && !sheetOpen) loadRadar(); }, 30000);
 async function loadWatch() {
-  loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts();
+  loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -639,7 +639,8 @@ function alertActions(a) {
   const dirs = p.direction === "up" ? ["long"] : p.direction === "down" ? ["short"] : ["long", "short"];
   const track = syms[0] && a.kind !== "system" ? dirs.map((d) => `<button class="btn ghost small" data-act="track" data-s="${esc(syms[0])}" data-dir="${d}" data-aid="${esc(a.id)}">${d === "long" ? "▲" : "▼"} Track ${esc(syms[0])} ${d}</button>`).join("") : "";
   return `<h4>Act on it</h4><div class="acts">${syms.map((s) => `<button class="btn ghost small" data-tk="${esc(s)}">${esc(s)} page ›</button>`).join("")}${track}
-    <button class="btn ghost small" data-act="share-a" data-s="${esc(a.id)}" data-title="${esc(a.title)}">Share ↗</button></div>
+    <button class="btn ghost small" data-act="share-a" data-s="${esc(a.id)}" data-title="${esc(a.title)}">Share ↗</button>
+    ${(desk?.saved || []).includes(a.id) ? `<button class="btn ghost small sel" data-act="unsave" data-s="${esc(a.id)}">★ Saved</button>` : `<button class="btn ghost small" data-act="save" data-s="${esc(a.id)}">☆ Save</button>`}</div>
     ${track ? `<div class="sub" style="margin-top:8px">Tracking takes the live price as your entry and keeps the P&amp;L on your desk. Paper only: the system never trades.</div>` : ""}`;
 }
 function showSheet(html) {
@@ -765,6 +766,11 @@ function renderDesk() {
         <span class="chg num ${cls(c.pnl_pct)}">${pct(c.pnl_pct)}</span><button class="x" data-act="tr-journal" data-s="${esc(c.id)}" aria-label="Journal">✎</button></div>`).join("")
       + (rec.by_tag?.length > 1 || rec.by_tag?.[0]?.tag !== "untagged" ? `<div class="sub" style="padding:12px 0 4px">By tag</div>` + rec.by_tag.map((g) => `<div class="kv"><span>#${esc(g.tag)}</span><b class="num">${g.wins} of ${g.n} won · avg <span class="${cls(g.avg)}">${pct(g.avg)}</span></b></div>`).join("") : "") : "");
   renderKeywords();
+  loadSaved();
+  // the heatmap: your stocks at a glance, colored by today's move
+  const hm = desk.watchlist.filter((w) => w.chg_day != null);
+  $("dHeat").hidden = !hm.length;
+  $("dHeat").innerHTML = hm.map((w) => { const k = Math.min(1, Math.abs(w.chg_day) / 5); return `<div class="hm" data-tk="${esc(w.symbol)}" role="button" style="--h:${w.chg_day >= 0 ? 150 : 8};--a:${(0.12 + 0.5 * k).toFixed(2)}"><b>${esc(w.symbol)}</b><small class="num">${pct(w.chg_day)}</small></div>`; }).join("");
   const tr2 = desk.transfer;
   $("dMove").innerHTML = `<div class="sub" style="margin-bottom:12px">Your desk lives with this phone. To use it on another phone or browser, make a code here and enter it there within 15 minutes: watchlist, alerts, calls, journal, keywords and settings are copied.</div>
     ${tr2 ? `<div class="code">${esc(tr2.code.slice(0, 4))}-${esc(tr2.code.slice(4))}</div><div class="sub">valid for ${esc(dur(tr2.until - Date.now() / 1000).replace(/ \d+s$/, ""))}, once</div>` : `<button class="btn ghost small" data-act="xfer-out">Make a code</button>`}
@@ -772,6 +778,9 @@ function renderDesk() {
   const pr = desk.prefs, q = pr.quiet || {};
   $("dPrefs").innerHTML = `<div class="sub" style="padding-top:12px">What may push to this phone</div>
     <div class="row" style="padding:10px 0 4px">${CATS.map(([k, l]) => `<button class="btn ghost small${pr.cats[k] !== false ? " sel" : ""}" data-act="cat" data-s="${k}" aria-pressed="${pr.cats[k] !== false}">${l}</button>`).join("")}</div>
+    <div class="sub" style="padding-top:8px">Snooze for an hour (tap again to end it)</div>
+    <div class="row" style="padding:10px 0 4px">${CATS.map(([k, l]) => { const until = (desk.snooze || {})[k]; return `<button class="btn ghost small${until ? " sel" : ""}" data-act="snooze" data-s="${k}">${until ? `💤 ${l} until ${new Date(until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : l}</button>`; }).join("")}</div>
+    <div class="kv"><span>Skip what fades ${tip("base")}<div class="sub">don't push alert kinds that went their way 40% of the time or less over 20+ graded (CRITICAL still comes)</div></span><b><button class="btn ghost small${pr.skip_fades ? " sel" : ""}" data-act="flag" data-s="skip_fades">${pr.skip_fades ? "On" : "Off"}</button></b></div>
     <div class="sub" style="padding-top:8px">This phone's floor</div>
     <div class="row" style="padding:10px 0 4px">${FLOORS.map(([k, l]) => `<button class="btn ghost small${(pr.min_sev || "") === k ? " sel" : ""}" data-act="floor" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="sub" style="padding-top:8px">How pushes arrive ${tip("digest")}${desk.held ? ` · <span class="gold">${desk.held} held for the next digest</span>` : ""}</div>
@@ -790,7 +799,8 @@ async function loadRecord() {
     const r = await api("/api/record?days=30");
     const label = (k) => { const [a, b] = k.split(":"); return (KIND_LABEL[a] || a) + (b ? ` · ${b}` : ""); };
     const cell = (x) => x ? `<b class="num ${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</b> <span class="sub">of ${x.n} · med ${pct(x.median)}</span>` : `<span class="sub">—</span>`;
-    $("dRecord").innerHTML = r.rows.length ? `<div class="kv head"><span>Alert kind</span><b>1 hour later · at the close</b></div>` + r.rows.map((x) => `<div class="kv"><span>${esc(label(x.kind))}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("")
+    const cells = (x) => [["1h", x.h1], ["close", x.close], ["next day", x.d1], ["5 days", x.d5]].filter(([, v]) => v).map(([k, v]) => `<span class="faint">${k}</span> ${cell(v)}`).join("<br>");
+    $("dRecord").innerHTML = r.rows.length ? `<div class="kv head"><span>Alert kind</span><b>1 hour · close · next day · 5 days</b></div>` + r.rows.map((x) => `<div class="kv"><span>${esc(label(x.kind))}</span><b class="rec">${cells(x)}</b></div>`).join("")
       + `<div class="sub" style="padding:10px 0 14px">${esc(r.note)} Hit = the stock went the alert's way.</div>`
       : `<div class="li"><span class="muted">Every alert is graded an hour later and at its session's close, against its own reference price. The first grades land after the next session; this fills in on its own.</span></div>`;
     const src = await api("/api/sources").catch(() => ({ rows: [] }));
@@ -798,6 +808,23 @@ async function loadRecord() {
   } catch (_) { $("dRecord").innerHTML = `<div class="li"><span class="muted">Track record unavailable.</span></div>`; }
 }
 
+// your data: the desk as a JSON backup, or your calls and journal as CSV
+async function exportDesk(fmt) {
+  try {
+    const r = await fetch("/api/export" + (fmt === "csv" ? "?format=csv" : ""), { headers: { Authorization: "Bearer " + TOKEN, "X-Device": DEVICE } });
+    if (!r.ok) throw new Error(await r.text());
+    const url = URL.createObjectURL(await r.blob()), link = document.createElement("a");
+    link.href = url; link.download = fmt === "csv" ? "foretape-calls.csv" : "foretape-desk.json";
+    document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) { toast("Export failed: " + e.message); }
+}
+async function loadSaved() {
+  const ids = (desk?.saved || []).slice(0, 20);
+  $("dSavedWrap").hidden = !ids.length;
+  if (!ids.length) return;
+  const got = await Promise.all(ids.map((id) => alerts.find((x) => x.id === id) || api("/api/alert/" + encodeURIComponent(id)).catch(() => null)));
+  $("dSaved").innerHTML = got.filter(Boolean).map((a) => `<div class="li" data-id="${esc(a.id)}" role="button"><span class="dot-sev" style="background:${SEV[a.severity]};color:${SEV[a.severity]}"></span><div class="grow"><div style="font-weight:600;line-height:1.35">${esc(a.title)}</div><div class="sub">${esc(a.severity)} · ${ago(a.created)} ago</div>${gradeRow(a)}</div><button class="x" data-act="unsave" data-s="${esc(a.id)}" aria-label="Remove">✕</button></div>`).join("");
+}
 const icsUrl = (scheme) => `${scheme === "webcal" ? "webcal:" : location.protocol}//${location.host}/api/calendar.ics?token=${encodeURIComponent(TOKEN)}&device=${encodeURIComponent(DEVICE)}`;
 // keywords: your own words, pushed to this phone when a scored headline names one
 function renderKeywords() {
@@ -1117,6 +1144,9 @@ async function onAct(el) {
   else if (a === "ics") { location.href = icsUrl("webcal"); }
   else if (a === "ics-copy") { try { await navigator.clipboard.writeText(icsUrl("https")); toast("Calendar link copied. In Google Calendar: Other calendars → From URL."); } catch (_) { toast(icsUrl("https")); } }
   else if (a === "sector") openSector(s);
+  else if (a === "save" || a === "unsave") { if (await deskEdit(a, { id: s })) { toast(a === "save" ? "★ Saved to your desk" : "Removed from saved"); openSheet(s); } }
+  else if (a === "snooze") { const on = (desk.snooze || {})[s] > Date.now() / 1000; await deskEdit("snooze", { cat: s, hours: on ? 0 : 1 }); }
+  else if (a === "export") exportDesk(el.dataset.f);
   else if (a === "why") {
     el.disabled = true; el.textContent = "Searching filings and news…";
     let r;
@@ -1140,7 +1170,7 @@ async function onAct(el) {
     if (await deskEdit("vote", { id: s, v: +el.dataset.v })) { toast(+el.dataset.v ? "Thanks: counted" : "Vote removed"); openSheet(s); }
   }
   else if (a === "digest") await deskEdit("prefs", { digest: +s });
-  else if (a === "flag") await deskEdit("prefs", { [s]: desk.prefs[s] === false });
+  else if (a === "flag") await deskEdit("prefs", { [s]: s === "skip_fades" ? !desk.prefs[s] : desk.prefs[s] === false });
   else if (a === "xfer-out") await deskEdit("transfer_out", {});
   else if (a === "xfer-in") {
     const code = $("xferIn").value.trim();
@@ -1209,6 +1239,40 @@ async function loadHalts() {
     $("halts").innerHTML = r.rows.slice(0, 15).map((x) => `<div class="li" ${x.symbol ? `data-tk="${esc(x.symbol)}" role="button"` : ""}><span class="sym" style="width:64px">${esc(x.symbol || "MKT")}</span>
       <div class="grow"><div>${esc(x.reason || x.title)} <span class="faint">${esc(x.code)}</span></div><div class="sub">halted ${ago(x.halted)} ago${x.market ? " · " + esc(x.market) : ""}</div></div>
       <span class="chg" style="width:auto">${x.resume ? `<small class="pos">resumes ${esc(x.resume)}</small>` : `<small class="faint">halted</small>`}</span></div>`).join("");
+  } catch (_) { /* optional */ }
+}
+// the market under the index: up vs down across the tape, and by size
+async function loadBreadth() {
+  try {
+    const b = await api("/api/breadth");
+    $("breadthWrap").hidden = !b.n;
+    if (!b.n) return;
+    const upW = (b.up / b.n) * 100, dnW = (b.down / b.n) * 100;
+    $("breadth").innerHTML = `<div class="bbar"><i class="u" style="width:${upW.toFixed(1)}%"></i><i class="d" style="width:${dnW.toFixed(1)}%"></i></div>
+      <div class="kv"><span><b class="pos">${b.up.toLocaleString()} up</b> · <b class="neg">${b.down.toLocaleString()} down</b> <span class="sub">of ${b.n.toLocaleString()} companies $300M+</span></span><b class="num">${b.pct_up}% up</b></div>
+      <div class="kv"><span>All of them, cap-weighted <span class="sub">· equal-weighted ${pct(b.equal_weighted)}</span></span><b class="num ${cls(b.cap_weighted)}">${pct(b.cap_weighted)}</b></div>
+      <div class="kv"><span>Up 5%+ · down 5%+</span><b class="num"><span class="pos">${b.up5}</span> · <span class="neg">${b.down5}</span></b></div>
+      ${b.bands.map((x) => `<div class="kv"><span>${esc(x.band)} <span class="sub">${x.up}/${x.n} up</span></span><b class="num ${cls(x.chg)}">${pct(x.chg)}</b></div>`).join("")}`;
+  } catch (_) { /* optional */ }
+}
+async function loadVolume() {
+  try {
+    const r = await api("/api/volume");
+    $("volWrap").hidden = !r.rows.length;
+    $("vol").innerHTML = r.rows.slice(0, 15).map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span>
+      <div class="grow"><div class="rname">${esc(x.name || "")}</div><div class="sub"><b class="gold">${x.rvol}× normal volume</b> for this time of day${x.dollar_volume ? ` · ${money(x.dollar_volume)} traded` : ""}${x.cap ? ` · ${esc(x.cap)}` : ""}</div>
+      <div class="sub">${x.why ? `<a href="${esc(x.why.url)}" target="_blank" rel="noopener" class="rnews">${esc(x.why.title)}</a>` : `<span class="rnone">No headline found</span>`}</div></div>
+      <span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("");
+  } catch (_) { /* optional */ }
+}
+async function loadBuzz() {
+  try {
+    const r = await api("/api/buzz");
+    $("buzzWrap").hidden = !r.rows.length;
+    $("buzz").innerHTML = r.rows.slice(0, 12).map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span>
+      <div class="grow"><div class="sub"><b class="gold">${x.n} headlines in the last hour</b> from ${x.sources} sources · usually ${x.usual_per_hour < 0.1 ? "almost none" : x.usual_per_hour.toFixed(1) + "/h"}</div>
+      <div style="font-weight:600;margin-top:2px">${x.top.url ? `<a href="${esc(x.top.url)}" target="_blank" rel="noopener">${esc(x.top.title)}</a>` : esc(x.top.title)}</div></div>
+      <span class="chg num" style="width:auto">${x.ratio}×</span></div>`).join("");
   } catch (_) { /* optional */ }
 }
 // one sector of the market map: its industries and every stock in it

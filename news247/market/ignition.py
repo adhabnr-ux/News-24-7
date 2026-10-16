@@ -165,6 +165,8 @@ class _Sym:
     day: str = ""
     points: deque[tuple[float, float, float, float, float]] = field(default_factory=lambda: deque(maxlen=120))
     fired: set[str] = field(default_factory=set)  # "ignition:up", "buildup:down", ...
+    last: tuple[float, float | None, float, float, float | None, str, float | None] | None = None
+    # ^ the latest read: (when, relative volume for the time of day, % on the day, price, dollars traded, name, market cap)
 
 
 class IgnitionScanner:
@@ -272,6 +274,15 @@ class IgnitionScanner:
             share = volume_share(0.0, m, self.profile)
             rvol = t.volume / (t.base_volume * share) if share > 0 else None
         day_pct = (t.price / t.prev_close - 1.0) * 100.0
+        st.last = (
+            t.ts,
+            rvol,
+            day_pct,
+            t.price,
+            t.volume * t.price if t.volume else None,
+            t.name,
+            t.market_cap,
+        )
         line = self.day_threshold(t.market_cap)
         hit = self._ignition(t, st, m, rvol, day_pct, line, now)
         if hit is None and c.ignition_buildup:
@@ -371,6 +382,24 @@ class IgnitionScanner:
             return max(below) if below else launch
         above = [x for x in levels if x > price]
         return min(above) if above else launch
+
+    def volume_board(
+        self, now: float | None = None, min_rvol: float = 3.0, max_age_s: float = 900.0
+    ) -> list[dict[str, Any]]:
+        """Every stock trading at least ``min_rvol`` times its normal volume for this time of day
+        (from its latest read), loudest first."""
+        now = now or time.time()
+        out = []
+        for sym, st in self.state.items():
+            if st.last is None:
+                continue
+            ts, rvol, chg, price, dollars, name, cap = st.last
+            if rvol is None or rvol < min_rvol or now - ts > max_age_s:
+                continue
+            out.append({"symbol": sym, "rvol": round(rvol, 1), "chg": round(chg, 2), "price": price,
+                        "dollar_volume": dollars, "name": name, "market_cap": cap, "ts": ts})  # fmt: skip
+        out.sort(key=lambda r: -r["rvol"])
+        return out
 
     def status(self) -> dict[str, Any]:
         return {

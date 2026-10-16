@@ -2208,6 +2208,8 @@ class Engine:
                 with contextlib.suppress(Exception):
                     self.mark_day(now)
                 with contextlib.suppress(Exception):
+                    await self.auto_why(now)
+                with contextlib.suppress(Exception):
                     await self.send_earnings_reminders(now)
                 if self._week_due(now):
                     with contextlib.suppress(Exception):
@@ -2570,6 +2572,31 @@ class Engine:
             if await self._to_device(device, payload, urgency="normal"):
                 sent += 1
         return sent
+
+    async def auto_why(self, now: float | None = None) -> list[str]:
+        """At 11:00 and 14:30 ET, a watched stock moving 4%+ with no headline behind it gets the
+        EDGAR + news hunt (once a day per stock), so its page, the report card and the tape can
+        say why."""
+        now = now or time.time()
+        if self.why is None:
+            return []
+        dt = datetime.fromtimestamp(now, ET)
+        if dt.weekday() >= 5 or not any(
+            (h, m) <= (dt.hour, dt.minute) < (h, m + 5) for h, m in ((11, 0), (14, 30))
+        ):
+            return []
+        watched = {s for p in self.desk.profiles.values() for s in p.get("watchlist") or []}
+        done = []
+        for sym in sorted(watched):
+            q = self.price_of(sym, 900, now=now)
+            if not q or q[2] is None or abs(q[2]) < 4 or self.find_catalysts([sym], now, overnight=True):
+                continue
+            if not self._once(f"autowhy:{dt.date()}:{sym}"):
+                continue
+            with contextlib.suppress(Exception):
+                await self.find_why(sym, now)
+                done.append(sym)
+        return done
 
     async def find_why(self, sym: str, now: float | None = None) -> dict[str, Any]:
         """Look for the reason a stock is moving, now: today's filings and news for it (EDGAR and a

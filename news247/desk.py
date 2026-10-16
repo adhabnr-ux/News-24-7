@@ -83,6 +83,7 @@ def default_profile() -> dict[str, Any]:
             "earn_remind": True,  # a push before a watched stock reports
             "open_plan": True,  # the 9:20 ET open plan
             "week": True,  # Friday's "your week"
+            "skip_fades": False,  # don't push alert groups whose base rate says they fade
         },
         "price_alerts": [],
         "tracked": [],
@@ -93,6 +94,8 @@ def default_profile() -> dict[str, Any]:
         "notes": {},  # symbol -> {"text", "ts"}
         "groups": {},  # watched symbol -> group name
         "votes": {},  # alert id -> +1 / -1 (was it useful)
+        "snooze": {},  # category -> until (epoch)
+        "saved": [],  # alert ids, newest first
         "digest_q": [],  # alerts held for the next digest
         "digest_at": 0.0,  # when the last digest went
         "created": time.time(),
@@ -207,11 +210,18 @@ class Desk:
         cat = alert_category(alert)
         if cat != "system" and not (prefs.get("cats") or {}).get(cat, True):
             return False
-        sev = (
+        sev_name = (
             alert.get("severity")
             if isinstance(alert, dict)
             else getattr(getattr(alert, "severity", None), "name", "")
         )
+        if str(sev_name) != "CRITICAL":
+            if (p.get("snooze") or {}).get(cat, 0) > (now or time.time()):
+                return False
+            edge = (alert.get("edge") if isinstance(alert, dict) else getattr(alert, "edge", None)) or {}
+            if prefs.get("skip_fades") and (edge.get("base") or {}).get("fades"):
+                return False
+        sev = sev_name
         if self.all_muted(device, alert, now):
             return False
         floor = prefs.get("min_sev")
@@ -322,7 +332,7 @@ class Desk:
             if "min_sev" in body:
                 floor = body.get("min_sev")
                 prefs["min_sev"] = floor if floor in SEV_RANK else None
-            for flag in ("eod", "earn_remind", "open_plan", "week"):
+            for flag in ("eod", "earn_remind", "open_plan", "week", "skip_fades"):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
             if "digest" in body:
@@ -465,6 +475,24 @@ class Desk:
             copied = json.loads(json.dumps(self.profiles[src]))
             copied["digest_q"], copied["created"] = [], p.get("created", now)
             self.profiles[device] = p = self._merge(copied)
+        elif action == "snooze":
+            cat = str(body.get("cat") or "")
+            try:
+                hours = float(body.get("hours") or 0)
+            except (TypeError, ValueError):
+                hours = -1
+            if cat not in CATEGORIES or not 0 <= hours <= 24:
+                raise ValueError("need a category and 0-24 hours (0 ends the snooze)")
+            sn = {c: u for c, u in (p.get("snooze") or {}).items() if u > now and c != cat}
+            if hours:
+                sn[cat] = now + hours * 3600
+            p["snooze"] = sn
+        elif action in ("save", "unsave"):
+            aid = str(body.get("id") or "")[:40]
+            if not aid:
+                raise ValueError("need an alert id")
+            saved = [x for x in p.get("saved") or [] if x != aid]
+            p["saved"] = ([aid] + saved)[:100] if action == "save" else saved
         elif action == "kw_add":
             k = re.sub(r"\s+", " ", str(body.get("keyword") or "")).strip().lower()
             if not 2 <= len(k) <= 40:
@@ -548,6 +576,8 @@ class Desk:
             "groups": p.get("groups") or {},
             "votes": p.get("votes") or {},
             "held": len(p.get("digest_q") or []),
+            "snooze": {c: u for c, u in (p.get("snooze") or {}).items() if u > now},
+            "saved": p.get("saved") or [],
             "transfer": p["transfer"] if (p.get("transfer") or {}).get("until", 0) > now else None,
             "record": {
                 "closed": len(closed),
