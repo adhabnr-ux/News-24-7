@@ -774,6 +774,7 @@ class WebPushNotifier(Notifier):
         self.removed = 0
         self.allow: Any = None  # (subscription, alert) -> bool: each phone's desk preferences
         self.hold: Any = None  # (subscription, alert) -> bool: True when that phone's digest keeps it
+        self.forward: Any = None  # (device, payload) -> None: that phone's own Discord/Telegram/ntfy copy
         self.filtered = 0
 
     # ------------------------------------------------------------------ setup
@@ -884,6 +885,9 @@ class WebPushNotifier(Notifier):
             "url": alert.url,
             "ts": alert.created,
             "tag": (alert.item.uid[:24] if alert.item else alert.id),
+            "mute": alert.tickers[0]
+            if alert.tickers and alert.kind != "system"
+            else "",  # the notification's "Mute 4h" button
         }
 
     async def push(
@@ -940,7 +944,13 @@ class WebPushNotifier(Notifier):
             if not only:
                 self.last_sent = time.time()
                 return
-        results = await self.push(self.payload(alert), urgency=urgency, only=only)
+        payload = self.payload(alert)
+        results = await self.push(payload, urgency=urgency, only=only)
+        if self.forward is not None:
+            for device in {
+                s.device for s in self.subs.values() if (only is None or s.endpoint in only) and s.device
+            }:
+                self.forward(device, payload)
         if results and all(r != "ok" for r in results.values()):
             raise RuntimeError("push failed: " + "; ".join(sorted(set(results.values())))[:300])
         self.last_sent = time.time()

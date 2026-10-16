@@ -244,6 +244,7 @@ class Engine:
         if self.webpush is not None:
             self.webpush.allow = lambda sub, alert: self.desk.allows(sub.device, alert)  # type: ignore[attr-defined]
             self.webpush.hold = lambda sub, alert: self.desk.hold(sub.device, alert)  # type: ignore[attr-defined]
+            self.webpush.forward = lambda device, payload: self._spawn(self._forward(device, payload))  # type: ignore[attr-defined]
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         # meaningful news kept back to the previous session, so a move at 09:45 can cite the
@@ -1718,6 +1719,10 @@ class Engine:
             if mk.get("open"):  # in session: read them now, not at their turn in the rotation
                 why = "on the radar" if alert.kind == "price" else "in the news"
                 self.options_feed.urgent(alert.tickers[:6], f"{why}: {alert.title[:90]}")
+        if alert.kind != "system" and alert.tickers and "pre" not in alert.edge:
+            pre = self.pre_move(alert.tickers[:3], alert.created)
+            if pre:
+                alert.edge["pre"] = pre  # how far it had moved in the 15 minutes before: priced in?
         if alert.kind != "system" and "base" not in alert.edge:
             from .dossier import base_rate
 
@@ -2177,6 +2182,8 @@ class Engine:
             return
         payload = wp.payload(alert)  # type: ignore[attr-defined]
         payload["title"] = "★ " + payload["title"]
+        for d in devices:
+            self._spawn(self._forward(d, payload))
         with contextlib.suppress(Exception):
             await wp.push(payload, urgency="normal", only=only)  # type: ignore[attr-defined]
 
@@ -2230,6 +2237,7 @@ class Engine:
         if wp is None:
             return False
         only = [s.endpoint for s in wp.subs.values() if s.device == device]  # type: ignore[attr-defined]
+        self._spawn(self._forward(device, payload))
         if not only:
             return False
         try:
@@ -2404,6 +2412,38 @@ class Engine:
                     sent += 1
         self.storage.set_setting(f"boardwatch:{day}", json.dumps(st))
         return sent
+
+    def pre_move(self, symbols: list[str], ts: float, window_s: float = 900.0) -> dict[str, float]:
+        """Each stock's move over the ``window_s`` before ``ts``, from the live tape's recent path
+        (only when a price from at least 10 minutes earlier is in it)."""
+        out = {}
+        for sym in symbols:
+            path = self.live_quotes.path(sym, ts)
+            if path is None or len(path.hist) < 2:
+                continue
+            upto = [(t, p) for t, p in path.hist if t <= ts + 5]
+            before = [(t, p) for t, p in upto if t <= ts - window_s]
+            ref = before[-1] if before else (upto[0] if upto and ts - upto[0][0] >= 600 else None)
+            if ref and upto and ref[1]:
+                out[sym] = round((upto[-1][1] / ref[1] - 1.0) * 100.0, 2)
+        return out
+
+    async def _forward(self, device: str, payload: dict[str, Any]) -> bool:
+        """This phone's own forward (Discord webhook, Telegram bot or ntfy topic): the same alert,
+        as text. Only to those three services' own hosts."""
+        from .desk import forward_request
+
+        fw = ((self.desk.profiles.get(device) or {}).get("prefs") or {}).get("forward")
+        req = forward_request(fw, payload) if fw else None
+        if req is None:
+            return False
+        url, kw = req
+        try:
+            await self.http.post(url, timeout_s=15, **kw)
+            return True
+        except Exception as exc:  # noqa: BLE001 - a dead webhook must not stop the phone's push
+            log.info("forward for %s failed: %s", device[:8], exc)
+            return False
 
     def mark_day(self, now: float | None = None, every_s: float = 300.0) -> None:
         """Keep SPY's and QQQ's price every 5 minutes today, for the day-in-one-screen timeline."""

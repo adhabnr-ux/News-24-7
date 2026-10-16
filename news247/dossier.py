@@ -227,6 +227,7 @@ def ticker_dossier(engine: Engine, raw: str, now: float | None = None) -> dict[s
         "watchers": watchers,
         "market": engine.calendar.market_status(now),
         "rel": relative_strength(engine, sym, now),
+        "session": session_context(engine, sym, now),
         "peers": peers(engine, sym, now),
         "earnings": _earnings(engine, sym),
     }
@@ -352,6 +353,9 @@ def base_rate(rates: dict[str, Any], alert: Any, min_n: int = 8) -> dict[str, An
            "close": close if close and close["n"] >= min_n else None}  # fmt: skip
     # a group that went the wrong way most of the time, on enough alerts to mean something
     out["fades"] = any(x and x["n"] >= 20 and x["hit"] <= 0.4 for x in (out["h1"], out["close"]))
+    # the typical path after alerts like this: median move (in the alert's direction) at each horizon
+    path = [("1h", h1), ("close", close), ("next day", row.get("d1")), ("5 days", row.get("d5"))]
+    out["path"] = [{"at": k, "median": x["median"], "n": x["n"]} for k, x in path if x and x["n"] >= min_n]
     return out
 
 
@@ -956,3 +960,144 @@ def buzz(
                      "top": {"title": top["title"], "source": top["source"], "url": top.get("url"), "score": top.get("score")}})  # fmt: skip
     rows.sort(key=lambda r: (-r["ratio"], -r["n"]))
     return {"rows": rows[:limit], "window_s": window_s}
+
+
+# --------------------------------------------------------------------------- priced in? time of day; session context
+
+
+def _graded(engine: Engine, days: float, now: float) -> list[tuple[dict[str, Any], dict[str, Any], int]]:
+    """(alert, its first graded row, sign) for every directional, graded alert in the window."""
+    out = []
+    for a in engine.storage.recent_alerts(3000, since=now - days * 86400):
+        o = (a.get("edge") or {}).get("outcome") or {}
+        if not o:
+            continue
+        row = next(iter(o.values()))
+        if row.get("sign"):
+            out.append((a, row, row["sign"]))
+    return out
+
+
+def _bucket_stats(groups: dict[str, dict[str, list[float]]], order: list[str]) -> list[dict[str, Any]]:
+    def stats(xs: list[float]) -> dict[str, Any] | None:
+        return (
+            {
+                "n": len(xs),
+                "hit": round(sum(x > 0 for x in xs) / len(xs), 2),
+                "median": round(st.median(xs), 2),
+            }
+            if xs
+            else None
+        )
+
+    return [
+        {"bucket": k, "h1": stats(groups[k]["h1"]), "close": stats(groups[k]["close"])}
+        for k in order
+        if k in groups
+    ]
+
+
+def priced_in_record(engine: Engine, days: float = 60, now: float | None = None) -> dict[str, Any]:
+    """Do alerts still work after the stock already moved? Graded alerts split by the stock's
+    move in the 15 minutes before the alert, in the alert's direction: fresh (under 1%), already
+    moved its way (1%+), or moved against it (1%+ the other way)."""
+    now = now or time.time()
+    groups: dict[str, dict[str, list[float]]] = {}
+    for a, row, sign in _graded(engine, days, now):
+        pre = (a.get("edge") or {}).get("pre") or {}
+        if not pre:
+            continue
+        x = next(iter(pre.values())) * sign
+        k = "fresh" if abs(x) < 1 else "already moved its way" if x > 0 else "moved against it first"
+        g = groups.setdefault(k, {"h1": [], "close": []})
+        for h in ("h1", "close"):
+            if row.get(h) is not None:
+                g[h].append(sign * row[h])
+    return {
+        "days": days,
+        "rows": _bucket_stats(groups, ["fresh", "already moved its way", "moved against it first"]),
+    }
+
+
+TIME_BUCKETS = [((4, 0), (9, 30), "pre-market"), ((9, 30), (10, 30), "the open"), ((10, 30), (14, 0), "midday"),
+                ((14, 0), (16, 0), "power hours"), ((16, 0), (20, 0), "after hours")]  # fmt: skip
+
+
+def time_bucket(ts: float) -> str:
+    d = datetime.fromtimestamp(ts, ET)
+    hm = (d.hour, d.minute)
+    if d.weekday() >= 5:
+        return "weekend"
+    return next((name for a, b, name in TIME_BUCKETS if a <= hm < b), "overnight")
+
+
+def time_of_day_record(engine: Engine, days: float = 60, now: float | None = None) -> dict[str, Any]:
+    """When do the alerts work? Graded alerts by the time (ET) they went out."""
+    now = now or time.time()
+    groups: dict[str, dict[str, list[float]]] = {}
+    for a, row, sign in _graded(engine, days, now):
+        g = groups.setdefault(time_bucket(float(a.get("created", 0))), {"h1": [], "close": []})
+        for h in ("h1", "close"):
+            if row.get(h) is not None:
+                g[h].append(sign * row[h])
+    return {
+        "days": days,
+        "rows": _bucket_stats(groups, [b[2] for b in TIME_BUCKETS] + ["overnight", "weekend"]),
+    }
+
+
+def session_context(engine: Engine, sym: str, now: float | None = None) -> dict[str, Any] | None:
+    """Where the stock sits in its session: against VWAP (from the tape's read) and against its
+    9:35 price (the end of the first five minutes), with the session's high and low."""
+    now = now or time.time()
+    q = engine.price_of(sym, 1800, now=now)
+    path = engine.live_quotes.path(sym, now)
+    ig = (
+        engine.ignition.latest(sym, now)
+        if engine.ignition is not None and hasattr(engine.ignition, "latest")
+        else None
+    )
+    if not q:
+        return None
+    px = q[1]
+    out: dict[str, Any] = {"price": px}
+    vwap = (ig or {}).get("vwap")
+    if vwap:
+        out["vwap"] = round(vwap, 4)
+        out["vs_vwap"] = round((px / vwap - 1) * 100, 2)
+    if path is not None:
+        if path.first5:
+            out["first5"] = path.first5
+            out["vs_first5"] = round((px / path.first5 - 1) * 100, 2)
+        if path.s_high and path.s_low:
+            out["s_high"], out["s_low"] = path.s_high, path.s_low
+    return out if len(out) > 1 else None
+
+
+def earnings_week(
+    engine: Engine, now: float | None = None, min_cap: float = 2e9, days: int = 7
+) -> dict[str, Any]:
+    """Every company worth ``min_cap``+ reporting in the next ``days`` days (Nasdaq's earnings
+    calendar), by day, biggest first."""
+    now = now or time.time()
+    book = getattr(engine.trends, "earnings", None) if engine.trends is not None else None
+    if book is None:
+        return {"enabled": False, "days": []}
+    today = datetime.fromtimestamp(now, ET).date()
+    by_day: dict[str, list[dict[str, Any]]] = {}
+    for sym in list(book.next):
+        e = book.lookup(sym, today)
+        if not e or e["in_days"] > days:
+            continue
+        li = engine.universe.get(sym)
+        if li is None or (li.market_cap or 0) < min_cap:
+            continue
+        by_day.setdefault(e["date"], []).append({"symbol": sym, "name": li.name, "cap": li.cap_label, "mcap": li.market_cap,
+                                                 "when": e.get("when") or "", "in_days": e["in_days"]})  # fmt: skip
+    out = []
+    for d in sorted(by_day):
+        rows = sorted(by_day[d], key=lambda r: -(r["mcap"] or 0))
+        for r in rows:
+            r.pop("mcap")
+        out.append({"date": d, "in_days": rows[0]["in_days"], "rows": rows})
+    return {"enabled": True, "days": out, "min_cap": min_cap}

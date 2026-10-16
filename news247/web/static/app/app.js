@@ -27,6 +27,13 @@ let alerts = [], app = {}, tab = "tape", unread = 0, showAll = false, sheetOpen 
 let desk = null, mine = new Set();  // this phone's desk (watchlist, price alerts, tracked calls) and its watched symbols
 const seen = new Set();
 
+// display: "clear" (no 3D scene, no glass blur: legible and light on the battery) and larger text
+function applyDisplay() {
+  const clear = store.get("ft_clear") === "1", big = store.get("ft_text") === "big";
+  document.body.classList.toggle("clear", clear);
+  document.body.classList.toggle("big", big);
+  try { Scene.setClear?.(clear); } catch (_) { /* the scene loads after this file on some paths */ }
+}
 function setManifest() { $("manifest").href = "/app/manifest.webmanifest" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : ""); }
 setManifest();
 function toast(msg, id, ms) {
@@ -51,6 +58,7 @@ const GLOSSARY = {
   gap: "Gap: a move from yesterday's close, often made before the open on overnight news. The board shows companies worth $300M+ moving 3%+.",
   halt: "Halt: the exchange stops trading in a stock. T1 = news pending, LUDP = a 5-minute volatility pause (limit up/limit down), H10 = SEC suspension. It reopens at the resumption time.",
   smart: "Smart money: options bought hard on one side, insiders buying with their own cash (Form 4), and stocks igniting on volume, in one feed.",
+  vwap: "VWAP: the volume-weighted average price of the session, where the day's average share changed hands. Above it, buyers have been in control; traders watch reclaims and losses of it. The 9:35 price is the end of the first five minutes, the opening range.",
   digest: "Digest: instead of one push per alert, one push every 15 minutes or hour listing them. CRITICAL alerts and your own price alerts still come at once.",
 };
 const tip = (k) => `<button class="tip" data-act="term" data-s="${k}" aria-label="What is this?">ⓘ</button>`;
@@ -184,6 +192,15 @@ function gradeRow(a) {
   const bit = (k, label) => r[k] != null ? `${label} <span class="num ${cls(r[k])}">${pct(r[k])}</span> ${mark(r[k])}` : "";
   return `<div class="grade">${esc(sym)}: ${[bit("h1", "1h"), bit("close", "close"), bit("d1", "next day"), bit("d5", "5 days")].filter(Boolean).join(" · ")}</div>`;
 }
+function preRow(a) {
+  const pre = a.edge?.pre;
+  if (!pre) return "";
+  const [sym, x] = Object.entries(pre)[0];
+  if (Math.abs(x) < 1) return "";
+  const d = a.edge?.play?.direction || a.analysis?.direction || a.edge?.confluence?.side;
+  const way = d === "up" ? (x > 0 ? "its way" : "against it") : d === "down" ? (x < 0 ? "its way" : "against it") : "";
+  return `<div class="pre">${esc(sym)} had already moved <b class="${cls(x)}">${pct(x)}</b> in the 15 minutes before${way ? ` (${way})` : ""}</div>`;
+}
 function relatedChip(a) {
   const t = (a.tickers || [])[0];
   if (!t || a.kind === "system") return "";
@@ -209,7 +226,7 @@ function alertHTML(a, opts = {}) {
       <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
-      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${baseRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}
+      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${preRow(a)}${baseRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}
     </div>
   </article>`;
 }
@@ -272,8 +289,20 @@ function renderTop() {
   if (app.sources) countTo($("sSources"), app.sources_ok, (v) => `${Math.round(v)}/${app.sources}`);
   const n = (app.next || []).find((e) => (e.impact || 1) >= 2) || (app.next || [])[0];
   $("nextCat").hidden = !n;
-  if (n) $("nextText").innerHTML = `<b>${esc(n.title)}</b><small>${esc(prettyDate(n.date))}${n.time ? " · " + esc(n.time) + " ET" : ""} · ${inDays(n.in_days)}</small>`;
+  if (n) $("nextText").innerHTML = `<b>${esc(n.title)}</b><small>${esc(prettyDate(n.date))}${n.time ? " · " + esc(n.time) + " ET" : ""} · <span id="nextIn">${inDays(n.in_days)}</span></small>`;
+  nextEvent = n || null; tickNext();
 }
+// a release today: a live countdown to it ("in 1h 12m"), then "just out" for half an hour
+let nextEvent = null;
+function etNowMinutes() { const t = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })); return t.getHours() * 60 + t.getMinutes() + t.getSeconds() / 60; }
+function tickNext() {
+  const n = nextEvent, el = $("nextIn");
+  if (!n || !el || n.in_days !== 0 || !/^\d{1,2}:\d{2}$/.test(n.time || "")) return;
+  const [h, m] = n.time.split(":").map(Number), left = h * 60 + m - etNowMinutes();
+  el.textContent = left > 0 ? `in ${left >= 60 ? Math.floor(left / 60) + "h " : ""}${Math.ceil(left % 60)}m` : left > -30 ? "just out" : "today";
+  $("nextCat").classList.toggle("soon", left > 0 && left <= 30);
+}
+setInterval(tickNext, 15000);
 async function load() {
   app = await api("/api/app");
   alerts = app.alerts;
@@ -353,12 +382,20 @@ function calRow(e, grouped) {
   return `<div class="li${e.kind === "binary" ? " binary" : ""}"><span class="time">${esc(e.time || "—")}</span><div class="grow"><div style="font-weight:600">${e.kind === "binary" ? `<span class="capb bin">Binary</span>` : ""}${title}</div><div class="sub">${sub}</div>${from}</div>
     <span class="imp">${[1, 2, 3].map((i) => `<i class="${i <= (e.impact || 1) ? "on" : ""}"></i>`).join("")}</span></div>`;
 }
+async function loadEarningsWeek() {
+  try {
+    const r = await api("/api/earnings-week");
+    if (!r.enabled || !r.days.length) return "";
+    return `<div class="sec-title rv"><h2>Earnings this week</h2><span>$2B+ companies · tap for the implied move</span></div><div class="panel glass tilt rv">`
+      + r.days.map((d) => `<div class="li"><div class="grow"><div style="font-weight:600">${esc(prettyDate(d.date))} <span class="sub">${inDays(d.in_days)}</span></div><div class="tks">${d.rows.slice(0, 18).map((x) => `<span class="tk${mine.has(x.symbol) ? " mine" : ""}" data-tk="${esc(x.symbol)}" role="button" title="${esc(x.name)}">${esc(x.symbol)} <small>${/before/i.test(x.when) ? "☀ pre" : /after/i.test(x.when) ? "☾ post" : ""}</small></span>`).join("")}${d.rows.length > 18 ? `<span class="tk rt">+${d.rows.length - 18}</span>` : ""}</div></div></div>`).join("") + "</div>";
+  } catch (_) { return ""; }
+}
 async function loadCalendar() {
-  const c = await api("/api/calendar?days=60");
+  const [c, ew] = await Promise.all([api("/api/calendar?days=60"), loadEarningsWeek()]);
   const byDay = {};
   c.events.forEach((e) => (byDay[e.date] = byDay[e.date] || []).push(e));
-  $("cal").innerHTML = Object.keys(byDay).length ? Object.entries(byDay).map(([d, evs]) => `<div class="day-head rv"><b>${esc(prettyDate(d))}</b><span>${inDays(evs[0].in_days)}</span></div>
-      <div class="panel glass tilt rv">${evs.map((e) => calRow(e, true)).join("")}</div>`).join("") : emptyHTML("Nothing scheduled in the next 60 days.");
+  $("cal").innerHTML = ew + (Object.keys(byDay).length ? Object.entries(byDay).map(([d, evs]) => `<div class="day-head rv"><b>${esc(prettyDate(d))}</b><span>${inDays(evs[0].in_days)}</span></div>
+      <div class="panel glass tilt rv">${evs.map((e) => calRow(e, true)).join("")}</div>`).join("") : emptyHTML("Nothing scheduled in the next 60 days."));
   Fx.observe($("cal"));
 }
 // ---------------------------------------------------------------- the Camillo desk
@@ -606,9 +643,11 @@ async function openSheet(id) {
         ${p.themes?.length ? `<div class="sub" style="margin-top:14px">${esc(p.themes.join(" · "))}</div>` : ""}</div>` : "",
     e.confluence ? `<h4>What lines up ${tip("confluence")}</h4><div class="panel glass padded">${confRow(a)}${e.confluence.signals.map((x) => `<div class="sig"${x.id ? ` data-id="${esc(x.id)}" role="button"` : ""}><span class="${x.side === "up" ? "pos" : "neg"}">${x.side === "up" ? "▲" : "▼"}</span><div class="grow"><div>${esc(x.label)}</div><div class="sub">${esc(KIND_LABEL[x.kind] || x.kind)} · weighs ${x.weight}${x.ts ? ` · ${ago(x.ts)} ago` : ""}</div></div></div>`).join("")}
       <div class="sub" style="margin-top:10px">Fires when 3+ independent kinds of evidence line up on one side (weight 4+, at least one from the last 2 hours); pushed at weight 7+. Each stock and side once a day.</div></div>` : "",
+    priceInBlock(a),
     e.base ? `<h4>How alerts like this did ${tip("base")}</h4><div class="panel glass">
       ${e.base.h1 ? `<div class="kv"><span>An hour later</span><b class="num"><span class="${e.base.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.h1.hit * 100)}%</span> went its way · median ${pct(e.base.h1.median)} · ${e.base.h1.n} graded</b></div>` : ""}
       ${e.base.close ? `<div class="kv"><span>At the close</span><b class="num"><span class="${e.base.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.close.hit * 100)}%</span> went its way · median ${pct(e.base.close.median)} · ${e.base.close.n} graded</b></div>` : ""}
+      ${pathChart(e.base.path)}
       <div class="sub" style="padding:4px 0 12px">${esc(e.base.label)} alerts over the last 60 days, each graded on its own stock from its own reference price. A base rate, not a forecast.</div></div>` : "",
     e.precedents?.length ? `<h4>Precedents</h4><div class="panel glass">${e.precedents.map((x) => `<div class="li"><div class="grow">
         <div class="sub">${esc(prettyDate(x.date))}, ${esc(x.date.slice(0, 4))} · ${esc(x.category)}${x.first_source ? " · first: " + esc(x.first_source) : ""}</div>
@@ -626,6 +665,34 @@ async function openSheet(id) {
   showSheet(blocks.join(""));
 }
 // was it useful? one vote per phone; the counts are every phone's
+// priced in? how far the stock had moved before the alert, and how alerts after such a move did
+let recordCache = null;
+function priceInBlock(a) {
+  const pre = a.edge?.pre;
+  if (!pre) return "";
+  const [sym, x] = Object.entries(pre)[0];
+  const d = a.edge?.play?.direction || a.analysis?.direction || a.edge?.confluence?.side;
+  const sign = d === "up" ? 1 : d === "down" ? -1 : 0, y = sign * x;
+  const bucket = !sign ? null : Math.abs(y) < 1 ? "fresh" : y > 0 ? "already moved its way" : "moved against it first";
+  const row = bucket && (recordCache?.priced_in || []).find((r) => r.bucket === bucket);
+  if (!recordCache) api("/api/record?days=60").then((r) => { recordCache = r; }).catch(() => {});
+  const st = row?.h1 || row?.close;
+  return `<h4>Priced in?</h4><div class="panel glass"><div class="kv"><span>${esc(sym)} in the 15 minutes before the alert</span><b class="num ${cls(x)}">${pct(x)}</b></div>
+    ${st && st.n >= 8 ? `<div class="kv"><span>Alerts that came ${esc(bucket === "fresh" ? "before much of a move" : bucket)} <span class="sub">${st.n} graded</span></span><b class="num ${st.hit >= 0.5 ? "pos" : "neg"}">${Math.round(st.hit * 100)}% went their way</b></div>` : ""}</div>`;
+}
+// the typical path after alerts like this: median move in the alert's direction at each horizon
+function pathChart(path) {
+  if (!path || path.length < 2) return "";
+  const pts = [{ at: "alert", median: 0 }, ...path], W = 520, H = 90, pad = 26;
+  const vs = pts.map((p) => p.median), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), span = hi - lo || 1;
+  const X = (i) => pad + (i / (pts.length - 1)) * (W - 2 * pad), Y = (v) => 14 + (1 - (v - lo) / span) * (H - 36);
+  const d = pts.map((p, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(p.median).toFixed(1)).join(" ");
+  return `<div class="sub" style="padding-top:12px">Typical path after alerts like this (median, in the alert's direction)</div>
+    <svg viewBox="0 0 ${W} ${H}" class="pathc"><line x1="${pad}" x2="${W - pad}" y1="${Y(0)}" y2="${Y(0)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 5"/>
+    <path d="${d}" fill="none" stroke="var(--gold)" stroke-width="2.2"/>${pts.map((p, i) => `<circle cx="${X(i)}" cy="${Y(p.median)}" r="3.5" fill="var(--gold)"/>
+    <text x="${X(i)}" y="${H - 4}" text-anchor="middle" fill="rgba(255,255,255,.55)" font-size="10" font-family="Inter">${esc(p.at)}</text>
+    ${i ? `<text x="${X(i)}" y="${Y(p.median) - 7}" text-anchor="middle" fill="${p.median >= 0 ? "#8CEBC4" : "#FF9E86"}" font-size="10.5" font-family="Inter">${p.median > 0 ? "+" : ""}${p.median.toFixed(1)}%</text>` : ""}`).join("")}</svg>`;
+}
 function voteRow(a) {
   if (a.kind === "system") return "";
   const mineV = (desk?.votes || {})[a.id] || 0, fb = a.edge?.feedback || {};
@@ -781,6 +848,15 @@ function renderDesk() {
     <div class="sub" style="padding-top:8px">Snooze for an hour (tap again to end it)</div>
     <div class="row" style="padding:10px 0 4px">${CATS.map(([k, l]) => { const until = (desk.snooze || {})[k]; return `<button class="btn ghost small${until ? " sel" : ""}" data-act="snooze" data-s="${k}">${until ? `💤 ${l} until ${new Date(until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : l}</button>`; }).join("")}</div>
     <div class="kv"><span>Skip what fades ${tip("base")}<div class="sub">don't push alert kinds that went their way 40% of the time or less over 20+ graded (CRITICAL still comes)</div></span><b><button class="btn ghost small${pr.skip_fades ? " sel" : ""}" data-act="flag" data-s="skip_fades">${pr.skip_fades ? "On" : "Off"}</button></b></div>
+    <div class="sub" style="padding-top:8px">Display (this phone)</div>
+    <div class="row" style="padding:10px 0 4px"><button class="btn ghost small${store.get("ft_clear") === "1" ? "" : " sel"}" data-act="display" data-s="cinema">Cinematic</button><button class="btn ghost small${store.get("ft_clear") === "1" ? " sel" : ""}" data-act="display" data-s="clear">Clear (no 3D, no blur)</button><button class="btn ghost small${store.get("ft_text") === "big" ? " sel" : ""}" data-act="display" data-s="text">Larger text</button></div>
+    <div class="sub" style="padding-top:8px">A move alert for every stock you add</div>
+    <div class="row" style="padding:10px 0 4px">${[0, 3, 5, 8, 10].map((v) => `<button class="btn ghost small${(pr.auto_move || 0) === v ? " sel" : ""}" data-act="automove" data-s="${v}">${v ? `±${v}%` : "Off"}</button>`).join("")}</div>
+    <div class="sub" style="padding-top:8px">Also send this phone's alerts to</div>
+    ${desk.forward ? `<div class="kv"><span>${esc(desk.forward.where)}</span><b><button class="btn ghost small" data-act="fw-off">Stop</button></b></div>`
+      : `<div class="addrow"><select id="fwKind"><option value="discord">Discord webhook</option><option value="telegram">Telegram bot</option><option value="ntfy">ntfy topic</option></select>
+        <input id="fwA" class="key" placeholder="webhook URL · bot token · topic" autocomplete="off" spellcheck="false"></div>
+        <div class="addrow" style="padding-top:0"><input id="fwB" class="key" placeholder="Telegram chat id (Telegram only)" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="fw-save">Save</button></div>`}
     <div class="sub" style="padding-top:8px">This phone's floor</div>
     <div class="row" style="padding:10px 0 4px">${FLOORS.map(([k, l]) => `<button class="btn ghost small${(pr.min_sev || "") === k ? " sel" : ""}" data-act="floor" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="sub" style="padding-top:8px">How pushes arrive ${tip("digest")}${desk.held ? ` · <span class="gold">${desk.held} held for the next digest</span>` : ""}</div>
@@ -803,6 +879,9 @@ async function loadRecord() {
     $("dRecord").innerHTML = r.rows.length ? `<div class="kv head"><span>Alert kind</span><b>1 hour · close · next day · 5 days</b></div>` + r.rows.map((x) => `<div class="kv"><span>${esc(label(x.kind))}</span><b class="rec">${cells(x)}</b></div>`).join("")
       + `<div class="sub" style="padding:10px 0 14px">${esc(r.note)} Hit = the stock went the alert's way.</div>`
       : `<div class="li"><span class="muted">Every alert is graded an hour later and at its session's close, against its own reference price. The first grades land after the next session; this fills in on its own.</span></div>`;
+    recordCache = r;
+    const bucketRows = (title, rows) => rows.length ? `<div class="kv head"><span>${title}</span><b>1 hour · close</b></div>` + rows.map((x) => `<div class="kv"><span>${esc(x.bucket)}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("") : "";
+    $("dRecord").innerHTML += bucketRows("Already moved before the alert?", r.priced_in || []) + bucketRows("By time of day (ET)", r.by_time || []);
     const src = await api("/api/sources").catch(() => ({ rows: [] }));
     if (src.rows.length) $("dRecord").innerHTML += `<div class="kv head"><span>By first source</span><b>1 hour · close</b></div>` + src.rows.slice(0, 10).map((x) => `<div class="kv"><span>${esc(outlet(x.source))}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("");
   } catch (_) { $("dRecord").innerHTML = `<div class="li"><span class="muted">Track record unavailable.</span></div>`; }
@@ -988,6 +1067,8 @@ function tickerHTML(d) {
       ${mine_tr.map((t) => `<div class="kv"><span>${t.direction === "long" ? "▲ Long" : "▼ Short"} from ${fmtPx(t.entry)} · ${ago(t.ts)} ago${levelsText(t)}</span><b class="num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</b></div>`).join("")}</div>` : ""}`;
   const chart = (d.series || []).length >= 3 ? sparkline({ [d.symbol]: d.series }, -1) : "";
   const rel = d.rel, er = d.earnings;
+  const ss = d.session;
+  const sessLine = ss && (ss.vs_vwap != null || ss.vs_first5 != null) ? `<div class="rel">${ss.vs_vwap != null ? `<span>${ss.vs_vwap >= 0 ? "Above" : "Below"} VWAP <b class="num ${cls(ss.vs_vwap)}">${pct(ss.vs_vwap)}</b> <span class="faint">(${fmtPx(ss.vwap)})</span></span>` : ""}${ss.vs_first5 != null ? `<span>vs 9:35 <b class="num ${cls(ss.vs_first5)}">${pct(ss.vs_first5)}</b></span>` : ""}${tip("vwap")}</div>` : "";
   const relLine = rel && (rel.spy != null || rel.sector != null) ? `<div class="rel"><span>vs S&amp;P <b class="num ${cls(rel.vs_spy)}">${rel.vs_spy != null ? (rel.vs_spy > 0 ? "+" : "") + rel.vs_spy.toFixed(1) : "—"}</b></span>${rel.sector != null ? `<span>vs ${esc(rel.sector_name)} <b class="num ${cls(rel.vs_sector)}">${(rel.vs_sector > 0 ? "+" : "") + rel.vs_sector.toFixed(1)}</b></span>` : ""}${rel.read ? `<span class="rread">${esc(rel.read)}</span>` : ""}${tip("rel")}</div>` : "";
   const earnLine = er ? `<div class="sub gold" style="margin-top:6px">Reports ${esc(prettyDate(er.date))}${er.when ? ", " + esc(er.when) : ""} · ${inDays(er.in_days)}</div>` : "";
   const pr = d.peers || {};
@@ -1020,7 +1101,7 @@ function tickerHTML(d) {
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
   const implied = `<h4>What options price in ${tip("implied")}</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
-  return [head + relLine + earnLine, acts, noteBlock, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
+  return [head + relLine + sessLine + earnLine, acts, noteBlock, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0, tickerNow = null;
 const impliedNow = {};
@@ -1147,6 +1228,18 @@ async function onAct(el) {
   else if (a === "save" || a === "unsave") { if (await deskEdit(a, { id: s })) { toast(a === "save" ? "★ Saved to your desk" : "Removed from saved"); openSheet(s); } }
   else if (a === "snooze") { const on = (desk.snooze || {})[s] > Date.now() / 1000; await deskEdit("snooze", { cat: s, hours: on ? 0 : 1 }); }
   else if (a === "export") exportDesk(el.dataset.f);
+  else if (a === "display") {
+    if (s === "text") store.set("ft_text", store.get("ft_text") === "big" ? "" : "big");
+    else store.set("ft_clear", s === "clear" ? "1" : "");
+    applyDisplay(); renderDesk();
+  }
+  else if (a === "automove") { if (await deskEdit("prefs", { auto_move: +s })) toast(+s ? `New stocks you watch get a ±${s}% move alert` : "Off"); }
+  else if (a === "fw-off") await deskEdit("prefs", { forward: null });
+  else if (a === "fw-save") {
+    const kind = $("fwKind").value, va = $("fwA").value.trim(), vb = $("fwB").value.trim();
+    const fw = kind === "discord" ? { kind, url: va } : kind === "telegram" ? { kind, token: va, chat: vb } : { kind, topic: va.replace(/^https?:\/\/ntfy\.sh\//, "") };
+    if (await deskEdit("prefs", { forward: fw })) toast("Forwarding on: every push to this phone is copied there");
+  }
   else if (a === "why") {
     el.disabled = true; el.textContent = "Searching filings and news…";
     let r;
@@ -1652,11 +1745,13 @@ async function start() {
 }
 
 // boot: the scene starts immediately (it's behind the lock screen too), the app follows
+applyDisplay();
 Fx.split();
 let lifted = false;
 const lift = () => { if (lifted) return; lifted = true; $("curtain").classList.add("off"); Scene.ignite(); };
 Scene.onReady = () => requestAnimationFrame(lift);
 setTimeout(lift, 9000);   // never leave someone on a black screen if the photo is slow
+if (store.get("ft_clear") === "1") requestAnimationFrame(lift);  // clear mode renders no scene: nothing to wait for
 Scene.start($("scene"));
 Fx.tick();
 start().catch(() => {});

@@ -243,7 +243,7 @@ void main() {
 
   const Scene = {
     ok: false, climb: 0, climbTarget: 0, tilt: [0, 0], tiltTarget: [0, 0], intro: 0, introStart: null,
-    scale: 1, tier: 1, frames: 0, slow: 0, paused: false, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    scale: 1, tier: 1, frames: 0, slow: 0, paused: false, clear: false, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
     onReady: null,
 
     async start(canvas, opts) {
@@ -293,7 +293,7 @@ void main() {
         gl.uniform1f(this.u.uSharp, opts.sharp ?? parseFloat(new URLSearchParams(location.search).get("sharp") ?? "1"));
         this.resize();
         addEventListener("resize", () => this.resize());
-        document.addEventListener("visibilitychange", () => { this.paused = document.hidden; if (!this.paused) this.loop(performance.now()); });
+        document.addEventListener("visibilitychange", () => { this.paused = document.hidden; if (!this.paused && !this.clear) this.loop(performance.now()); });
         this.aspect = photo.width / photo.height;
         this.ok = true;
         document.documentElement.classList.add("gl");
@@ -345,8 +345,10 @@ void main() {
     setClimb(v) { this.climbTarget = v; },
     setTilt(x, y) { this.tiltTarget = [Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y))]; },
 
+    // clear mode (the Desk's Display setting): no rendering at all, for legibility and battery
+    setClear(on) { const was = this.clear; this.clear = !!on; if (was && !on && !this.paused && this.gl) this.loop(performance.now()); },
     loop(now) {
-      if (this.paused || !this.gl) return;
+      if (this.paused || this.clear || !this.gl) return;
       const dt = Math.min(0.1, (now - (this.last || now)) / 1000); this.last = now;
       // the camera is a critically-damped spring: it glides to a new altitude (tab switch) in about a
       // second, and trails the page a little while scrolling, which is what makes the sky feel deep

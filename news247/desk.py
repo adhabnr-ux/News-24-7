@@ -84,6 +84,8 @@ def default_profile() -> dict[str, Any]:
             "open_plan": True,  # the 9:20 ET open plan
             "week": True,  # Friday's "your week"
             "skip_fades": False,  # don't push alert groups whose base rate says they fade
+            "auto_move": 0,  # %: a "moves ±N% on the day" price alert for every stock added (0 = off)
+            "forward": None,  # this phone's own copy: {"kind": "discord"|"telegram"|"ntfy", ...}
         },
         "price_alerts": [],
         "tracked": [],
@@ -307,8 +309,29 @@ class Desk:
             syms = [s for s in (clean_symbol(x) for x in body.get("symbols") or [body.get("symbol")]) if s]
             if not syms:
                 raise ValueError("no valid symbol")
+            fresh = [x for x in syms if x not in p["watchlist"]]
             wl = list(dict.fromkeys([*(p["watchlist"]), *syms]))
             p["watchlist"] = wl[:MAX_WATCH]
+            auto = (p.get("prefs") or {}).get("auto_move") or 0
+            if auto:
+                open_ = [a for a in p["price_alerts"] if not a.get("fired")]
+                for x in fresh:
+                    if (
+                        x in p["watchlist"]
+                        and len(open_) < MAX_PRICE_ALERTS
+                        and not any(a["symbol"] == x and a["kind"] == "move" for a in open_)
+                    ):
+                        a = {
+                            "id": secrets.token_hex(5),
+                            "symbol": x,
+                            "kind": "move",
+                            "value": float(auto),
+                            "created": now,
+                            "fired": None,
+                            "auto": True,
+                        }
+                        p["price_alerts"].append(a)
+                        open_.append(a)
         elif action == "watch_remove":
             sym = clean_symbol(body.get("symbol"))
             p["watchlist"] = [s for s in p["watchlist"] if s != sym]
@@ -335,6 +358,16 @@ class Desk:
             for flag in ("eod", "earn_remind", "open_plan", "week", "skip_fades"):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
+            if "auto_move" in body:
+                try:
+                    v = float(body.get("auto_move") or 0)
+                except (TypeError, ValueError):
+                    v = -1
+                if v not in (0, 3, 5, 8, 10):
+                    raise ValueError("auto_move is 0 (off), 3, 5, 8 or 10")
+                prefs["auto_move"] = v
+            if "forward" in body:
+                prefs["forward"] = clean_forward(body.get("forward"))
             if "digest" in body:
                 try:
                     mins = int(body.get("digest") or 0)
@@ -579,6 +612,7 @@ class Desk:
             "snooze": {c: u for c, u in (p.get("snooze") or {}).items() if u > now},
             "saved": p.get("saved") or [],
             "transfer": p["transfer"] if (p.get("transfer") or {}).get("until", 0) > now else None,
+            "forward": _mask_forward((p.get("prefs") or {}).get("forward")),
             "record": {
                 "closed": len(closed),
                 "wins": len(wins),
@@ -661,6 +695,79 @@ class Desk:
             if changed:
                 self.save(device)
         return out
+
+
+DISCORD_RE = re.compile(
+    r"^https://(?:discord\.com|discordapp\.com|ptb\.discord\.com|canary\.discord\.com)/api/webhooks/\d{5,25}/[\w-]{20,120}$"
+)
+TELEGRAM_TOKEN_RE = re.compile(r"^\d{5,12}:[\w-]{30,60}$")
+TELEGRAM_CHAT_RE = re.compile(r"^-?\d{3,20}$|^@[A-Za-z][\w]{4,31}$")
+NTFY_TOPIC_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
+
+
+def clean_forward(raw: Any) -> dict[str, str] | None:
+    """A phone's forward, checked: a Discord webhook URL on Discord's own hosts, a Telegram bot
+    token and chat, or an ntfy.sh topic. Anything else is refused (the server only ever posts to
+    those three services)."""
+    if not raw:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("forward must be an object")
+    kind = str(raw.get("kind") or "")
+    if kind == "discord":
+        url = str(raw.get("url") or "").strip()
+        if not DISCORD_RE.match(url):
+            raise ValueError("that isn't a Discord webhook URL (https://discord.com/api/webhooks/...)")
+        return {"kind": "discord", "url": url}
+    if kind == "telegram":
+        token, chat = str(raw.get("token") or "").strip(), str(raw.get("chat") or "").strip()
+        if not TELEGRAM_TOKEN_RE.match(token) or not TELEGRAM_CHAT_RE.match(chat):
+            raise ValueError("need a Telegram bot token (123456:ABC...) and a chat id (or @channel)")
+        return {"kind": "telegram", "token": token, "chat": chat}
+    if kind == "ntfy":
+        topic = str(raw.get("topic") or "").strip()
+        if not NTFY_TOPIC_RE.match(topic):
+            raise ValueError("an ntfy topic is 6-64 letters, digits, - or _")
+        return {"kind": "ntfy", "topic": topic}
+    raise ValueError("forward kind is discord, telegram or ntfy")
+
+
+def _mask_forward(fw: dict[str, str] | None) -> dict[str, str] | None:
+    if not fw:
+        return None
+    if fw["kind"] == "discord":
+        return {"kind": "discord", "where": "Discord webhook …" + fw["url"][-6:]}
+    if fw["kind"] == "telegram":
+        return {"kind": "telegram", "where": f"Telegram chat {fw['chat']}"}
+    return {"kind": "ntfy", "where": f"ntfy.sh/{fw['topic']}"}
+
+
+def forward_text(payload: dict[str, Any]) -> str:
+    lines = [str(payload.get("title") or ""), str(payload.get("body") or "")]
+    if payload.get("url"):
+        lines.append(str(payload["url"]))
+    return "\n".join(x for x in lines if x).strip()
+
+
+def forward_request(fw: dict[str, str] | None, payload: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    """(url, request kwargs) for a forward, or None. Built only from a checked forward."""
+    if not fw:
+        return None
+    text = forward_text(payload)
+    if fw.get("kind") == "discord" and DISCORD_RE.match(fw.get("url", "")):
+        return fw["url"], {"json": {"content": text[:1900], "allowed_mentions": {"parse": []}}}
+    if fw.get("kind") == "telegram" and TELEGRAM_TOKEN_RE.match(fw.get("token", "")):
+        return f"https://api.telegram.org/bot{fw['token']}/sendMessage", {
+            "json": {"chat_id": fw["chat"], "text": text[:4000], "disable_web_page_preview": True}
+        }
+    if fw.get("kind") == "ntfy" and NTFY_TOPIC_RE.match(fw.get("topic", "")):
+        return f"https://ntfy.sh/{fw['topic']}", {
+            "data": text[:3500].encode(),
+            "headers": {
+                "Title": str(payload.get("title") or "")[:200].encode("ascii", "ignore").decode().strip()
+            },
+        }
+    return None
 
 
 def _kw_pattern(k: str) -> re.Pattern[str]:

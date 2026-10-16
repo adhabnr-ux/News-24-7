@@ -119,6 +119,7 @@ class WebServer:
         app.router.add_post("/api/why/{sym}", self.api_why)
         app.router.add_get("/api/day", self.api_day)
         app.router.add_get("/api/breadth", self.api_breadth)
+        app.router.add_get("/api/earnings-week", self.api_earnings_week)
         app.router.add_get("/api/volume", self.api_volume)
         app.router.add_get("/api/buzz", self.api_buzz)
         app.router.add_get("/api/export", self.api_export)
@@ -764,6 +765,11 @@ class WebServer:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(await earnings_reactions(self.engine, sym))
 
+    async def api_earnings_week(self, request: web.Request) -> web.Response:
+        from ..dossier import earnings_week
+
+        return _json(earnings_week(self.engine))
+
     async def api_breadth(self, request: web.Request) -> web.Response:
         from ..dossier import breadth
 
@@ -885,7 +891,12 @@ class WebServer:
             days = max(1.0, min(90.0, float(request.query.get("days", "30"))))
         except ValueError:
             days = 30.0
-        return _json(track_record(self.engine, days))
+        from ..dossier import priced_in_record, time_of_day_record
+
+        out = track_record(self.engine, days)
+        out["priced_in"] = priced_in_record(self.engine, days)["rows"]
+        out["by_time"] = time_of_day_record(self.engine, days)["rows"]
+        return _json(out)
 
     async def api_foretape(self, request: web.Request) -> web.Response:
         """For the Setup page: the link (and a QR code) that opens Foretape on a phone."""

@@ -1,6 +1,6 @@
 /* Foretape service worker: shows pushed alerts, opens the app on tap, keeps the app shell
    available offline, and re-subscribes if the browser rotates the push subscription. */
-const SHELL = "foretape-shell-v20";
+const SHELL = "foretape-shell-v22";
 const CONF = "foretape-conf";
 const SHELL_FILES = [
   "/app/", "/app/app.css", "/app/app.js", "/app/scene.js", "/app/launch.webp", "/app/depth.png", "/app/logo.svg", "/app/icon-192.png", "/app/badge-96.png",
@@ -56,8 +56,9 @@ self.addEventListener("push", (e) => {
     badge: "/app/badge-96.png",
     timestamp: d.ts ? d.ts * 1000 : Date.now(),
     vibrate: critical ? [120, 60, 120, 60, 240] : [80, 40, 80],
-    data: { url: d.open || "/app/" + (d.id ? "#a=" + d.id : ""), source: d.url || "" },
-    actions: d.url ? [{ action: "source", title: "Open source" }] : [],
+    data: { url: d.open || "/app/" + (d.id ? "#a=" + d.id : ""), source: d.url || "", mute: d.mute || "" },
+    // buttons where the platform shows them (Android, desktop; iOS doesn't): the source, and muting the stock here
+    actions: [...(d.url ? [{ action: "source", title: "Open source" }] : []), ...(d.mute ? [{ action: "mute", title: `Mute ${d.mute} 4h` }] : [])],
   };
   e.waitUntil(Promise.all([
     self.registration.showNotification(title, options),  // iOS requires a visible notification for every push
@@ -66,9 +67,21 @@ self.addEventListener("push", (e) => {
   ]));
 });
 
+async function deskAction(body) {
+  const c = await caches.open(CONF);
+  const token = await (await c.match("/token"))?.text();
+  const device = (await (await c.match("/device"))?.text()) || "";
+  if (!token || !device) return;
+  await fetch("/api/desk", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, "X-Device": device }, body: JSON.stringify(body) });
+}
+
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const { url, source } = e.notification.data || {};
+  const { url, source, mute } = e.notification.data || {};
+  if (e.action === "mute" && mute) {  // handled in the background: no app window
+    e.waitUntil(deskAction({ action: "mute", symbol: mute, hours: 4 }).catch(() => {}));
+    return;
+  }
   const target = e.action === "source" && source ? source : url || "/app/";
   e.waitUntil((async () => {
     await caches.open(CONF).then((c) => c.put("/badge", new Response("0")));

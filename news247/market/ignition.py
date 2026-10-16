@@ -165,8 +165,9 @@ class _Sym:
     day: str = ""
     points: deque[tuple[float, float, float, float, float]] = field(default_factory=lambda: deque(maxlen=120))
     fired: set[str] = field(default_factory=set)  # "ignition:up", "buildup:down", ...
-    last: tuple[float, float | None, float, float, float | None, str, float | None] | None = None
-    # ^ the latest read: (when, relative volume for the time of day, % on the day, price, dollars traded, name, market cap)
+    last: dict[str, Any] | None = (
+        None  # the latest read: when, relative volume for the time of day, % on the day, price, dollars, vwap
+    )
 
 
 class IgnitionScanner:
@@ -274,15 +275,8 @@ class IgnitionScanner:
             share = volume_share(0.0, m, self.profile)
             rvol = t.volume / (t.base_volume * share) if share > 0 else None
         day_pct = (t.price / t.prev_close - 1.0) * 100.0
-        st.last = (
-            t.ts,
-            rvol,
-            day_pct,
-            t.price,
-            t.volume * t.price if t.volume else None,
-            t.name,
-            t.market_cap,
-        )
+        st.last = {"ts": t.ts, "rvol": rvol, "chg": day_pct, "price": t.price, "dollar_volume": t.volume * t.price if t.volume else None,
+                   "name": t.name, "market_cap": t.market_cap, "vwap": t.vwap}  # fmt: skip
         line = self.day_threshold(t.market_cap)
         hit = self._ignition(t, st, m, rvol, day_pct, line, now)
         if hit is None and c.ignition_buildup:
@@ -393,13 +387,21 @@ class IgnitionScanner:
         for sym, st in self.state.items():
             if st.last is None:
                 continue
-            ts, rvol, chg, price, dollars, name, cap = st.last
-            if rvol is None or rvol < min_rvol or now - ts > max_age_s:
+            r = st.last
+            if r["rvol"] is None or r["rvol"] < min_rvol or now - r["ts"] > max_age_s:
                 continue
-            out.append({"symbol": sym, "rvol": round(rvol, 1), "chg": round(chg, 2), "price": price,
-                        "dollar_volume": dollars, "name": name, "market_cap": cap, "ts": ts})  # fmt: skip
+            out.append({"symbol": sym, "rvol": round(r["rvol"], 1), "chg": round(r["chg"], 2), "price": r["price"],
+                        "dollar_volume": r["dollar_volume"], "name": r["name"], "market_cap": r["market_cap"], "ts": r["ts"]})  # fmt: skip
         out.sort(key=lambda r: -r["rvol"])
         return out
+
+    def latest(
+        self, symbol: str, now: float | None = None, max_age_s: float = 900.0
+    ) -> dict[str, Any] | None:
+        st = self.state.get(symbol)
+        if st is None or st.last is None or (now or time.time()) - st.last["ts"] > max_age_s:
+            return None
+        return st.last
 
     def status(self) -> dict[str, Any]:
         return {
