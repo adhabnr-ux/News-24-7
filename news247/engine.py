@@ -228,6 +228,11 @@ class Engine:
         from .desk import Desk
 
         self.desk = Desk(self.storage, self.state_store)
+        self.base_rates: dict[
+            str, Any
+        ] = {}  # record_key -> graded stats (dossier.track_record), for each new alert
+        self.implied_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # symbol -> (when, implied move)
+        self.confluence_day: dict[str, Any] = {"day": "", "fired": [], "pushed": 0}
         if self.webpush is not None:
             self.webpush.allow = lambda sub, alert: self.desk.allows(sub.device, alert)  # type: ignore[attr-defined]
         self._load_phone_controls()
@@ -1699,6 +1704,12 @@ class Engine:
             if mk.get("open"):  # in session: read them now, not at their turn in the rotation
                 why = "on the radar" if alert.kind == "price" else "in the news"
                 self.options_feed.urgent(alert.tickers[:6], f"{why}: {alert.title[:90]}")
+        if alert.kind != "system" and "base" not in alert.edge:
+            from .dossier import base_rate
+
+            base = base_rate(self.base_rates, alert)
+            if base:
+                alert.edge["base"] = base  # how alerts like this did: on the card, the sheet, the push
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:
@@ -2086,7 +2097,22 @@ class Engine:
         payload = brief_push(self.brief(now))
         if payload is None or self.webpush is None or self.dispatcher.paused:
             return False
-        results = await self.webpush.push(payload, urgency="normal")  # type: ignore[attr-defined]
+        from .personal import your_stocks, your_stocks_line
+
+        # phones with a watchlist get one more line: their own stocks this morning
+        personal: dict[str, list[str]] = {}
+        for sub in self.webpush.subs.values():  # type: ignore[attr-defined]
+            line = your_stocks_line(your_stocks(self, sub.device, now)) if sub.device else ""
+            if line:
+                personal.setdefault(line, []).append(sub.endpoint)
+        mine = {e for ends in personal.values() for e in ends}
+        rest = [s.endpoint for s in self.webpush.subs.values() if s.endpoint not in mine]  # type: ignore[attr-defined]
+        results: dict[str, str] = {}
+        if rest:
+            results |= await self.webpush.push(payload, urgency="normal", only=rest)  # type: ignore[attr-defined]
+        for line, ends in personal.items():
+            p = dict(payload, body=(payload.get("body", "") + "\n" + line).strip()[:600])
+            results |= await self.webpush.push(p, urgency="normal", only=ends)  # type: ignore[attr-defined]
         return any(r == "ok" for r in results.values())
 
     async def _edge_loop(self, stop: asyncio.Event) -> None:
@@ -2143,7 +2169,7 @@ class Engine:
         (an hour later, at the close) are stamped, and the desk is saved to the state database."""
         from .dossier import record_outcomes
 
-        last_outcomes = 0.0
+        last_outcomes = last_rates = 0.0
         while not stop.is_set():
             await _sleep_or_stop(stop, 15)
             now = time.time()
@@ -2155,12 +2181,45 @@ class Engine:
                     record_outcomes(self, now)
                 with contextlib.suppress(Exception):
                     await self.desk.persist()
+                try:
+                    await self.check_confluence(now)
+                except Exception as exc:  # noqa: BLE001 - never stop the desk loop
+                    log.warning("confluence scan failed: %s", exc)
+                if self._eod_due(now):
+                    with contextlib.suppress(Exception):
+                        await self.send_report_cards(now)
+            if now - last_rates >= 300:
+                last_rates = now
+                with contextlib.suppress(Exception):
+                    self.refresh_base_rates(now)
+
+    async def _to_device(self, device: str, payload: dict[str, Any], urgency: str = "high") -> bool:
+        """Push to one phone's subscriptions only (its price alerts, its levels, its report card)."""
+        wp = self.webpush
+        if wp is None:
+            return False
+        only = [s.endpoint for s in wp.subs.values() if s.device == device]  # type: ignore[attr-defined]
+        if not only:
+            return False
+        try:
+            results = await wp.push(payload, urgency=urgency, only=only)  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001 - one phone must never stop the loop
+            return False
+        return any(r == "ok" for r in results.values())
 
     async def check_price_alerts(self, now: float | None = None) -> list[tuple[str, dict[str, Any]]]:
+        """Price alerts that came true, and tracked calls whose stop or target was reached: each
+        goes to its own phone (and a toast in the app), once."""
+        now = now or time.time()
         fired = self.desk.due_price_alerts(self.price_of, now)
         for device, a, q in fired:
-            what = {"above": f"is above ${a['value']:,.2f}", "below": f"is below ${a['value']:,.2f}",
-                    "move": f"is {fmt_pct(q[2] or 0)} on the day (your line: ±{a['value']:g}%)"}[a["kind"]]  # fmt: skip
+            v = a["value"]
+            what = {
+                "above": f"is above ${v:,.2f}",
+                "below": f"is below ${v:,.2f}",
+                "move": f"is {fmt_pct(q[2] or 0)} on the day (your line: ±{v:g}%)",
+                "trail": f"fell {v:g}% from its high of ${a.get('peak') or 0:,.2f}",
+            }[a["kind"]]
             title = f"🔔 {a['symbol']} {what}"
             body = (
                 f"${q[1]:,.2f}"
@@ -2170,16 +2229,93 @@ class Engine:
             self._broadcast(
                 "price_alert", {"device": device, "symbol": a["symbol"], "title": title, "body": body}
             )
-            wp = self.webpush
-            if wp is not None:
-                only = [s.endpoint for s in wp.subs.values() if s.device == device]  # type: ignore[attr-defined]
-                if only:
-                    payload = {"id": f"pa-{a['id']}", "title": title, "body": body, "severity": "HIGH", "kind": "system",
-                               "tickers": [a["symbol"]], "tag": f"pa-{a['id']}", "ts": now or time.time(),
-                               "open": f"/app/#t={a['symbol']}"}  # fmt: skip
-                    with contextlib.suppress(Exception):
-                        await wp.push(payload, urgency="high", only=only)  # type: ignore[attr-defined]
+            payload = {"id": f"pa-{a['id']}", "title": title, "body": body, "severity": "HIGH", "kind": "system",
+                       "tickers": [a["symbol"]], "tag": f"pa-{a['id']}", "ts": now, "open": f"/app/#t={a['symbol']}"}  # fmt: skip
+            await self._to_device(device, payload)
+        for device, t, which, q in self.desk.due_levels(self.price_of, now):
+            r = (q[1] / t["entry"] - 1.0) * 100.0 * (1 if t["direction"] == "long" else -1)
+            title = f"{'🎯' if which == 'target' else '🛑'} {t['symbol']} hit your {which} (${t[which]:,.2f})"
+            body = f"{t['direction'].title()} from ${t['entry']:,.2f}, now ${q[1]:,.2f} · {fmt_pct(r)} · paper call"
+            self._broadcast(
+                "price_alert", {"device": device, "symbol": t["symbol"], "title": title, "body": body}
+            )
+            payload = {"id": f"lv-{t['id']}-{which}", "title": title, "body": body, "severity": "HIGH", "kind": "system",
+                       "tickers": [t["symbol"]], "tag": f"lv-{t['id']}", "ts": now, "open": f"/app/#t={t['symbol']}"}  # fmt: skip
+            await self._to_device(device, payload)
         return [(d, a) for d, a, _ in fired]
+
+    async def check_confluence(self, now: float | None = None) -> list[Alert]:
+        """When independent kinds of evidence line up on one side of a stock (dossier.py), say so
+        once per stock, side and day: HIGH (pushed) at a combined weight of 7+, else MEDIUM (in the
+        app, and pushed to phones watching the stock). At most 8 pushed a day."""
+        from .dossier import CONF_HIGH_WEIGHT, CONF_KIND_LABEL, confluence_candidates
+
+        now = now or time.time()
+        if self.calendar.market_status(now).get("phase") == "closed":
+            return []
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        st = self.confluence_day
+        if st["day"] != day:
+            saved = self.storage.get_setting(f"confluence:{day}")
+            st.update(json.loads(saved) if saved else {"day": day, "fired": [], "pushed": 0})
+        made = []
+        for c in confluence_candidates(self, now):
+            key = f"{c['symbol']}:{c['side']}"
+            if key in st["fired"]:
+                continue
+            st["fired"].append(key)
+            high = c["weight"] >= CONF_HIGH_WEIGHT and st["pushed"] < 8
+            st["pushed"] += 1 if high else 0
+            li = self.universe.get(c["symbol"])
+            arrow = "▲" if c["side"] == "up" else "▼"
+            kinds = [CONF_KIND_LABEL.get(k, k) for k in c["kinds"]]
+            title = f"{arrow} {c['symbol']}: {', '.join(kinds[:-1])} and {kinds[-1]} line up" + (
+                f" ({li.name[:40]})" if li else ""
+            )
+            body = "\n".join(f"{'▲' if x['side'] == 'up' else '▼'} {x['label']}" for x in c["signals"][:4])
+            q = self.price_of(c["symbol"], 1800, now=now)
+            alert = Alert(
+                kind="confluence", severity=Severity.HIGH if high else Severity.MEDIUM, title=title, body=body,
+                tickers=[c["symbol"]], created=now,
+                edge={"confluence": {k: c[k] for k in ("side", "weight", "against", "kinds", "signals")},
+                      **({"refs": {c["symbol"]: q[1]}} if q else {})},
+            )  # fmt: skip
+            await self.publish(alert)
+            made.append(alert)
+        self.storage.set_setting(f"confluence:{day}", json.dumps(st))
+        return made
+
+    def refresh_base_rates(self, now: float | None = None) -> None:
+        from .dossier import track_record
+
+        self.base_rates = {r["kind"]: r for r in track_record(self, 60, now)["rows"]}
+
+    def _eod_due(self, now: float) -> bool:
+        dt = datetime.fromtimestamp(now, ET)
+        if dt.weekday() >= 5 or dt.date().isoformat() in self.calendar.holidays:
+            return False
+        if not ((16, 5) <= (dt.hour, dt.minute) < (17, 30)):  # a missed card isn't sent at night
+            return False
+        return self.storage.get_setting("eod_sent") != dt.date().isoformat()
+
+    async def send_report_cards(self, now: float | None = None) -> int:
+        """16:05 ET: each phone with a watchlist or tracked calls gets its day in one push."""
+        from .personal import report_card, report_push
+
+        now = now or time.time()
+        self.storage.set_setting("eod_sent", datetime.fromtimestamp(now, ET).date().isoformat())
+        if self.webpush is None or self.dispatcher.paused:
+            return 0
+        sent = 0
+        for device in {s.device for s in self.webpush.subs.values() if s.device}:  # type: ignore[attr-defined]
+            prof = self.desk.profiles.get(device)
+            if not prof or not (prof.get("prefs") or {}).get("eod", True):
+                continue
+            card = report_card(self, device, now)
+            payload = report_push(card) if card else None
+            if payload and await self._to_device(device, payload, urgency="normal"):
+                sent += 1
+        return sent
 
     async def _maintenance(self, stop: asyncio.Event) -> None:
         last_prune = 0.0

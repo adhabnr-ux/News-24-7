@@ -509,3 +509,19 @@ input.key { width: 100%; padding: 15px; border-radius: 16px; border: 1px solid v
 .kv .sub { font-weight: 400; margin-top: 2px; }
 .qh { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
 .qh input { width: 104px; padding: 8px; border: 0; border-radius: 10px; color: var(--cream); background: rgba(255, 255, 255, .08); font: 500 13px var(--sans); color-scheme: dark; }
+/* run 2: base rates, confluence, relative strength, catch-up */
+.gold { color: var(--gold); }
+.base { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.base b { font-weight: 700; }
+.conf { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 2px; }
+.conf .ck { padding: 4px 9px; border-radius: 999px; font: 600 11px var(--sans); letter-spacing: .04em; color: var(--cream); background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 1px rgba(255, 217, 160, .3); }
+.conf .faint { font-size: 11.5px; margin-left: 2px; }
+.rel { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.rel b { font-weight: 700; }
+.rel .rread { color: var(--cream); font-weight: 600; }
+.col { display: flex; flex-direction: column; gap: 6px; }
+.away { margin-bottom: 16px; }
+.away-in { position: relative; padding: 16px 18px 10px; border-radius: 22px; }
+.away-in .x { position: absolute; top: 12px; right: 12px; }
+.away-n { margin: 8px 0 4px; font: 400 24px/1.15 var(--serif); }
+.away .li[data-id] { cursor: pointer; }

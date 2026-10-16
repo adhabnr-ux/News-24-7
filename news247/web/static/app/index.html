@@ -94,6 +94,7 @@
       <label class="search glass rv"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="q" type="search" enterkeyhint="search" placeholder="Ticker, company or headline" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Search"></label>
       <div id="searchRes"></div>
+      <div class="away" id="away" hidden></div>
       <div id="featureWrap"></div>
       <div class="sec-title rv"><h2>The tape</h2><div class="seg" id="tapeSeg" role="tablist" aria-label="Filter the tape"><i class="thumb" aria-hidden="true"></i><button data-f="all" class="on" role="tab" aria-selected="true">All</button><button data-f="mine" role="tab" aria-selected="false">Mine</button><button data-f="small" role="tab" aria-selected="false">Small caps</button></div></div>
       <div id="alerts"></div>
@@ -110,6 +111,7 @@
     <div class="stage">
       <div class="sec-title rv"><h2>Overnight</h2><span>since the last close</span></div>
       <div class="panel glass tilt rv" id="bOvernight"></div>
+      <div id="bMineWrap" hidden><div class="sec-title"><h2>Your stocks</h2><span>this morning</span></div><div class="panel glass tilt" id="bMine"></div></div>
       <div id="bThemesWrap" class="rv"><div class="sec-title"><h2>In focus</h2></div><div class="row" id="bThemes"></div></div>
       <div class="sec-title rv"><h2>The market</h2><span id="bMkt"></span></div>
       <div class="tiles rv" id="bIdx"></div>
@@ -182,6 +184,7 @@
       <h1 class="display">The <em>desk</em></h1>
     </div></div>
     <div class="stage">
+      <div id="dTodayWrap" hidden><div class="sec-title"><h2>Today</h2><span>your day so far</span></div><div class="panel glass tilt" id="dToday"></div></div>
       <div class="sec-title rv"><h2>Watchlist</h2><span>live</span></div>
       <div class="panel glass tilt rv" id="dWatch"></div>
       <div class="sec-title rv"><h2>Price alerts</h2><span>this phone only</span></div>

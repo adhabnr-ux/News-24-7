@@ -106,6 +106,9 @@ class WebServer:
         app.router.add_get("/api/smart", self.api_smart)
         app.router.add_get("/api/sectors", self.api_sectors)
         app.router.add_get("/api/record", self.api_record)
+        app.router.add_get("/api/implied/{sym}", self.api_implied)
+        app.router.add_get("/api/peers/{sym}", self.api_peers)
+        app.router.add_get("/api/report", self.api_report)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
         app.router.add_post("/api/push/test", self.api_push_test)
@@ -510,7 +513,12 @@ class WebServer:
         )
 
     async def api_brief(self, request: web.Request) -> web.Response:
-        return _json(self.engine.brief())
+        from ..personal import your_stocks
+
+        b = self.engine.brief()
+        dev = self._device(request)
+        b["mine"] = your_stocks(self.engine, dev) if dev else []
+        return _json(b)
 
     async def api_scorecard(self, request: web.Request) -> web.Response:
         """Who knew first: every big move of a day with its verdict (``?date=YYYY-MM-DD``,
@@ -681,6 +689,30 @@ class WebServer:
         from ..dossier import sectors
 
         return _json(sectors(self.engine))
+
+    async def api_implied(self, request: web.Request) -> web.Response:
+        """The move the options market prices by each of the next expiries (ATM straddle)."""
+        from ..desk import clean_symbol
+        from ..personal import implied_move
+
+        sym = clean_symbol(request.match_info["sym"])
+        if not sym:
+            raise web.HTTPBadRequest(text="not a symbol")
+        return _json(await implied_move(self.engine, sym))
+
+    async def api_peers(self, request: web.Request) -> web.Response:
+        from ..dossier import peers
+
+        return _json(peers(self.engine, request.match_info["sym"]))
+
+    async def api_report(self, request: web.Request) -> web.Response:
+        """This phone's day so far: watchlist, tracked calls, what fired, how the alerts did."""
+        from ..personal import report_card
+
+        dev = self._device(request)
+        if not dev:
+            raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
+        return _json(report_card(self.engine, dev) or {})
 
     async def api_record(self, request: web.Request) -> web.Response:
         from ..dossier import track_record

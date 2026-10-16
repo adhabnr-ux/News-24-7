@@ -144,6 +144,19 @@ function footRow(a) {
   if (a.url) parts.push(`<a href="${esc(a.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${quote ? "Quote" : "Source"} ↗</a>`);
   return parts.length ? `<div class="foot">${parts.join("")}</div>` : "";
 }
+function baseRow(a) {
+  const b = a.edge?.base;
+  if (!b) return "";
+  const bits = [b.h1 && `<b class="${b.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(b.h1.hit * 100)}%</b> in 1h`, b.close && `<b class="${b.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(b.close.hit * 100)}%</b> by the close`].filter(Boolean);
+  const n = Math.max(b.h1?.n || 0, b.close?.n || 0);
+  return `<div class="base">Alerts like this went their way ${bits.join(", ")} <span class="faint">· ${n} graded</span></div>`;
+}
+const CONF_KIND = { news: "Headlines", options: "Options", insider: "Insider", tape: "Tape", macro: "Macro" };
+function confRow(a) {
+  const c = a.edge?.confluence;
+  if (!c) return "";
+  return `<div class="conf"><span class="dir ${c.side}">${c.side === "up" ? "▲ Bullish" : "▼ Bearish"}</span>${c.kinds.map((k) => `<span class="ck">${esc(CONF_KIND[k] || k)}</span>`).join("")}<span class="faint num">weight ${c.weight}${c.against ? ` vs ${c.against}` : ""}</span></div>`;
+}
 function alertHTML(a, opts = {}) {
   const an = a.analysis || {}, it = a.item || {};
   const src = a.edge?.radar ? "RADAR" : a.kind === "price" ? "PRICE ACTION" : a.kind === "system" ? "FORETAPE" : (it.source || a.kind).toUpperCase();
@@ -156,7 +169,7 @@ function alertHTML(a, opts = {}) {
       <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
-      ${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${footRow(a)}
+      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${precLine(a)}${baseRow(a)}${footRow(a)}
     </div>
   </article>`;
 }
@@ -251,6 +264,14 @@ async function loadBrief() {
       ${a.smallcap ? `<div class="bcap"><span class="capb">${esc(a.smallcap.band)}</span><span>${esc(a.smallcap.cap)}</span><span class="${a.smallcap.direction === "down" ? "neg" : a.smallcap.direction === "up" ? "pos" : ""}">${esc(a.smallcap.move_text || "")}</span></div>` : ""}</div>
       <span class="${a.direction === "down" ? "neg" : a.direction === "up" ? "pos" : "faint"}" style="font-size:13px">${a.direction === "down" ? "▼" : a.direction === "up" ? "▲" : "◆"}</span></div>`).join("")
     : `<div class="li"><span class="muted">Nothing overnight.</span></div>`;
+  const mineRows = b.mine || [];
+  $("bMineWrap").hidden = !mineRows.length;
+  $("bMine").innerHTML = mineRows.map((r) => `<div class="li" data-tk="${esc(r.symbol)}" role="button"><span class="sym" style="width:64px">${esc(r.symbol)}</span>
+      <div class="grow">${r.news ? `<div style="font-weight:600;line-height:1.35">${esc(r.news.title)}</div><div class="sub">${esc(outlet(r.news.source))}</div>` : `<div class="sub">No overnight headline</div>`}
+      ${r.earnings ? `<div class="sub gold">Reports ${r.earnings.in_days === 0 ? "today" : r.earnings.in_days === 1 ? "tomorrow" : "in 2 days"}, ${esc(r.earnings.when || "")}</div>` : ""}
+      ${(r.events || []).map((e) => `<div class="sub gold">${esc(e.title)}${e.time ? " · " + esc(e.time) + " ET" : ""}</div>`).join("")}
+      ${r.alerts ? `<div class="sub">${r.alerts} alert${r.alerts > 1 ? "s" : ""} since the close</div>` : ""}</div>
+      <span class="chg num ${cls(r.chg)}">${pct(r.chg)}</span></div>`).join("");
   $("bThemesWrap").hidden = !b.themes.length;
   $("bThemes").innerHTML = b.themes.map((t) => `<span class="chip" style="color:var(--cream)">${esc(t)}</span>`).join("");
   $("bMkt").textContent = marketText(b.market);
@@ -527,7 +548,7 @@ async function openSheet(id) {
   const blocks = [
     `<div class="meta" style="--sev:${SEV[a.severity]}"><span class="sev">${esc(a.severity)}</span><span>${esc(e.radar ? "RADAR" : (it.source || a.kind).toUpperCase())}</span><span class="ago">${ago(a.created)} ago</span></div>`,
     `<h2>${esc(a.title)}</h2>`,
-    an.summary ? `<p class="muted" style="font-size:15.5px">${esc(an.summary)}</p>` : a.body ? `<p class="muted" style="white-space:pre-line">${esc(a.body)}</p>` : "",
+    an.summary ? `<p class="muted" style="font-size:15.5px">${esc(an.summary)}</p>` : a.body && !e.confluence ? `<p class="muted" style="white-space:pre-line">${esc(a.body)}</p>` : "",
     capBlock,
     rel.length ? `<h4>The headline behind it</h4><div class="panel glass">${rel.map((x) => `<div class="li"><div class="grow">
         <a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a>
@@ -540,6 +561,12 @@ async function openSheet(id) {
         ${p.direct?.length ? `<div class="sub" style="margin-top:14px">Direct</div><div class="tks" style="margin-top:7px">${p.direct.map((t) => `<span class="tk">${esc(t)}${since[t] != null ? ` <small class="${cls(since[t])}">${pct(since[t])} since alert</small>` : ""}</span>`).join("")}</div>` : ""}
         ${p.read_through?.length ? `<div class="sub" style="margin-top:14px">Read-through</div><div class="tks" style="margin-top:7px">${p.read_through.map((t) => `<span class="tk rt">${esc(t)}</span>`).join("")}</div>` : ""}
         ${p.themes?.length ? `<div class="sub" style="margin-top:14px">${esc(p.themes.join(" · "))}</div>` : ""}</div>` : "",
+    e.confluence ? `<h4>What lines up</h4><div class="panel glass padded">${confRow(a)}${e.confluence.signals.map((x) => `<div class="sig"${x.id ? ` data-id="${esc(x.id)}" role="button"` : ""}><span class="${x.side === "up" ? "pos" : "neg"}">${x.side === "up" ? "▲" : "▼"}</span><div class="grow"><div>${esc(x.label)}</div><div class="sub">${esc(KIND_LABEL[x.kind] || x.kind)} · weighs ${x.weight}${x.ts ? ` · ${ago(x.ts)} ago` : ""}</div></div></div>`).join("")}
+      <div class="sub" style="margin-top:10px">Fires when 3+ independent kinds of evidence line up on one side (weight 4+, at least one from the last 2 hours); pushed at weight 7+. Each stock and side once a day.</div></div>` : "",
+    e.base ? `<h4>How alerts like this did</h4><div class="panel glass">
+      ${e.base.h1 ? `<div class="kv"><span>An hour later</span><b class="num"><span class="${e.base.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.h1.hit * 100)}%</span> went its way · median ${pct(e.base.h1.median)} · ${e.base.h1.n} graded</b></div>` : ""}
+      ${e.base.close ? `<div class="kv"><span>At the close</span><b class="num"><span class="${e.base.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.close.hit * 100)}%</span> went its way · median ${pct(e.base.close.median)} · ${e.base.close.n} graded</b></div>` : ""}
+      <div class="sub" style="padding:4px 0 12px">${esc(e.base.label)} alerts over the last 60 days, each graded on its own stock from its own reference price. A base rate, not a forecast.</div></div>` : "",
     e.precedents?.length ? `<h4>Precedents</h4><div class="panel glass">${e.precedents.map((x) => `<div class="li"><div class="grow">
         <div class="sub">${esc(prettyDate(x.date))}, ${esc(x.date.slice(0, 4))} · ${esc(x.category)}${x.first_source ? " · first: " + esc(x.first_source) : ""}</div>
         <div style="font-weight:600;margin:3px 0">${esc(x.headline)}</div><div class="${/(^|\s)[-−]\d/.test(x.move) ? "neg" : "pos"}" style="font-size:13.5px">${esc(x.move)}</div></div></div>`).join("")}</div>` : "",
@@ -639,8 +666,9 @@ function renderStrip() {
 }
 const fmtPx = (v) => (v == null ? "—" : "$" + (v >= 1000 ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : v >= 1 ? v.toFixed(2) : v.toFixed(4)));
 const money = (v) => v == null ? "—" : v >= 1e9 ? "$" + (v / 1e9).toFixed(1) + "B" : v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M" : "$" + Math.round(v / 1e3) + "K";
-const CATS = [["news", "Headlines"], ["radar", "Radar & ignition"], ["options", "Options flow"], ["insider", "Insider buys"], ["macro", "Macro & indexes"]];
-const KIND_LABEL = { news: "Headline", radar: "Radar", options: "Options", insider: "Insider buy", macro: "Macro", tape: "Tape", system: "System", ignition: "Ignition" };
+const CATS = [["news", "Headlines"], ["radar", "Radar & ignition"], ["options", "Options flow"], ["insider", "Insider buys"], ["macro", "Macro & indexes"], ["confluence", "Confluence"]];
+const FLOORS = [["", "All the server sends"], ["HIGH", "HIGH and up"], ["CRITICAL", "CRITICAL only"]];
+const KIND_LABEL = { news: "Headline", radar: "Radar", options: "Options", insider: "Insider buy", macro: "Macro", tape: "Tape", system: "System", ignition: "Ignition", confluence: "Confluence" };
 
 function renderDesk() {
   if (!desk) return;
@@ -652,7 +680,7 @@ function renderDesk() {
       : `<div class="li"><span class="muted">Empty. Add tickers above, or tap ☆ Watch on any stock's page. Alerts on your stocks get the <b>Mine</b> filter on the tape, and reach your lock screen even at MEDIUM.</span></div>`);
   const pa = desk.price_alerts;
   $("dAlerts").innerHTML = pa.length ? pa.map((a) => {
-    const line = a.kind === "above" ? `above ${fmtPx(a.value)}` : a.kind === "below" ? `below ${fmtPx(a.value)}` : `moves ±${a.value}% on the day`;
+    const line = a.kind === "above" ? `above ${fmtPx(a.value)}` : a.kind === "below" ? `below ${fmtPx(a.value)}` : a.kind === "trail" ? `falls ${a.value}% from its high${a.peak ? ` (high ${fmtPx(a.peak)}, fires under ${fmtPx(a.peak * (1 - a.value / 100))})` : ""}` : `moves ±${a.value}% on the day`;
     const now = a.price != null ? `now ${fmtPx(a.price)}${a.chg_day != null ? ` · ${pct(a.chg_day)}` : ""}` : "no live price yet";
     return `<div class="li${a.fired ? " done" : ""}"><span class="sym" style="width:64px" data-tk="${esc(a.symbol)}" role="button">${esc(a.symbol)}</span>
       <div class="grow"><div>${esc(line)}</div><div class="sub">${a.fired ? `✓ fired ${ago(a.fired)} ago at ${fmtPx(a.fired_price)}` : esc(now)}</div></div>
@@ -661,8 +689,8 @@ function renderDesk() {
   const tr = desk.tracked, rec = desk.record;
   $("dTracked").innerHTML = (tr.length ? tr.map((t) => `<div class="li"><span class="sym" style="width:64px" data-tk="${esc(t.symbol)}" role="button">${esc(t.symbol)}</span>
       <div class="grow"><div><span class="${t.direction === "long" ? "pos" : "neg"}">${t.direction === "long" ? "▲ Long" : "▼ Short"}</span> from ${fmtPx(t.entry)} · now ${fmtPx(t.price)}</div>
-      <div class="sub">${ago(t.ts)} ago${t.alert_id ? ` · <span data-id="${esc(t.alert_id)}" role="button" class="lnk">from an alert</span>` : ""}${t.note ? " · " + esc(t.note) : ""}</div></div>
-      <span class="chg num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</span><button class="btn ghost small" data-act="tr-close" data-s="${esc(t.id)}">Close</button></div>`).join("")
+      <div class="sub">${ago(t.ts)} ago${t.alert_id ? ` · <span data-id="${esc(t.alert_id)}" role="button" class="lnk">from an alert</span>` : ""}${t.note ? " · " + esc(t.note) : ""}${levelsText(t)}</div></div>
+      <span class="chg num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</span><div class="col"><button class="btn ghost small" data-act="tr-levels" data-s="${esc(t.id)}">Levels</button><button class="btn ghost small" data-act="tr-close" data-s="${esc(t.id)}">Close</button></div></div>`).join("")
     : `<div class="li"><span class="muted">No open calls. Tap ▲ Track on an alert or a stock's page: it takes the live price as entry and follows the P&amp;L, so you learn which of your reads actually work. Paper only.</span></div>`)
     + (rec.closed ? `<div class="kv"><span>Closed calls</span><b class="num">${rec.closed} · ${rec.wins} won (${Math.round(rec.wins / rec.closed * 100)}%) · avg <span class="${cls(rec.avg_pnl_pct)}">${pct(rec.avg_pnl_pct)}</span></b></div>`
       + desk.closed.slice(0, 8).map((c) => `<div class="li done"><span class="sym" style="width:64px" data-tk="${esc(c.symbol)}" role="button">${esc(c.symbol)}</span>
@@ -671,6 +699,9 @@ function renderDesk() {
   const pr = desk.prefs, q = pr.quiet || {};
   $("dPrefs").innerHTML = `<div class="sub" style="padding-top:12px">What may push to this phone</div>
     <div class="row" style="padding:10px 0 4px">${CATS.map(([k, l]) => `<button class="btn ghost small${pr.cats[k] !== false ? " sel" : ""}" data-act="cat" data-s="${k}" aria-pressed="${pr.cats[k] !== false}">${l}</button>`).join("")}</div>
+    <div class="sub" style="padding-top:8px">This phone's floor</div>
+    <div class="row" style="padding:10px 0 4px">${FLOORS.map(([k, l]) => `<button class="btn ghost small${(pr.min_sev || "") === k ? " sel" : ""}" data-act="floor" data-s="${k}">${l}</button>`).join("")}</div>
+    <div class="kv"><span>End-of-day report card<div class="sub">16:05 ET: your watchlist's day, your calls, what fired, how the alerts did</div></span><b><button class="btn ghost small${pr.eod !== false ? " sel" : ""}" data-act="eod">${pr.eod !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Watchlist pushes<div class="sub">a MEDIUM alert on a stock you watch still reaches your lock screen</div></span><b><button class="btn ghost small${pr.watch_push ? " sel" : ""}" data-act="wpush">${pr.watch_push ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Quiet hours (ET)<div class="sub">${pr.quiet ? `only CRITICAL between ${esc(q.start)} and ${esc(q.end)}` : "off: everything you allow, any hour"}</div></span>
       <b class="qh"><input type="time" id="qStart" value="${esc(q.start || "22:00")}"><input type="time" id="qEnd" value="${esc(q.end || "07:00")}">
@@ -686,6 +717,45 @@ async function loadRecord() {
       : `<div class="li"><span class="muted">Every alert is graded an hour later and at its session's close, against its own reference price. The first grades land after the next session; this fills in on its own.</span></div>`;
   } catch (_) { $("dRecord").innerHTML = `<div class="li"><span class="muted">Track record unavailable.</span></div>`; }
 }
+
+// the Desk's "Today": this phone's day so far (also pushed at 16:05 ET as the report card)
+async function loadReport() {
+  let r;
+  try { r = await api("/api/report"); } catch (_) { return; }
+  $("dTodayWrap").hidden = !r.date;
+  if (!r.date) return;
+  const w = r.watch, t = r.tracked, al = r.alerts;
+  $("dToday").innerHTML = [
+    w.n ? `<div class="kv"><span>Watchlist</span><b class="num">${w.up} of ${w.n} up${w.best ? ` · best <span data-tk="${esc(w.best.symbol)}" role="button">${esc(w.best.symbol)}</span> <span class="${cls(w.best.chg)}">${pct(w.best.chg)}</span>` : ""}${w.worst ? ` · worst <span data-tk="${esc(w.worst.symbol)}" role="button">${esc(w.worst.symbol)}</span> <span class="${cls(w.worst.chg)}">${pct(w.worst.chg)}</span>` : ""}</b></div>` : "",
+    t.n ? `<div class="kv"><span>Tracked calls</span><b class="num">${t.n} open · avg <span class="${cls(t.avg)}">${pct(t.avg)}</span></b></div>` : "",
+    r.fired.length || r.levels.length ? `<div class="kv"><span>Fired today</span><b class="num">${r.fired.length} price alert${r.fired.length === 1 ? "" : "s"} · ${r.levels.length} stop/target</b></div>` : "",
+    `<div class="kv"><span>Foretape on your stocks</span><b class="num">${al.graded ? `${al.right} of ${al.graded} went the alert's way by the close` : "none graded at the close yet"}</b></div>`,
+  ].join("");
+}
+
+// ------------------------------------------------------------------ while you were away
+const SEEN_KEY = "ft_seen_at";
+const markSeen = () => store.set(SEEN_KEY, String(Date.now() / 1000));
+function renderAway() {
+  const since = +(store.get(SEEN_KEY) || 0), now = Date.now() / 1000;
+  if (!since || now - since < 1200) { markSeen(); return; }   // gone under 20 minutes: nothing to catch up on
+  const missed = alerts.filter((a) => a.created > since && a.kind !== "system");
+  const movers = (desk?.watchlist || []).filter((w) => w.chg_day != null && Math.abs(w.chg_day) >= 2).sort((x, y) => Math.abs(y.chg_day) - Math.abs(x.chg_day)).slice(0, 6);
+  markSeen();
+  if (!missed.length && !movers.length) return;
+  const rank = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
+  const top = [...missed].sort((x, y) => (rank[y.severity] - rank[x.severity]) || (y.created - x.created)).slice(0, 3);
+  const counts = ["CRITICAL", "HIGH"].map((v) => [v, missed.filter((a) => a.severity === v).length]).filter(([, n]) => n);
+  const atLeast = missed.length && missed.length === alerts.filter((a) => a.kind !== "system").length ? "at least " : "";
+  $("away").innerHTML = `<div class="glass away-in"><button class="x" data-act="away-x" aria-label="Dismiss">✕</button>
+    <div class="eyebrow" style="color:var(--gold)">While you were away · ${esc(dur(now - since).replace(/ \d+s$/, ""))}</div>
+    <div class="away-n">${missed.length ? `${atLeast}${missed.length} alert${missed.length > 1 ? "s" : ""}${counts.length ? " · " + counts.map(([v, n]) => `${n} ${v}`).join(" · ") : ""}` : "No new alerts"}</div>
+    ${top.map((a) => `<div class="li" data-id="${esc(a.id)}" role="button"><span class="dot-sev" style="background:${SEV[a.severity]};color:${SEV[a.severity]}"></span><div class="grow"><div style="font-weight:600;line-height:1.35">${esc(a.title)}</div><div class="sub">${esc(a.severity)} · ${ago(a.created)} ago</div></div></div>`).join("")}
+    ${movers.length ? `<div class="sub" style="margin-top:10px">Your stocks</div><div class="tks" style="margin-top:6px">${movers.map((w) => `<span class="tk mine" data-tk="${esc(w.symbol)}" role="button">${esc(w.symbol)} <small class="${cls(w.chg_day)}">${pct(w.chg_day)}</small></span>`).join("")}</div>` : ""}</div>`;
+  $("away").hidden = false;
+}
+setInterval(() => { if (!document.hidden && TOKEN && !$("main").hidden) markSeen(); }, 60000);
+addEventListener("pagehide", markSeen);
 
 // ------------------------------------------------------------------ the ticker page: everything about one stock
 const LEAN = { bullish: ["pos", "▲ Evidence leans bullish"], bearish: ["neg", "▼ Evidence leans bearish"], mixed: ["", "◆ Evidence is mixed"], none: ["", "No directional evidence"] };
@@ -706,7 +776,8 @@ function tickerHTML(d) {
   const head = `<div class="meta"><span class="src">${esc([d.cap, d.band, d.sector].filter(Boolean).join(" · ") || "Stock")}</span>${d.otc ? `<span class="neg">OTC</span>` : ""}${q ? `<span class="ago">${ago(q.ts)} ago</span>` : ""}</div>
     <h2>${sym}${d.name ? ` <span class="tname">${esc(d.name)}</span>` : ""}</h2>
     ${q ? `<div class="tquote"><b class="num">${fmtPx(q.price)}</b><span class="num ${cls(q.chg_day)}">${pct(q.chg_day)}</span>${d.range?.low ? `<small class="faint num">day ${fmtPx(d.range.low)} – ${fmtPx(d.range.high)}</small>` : ""}</div>`
-      : `<div class="sub" style="margin:6px 0 4px">No live price yet. ${watching ? "It's on your watchlist, so it's quoted from now on." : "Watching it adds it to the live quotes."}</div>`}`;
+      : `<div class="sub" style="margin:6px 0 4px">No live price yet. ${watching ? "It's on your watchlist, so it's quoted from now on." : "Watching it adds it to the live quotes."}</div>`}
+`;
   const acts = `<div class="acts">
     <button class="btn ghost small${watching ? " sel" : ""}" data-act="watch" data-s="${sym}">${watching ? "★ Watching" : "☆ Watch"}</button>
     <button class="btn ghost small" data-act="pa-form">🔔 Price alert</button>
@@ -714,12 +785,20 @@ function tickerHTML(d) {
     <button class="btn ghost small" data-act="track" data-s="${sym}" data-dir="short">▼ Short</button>
     <button class="btn ghost small" data-act="share-t" data-s="${sym}" data-title="${esc(d.symbol + (d.name ? " · " + d.name : ""))}">Share ↗</button></div>
     <div class="panel glass padded paform" id="paForm" hidden>
-      <div class="addrow"><select id="paKind"><option value="above">Above $</option><option value="below">Below $</option><option value="move">Moves ±% today</option></select>
+      <div class="addrow"><select id="paKind"><option value="above">Above $</option><option value="below">Below $</option><option value="move">Moves ±% today</option><option value="trail">Falls % from high</option></select>
       <input id="paVal" class="key" inputmode="decimal" placeholder="${q ? q.price.toFixed(2) : "value"}"><button class="btn ghost small sel" data-act="pa-save" data-s="${sym}">Set</button></div>
       <div class="sub">Checked every 15 seconds against the live price; pushed to this phone only, once.</div></div>
-    ${mine_pa.length || mine_tr.length ? `<div class="panel glass">${mine_pa.map((a) => `<div class="kv"><span>🔔 ${a.kind === "move" ? `±${a.value}% on the day` : `${a.kind} ${fmtPx(a.value)}`}</span><b><button class="x" data-act="pa-rm" data-s="${esc(a.id)}">✕</button></b></div>`).join("")}
-      ${mine_tr.map((t) => `<div class="kv"><span>${t.direction === "long" ? "▲ Long" : "▼ Short"} from ${fmtPx(t.entry)} · ${ago(t.ts)} ago</span><b class="num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</b></div>`).join("")}</div>` : ""}`;
+    ${mine_pa.length || mine_tr.length ? `<div class="panel glass">${mine_pa.map((a) => `<div class="kv"><span>🔔 ${a.kind === "move" ? `±${a.value}% on the day` : a.kind === "trail" ? `falls ${a.value}% from its high` : `${a.kind} ${fmtPx(a.value)}`}</span><b><button class="x" data-act="pa-rm" data-s="${esc(a.id)}">✕</button></b></div>`).join("")}
+      ${mine_tr.map((t) => `<div class="kv"><span>${t.direction === "long" ? "▲ Long" : "▼ Short"} from ${fmtPx(t.entry)} · ${ago(t.ts)} ago${levelsText(t)}</span><b class="num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</b></div>`).join("")}</div>` : ""}`;
   const chart = (d.series || []).length >= 3 ? sparkline({ [d.symbol]: d.series }, -1) : "";
+  const rel = d.rel, er = d.earnings;
+  const relLine = rel && (rel.spy != null || rel.sector != null) ? `<div class="rel"><span>vs S&amp;P <b class="num ${cls(rel.vs_spy)}">${rel.vs_spy != null ? (rel.vs_spy > 0 ? "+" : "") + rel.vs_spy.toFixed(1) : "—"}</b></span>${rel.sector != null ? `<span>vs ${esc(rel.sector_name)} <b class="num ${cls(rel.vs_sector)}">${(rel.vs_sector > 0 ? "+" : "") + rel.vs_sector.toFixed(1)}</b></span>` : ""}${rel.read ? `<span class="rread">${esc(rel.read)}</span>` : ""}</div>` : "";
+  const earnLine = er ? `<div class="sub gold" style="margin-top:6px">Reports ${esc(prettyDate(er.date))}${er.when ? ", " + esc(er.when) : ""} · ${inDays(er.in_days)}</div>` : "";
+  const pr = d.peers || {};
+  const peerBlock = (pr.rows || []).length ? `<h4>Peers · ${esc(pr.group || "")}</h4><div class="panel glass">
+    ${pr.laggards?.length ? `<div class="sub" style="padding:12px 0 4px">${esc(d.symbol)} is ${pct(pr.me)}; these haven't moved yet: <b class="gold">${pr.laggards.map((x) => esc(x.symbol)).join(", ")}</b>. Where a sympathy move would come from, if it comes.</div>` : ""}
+    ${pr.rows.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span><div class="grow"><div>${esc(x.name)}</div><div class="sub">${esc(x.cap)}${(pr.laggards || []).some((l) => l.symbol === x.symbol) ? ` · <span class="gold">not moved yet</span>` : ""}</div></div>${x.chg != null ? barHTML(x.chg) : ""}<span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("")}
+    ${pr.avg != null ? `<div class="kv"><span>Peers on average</span><b class="num ${cls(pr.avg)}">${pct(pr.avg)}</b></div>` : ""}</div>` : "";
   const why = (d.why || []).length ? `<h4>Why it's moving</h4><div class="panel glass">${d.why.map((x) => `<div class="li"><div class="grow"><a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a><div class="sub">${esc(outlet(x.source))} · ${esc(x.age)} ago</div></div></div>`).join("")}</div>` : "";
   const ign = d.radar?.ignition, o = d.options;
   const tape = ign || d.radar?.change_pct != null || o ? `<h4>On the tape</h4><div class="panel glass">
@@ -730,7 +809,7 @@ function tickerHTML(d) {
   const al = (d.alerts || []).length ? `<h4>Foretape on ${sym}</h4><div class="panel glass">${d.alerts.slice(0, 12).map((a) => {
     const oc = a.outcome || {}, dir = a.direction === "up" ? `<span class="pos">▲</span>` : a.direction === "down" ? `<span class="neg">▼</span>` : "";
     const grade = oc.close != null ? `close ${pct(oc.close)}` : oc.h1 != null ? `1h ${pct(oc.h1)}` : "";
-    return `<div class="li" data-id="${esc(a.id)}" role="button"><div class="grow"><div class="sub">${esc(a.severity)} · ${esc(KIND_LABEL[a.kind] || a.kind)} · ${ago(a.created)} ago</div><div style="font-weight:600">${dir} ${esc(a.title)}</div></div>
+    return `<div class="li" data-id="${esc(a.id)}" role="button"><div class="grow"><div class="sub">${esc(a.severity)} · ${esc(KIND_LABEL[a.kind] || a.kind)} · ${ago(a.created)} ago</div><div style="font-weight:600">${/^[▲▼]/.test(a.title) ? "" : dir + " "}${esc(a.title)}</div></div>
       <span class="chg num ${cls(a.since)}" style="width:auto;min-width:64px">${a.since != null ? pct(a.since) : ""}${grade ? `<small class="rsess">${grade}</small>` : ""}</span></div>`;
   }).join("")}<div class="sub" style="padding:4px 0 12px">The % is the move since each alert, from its own reference price.</div></div>` : "";
   const ins = (d.insider || []).length ? `<h4>Insider buys</h4><div class="panel glass">${d.insider.map((x) => `<div class="li"><div class="grow">${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a>` : esc(x.title)}<div class="sub">Form 4 · ${ago(x.detected)} ago</div></div></div>`).join("")}</div>` : "";
@@ -740,7 +819,8 @@ function tickerHTML(d) {
     ${d.market_cap ? `<div class="kv"><span>Market cap</span><b class="num">${esc(d.cap)} · ${esc(d.band)}</b></div>` : ""}
     ${d.industry || d.sector ? `<div class="kv"><span>Industry</span><b>${esc(d.industry || d.sector)}</b></div>` : ""}
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
-  return [head, acts, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, al, ins, cal, news, facts].filter(Boolean).join("");
+  const implied = `<h4>What options price in</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>`;
+  return [head + relLine + earnLine, acts, chart ? `<h4>Recent tape</h4>${chart}` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0;
 async function openTicker(sym) {
@@ -753,6 +833,23 @@ async function openTicker(sym) {
   if (n !== tickerReq) return;  // a newer tap won
   showSheet(tickerHTML(d));
   $("sheet").dataset.sym = d.symbol;
+  loadImplied(d.symbol);
+}
+// the at-the-money straddle by expiry: the move the options market is paying for
+async function loadImplied(sym) {
+  let r;
+  try { r = await api("/api/implied/" + encodeURIComponent(sym)); } catch (_) { r = { available: false, why: "Couldn't read it." }; }
+  const el = $("implied");
+  if (!el || $("sheet").dataset.sym !== sym) return;
+  if (!r.available) { el.innerHTML = `<div class="li"><span class="muted">${esc(r.why || "Not available.")}</span></div>`; return; }
+  const dt = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  el.innerHTML = r.rows.map((x) => `<div class="kv"><span>By ${esc(dt(x.expiry))} <span class="sub">${x.dte}d${x.earnings ? ` · <span class="gold">earnings inside</span>` : ""}</span></span>
+      <b class="num">±${x.move_pct.toFixed(1)}% <span class="sub">${fmtPx(x.low)} – ${fmtPx(x.high)}</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">The at-the-money straddle (the $${esc(String(r.rows[0].strike))} call + put)${r.iv30 ? `; 30-day implied vol ${r.iv30}%` : ""}. ${r.rows.some((x) => !x.quoted) ? "Some from last trades, not live quotes. " : ""}${esc(r.source || "")}.</div>`;
+}
+function levelsText(t) {
+  const bit = (w) => t[w] != null ? ` · ${w} ${fmtPx(t[w])}${t[w + "_hit"] ? " ✓" : ""}` : "";
+  return bit("stop") + bit("target");
 }
 async function refreshTickerSheet() {
   const sym = $("sheet").dataset.sym;
@@ -774,7 +871,7 @@ async function onAct(el) {
   else if (a === "pa-save") {
     const kind = $("paKind").value, value = parseFloat($("paVal").value);
     if (!(value > 0)) { toast("Enter a price (or a % for a move)"); return; }
-    if (await deskEdit("alert_add", { symbol: s, kind, value })) { toast(`🔔 Set: ${s} ${kind === "move" ? `moves ±${value}%` : `${kind} $${value}`}`); refreshTickerSheet(); }
+    if (await deskEdit("alert_add", { symbol: s, kind, value })) { toast(`🔔 Set: ${s} ${kind === "move" ? `moves ±${value}%` : kind === "trail" ? `falls ${value}% from its high` : `${kind} $${value}`}`); refreshTickerSheet(); }
   }
   else if (a === "pa-rm") { await deskEdit("alert_remove", { id: s }); refreshTickerSheet(); }
   else if (a === "track") {
@@ -784,6 +881,17 @@ async function onAct(el) {
   else if (a === "tr-close") { const r = await deskEdit("track_close", { id: s }); const c = r?.closed?.[0]; if (c) toast(`Closed ${c.symbol} ${pct(c.pnl_pct)}`); }
   else if (a === "cat") { const on = desk.prefs.cats[s] !== false; await deskEdit("prefs", { cats: { [s]: !on } }); }
   else if (a === "wpush") await deskEdit("prefs", { watch_push: !desk.prefs.watch_push });
+  else if (a === "floor") await deskEdit("prefs", { min_sev: s || null });
+  else if (a === "eod") await deskEdit("prefs", { eod: desk.prefs.eod === false });
+  else if (a === "tr-levels") {
+    const t = desk.tracked.find((x) => x.id === s);
+    if (!t) return;
+    const v = prompt(`${t.symbol} ${t.direction} from $${t.entry}: stop and target, comma separated (blank clears). A ${t.direction === "long" ? "long's stop goes under" : "short's stop goes over"} the entry.`, [t.stop ?? "", t.target ?? ""].join(", "));
+    if (v == null) return;
+    const [stop, target] = v.split(",").map((x) => x.trim().replace(/^\$/, ""));
+    if (await deskEdit("track_levels", { id: s, stop: stop || null, target: target || null })) toast(`${t.symbol}: levels set. You'll get a push when one is reached.`);
+  }
+  else if (a === "away-x") { $("away").hidden = true; }
   else if (a === "quiet") await deskEdit("prefs", { quiet: { start: $("qStart").value, end: $("qEnd").value } });
   else if (a === "quiet-off") await deskEdit("prefs", { quiet: null });
   else if (a === "share-a") share(el.dataset.title || "Foretape alert", location.origin + "/app/#a=" + s);
@@ -1090,7 +1198,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -1131,7 +1239,10 @@ $("nextCat").onclick = () => go("calendar");
 $("ticker").onclick = () => go("watch");
 setInterval(() => document.querySelectorAll(".ago[data-t]").forEach((el) => (el.textContent = ago(+el.dataset.t))), 15000);
 setInterval(() => { if (!document.hidden && TOKEN && !$("main").hidden) { load().catch(() => {}); loadDesk(); if (tab === "watch") loadWatch().catch(() => {}); } }, 60000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && TOKEN) { navigator.clearAppBadge?.(); load().catch(() => {}); } });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { markSeen(); return; }
+  if (TOKEN) { navigator.clearAppBadge?.(); Promise.all([load(), loadDesk()]).then(renderAway).catch(() => {}); }
+});
 $("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 220); });
 $("q").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
@@ -1149,6 +1260,7 @@ function route() {
   const m = location.hash.match(/a=([\w-]+)/);
   if (!m) return;
   if (m[1] === "brief") return go("brief");
+  if (m[1] === "desk") return go("desk");
   if (m[1] !== "test") openSheet(m[1]);
 }
 addEventListener("hashchange", route);
@@ -1159,7 +1271,7 @@ async function start() {
   $("lock").hidden = true; $("main").hidden = false; $("dock").hidden = false;
   Fx.split(); Fx.observe(document);
   connect();
-  loadDesk();
+  loadDesk().then(renderAway);
   if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" });
   navigator.clearAppBadge?.();
   refreshPushUI();

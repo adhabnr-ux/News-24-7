@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import math
 import statistics as st
 import time
 from datetime import datetime, timedelta
@@ -36,6 +37,8 @@ def _direction(a: dict[str, Any]) -> str:
     d = (e.get("play") or {}).get("direction") or (a.get("analysis") or {}).get("direction") or ""
     if not d:
         d = (e.get("ignition") or {}).get("direction") or (e.get("smallcap") or {}).get("direction") or ""
+    if not d:
+        d = (e.get("confluence") or {}).get("side") or ""
     if not d and (a.get("move") or {}).get("pct") is not None:
         d = "up" if a["move"]["pct"] > 0 else "down"
     return d if d in ("up", "down") else ""
@@ -99,6 +102,8 @@ def ticker_signals(
             continue  # counted below with its own weight
         if cat == "options":
             w = 2.0
+        if cat == "radar":
+            cat = "tape"  # a radar alert and an ignition are the same kind of evidence: the tape
         out.append(
             {
                 "side": d,
@@ -218,7 +223,21 @@ def ticker_dossier(engine: Engine, raw: str, now: float | None = None) -> dict[s
         "calendar": events,
         "watchers": watchers,
         "market": engine.calendar.market_status(now),
+        "rel": relative_strength(engine, sym, now),
+        "peers": peers(engine, sym, now),
+        "earnings": _earnings(engine, sym),
     }
+
+
+def _earnings(engine: Engine, sym: str) -> dict[str, Any] | None:
+    """The next report date, from Nasdaq's earnings calendar (the Camillo desk's book)."""
+    book = getattr(engine.trends, "earnings", None) if engine.trends is not None else None
+    if book is None:
+        return None
+    try:
+        return book.lookup(sym)
+    except Exception:  # noqa: BLE001 - a missing date must not break the page
+        return None
 
 
 # --------------------------------------------------------------------------- outcomes
@@ -274,6 +293,49 @@ def _session_close(ts: float) -> float:
     return close.timestamp()
 
 
+def record_key(alert: Any) -> str:
+    """The group an alert is graded in: headlines and macro by severity, the rest by kind."""
+    cat = alert_category(alert)
+    if isinstance(alert, dict):
+        sev = alert.get("severity")
+    else:
+        sev = getattr(getattr(alert, "severity", None), "name", "")
+    return f"{cat}:{sev}" if cat in ("news", "macro") else cat
+
+
+RECORD_LABEL = {"news": "Headlines", "macro": "Macro", "radar": "Radar", "options": "Options",
+                "insider": "Insider buys", "confluence": "Confluence"}  # fmt: skip
+
+
+def base_rate(rates: dict[str, Any], alert: Any, min_n: int = 8) -> dict[str, Any] | None:
+    """How alerts like this one did (its group's hit rate and median, an hour later and at the
+    close), when the group has at least ``min_n`` graded alerts."""
+    key = record_key(alert)
+    row = rates.get(key)
+    if not row:
+        return None
+    h1, close = row.get("h1"), row.get("close")
+    if not ((h1 and h1["n"] >= min_n) or (close and close["n"] >= min_n)):
+        return None
+    cat, _, sev = key.partition(":")
+    label = RECORD_LABEL.get(cat, cat.title()) + (f" · {sev}" if sev else "")
+    return {"key": key, "label": label, "h1": h1 if h1 and h1["n"] >= min_n else None,
+            "close": close if close and close["n"] >= min_n else None}  # fmt: skip
+
+
+def base_line(base: dict[str, Any] | None) -> str:
+    """'Alerts like this (Options): 62% went their way in 1h, 58% by the close · 31 graded'."""
+    if not base:
+        return ""
+    bits = []
+    if base.get("h1"):
+        bits.append(f"{round(base['h1']['hit'] * 100)}% went their way in 1h")
+    if base.get("close"):
+        bits.append(f"{round(base['close']['hit'] * 100)}% by the close")
+    n = max((base.get(k) or {}).get("n", 0) for k in ("h1", "close"))
+    return f"Alerts like this ({base['label']}): {', '.join(bits)} · {n} graded"
+
+
 def track_record(engine: Engine, days: float = 30, now: float | None = None) -> dict[str, Any]:
     now = now or time.time()
     groups: dict[str, dict[str, list[float]]] = {}
@@ -281,8 +343,7 @@ def track_record(engine: Engine, days: float = 30, now: float | None = None) -> 
         out = (a.get("edge") or {}).get("outcome") or {}
         if not out:
             continue
-        cat = alert_category(a)
-        key = f"{cat}:{a.get('severity')}" if cat in ("news", "macro") else cat
+        key = record_key(a)
         sym, row = next(iter(out.items()))
         sign = row.get("sign") or 0
         if not sign:
@@ -421,3 +482,149 @@ def search(engine: Engine, text: str, now: float | None = None) -> dict[str, Any
             for it in found["items"]
         ],
     }
+
+
+# --------------------------------------------------------------------------- confluence
+
+CONF_MIN_KINDS = 3  # independent kinds of evidence on one side: headlines, options, insider, tape
+CONF_MIN_WEIGHT = 4.0
+CONF_HIGH_WEIGHT = 7.0
+CONF_FRESH_S = 2 * 3600  # at least one non-insider signal this recent: something is happening now
+CONF_KIND_LABEL = {"news": "headlines", "options": "options flow", "insider": "insider buying",
+                   "tape": "the tape", "macro": "macro"}  # fmt: skip
+
+
+def confluence_candidates(engine: Engine, now: float | None = None) -> list[dict[str, Any]]:
+    """Stocks where independent kinds of evidence line up on one side right now: the evidence tally
+    leans clearly one way, with 3+ kinds of evidence on that side, a combined weight of 4+, and at
+    least one fresh (2-hour) signal that isn't an insider filing. Strongest first."""
+    now = now or time.time()
+    syms: set[str] = set()
+    for a in engine.storage.recent_alerts(300, since=now - 6.5 * 3600):
+        if a.get("kind") in ("news", "options", "price"):
+            syms.update(t for t in (a.get("tickers") or [])[:3] if t and t not in MACRO)
+    if engine.radar is not None:
+        syms.update(
+            s
+            for s, r in engine.radar.board.items()
+            if (r.get("ignition") or {}).get("detected", 0) > now - 6.5 * 3600
+        )
+    if engine.options_radar is not None:
+        syms.update(
+            r["symbol"]
+            for r in engine.options_radar.snapshot(80)
+            if now - (r.get("detected") or 0) < 6.5 * 3600
+        )
+    out = []
+    for sym in syms:
+        alerts = engine.storage.alerts_for_ticker(sym, since=now - 3 * 86400, limit=40)
+        items = engine.storage.items_for_ticker(sym, since=now - 3 * 86400, limit=40)
+        sig = ticker_signals(engine, sym, alerts, items, now)
+        t = tally(sig)
+        if t["lean"] not in ("bullish", "bearish"):
+            continue
+        side = "up" if t["lean"] == "bullish" else "down"
+        mine = [x for x in sig if x["side"] == side]
+        kinds = sorted({x["kind"] for x in mine})
+        weight = round(sum(x["weight"] for x in mine), 1)
+        fresh = [x for x in mine if x["kind"] != "insider" and now - (x.get("ts") or 0) <= CONF_FRESH_S]
+        if len(kinds) < CONF_MIN_KINDS or weight < CONF_MIN_WEIGHT or not fresh:
+            continue
+        out.append({"symbol": sym, "side": side, "weight": weight, "against": t["bear"] if side == "up" else t["bull"],
+                    "kinds": kinds, "signals": sorted(mine, key=lambda x: -x["weight"])[:6]})  # fmt: skip
+    out.sort(key=lambda c: -c["weight"])
+    return out
+
+
+MACRO = {"SPY", "QQQ", "IWM", "DIA", "TLT", "USO", "XLE", "GLD", "UUP", "VIX", "^VIX"}
+
+
+# --------------------------------------------------------------------------- peers and relative strength
+
+
+def peers(engine: Engine, raw: str, now: float | None = None, limit: int = 10) -> dict[str, Any]:
+    """The stock's industry peers (its sector when the industry is thin), nearest in size first,
+    with their moves today; and, when the stock itself moved 3%+, the peers that haven't moved
+    yet (a quarter of its move or less, same direction): where a sympathy move would come from."""
+    now = now or time.time()
+    sym = clean_symbol(raw) or ""
+    li = engine.universe.get(sym) if sym else None
+    if li is None or not (li.industry or li.sector):
+        return {"symbol": sym, "basis": None, "rows": [], "laggards": []}
+
+    def pool(attr: str) -> list[Any]:
+        val = getattr(li, attr)
+        return [x for x in engine.universe.by_symbol.values()
+                if x.symbol != sym and x.common and val and getattr(x, attr) == val and (x.market_cap or 0) >= 300e6]  # fmt: skip
+
+    basis, group = "industry", pool("industry")
+    if len(group) < 3:  # a thin industry: its sector, when that adds anyone
+        wider = pool("sector")
+        if len(wider) > len(group):
+            basis, group = "sector", wider
+    mc = li.market_cap or 1e9
+    group.sort(key=lambda x: abs(math.log((x.market_cap or 1e9) / mc)))
+    rows = []
+    for x in group[:limit]:
+        q = engine.price_of(x.symbol, 1800, now=now)
+        rows.append(
+            {
+                "symbol": x.symbol,
+                "name": x.name,
+                "cap": x.cap_label,
+                "chg": round(q[2], 2) if q and q[2] is not None else None,
+            }
+        )
+    me = engine.price_of(sym, 1800, now=now)
+    my = me[2] if me else None
+    laggards = []
+    if my is not None and abs(my) >= 3:
+        sign = 1 if my > 0 else -1
+        laggards = [r for r in rows if r["chg"] is not None and r["chg"] * sign <= abs(my) / 4]
+    moved = [r["chg"] for r in rows if r["chg"] is not None]
+    return {
+        "symbol": sym, "basis": basis, "group": li.industry if basis == "industry" else li.sector,
+        "me": round(my, 2) if my is not None else None,
+        "avg": round(sum(moved) / len(moved), 2) if moved else None,
+        "rows": rows, "laggards": laggards[:5],
+    }  # fmt: skip
+
+
+def relative_strength(
+    engine: Engine, sym: str, now: float | None = None, market: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Today's move against the S&P 500 (SPY) and the stock's own sector: is the move its own?"""
+    now = now or time.time()
+    me = engine.price_of(sym, 1800, now=now)
+    if not me or me[2] is None:
+        return None
+    li = engine.universe.get(sym)
+    spy = engine.price_of("SPY", 1800, now=now)
+    sec = None
+    if li is not None and li.sector:
+        board = market if market is not None else sectors(engine, now)
+        sec = next((r for r in board["rows"] if r["sector"] == li.sector), None)
+    out: dict[str, Any] = {
+        "chg": round(me[2], 2),
+        "spy": None,
+        "sector": None,
+        "sector_name": li.sector if li else "",
+    }
+    if spy and spy[2] is not None:
+        out["spy"] = round(spy[2], 2)
+        out["vs_spy"] = round(me[2] - spy[2], 2)
+    if sec is not None:
+        out["sector"] = sec["chg"]
+        out["vs_sector"] = round(me[2] - sec["chg"], 2)
+    ref = out.get("vs_sector", out.get("vs_spy"))
+    if ref is None:
+        out["read"] = ""
+    elif abs(me[2]) >= 1.5 and abs(ref) <= 0.5 * abs(me[2]):
+        out["read"] = "Moving with its " + ("sector" if "vs_sector" in out else "market")
+    elif abs(ref) >= 1.5:
+        out["read"] = "Its own move" + (
+            " (against the market)" if out.get("spy") and out["spy"] * me[2] < 0 else ""
+        )
+    else:
+        out["read"] = "In line"
+    return out
