@@ -262,6 +262,17 @@ class Storage:
         ).fetchall()
         return [{"source": r[0], "tier": r[1], "detected": r[2], "title": r[3], "url": r[4]} for r in rows]
 
+    def story_items(self, story_id: int, limit: int = 40) -> list[dict[str, Any]]:
+        """Every headline in a story, first one first: the story's timeline."""
+        rows = self.db.execute(
+            "SELECT source, detected, title, url, score, severity FROM items WHERE story_id = ? ORDER BY detected LIMIT ?",
+            (story_id, limit),
+        ).fetchall()
+        return [
+            {"source": r[0], "detected": r[1], "title": r[2], "url": r[3], "score": r[4], "severity": r[5]}
+            for r in rows
+        ]
+
     # ------------------------------------------------------------------ settings
 
     def get_setting(self, key: str, default: str | None = None) -> str | None:

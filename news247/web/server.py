@@ -120,6 +120,10 @@ class WebServer:
         app.router.add_get("/api/day", self.api_day)
         app.router.add_get("/api/breadth", self.api_breadth)
         app.router.add_get("/api/earnings-week", self.api_earnings_week)
+        app.router.add_get("/api/inplay", self.api_inplay)
+        app.router.add_get("/api/regime", self.api_regime)
+        app.router.add_get("/api/close", self.api_close)
+        app.router.add_get("/api/similar/{id}", self.api_similar)
         app.router.add_get("/api/volume", self.api_volume)
         app.router.add_get("/api/buzz", self.api_buzz)
         app.router.add_get("/api/export", self.api_export)
@@ -645,6 +649,7 @@ class WebServer:
         uid = (alert.get("item") or {}).get("uid")
         story = self.engine.storage.story_of(uid) if uid else None
         alert["story_sources"] = self.engine.storage.story_sources(story) if story is not None else []
+        alert["story_items"] = self.engine.storage.story_items(story) if story is not None else []
         alert["series"] = self.engine.price_series(alert)
         alert["follow"] = self.engine.follow_for(alert)
         return _json(alert)
@@ -764,6 +769,29 @@ class WebServer:
         if not sym:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(await earnings_reactions(self.engine, sym))
+
+    async def api_inplay(self, request: web.Request) -> web.Response:
+        from ..dossier import in_play
+
+        return _json(in_play(self.engine))
+
+    async def api_regime(self, request: web.Request) -> web.Response:
+        from ..dossier import regime
+
+        return _json(regime(self.engine))
+
+    async def api_close(self, request: web.Request) -> web.Response:
+        from ..dossier import close_recap
+
+        return _json(close_recap(self.engine))
+
+    async def api_similar(self, request: web.Request) -> web.Response:
+        from ..dossier import similar_alerts
+
+        alert = self.engine.storage.get_alert(request.match_info["id"])
+        if alert is None:
+            raise web.HTTPNotFound(text="no such alert")
+        return _json(similar_alerts(self.engine, alert))
 
     async def api_earnings_week(self, request: web.Request) -> web.Response:
         from ..dossier import earnings_week

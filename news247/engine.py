@@ -238,6 +238,10 @@ class Engine:
         self.earnings_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # symbol -> (when, reactions)
         self._kw_sent: dict[tuple[str, int], float] = {}  # (device, story id) -> when a keyword push went
         self._board_seen: dict[str, Any] = {"day": "", "keys": []}  # watchlist board pushes sent today
+        self._rule_refs: dict[
+            tuple[str, str], float
+        ] = {}  # (symbol, headline uid) -> price when the rule first saw it
+        self._vwap_side: dict[str, str] = {}  # symbol -> "above" | "below" VWAP at the last check
         self.day_marks: dict[
             str, list[tuple[float, float]]
         ] = {}  # SPY/QQQ every 5 minutes today (the day timeline)
@@ -2200,6 +2204,10 @@ class Engine:
                 await self.check_price_alerts(now)
             with contextlib.suppress(Exception):
                 await self.send_digests(now)
+            try:
+                await self.check_rules(now)
+            except Exception as exc:  # noqa: BLE001 - never stop the desk loop
+                log.warning("smart alerts failed: %s", exc)
             if now - last_outcomes >= 60:
                 last_outcomes = now
                 with contextlib.suppress(Exception):
@@ -2218,6 +2226,9 @@ class Engine:
                     await self.auto_why(now)
                 with contextlib.suppress(Exception):
                     await self.send_earnings_reminders(now)
+                if self._close_due(now):
+                    with contextlib.suppress(Exception):
+                        await self.send_close(now)
                 if self._week_due(now):
                     with contextlib.suppress(Exception):
                         await self.send_week_cards(now)
@@ -2411,6 +2422,133 @@ class Engine:
                 if await self._to_device(device, payload, urgency="normal"):
                     sent += 1
         self.storage.set_setting(f"boardwatch:{day}", json.dumps(st))
+        return sent
+
+    def price_at(self, sym: str, ts: float) -> float | None:
+        """The stock's price at ``ts`` from the live tape's recent path (the last 30 minutes)."""
+        path = self.live_quotes.path(sym, ts)
+        if path is None:
+            return None
+        before = [p for t, p in path.hist if t <= ts + 5]
+        return before[-1] if before else None
+
+    def _rule_hit(self, r: dict[str, Any], sym: str, now: float, day: str) -> tuple[str, str, str] | None:
+        """(key, title, body) when this rule holds for this stock now, else None."""
+        kind, v = r["kind"], r["value"]
+        if kind == "headline":
+            for it in self.storage.items_for_ticker(sym, since=now - 600, limit=5, min_score=v):
+                return (f"h:{r['id']}:{it['uid']}", f"📰 {sym}: {it['title'][:150]}",
+                        f"{it['source']} · score {round(it.get('score') or 0)} · your rule: headlines on {r['symbol']} scoring {v:g}+")  # fmt: skip
+            return None
+        if kind == "news_move":
+            q = self.price_of(sym, 900, now=now)
+            if not q:
+                return None
+            for it in self.storage.items_for_ticker(sym, since=now - 3600, limit=5, min_score=20):
+                ref = self._rule_refs.get((sym, it["uid"]))
+                if ref is None:
+                    ref = self.price_at(sym, it["detected"]) or q[1]
+                    self._rule_refs[(sym, it["uid"])] = ref
+                move = (q[1] / ref - 1.0) * 100.0 if ref else 0.0
+                if abs(move) >= v:
+                    return (f"nm:{r['id']}:{it['uid']}", f"⚡ {sym} {move:+.1f}% since the headline",
+                            f"{it['title'][:160]} · {it['source']} · your rule: a headline, then a {v:g}% move")  # fmt: skip
+            return None
+        lt = (
+            self.ignition.latest(sym, now)
+            if self.ignition is not None and hasattr(self.ignition, "latest")
+            else None
+        )
+        if kind == "volume":
+            if lt and lt.get("rvol") and lt["rvol"] >= v:
+                return (f"v:{r['id']}:{sym}:{day}", f"📊 {sym} at {lt['rvol']:.1f}× its normal volume",
+                        f"{lt['chg']:+.1f}% on the day · your rule: {v:g}× volume")  # fmt: skip
+            return None
+        if kind == "vwap":
+            if not lt or not lt.get("vwap"):
+                return None
+            side = "above" if lt["price"] > lt["vwap"] else "below"
+            was = self._vwap_side.get(sym)
+            self._vwap_side[sym] = side
+            if was is not None and was != side and side == r["dir"]:
+                return (f"w:{r['id']}:{sym}:{day}", f"〽️ {sym} crossed {side} VWAP",
+                        f"${lt['price']:,.2f} vs VWAP ${lt['vwap']:,.2f} · {lt['chg']:+.1f}% on the day · your rule")  # fmt: skip
+            return None
+        if kind == "gap":
+            if self.calendar.market_status(now).get("phase") != "pre-market":
+                return None
+            q = self.price_of(sym, 900, now=now)
+            if q and q[2] is not None and abs(q[2]) >= v:
+                return (
+                    f"g:{r['id']}:{sym}:{day}",
+                    f"🌅 {sym} gapping {q[2]:+.1f}% pre-market",
+                    f"${q[1]:,.2f} · your rule: a {v:g}% gap",
+                )
+        return None
+
+    async def check_rules(self, now: float | None = None) -> int:
+        """Every phone's smart alerts (desk.py rules), each pushed to its phone once per headline or
+        once a day."""
+        now = now or time.time()
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        sent = 0
+        for device, p in list(self.desk.profiles.items()):
+            rules = p.get("rules") or []
+            if not rules:
+                continue
+            fired = p.setdefault("rules_fired", [])
+            changed = False
+            for r in rules:
+                syms = (p.get("watchlist") or [])[:60] if r["symbol"] == "*" else [r["symbol"]]
+                for sym in syms:
+                    hit = self._rule_hit(r, sym, now, day)
+                    if hit is None or hit[0] in fired:
+                        continue
+                    fired.append(hit[0])
+                    changed = True
+                    payload = {"id": f"rule-{hit[0][:40]}", "title": hit[1], "body": hit[2], "severity": "HIGH", "kind": "system",
+                               "tickers": [sym], "tag": f"rule-{r['id']}-{sym}", "ts": now, "open": f"/app/#t={sym}"}  # fmt: skip
+                    self._broadcast(
+                        "price_alert", {"device": device, "symbol": sym, "title": hit[1], "body": hit[2]}
+                    )
+                    if await self._to_device(device, payload):
+                        sent += 1
+            if changed:
+                del fired[:-400]
+                self.desk.save(device)
+        if len(self._rule_refs) > 5000:
+            self._rule_refs.clear()
+        return sent
+
+    def _close_due(self, now: float) -> bool:
+        dt = datetime.fromtimestamp(now, ET)
+        if (
+            dt.weekday() >= 5
+            or dt.date().isoformat() in self.calendar.holidays
+            or not ((16, 15) <= (dt.hour, dt.minute) < (16, 50))
+        ):
+            return False
+        return self.storage.get_setting("close_sent") != dt.date().isoformat()
+
+    async def send_close(self, now: float | None = None) -> int:
+        """16:15 ET: the close, to every phone that turned it on."""
+        from .dossier import close_push, close_recap
+
+        now = now or time.time()
+        self.storage.set_setting("close_sent", datetime.fromtimestamp(now, ET).date().isoformat())
+        if self.webpush is None or self.dispatcher.paused:
+            return 0
+        devices = [d for d in {s.device for s in self.webpush.subs.values() if s.device}  # type: ignore[attr-defined]
+                   if ((self.desk.profiles.get(d) or {}).get("prefs") or {}).get("close_recap")]  # fmt: skip
+        if not devices:
+            return 0
+        payload = close_push(close_recap(self, now))
+        if payload is None:
+            return 0
+        sent = 0
+        for d in devices:
+            if await self._to_device(d, payload, urgency="normal"):
+                sent += 1
         return sent
 
     def pre_move(self, symbols: list[str], ts: float, window_s: float = 900.0) -> dict[str, float]:

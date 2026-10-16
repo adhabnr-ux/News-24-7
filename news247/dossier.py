@@ -1101,3 +1101,197 @@ def earnings_week(
             r.pop("mcap")
         out.append({"date": d, "in_days": rows[0]["in_days"], "rows": rows})
     return {"enabled": True, "days": out, "min_cap": min_cap}
+
+
+# --------------------------------------------------------------------------- in play, regime, the close, similar alerts
+
+
+def in_play(engine: Engine, now: float | None = None, limit: int = 15) -> dict[str, Any]:
+    """The stocks that matter right now, from every board at once: the move, relative volume, news
+    buzz, options flow, a confluence alert, the radar, and whether there's a reason. Each row says
+    why it's in play."""
+    now = now or time.time()
+    day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    rows: dict[str, dict[str, Any]] = {}
+
+    def row(sym: str) -> dict[str, Any]:
+        return rows.setdefault(sym, {"symbol": sym, "score": 0.0, "why": []})
+
+    for sym, q in list(engine.live_quotes.quotes.items()):
+        if now - q.ts > 900 or q.change_pct is None or abs(q.change_pct) < 3:
+            continue
+        li = engine.universe.get(sym)
+        if li is None or not li.common or (li.market_cap or 0) < 300e6:
+            continue
+        r = row(sym)
+        r["score"] += min(abs(q.change_pct), 15) / 3
+        r["why"].append(f"{q.change_pct:+.1f}% today")
+    if engine.ignition is not None and hasattr(engine.ignition, "volume_board"):
+        for v in engine.ignition.volume_board(now, 3.0)[:60]:
+            r = row(v["symbol"])
+            r["score"] += min(v["rvol"], 12) / 2
+            r["why"].append(f"{v['rvol']:.0f}× normal volume")
+    for b in buzz(engine, now)["rows"]:
+        r = row(b["symbol"])
+        r["score"] += min(b["n"], 8) / 2
+        r["why"].append(f"{b['n']} headlines this hour")
+    if engine.options_radar is not None:
+        for o in engine.options_radar.snapshot(100):
+            if (o.get("detected") or 0) >= day0:
+                r = row(o["symbol"])
+                r["score"] += 2
+                r["why"].append(f"options {o.get('kind', 'flow')}")
+    if engine.radar is not None:
+        for sym, b in list(engine.radar.board.items()):
+            if b.get("flagged") or b.get("ignition"):
+                r = row(sym)
+                r["score"] += 1.5
+                r["why"].append("igniting" if b.get("ignition") else "on the radar")
+    for a in engine.storage.recent_alerts(200, since=day0):
+        if a.get("kind") == "confluence":
+            for t in a.get("tickers") or []:
+                r = row(t)
+                r["score"] += 3
+                r["why"].append("confluence alert")
+    out = []
+    for r in sorted(rows.values(), key=lambda x: -x["score"])[: limit * 2]:
+        li = engine.universe.get(r["symbol"])
+        if li is not None and not li.common:
+            continue
+        q = engine.price_of(r["symbol"], 1800, now=now)
+        why = engine.find_catalysts([r["symbol"]], now, overnight=True)
+        if why:
+            r["score"] += 1
+        out.append({**r, "score": round(r["score"], 1), "why": list(dict.fromkeys(r["why"])), "name": li.name if li else "",
+                    "cap": li.cap_label if li else "", "chg": round(q[2], 2) if q and q[2] is not None else None,
+                    "reason": {"title": why[0]["title"], "url": why[0]["url"], "source": why[0]["source"]} if why else None})  # fmt: skip
+    out.sort(key=lambda x: -x["score"])
+    return {"rows": out[:limit], "market": engine.calendar.market_status(now)}
+
+
+DEFENSIVE = {"Utilities", "Consumer Staples", "Health Care", "Real Estate", "Telecommunications"}
+CYCLICAL = {
+    "Technology",
+    "Consumer Discretionary",
+    "Industrials",
+    "Finance",
+    "Financials",
+    "Energy",
+    "Basic Materials",
+}
+
+
+def regime(engine: Engine, now: float | None = None) -> dict[str, Any]:
+    """Risk-on, risk-off or mixed, read from the live tape: cyclical sectors against defensive
+    ones, breadth, and small caps against large. Every input is shown; it's a read, not a call."""
+    now = now or time.time()
+    sec = {r["sector"]: r["chg"] for r in sectors(engine, now)["rows"]}
+    b = breadth(engine, now)
+    cyc = [v for k, v in sec.items() if k in CYCLICAL]
+    dfn = [v for k, v in sec.items() if k in DEFENSIVE]
+    if not b.get("n") or not cyc or not dfn:
+        return {"label": "unknown", "why": [], "inputs": {}}
+    spread = round(sum(cyc) / len(cyc) - sum(dfn) / len(dfn), 2)
+    bands = {x["band"]: x["chg"] for x in b.get("bands") or []}
+    small = bands.get("small cap", bands.get("micro cap"))
+    large = bands.get("large cap", bands.get("mega cap"))
+    size = round(small - large, 2) if small is not None and large is not None else None
+    on = (spread >= 0.5) + (b["pct_up"] >= 55) + (size is not None and size >= 0.5)
+    off = (spread <= -0.5) + (b["pct_up"] <= 45) + (size is not None and size <= -0.5)
+    label = "risk-on" if on >= 2 and not off else "risk-off" if off >= 2 and not on else "mixed"
+    why = [f"cyclicals {'ahead of' if spread >= 0 else 'behind'} defensives by {abs(spread):.1f} pts",
+           f"{b['pct_up']:.0f}% of stocks up"]  # fmt: skip
+    if size is not None:
+        why.append(f"small caps {'ahead of' if size >= 0 else 'behind'} large by {abs(size):.1f} pts")
+    return {"label": label, "why": why, "inputs": {"cyc_minus_def": spread, "pct_up": b["pct_up"], "small_minus_large": size,
+                                                   "cap_weighted": b["cap_weighted"]}}  # fmt: skip
+
+
+def close_recap(engine: Engine, now: float | None = None) -> dict[str, Any]:
+    """The close in one screen: the indexes, breadth, the regime, the best and worst sectors, the
+    biggest movers and why, and how today's alerts did by the close."""
+    now = now or time.time()
+    day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    idx = {}
+    for s in ("SPY", "QQQ", "IWM", "DIA"):
+        q = engine.price_of(s, 6 * 3600, now=now)
+        if q and q[2] is not None:
+            idx[s] = round(q[2], 2)
+    sec = sectors(engine, now, max_age_s=6 * 3600)["rows"]
+    g = gaps(engine, now, max_age_s=6 * 3600, limit=5)
+    graded = right = 0
+    for a in engine.storage.recent_alerts(500, since=day0):
+        o = (a.get("edge") or {}).get("outcome") or {}
+        row = next(iter(o.values()), None) if o else None
+        if row and row.get("sign") and row.get("close") is not None:
+            graded += 1
+            right += row["sign"] * row["close"] > 0
+    return {
+        "date": datetime.fromtimestamp(now, ET).date().isoformat(), "indexes": idx,
+        "breadth": breadth(engine, now, max_age_s=6 * 3600), "regime": regime(engine, now),
+        "best": sec[:2], "worst": sec[-2:][::-1] if len(sec) > 2 else [],
+        "up": g["up"][:3], "down": g["down"][:3], "alerts": {"graded": graded, "right": right},
+    }  # fmt: skip
+
+
+def close_push(c: dict[str, Any]) -> dict[str, Any] | None:
+    lines = []
+    if c["indexes"]:
+        lines.append(" · ".join(f"{k} {v:+.1f}%" for k, v in c["indexes"].items()))
+    b = c["breadth"]
+    if b.get("n"):
+        lines.append(f"{b['up']} up / {b['down']} down ({b['pct_up']:.0f}%) · {c['regime']['label']}")
+    if c["best"]:
+        lines.append(
+            "Led: "
+            + ", ".join(f"{r['sector']} {r['chg']:+.1f}%" for r in c["best"])
+            + (
+                "; lagged: " + ", ".join(f"{r['sector']} {r['chg']:+.1f}%" for r in c["worst"])
+                if c["worst"]
+                else ""
+            )
+        )
+    for r in c["up"][:1] + c["down"][:1]:
+        lines.append(
+            f"{r['symbol']} {r['chg']:+.1f}%" + (f": {r['why']['title'][:80]}" if r.get("why") else "")
+        )
+    if c["alerts"]["graded"]:
+        lines.append(f"Alerts: {c['alerts']['right']} of {c['alerts']['graded']} went their way by the close")
+    if not lines:
+        return None
+    return {"id": f"close-{c['date']}", "title": "🔔 The close", "body": "\n".join(lines)[:600], "severity": "MEDIUM",
+            "kind": "system", "tickers": [], "tag": f"close-{c['date']}", "ts": time.time(), "open": "/app/#a=brief"}  # fmt: skip
+
+
+def similar_alerts(
+    engine: Engine, alert: dict[str, Any], days: float = 180, limit: int = 12
+) -> dict[str, Any]:
+    """Earlier alerts of the same kind on the same stock, with how each was graded."""
+    sym = next(iter(alert.get("tickers") or []), None)
+    if not sym:
+        return {"rows": [], "stats": None}
+    key = record_key(alert)
+    rows, moves = [], []
+    for a in engine.storage.alerts_for_ticker(
+        sym, since=float(alert.get("created", time.time())) - days * 86400, limit=200
+    ):
+        if (
+            a["id"] == alert.get("id")
+            or a.get("created", 0) >= alert.get("created", 0)
+            or record_key(a) != key
+        ):
+            continue
+        g = ((a.get("edge") or {}).get("outcome") or {}).get(sym)
+        rows.append({"id": a["id"], "title": a["title"], "created": a["created"], "grade": g})
+        if g and g.get("sign") and g.get("close") is not None:
+            moves.append(g["sign"] * g["close"])
+    stats = (
+        {
+            "n": len(moves),
+            "hit": round(sum(m > 0 for m in moves) / len(moves), 2),
+            "median": round(st.median(moves), 2),
+        }
+        if moves
+        else None
+    )
+    return {"symbol": sym, "key": key, "rows": rows[:limit], "stats": stats}

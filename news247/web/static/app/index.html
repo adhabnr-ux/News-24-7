@@ -111,6 +111,7 @@
     <div class="stage">
       <div class="sec-title rv"><h2>Overnight</h2><span>since the last close</span></div>
       <div class="panel glass tilt rv" id="bOvernight"></div>
+      <div id="bCloseWrap" hidden><div class="sec-title"><h2>The close</h2><span>today's session</span></div><div class="panel glass tilt" id="bClose"></div></div>
       <div id="bDayWrap" hidden><div class="sec-title"><h2>The day so far</h2><span>alerts over the S&amp;P 500</span></div><div class="panel glass tilt" id="bDay"></div></div>
       <div id="bMineWrap" hidden><div class="sec-title"><h2>Your stocks</h2><span>this morning</span></div><div class="panel glass tilt" id="bMine"></div></div>
       <div id="bThemesWrap" class="rv"><div class="sec-title"><h2>In focus</h2></div><div class="row" id="bThemes"></div></div>
@@ -140,6 +141,7 @@
       <h1 class="display">The <em>board</em></h1>
     </div></div>
     <div class="stage">
+      <div id="inplayWrap" hidden><div class="sec-title"><h2>In play</h2><span>every board, ranked</span></div><div class="regime" id="regime"></div><div class="panel glass tilt" id="inplay"></div></div>
       <div id="breadthWrap" hidden><div class="sec-title"><h2>Breadth</h2><span>the market under the index</span></div><div class="panel glass tilt" id="breadth"></div></div>
       <div class="sec-title rv"><h2><span class="sweep" aria-hidden="true"><i></i></span>The radar</h2><span id="radarSub">moving before the news</span></div>
       <div class="panel glass tilt rv" id="radar"></div>
@@ -198,6 +200,8 @@
       <div class="panel glass tilt rv" id="dWatch"></div>
       <div id="dSavedWrap" hidden><div class="sec-title"><h2>Saved</h2><span>alerts you kept</span></div><div class="panel glass tilt" id="dSaved"></div></div>
       <div id="dWorthWrap" hidden><div class="sec-title"><h2>Worth a look</h2><span>next to your stocks, moving today</span></div><div class="panel glass tilt" id="dWorth"></div></div>
+      <div class="sec-title rv"><h2>Smart alerts</h2><span>your own triggers</span></div>
+      <div class="panel glass tilt rv" id="dRules"></div>
       <div class="sec-title rv"><h2>Keywords</h2><span>your words, pushed</span></div>
       <div class="panel glass tilt rv" id="dKeys"></div>
       <div class="sec-title rv"><h2>Price alerts</h2><span>this phone only</span></div>
@@ -210,6 +214,8 @@
       <div class="panel glass tilt rv" id="dPrefs"></div>
       <div class="panel glass tilt" id="dMuted" hidden></div>
       <div class="row" style="justify-content:center;margin:18px 0 0"><button class="btn ghost small" data-act="onboard">Set up from scratch: stocks, words, push style</button></div>
+      <div class="sec-title rv"><h2>Share your watchlist</h2><span>by code</span></div>
+      <div class="panel glass tilt rv padded" id="dShare"></div>
       <div class="sec-title rv"><h2>Move your desk</h2><span>to another phone</span></div>
       <div class="panel glass tilt rv padded" id="dMove"></div>
       <div class="sec-title rv"><h2>Your data</h2><span>yours to keep</span></div>
@@ -261,6 +267,7 @@
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="grab"></div><button class="close" id="closeSheet" aria-label="Close">✕</button><div class="inner" id="sheetBody"></div></div>
 <div class="toast" id="toast"></div>
+<div class="offline" id="offline" hidden></div>
 
 <script src="/app/scene.js"></script>
 <script src="/app/app.js"></script>

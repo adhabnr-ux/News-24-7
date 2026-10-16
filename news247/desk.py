@@ -23,6 +23,10 @@ with each request. Its profile holds:
   listing what came in (CRITICAL still comes at once; price alerts and levels too).
 * **notes** on any stock, and a **group** for each watched stock.
 * **transfer**: a one-time code (15 minutes) that copies this desk to another phone.
+* **rules** (smart alerts): this phone's own triggers on a stock or on every watched stock: a
+  headline scoring N+, a headline followed by an N% move within the hour, N times normal volume,
+  a VWAP cross, an N% pre-market gap. Each fires once per headline (or once a day).
+* **share**: a code (7 days, any number of uses) that copies this watchlist into someone else's.
 
 Profiles live in SQLite (``profiles`` table) and, when ``STATE_DB`` is set, in the state database
 too, so a fresh container on a free host keeps them.
@@ -50,6 +54,15 @@ MAX_KEYWORDS = 20
 TRANSFER_TTL_S = 900.0
 TRANSFER_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L: read aloud or typed by hand
 DIGEST_MINUTES = (0, 15, 60)
+MAX_RULES = 30
+SHARE_TTL_S = 7 * 86400.0
+RULE_KINDS = {  # kind -> (lowest value, highest value, default)
+    "headline": (5.0, 100.0, 20.0),  # a headline on the stock scoring at least this
+    "news_move": (0.5, 50.0, 3.0),  # a headline, then the stock moves this % (either way) within the hour
+    "volume": (1.5, 50.0, 5.0),  # this many times its normal volume for the time of day
+    "vwap": (0.0, 0.0, 0.0),  # crosses VWAP (``dir``: above | below)
+    "gap": (1.0, 50.0, 4.0),  # this % from yesterday's close before the open
+}
 MAX_MUTE_H = 72.0
 TAG_RE = re.compile(r"#([a-z][a-z0-9-]{1,19})")
 MACRO_TICKERS = {
@@ -86,6 +99,7 @@ def default_profile() -> dict[str, Any]:
             "skip_fades": False,  # don't push alert groups whose base rate says they fade
             "auto_move": 0,  # %: a "moves ±N% on the day" price alert for every stock added (0 = off)
             "forward": None,  # this phone's own copy: {"kind": "discord"|"telegram"|"ntfy", ...}
+            "close_recap": False,  # the 16:15 ET market recap ("the close")
         },
         "price_alerts": [],
         "tracked": [],
@@ -98,6 +112,8 @@ def default_profile() -> dict[str, Any]:
         "votes": {},  # alert id -> +1 / -1 (was it useful)
         "snooze": {},  # category -> until (epoch)
         "saved": [],  # alert ids, newest first
+        "rules": [],  # smart alerts: {"id", "kind", "symbol" ("*" = every watched stock), "value", "dir"}
+        "rules_fired": [],  # keys of what each rule already fired on (once per headline / per day)
         "digest_q": [],  # alerts held for the next digest
         "digest_at": 0.0,  # when the last digest went
         "created": time.time(),
@@ -355,7 +371,7 @@ class Desk:
             if "min_sev" in body:
                 floor = body.get("min_sev")
                 prefs["min_sev"] = floor if floor in SEV_RANK else None
-            for flag in ("eod", "earn_remind", "open_plan", "week", "skip_fades"):
+            for flag in ("eod", "earn_remind", "open_plan", "week", "skip_fades", "close_recap"):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
             if "auto_move" in body:
@@ -508,6 +524,66 @@ class Desk:
             copied = json.loads(json.dumps(self.profiles[src]))
             copied["digest_q"], copied["created"] = [], p.get("created", now)
             self.profiles[device] = p = self._merge(copied)
+        elif action == "rule_add":
+            kind = str(body.get("kind") or "")
+            if kind not in RULE_KINDS:
+                raise ValueError("rule kind is headline, news_move, volume, vwap or gap")
+            raw = str(body.get("symbol") or "").strip()
+            sym = "*" if raw == "*" else clean_symbol(raw)
+            if not sym:
+                raise ValueError("need a symbol, or * for every stock you watch")
+            lo, hi, default = RULE_KINDS[kind]
+            if kind == "vwap":
+                d = str(body.get("dir") or "")
+                if d not in ("above", "below"):
+                    raise ValueError("a VWAP rule needs dir above or below")
+                value = 0.0
+            else:
+                d = ""
+                try:
+                    value = float(body.get("value") if body.get("value") not in (None, "") else default)
+                except (TypeError, ValueError):
+                    raise ValueError("value must be a number") from None
+                if not lo <= value <= hi:
+                    raise ValueError(f"{kind} value is {lo:g} to {hi:g}")
+            rules = p.setdefault("rules", [])
+            if len(rules) >= MAX_RULES:
+                raise ValueError(f"at most {MAX_RULES} rules")
+            rules.append(
+                {
+                    "id": secrets.token_hex(4),
+                    "kind": kind,
+                    "symbol": sym,
+                    "value": value,
+                    "dir": d,
+                    "created": now,
+                }
+            )
+        elif action == "rule_remove":
+            rid = str(body.get("id") or "")
+            p["rules"] = [r for r in p.get("rules") or [] if r["id"] != rid]
+        elif action == "share_list":
+            if not p["watchlist"]:
+                raise ValueError("your watchlist is empty")
+            code = "".join(secrets.choice(TRANSFER_ALPHABET) for _ in range(8))
+            name = str(body.get("name") or "").strip()[:40]
+            if hasattr(self.storage, "set_setting"):
+                self.storage.set_setting(
+                    f"share:{code}",
+                    json.dumps({"symbols": p["watchlist"], "name": name, "until": now + SHARE_TTL_S}),
+                )
+            p["share"] = {"code": code, "until": now + SHARE_TTL_S, "n": len(p["watchlist"]), "name": name}
+        elif action == "import_list":
+            code = str(body.get("code") or "").strip().upper().replace(" ", "").replace("-", "")
+            raw = self.storage.get_setting(f"share:{code}") if hasattr(self.storage, "get_setting") else None
+            data = json.loads(raw) if raw else None
+            if not data or data.get("until", 0) < now:
+                raise ValueError("that list code is wrong or expired")
+            syms = [x for x in (clean_symbol(s) for s in data.get("symbols") or []) if x]
+            p["watchlist"] = list(dict.fromkeys([*p["watchlist"], *syms]))[:MAX_WATCH]
+            if data.get("name"):
+                for x in syms:
+                    p.setdefault("groups", {}).setdefault(x, data["name"][:24])
         elif action == "snooze":
             cat = str(body.get("cat") or "")
             try:
@@ -613,6 +689,8 @@ class Desk:
             "saved": p.get("saved") or [],
             "transfer": p["transfer"] if (p.get("transfer") or {}).get("until", 0) > now else None,
             "forward": _mask_forward((p.get("prefs") or {}).get("forward")),
+            "rules": p.get("rules") or [],
+            "share": p["share"] if (p.get("share") or {}).get("until", 0) > now else None,
             "record": {
                 "closed": len(closed),
                 "wins": len(wins),

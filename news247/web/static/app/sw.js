@@ -1,6 +1,6 @@
 /* Foretape service worker: shows pushed alerts, opens the app on tap, keeps the app shell
    available offline, and re-subscribes if the browser rotates the push subscription. */
-const SHELL = "foretape-shell-v22";
+const SHELL = "foretape-shell-v23";
 const CONF = "foretape-conf";
 const SHELL_FILES = [
   "/app/", "/app/app.css", "/app/app.js", "/app/scene.js", "/app/launch.webp", "/app/depth.png", "/app/logo.svg", "/app/icon-192.png", "/app/badge-96.png",
@@ -18,6 +18,14 @@ self.addEventListener("activate", (e) => e.waitUntil(
 // Network first for the app shell (always fresh when online), cache when offline.
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
+  // the tape itself: kept from the last good answer, served (marked) when the network is gone
+  if (e.request.method === "GET" && url.origin === location.origin && url.pathname === "/api/app") {
+    e.respondWith(fetch(e.request).then((r) => {
+      if (r.ok) { const copy = r.clone(); caches.open(CONF).then(async (c) => c.put("/offline/app", new Response(await copy.blob(), { headers: { "Content-Type": "application/json", "X-Foretape-Offline": String(Math.floor(Date.now() / 1000)) } }))); }
+      return r;
+    }).catch(async () => (await (await caches.open(CONF)).match("/offline/app")) || Response.error()));
+    return;
+  }
   if (e.request.method !== "GET" || url.origin !== location.origin || !url.pathname.startsWith("/app/")) return;
   if (url.pathname.endsWith("sw.js") || url.pathname.endsWith(".webmanifest")) return;
   e.respondWith(
