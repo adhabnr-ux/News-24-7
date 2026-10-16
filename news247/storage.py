@@ -72,6 +72,11 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL,
     updated REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS profiles (
+    device TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    updated REAL NOT NULL
+);
 """
 
 
@@ -283,6 +288,85 @@ class Storage:
             "SELECT payload FROM relay_outbox WHERE created >= ? ORDER BY created", (since,)
         ).fetchall()
         return [json.loads(r[0]) for r in rows]
+
+    # ------------------------------------------------------------------ per-ticker and search
+
+    @staticmethod
+    def _like_ticker(sym: str) -> str:
+        return '%"' + sym.replace("%", "").replace('"', "") + '"%'
+
+    def alerts_for_ticker(
+        self, sym: str, since: float | None = None, limit: int = 40
+    ) -> list[dict[str, Any]]:
+        q, args = "SELECT payload FROM alerts WHERE tickers LIKE ?", [self._like_ticker(sym)]
+        if since:
+            q += " AND created >= ?"
+            args.append(since)
+        q += " ORDER BY created DESC LIMIT ?"
+        args.append(limit)
+        return [json.loads(r[0]) for r in self.db.execute(q, args)]
+
+    def items_for_ticker(
+        self, sym: str, since: float | None = None, limit: int = 40, min_score: float = 0.0
+    ) -> list[dict[str, Any]]:
+        q, args = (
+            "SELECT * FROM items WHERE tickers LIKE ? AND score >= ?",
+            [self._like_ticker(sym), min_score],
+        )
+        if since:
+            q += " AND detected >= ?"
+            args.append(since)
+        q += " ORDER BY detected DESC LIMIT ?"
+        args.append(limit)
+        return [self._item_row(r) for r in self.db.execute(q, args)]
+
+    def search(
+        self, text: str, since: float | None = None, limit: int = 30
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Alerts and headlines whose title (or tickers) contain ``text`` (case-insensitive)."""
+        like = "%" + text.replace("%", "").replace("_", "") + "%"
+        q, args = "SELECT payload FROM alerts WHERE (title LIKE ? OR tickers LIKE ?)", [like, like]
+        if since:
+            q += " AND created >= ?"
+            args.append(since)
+        alerts = [
+            json.loads(r[0]) for r in self.db.execute(q + " ORDER BY created DESC LIMIT ?", [*args, limit])
+        ]
+        q2, args2 = "SELECT * FROM items WHERE (title LIKE ? OR tickers LIKE ?)", [like, like]
+        if since:
+            q2 += " AND detected >= ?"
+            args2.append(since)
+        items = [
+            self._item_row(r)
+            for r in self.db.execute(q2 + " ORDER BY detected DESC LIMIT ?", [*args2, limit])
+        ]
+        return {"alerts": alerts, "items": items}
+
+    def items_from(self, source: str, since: float | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        q, args = "SELECT * FROM items WHERE source = ?", [source]
+        if since:
+            q += " AND detected >= ?"
+            args.append(since)
+        q += " ORDER BY detected DESC LIMIT ?"
+        args.append(limit)
+        return [self._item_row(r) for r in self.db.execute(q, args)]
+
+    # ------------------------------------------------------------------ profiles (your desk)
+
+    def profile_save(self, device: str, data: dict[str, Any]) -> None:
+        self.db.execute(
+            "INSERT OR REPLACE INTO profiles (device, data, updated) VALUES (?,?,?)",
+            (device, json.dumps(data), time.time()),
+        )
+
+    def profiles_all(self) -> dict[str, dict[str, Any]]:
+        out = {}
+        for device, data in self.db.execute("SELECT device, data FROM profiles"):
+            try:
+                out[device] = json.loads(data)
+            except ValueError:
+                continue
+        return out
 
     # ------------------------------------------------------------------ web push subscriptions
 

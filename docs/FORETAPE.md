@@ -50,11 +50,11 @@ Five tabs:
 
 | Tab | What's on it |
 |---|---|
-| **Tape** | The hero line, then three numbers: your **median lead over the news** (7 days), alerts in the last 24 h, and sources live. Then the **next big catalyst** on the calendar. Below that, **Top of the tape** (the strongest alert of the last 6 h, in large type) and every other alert. Tap any alert for its full dossier. The **All / Small caps** switch above the tape filters to small- and mid-cap catalysts and radar hits (remembered on the phone). |
+| **Tape** | The hero line, then three numbers: your **median lead over the news** (7 days), alerts in the last 24 h, and sources live. Then the **next big catalyst** on the calendar. Below that, **Top of the tape** (the strongest alert of the last 6 h, in large type) and every other alert. Tap any alert for its full dossier. Above the tape: **your watchlist** as a live strip (tap a name for its page, **＋** to add), and **search** across tickers, company names, 30 days of alerts and headlines (type a ticker and press Enter to jump straight to its page). The **All / Mine / Small caps** switch filters the tape: **Mine** keeps only alerts on stocks you watch (cards on them carry a gold **★ yours**), **Small caps** keeps small- and mid-cap catalysts and radar hits (remembered on the phone). |
 | **Brief** | The morning meeting: catalysts **since the last close**, the themes in focus, SPY/QQQ/IWM/DIA and the biggest movers, the week's calendar, and **your edge** (stories you had before the mainstream, median and biggest head start). |
 | **Calendar** | Scheduled catalysts for the next 60 days, with time (ET) and impact: FOMC decisions, jobs reports, elections, option expirations and quad witching, market holidays and early closes, plus one-offs like the end of China's rare-earth suspension. **Binary events are added automatically** from headlines that announce them (a Phase 3 readout date, a PDUFA date, an FDA panel), marked with a gold BINARY tag and linked to the release; the morning Brief warns you the day before. Edit `news247/data/calendar.yaml` to add your own (earnings dates, investor days). |
-| **Watch** | The **radar** first, led by stocks **igniting** in the last hour (⚡ "+2.1% in 5m on 6× vol": a push on volume a median 20 minutes before they become big movers; tap one for its launch price, where the move fails and what backs it). Then small caps breaking out right now on real volume (±20% on the day or a fast jump, $2M+ traded), with market cap, dollars traded, relative volume, pre-market/after-hours tag and the headline behind the move, or "No headline yet". It is live: it refreshes every 30 s while on screen and instantly when the radar fires (new names flash gold, moves count to their new value), and tapping a flagged name opens its radar alert. Then the board: every quoted symbol sorted by today's move, with the 5-minute change. Tickers from fresh alerts are added automatically. |
-| **Desk** | Push status, **Send a test alert**, **Reconnect**, motion on/off, alert level (**Critical only / Normal / More**), **Pause 30m / 2h / until resumed**, **Resume**, the Brief time, and engine health. |
+| **Watch** | The **radar** first, led by stocks **igniting** in the last hour (⚡ "+2.1% in 5m on 6× vol": a push on volume a median 20 minutes before they become big movers; tap one for its launch price, where the move fails and what backs it). Then small caps breaking out right now on real volume (±20% on the day or a fast jump, $2M+ traded), with market cap, dollars traded, relative volume, pre-market/after-hours tag and the headline behind the move, or "No headline yet". It is live: it refreshes every 30 s while on screen and instantly when the radar fires (new names flash gold, moves count to their new value), and tapping a flagged name opens its radar alert. Then **Smart money**: one feed of informed money as it prints, newest first: options bought hard on one side (◈), insiders buying with their own cash on Form 4 (✦), and stocks igniting on volume (⚡), each with ▲/▼. Then the **Market map**: today's cap-weighted move for every sector (companies worth $300M+ with a live quote, 3+ per sector), green to red by strength, with each sector's leaders and its worst laggard (tap any for its page). Then the board: every quoted symbol sorted by today's move, with the 5-minute change. Tickers from fresh alerts are added automatically. |
+| **Desk** | **Yours, on this phone** (see [Your desk](#your-desk-per-phone-watchlist-price-alerts-tracked-calls)): your **watchlist** with live prices, your **price alerts**, your **tracked calls** with their P&L and your record, the **track record** of every alert Foretape sent (graded an hour later and at the close), and **what reaches you** (categories, quiet hours, watchlist pushes). Then push status, **Send a test alert**, **Reconnect**, motion on/off, the server's alert level (**Critical only / Normal / More**), **Pause 30m / 2h / until resumed**, **Resume**, the Brief time, and engine health. |
 
 A HIGH or CRITICAL alert that arrives while you're on another tab slides up as a glass toast; tap it to open the alert. Pull down at the top of any tab to refresh it: a ring fills as you pull, the flame lights when you've pulled far enough, and the engine flares as the data reloads.
 
@@ -69,6 +69,35 @@ A HIGH or CRITICAL alert that arrives while you're on another tab slides up as a
 | **The edge** | How many seconds after publication Foretape caught it, where it was first seen, and when the mainstream caught up: *"Beat CNBC by 6m 52s"*. It's measured live: when CNBC, Yahoo Finance, Google News, MarketWatch, WSJ, Bloomberg, NYT, Fortune or Axios later carries the same story, the gap is recorded. |
 | **Who carried it** | Every source that carried the story, first one first, with the gaps. |
 | **Why Foretape flagged it** | The full score breakdown: every keyword, theme, authority and source signal that counted. |
+| **Act on it** | A door to each stock's page, **▲/▼ Track** (a paper call at the live price, kept on your desk with its P&L; the direction follows the play) and **Share**: the phone's share sheet (or a copied link) with a deep link straight to this alert. Whoever opens it needs their own access key. |
+
+### Every stock has a page
+
+Tap any ticker chip, anywhere (an alert card, the radar, smart money, the market map, search, your watchlist) and its page slides up. Deep link: `/app/#t=NVDA`.
+
+| Part | What it shows |
+|---|---|
+| **Header** | The live price and today's move (from the live tape or the price monitor, whichever is fresher), the day's range, market cap, size band, sector, OTC flag. |
+| **Actions** | **☆ Watch**, **🔔 Price alert** (above $X, below $X, or ±N% on the day), **▲ Track / ▼ Short** (paper), **Share**. Your open price alerts and tracked calls on this stock are listed right there. |
+| **Recent tape** | Its intraday price line. |
+| **The evidence** | A weighted bull/bear tally of everything Foretape knows about it, with a lean (**▲ leans bullish** only when the bull side is at least twice the bear side and 1.5+ points ahead; likewise bearish; else **mixed**). Counted: alerts from the last 3 days by severity (HIGH = 2, CRITICAL = 3), options bought on one side today (2), insider buys from the last 90 days (opportunistic 3, routine or 10b5-1 planned 0.5, otherwise 2, following Cohen, Malloy and Pomorski 2012), other scored headlines (0.5) and an ignition on the tape (1, or 1.5 when its option chain primed it). Every signal is listed with its weight, and tapping one opens its alert. It is a tally of the evidence, not a forecast. |
+| **Why it's moving** | The headlines behind today's move (including overnight news, the reason for a morning gap). |
+| **On the tape** | An ignition (with its burst volume), the radar's read (dollars traded, relative volume) and the latest options hit (call vs put premium, top contracts). |
+| **Foretape on it** | Every alert on the stock in the last 30 days, its direction, its move **since the alert** (from the alert's own reference price), and its grade an hour later and at the close. |
+| **Insider buys, Coming up, Headlines** | Form 4 purchases (180 days), calendar events naming it, and 7 days of scored headlines. |
+| **Company** | Market cap, industry, and how many phones watch it. |
+
+## Your desk: per-phone watchlist, price alerts, tracked calls
+
+Each phone (each browser) gets a random id the first time it opens Foretape. Everything you set is kept on the server under that id, so the server can respect it when it pushes, and it survives restarts (SQLite, plus the `STATE_DB` Postgres when set).
+
+- **Watchlist** (up to 60 stocks). Alerts on them get the **Mine** filter and the gold ★, and **a MEDIUM alert on a stock you watch reaches your lock screen** (MEDIUM normally only shows in the app), marked ★ in the title. Turn that off with **Watchlist pushes**. Adding a stock also adds it to the live quotes.
+- **Price alerts** (up to 40 open): above a price, below a price, or a move of ±N% on the day. Checked every 15 seconds against the freshest live price; when one hits, this phone alone gets a push (*"🔔 NVDA is above $200.00 · $200.40 (+2.10% today)"*), the app shows a toast, and tapping the push opens the stock's page. Each fires once; it then shows ✓ with the price it fired at.
+- **Tracked calls** (up to 40 open): a paper long or short from an alert or a stock's page, at the live price when you tap. The desk shows each one's P&L live; **Close** books it at the live price. Closed calls build your record: how many, how many won, the average. It's how you learn which of your reads work. **The system never trades.**
+- **Track record:** every alert Foretape sends is graded on its own, per stock, an hour after it and at its session's close (an after-hours alert is graded at the next session's close), in the alert's direction: + means the stock went the alert's way. The desk shows each kind's hit rate and median move (headlines by severity, radar, options, insider buys) over 30 days. Alerts without a direction count toward neither side.
+- **What reaches you:** turn categories on or off for this phone: **Headlines, Radar & ignition, Options flow, Insider buys, Macro & indexes** (an alert on SPY/QQQ/TLT-type tickers, or none). **Quiet hours** (ET, may wrap midnight): only CRITICAL alerts reach this phone in between. These sit on top of the server-wide level and pause, which apply to every phone.
+
+The same data is in the API: `GET /api/desk` and `POST /api/desk` (with the `X-Device` header the app sends), `GET /api/ticker/{SYM}`, `/api/search?q=`, `/api/smart`, `/api/sectors` and `/api/record?days=30`.
 
 ### The morning Brief
 
@@ -108,13 +137,14 @@ News247 then keeps a copy of the subscriptions there and restores them on start.
 | `CONTACT_EMAIL` | (none) | Sent to push services as the operator contact; already set for SEC. |
 | `PUSH_BRIEF_TIME` | `08:15` | When the morning Brief is pushed (US/Eastern, market days only). Empty turns it off. |
 
-Quiet hours, the rate limit and the pause/level commands apply to push exactly as they do to the other channels. Several phones can subscribe; each gets every alert.
+Quiet hours, the rate limit and the pause/level commands apply to push exactly as they do to the other channels. Several phones can subscribe; each gets every alert its own desk allows (categories, quiet hours), plus its watchlist's MEDIUM alerts and its own price alerts.
 
 ## Privacy and security
 
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.
+- **Your desk** is stored under a random per-phone id (no name, number or email). Anyone with your access key could read a desk if they knew its id; the id is only kept on that phone and in the server's database.
 - **Cleanup:** when a phone uninstalls the app or revokes permission, its push service answers *gone* and News247 deletes that subscription.
 
 ## Troubleshooting

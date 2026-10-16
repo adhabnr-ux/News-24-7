@@ -772,6 +772,8 @@ class WebPushNotifier(Notifier):
         self.state: Any = None  # StateStore, when STATE_DB is set
         self.last_sent: float | None = None
         self.removed = 0
+        self.allow: Any = None  # (subscription, alert) -> bool: each phone's desk preferences
+        self.filtered = 0
 
     # ------------------------------------------------------------------ setup
 
@@ -831,16 +833,17 @@ class WebPushNotifier(Notifier):
 
         return b64u(public_bytes(self.key))
 
-    async def subscribe(self, data: dict[str, Any], label: str = "") -> Any:
+    async def subscribe(self, data: dict[str, Any], label: str = "", device: str = "") -> Any:
         from ..webpush import Subscription
 
-        sub = Subscription.from_browser(data, label)
+        sub = Subscription.from_browser(data, label, device)
         old = self.subs.get(sub.endpoint)
         if old is not None:
             sub.created, sub.last_ok = old.created, old.last_ok
+            sub.device = sub.device or old.device
         self.subs[sub.endpoint] = sub
         self.storage.push_save(sub.to_dict())
-        if old is None or (old.p256dh, old.auth) != (sub.p256dh, sub.auth):
+        if old is None or (old.p256dh, old.auth, old.device) != (sub.p256dh, sub.auth, sub.device):
             await self._persist()
         return sub
 
@@ -922,7 +925,14 @@ class WebPushNotifier(Notifier):
                 "no phone has turned on alerts yet: open /app on your phone and tap “Turn on alerts”"
             )
         urgency = "high" if alert.severity >= Severity.HIGH else "normal"
-        results = await self.push(self.payload(alert), urgency=urgency)
+        only = None
+        if self.allow is not None:  # each phone's own preferences (desk.py): categories, quiet hours
+            only = [s.endpoint for s in self.subs.values() if self.allow(s, alert)]
+            self.filtered += len(self.subs) - len(only)
+            if not only:
+                self.last_sent = time.time()
+                return
+        results = await self.push(self.payload(alert), urgency=urgency, only=only)
         if results and all(r != "ok" for r in results.values()):
             raise RuntimeError("push failed: " + "; ".join(sorted(set(results.values())))[:300])
         self.last_sent = time.time()

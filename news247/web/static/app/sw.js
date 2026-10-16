@@ -1,6 +1,6 @@
 /* Foretape service worker: shows pushed alerts, opens the app on tap, keeps the app shell
    available offline, and re-subscribes if the browser rotates the push subscription. */
-const SHELL = "foretape-shell-v14";
+const SHELL = "foretape-shell-v15";
 const CONF = "foretape-conf";
 const SHELL_FILES = [
   "/app/", "/app/app.css", "/app/app.js", "/app/scene.js", "/app/launch.webp", "/app/depth.png", "/app/logo.svg", "/app/icon-192.png", "/app/badge-96.png",
@@ -30,6 +30,7 @@ self.addEventListener("fetch", (e) => {
 // The page hands us the access key so we can re-subscribe on our own if needed.
 self.addEventListener("message", (e) => {
   if (e.data?.type === "token") caches.open(CONF).then((c) => c.put("/token", new Response(e.data.token)));
+  if (e.data?.type === "device") caches.open(CONF).then((c) => c.put("/device", new Response(e.data.device)));
 });
 
 async function bumpBadge() {
@@ -55,7 +56,7 @@ self.addEventListener("push", (e) => {
     badge: "/app/badge-96.png",
     timestamp: d.ts ? d.ts * 1000 : Date.now(),
     vibrate: critical ? [120, 60, 120, 60, 240] : [80, 40, 80],
-    data: { url: "/app/" + (d.id ? "#a=" + d.id : ""), source: d.url || "" },
+    data: { url: d.open || "/app/" + (d.id ? "#a=" + d.id : ""), source: d.url || "" },
     actions: d.url ? [{ action: "source", title: "Open source" }] : [],
   };
   e.waitUntil(Promise.all([
@@ -84,6 +85,7 @@ self.addEventListener("notificationclick", (e) => {
 self.addEventListener("pushsubscriptionchange", (e) => {
   e.waitUntil((async () => {
     const token = await (await (await caches.open(CONF)).match("/token"))?.text();
+    const device = (await (await (await caches.open(CONF)).match("/device"))?.text()) || "";
     const key = (await (await fetch("/app/push-key")).text()).trim();
     const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - key.length % 4) % 4));
     const sub = await self.registration.pushManager.subscribe({
@@ -92,7 +94,7 @@ self.addEventListener("pushsubscriptionchange", (e) => {
     if (token) {
       await fetch("/api/push/subscribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, "X-Device": device },
         body: JSON.stringify({ subscription: sub.toJSON(), label: "renewed" }),
       });
     }

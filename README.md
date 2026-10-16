@@ -59,6 +59,8 @@ Every alert comes with an analysis:
 
 There's also a **morning Brief** pushed at 08:15 ET on market days, a **catalyst calendar** (FOMC, jobs, elections, option expiries, holidays) and a live **board** of movers.
 
+**Every stock has a page** (tap any ticker): live price, a weighted **bull/bear tally** of every signal on it (alerts, one-sided options, insider buys, tape ignitions), why it's moving, every alert on it with its move since and its grade. **Your desk**, per phone: a **watchlist** (its alerts get a *Mine* filter and reach your lock screen even at MEDIUM), **price alerts** (above, below, ±% on the day; pushed to that phone only), paper-**tracked calls** with live P&L, per-phone **categories and quiet hours**, and the **track record** of every alert, graded an hour later and at the close. The Watch tab adds **smart money** (options, insider buys and ignitions in one feed) and a live cap-weighted **market map**; the tape has **search**.
+
 It needs no phone number, no Meta/Apple developer account and no app store. It uses standard Web Push (encrypted; iOS 16.4+, Android, desktop). Optional: a free Postgres in `STATE_DB` keeps phones subscribed across Render restarts.
 
 ![Foretape: the live launch scene with callouts, the tape, an alert's analysis with its price chart](docs/foretape.png)
@@ -457,7 +459,7 @@ Secrets go in `.env` and are referenced from the config as `${NAME}`.
 
 ### API
 
-`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/scorecard?date=YYYY-MM-DD&days=30`, `/api/trends?days=30`, `/api/camillo`, `/api/brief`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
+`GET /api/alerts`, `/api/items?min_score=50`, `/api/market`, `/api/radar`, `/api/options`, `/api/ticker/{SYM}`, `/api/search?q=`, `/api/smart`, `/api/sectors`, `/api/record?days=30`, `GET`/`POST /api/desk` (per phone, `X-Device` header), `/api/scorecard?date=YYYY-MM-DD&days=30`, `/api/trends?days=30`, `/api/camillo`, `/api/brief`, `/api/status`, `/api/latency`, `/health`, and `GET /events` (Server-Sent Events stream of `item` / `alert` / `item_update`).
 
 ---
 

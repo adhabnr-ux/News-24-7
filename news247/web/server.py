@@ -99,6 +99,13 @@ class WebServer:
         app.router.add_get("/api/trends", self.api_trends)
         app.router.add_get("/api/camillo", self.api_camillo)
         app.router.add_get("/api/alert/{id}", self.api_alert)
+        app.router.add_get("/api/ticker/{sym}", self.api_ticker)
+        app.router.add_get("/api/search", self.api_search)
+        app.router.add_get("/api/desk", self.api_desk)
+        app.router.add_post("/api/desk", self.api_desk_edit)
+        app.router.add_get("/api/smart", self.api_smart)
+        app.router.add_get("/api/sectors", self.api_sectors)
+        app.router.add_get("/api/record", self.api_record)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
         app.router.add_post("/api/push/unsubscribe", self.api_push_unsubscribe)
         app.router.add_post("/api/push/test", self.api_push_test)
@@ -618,6 +625,72 @@ class WebServer:
         alert["follow"] = self.engine.follow_for(alert)
         return _json(alert)
 
+    # ------------------------------------------------------------------ dossier, desk, boards
+
+    async def api_ticker(self, request: web.Request) -> web.Response:
+        """Everything about one stock: price, why it moves, the evidence tally, its alerts and what
+        they did since, insider buys, options, the radar, its calendar."""
+        from ..dossier import ticker_dossier
+
+        d = ticker_dossier(self.engine, request.match_info["sym"])
+        if d is None:
+            raise web.HTTPBadRequest(text="not a symbol")
+        dev = self._device(request)
+        d["watching"] = bool(dev and d["symbol"] in (self.engine.desk.get(dev).get("watchlist") or []))
+        return _json(d)
+
+    async def api_search(self, request: web.Request) -> web.Response:
+        from ..dossier import search
+
+        return _json(search(self.engine, request.query.get("q", "")))
+
+    @staticmethod
+    def _device(request: web.Request) -> str:
+        dev = request.headers.get("X-Device") or request.query.get("device") or ""
+        from ..desk import Desk
+
+        return dev if Desk.valid_device(dev) else ""
+
+    async def api_desk(self, request: web.Request) -> web.Response:
+        """This phone's desk: watchlist with live prices, price alerts, tracked calls, preferences."""
+        dev = self._device(request)
+        if not dev:
+            raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
+        return _json(self.engine.desk.view(dev, self.engine.price_of))
+
+    async def api_desk_edit(self, request: web.Request) -> web.Response:
+        self._check_write(request)
+        dev = self._device(request)
+        if not dev:
+            raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
+        try:
+            body = await request.json()
+            self.engine.desk.apply(dev, str(body.get("action", "")), body, self.engine.price_of)
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
+        syms = [str(body.get("symbol") or "")] + [str(s) for s in body.get("symbols") or []]
+        self.engine._track_symbols([s.upper() for s in syms if s])  # quote it from now on
+        return _json(self.engine.desk.view(dev, self.engine.price_of))
+
+    async def api_smart(self, request: web.Request) -> web.Response:
+        from ..dossier import smart_money
+
+        return _json(smart_money(self.engine))
+
+    async def api_sectors(self, request: web.Request) -> web.Response:
+        from ..dossier import sectors
+
+        return _json(sectors(self.engine))
+
+    async def api_record(self, request: web.Request) -> web.Response:
+        from ..dossier import track_record
+
+        try:
+            days = max(1.0, min(90.0, float(request.query.get("days", "30"))))
+        except ValueError:
+            days = 30.0
+        return _json(track_record(self.engine, days))
+
     async def api_foretape(self, request: web.Request) -> web.Response:
         """For the Setup page: the link (and a QR code) that opens Foretape on a phone."""
         wp = self.engine.webpush
@@ -644,7 +717,9 @@ class WebServer:
         self._check_write(request)
         try:
             body = await request.json()
-            sub = await wp.subscribe(body.get("subscription") or {}, str(body.get("label") or ""))
+            sub = await wp.subscribe(
+                body.get("subscription") or {}, str(body.get("label") or ""), self._device(request)
+            )
         except (ValueError, TypeError, AttributeError) as exc:
             raise web.HTTPBadRequest(text=f"invalid subscription: {exc}") from None
         return _json({"ok": True, "service": sub.service, "devices": len(wp.subs)})

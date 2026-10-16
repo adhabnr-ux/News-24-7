@@ -224,6 +224,12 @@ class Engine:
             contact = contact_email(cfg.general.user_agent, os.environ.get("CONTACT_EMAIL", ""))
             subject = f"mailto:{contact}" if contact else (cfg.web.public_url or "")
             self.webpush.attach(self.storage, secret=cfg.web.token, state=self.state_store, subject=subject)  # type: ignore[attr-defined]
+        # your desk: each phone's watchlist, push preferences, price alerts and tracked calls (desk.py)
+        from .desk import Desk
+
+        self.desk = Desk(self.storage, self.state_store)
+        if self.webpush is not None:
+            self.webpush.allow = lambda sub, alert: self.desk.allows(sub.device, alert)  # type: ignore[attr-defined]
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         # meaningful news kept back to the previous session, so a move at 09:45 can cite the
@@ -267,6 +273,8 @@ class Engine:
         self._spawn(asyncio.to_thread(self.edge.warm))  # score the history off the event loop
         if self.webpush is not None:
             await self.webpush.restore()  # type: ignore[attr-defined]  # fresh container: phones come back
+        with contextlib.suppress(Exception):
+            await self.desk.restore()
         snap = getattr(self._wa_channel, "snapshot", None)
         if self.whatsapp is not None:
             if snap is not None:
@@ -276,6 +284,7 @@ class Engine:
         if self.prices:
             runners.append(asyncio.create_task(self.prices.run(self.on_moves, stop), name="prices"))
         runners.append(asyncio.create_task(self._maintenance(stop), name="maintenance"))
+        runners.append(asyncio.create_task(self._desk_loop(stop), name="desk"))
         runners.append(asyncio.create_task(self._edge_loop(stop), name="edge"))
         if self.smallcap_feed is not None:
             runners.append(asyncio.create_task(self.smallcap_feed.run(self.on_radar, stop), name="smallcap"))
@@ -820,7 +829,9 @@ class Engine:
                 alert = self._ignition_alert(hit, [], Severity.MEDIUM)
                 await self.publish(alert)
                 self._maybe_hunt(alert, hit.name)
-        cut = time.time() - 1800
+        cut = (
+            max(h.detected for h in hits) if hits else time.time()
+        ) - 1800  # the tape's clock, not the wall's
         for sym, (_, ts) in list(self.ignition_pending.items()):
             if ts < cut:
                 del self.ignition_pending[sym]
@@ -1693,6 +1704,7 @@ class Engine:
         if push:
             self.stats["pushed"] += 1
             self._spawn(self.dispatcher.dispatch(alert))
+            self._spawn(self._push_watchers(alert))
         else:
             log.info("startup backfill (dashboard only): %s", alert.title[:100])
 
@@ -2090,6 +2102,84 @@ class Engine:
                     await self.send_brief(now)
                 except Exception as exc:  # noqa: BLE001 - the brief must never stop the engine
                     log.warning("morning brief failed: %s", exc)
+
+    # ------------------------------------------------------------------ your desk
+
+    def price_of(
+        self, symbol: str, max_age_s: float = 86400.0, now: float | None = None
+    ) -> tuple[float, float, float | None] | None:
+        """(when, price, % on the day) from the freshest source: the live tape, else the price monitor."""
+        sym = (symbol or "").upper()
+        q = self.live_quotes.get(sym, max_age_s, now)
+        best = (q.ts, q.price, q.change_pct) if q is not None else None
+        last = self.detector.last_price.get(sym)
+        if last is not None and (best is None or last[0] > best[0]):
+            pc = self.detector.prev_close.get(sym)
+            best = (last[0], last[1], (last[1] / pc - 1.0) * 100.0 if pc else None)
+        return best
+
+    async def _push_watchers(self, alert: Alert) -> None:
+        """A MEDIUM alert (shown in the app, not pushed) on a stock someone watches: push it to
+        those phones, with their preferences (category, quiet hours) respected."""
+        wp = self.webpush
+        if wp is None or alert.severity != Severity.MEDIUM or not alert.tickers or self.dispatcher.paused:
+            return
+        if any(ch.name == "webpush" for ch in self.dispatcher.targets(alert)):
+            return  # the phone floor is at MEDIUM: it went to everyone already
+        devices = {
+            d for d in self.desk.watchers(alert.tickers[:6])
+            if (self.desk.get(d).get("prefs") or {}).get("watch_push", True) and self.desk.allows(d, alert)
+        }  # fmt: skip
+        only = [s.endpoint for s in wp.subs.values() if s.device in devices]  # type: ignore[attr-defined]
+        if not only:
+            return
+        payload = wp.payload(alert)  # type: ignore[attr-defined]
+        payload["title"] = "★ " + payload["title"]
+        with contextlib.suppress(Exception):
+            await wp.push(payload, urgency="normal", only=only)  # type: ignore[attr-defined]
+
+    async def _desk_loop(self, stop: asyncio.Event) -> None:
+        """Every 15 s: price alerts that came true go to their phone. Every minute: alert outcomes
+        (an hour later, at the close) are stamped, and the desk is saved to the state database."""
+        from .dossier import record_outcomes
+
+        last_outcomes = 0.0
+        while not stop.is_set():
+            await _sleep_or_stop(stop, 15)
+            now = time.time()
+            with contextlib.suppress(Exception):
+                await self.check_price_alerts(now)
+            if now - last_outcomes >= 60:
+                last_outcomes = now
+                with contextlib.suppress(Exception):
+                    record_outcomes(self, now)
+                with contextlib.suppress(Exception):
+                    await self.desk.persist()
+
+    async def check_price_alerts(self, now: float | None = None) -> list[tuple[str, dict[str, Any]]]:
+        fired = self.desk.due_price_alerts(self.price_of, now)
+        for device, a, q in fired:
+            what = {"above": f"is above ${a['value']:,.2f}", "below": f"is below ${a['value']:,.2f}",
+                    "move": f"is {fmt_pct(q[2] or 0)} on the day (your line: ±{a['value']:g}%)"}[a["kind"]]  # fmt: skip
+            title = f"🔔 {a['symbol']} {what}"
+            body = (
+                f"${q[1]:,.2f}"
+                + (f" ({fmt_pct(q[2])} today)" if q[2] is not None else "")
+                + " · your price alert"
+            )
+            self._broadcast(
+                "price_alert", {"device": device, "symbol": a["symbol"], "title": title, "body": body}
+            )
+            wp = self.webpush
+            if wp is not None:
+                only = [s.endpoint for s in wp.subs.values() if s.device == device]  # type: ignore[attr-defined]
+                if only:
+                    payload = {"id": f"pa-{a['id']}", "title": title, "body": body, "severity": "HIGH", "kind": "system",
+                               "tickers": [a["symbol"]], "tag": f"pa-{a['id']}", "ts": now or time.time(),
+                               "open": f"/app/#t={a['symbol']}"}  # fmt: skip
+                    with contextlib.suppress(Exception):
+                        await wp.push(payload, urgency="high", only=only)  # type: ignore[attr-defined]
+        return [(d, a) for d, a, _ in fired]
 
     async def _maintenance(self, stop: asyncio.Event) -> None:
         last_prune = 0.0

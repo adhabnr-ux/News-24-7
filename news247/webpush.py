@@ -142,9 +142,10 @@ class Subscription:
     created: float = 0.0
     last_ok: float | None = None
     failures: int = 0
+    device: str = ""  # the app's device id: its desk (watchlist, push preferences, price alerts)
 
     @classmethod
-    def from_browser(cls, data: dict[str, Any], label: str = "") -> Subscription:
+    def from_browser(cls, data: dict[str, Any], label: str = "", device: str = "") -> Subscription:
         """From PushSubscription.toJSON(): {endpoint, keys: {p256dh, auth}}."""
         keys = data.get("keys") or {}
         endpoint, p256dh, auth = (
@@ -156,7 +157,7 @@ class Subscription:
             raise ValueError("not a valid push subscription")
         if len(unb64u(p256dh)) != 65 or len(unb64u(auth)) != 16:
             raise ValueError("push subscription keys have the wrong size")
-        return cls(endpoint, p256dh, auth, label[:80], time.time())
+        return cls(endpoint, p256dh, auth, label[:80], time.time(), device=device[:64])
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -167,6 +168,7 @@ class Subscription:
             "created": self.created,
             "last_ok": self.last_ok,
             "failures": self.failures,
+            "device": self.device,
         }
 
     @property
