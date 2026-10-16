@@ -596,3 +596,10 @@ body.light .lede { color: var(--muted); text-shadow: none; }
 body.light .toast { background: #16213B; color: #FFF; }
 body.light, body.light * { text-shadow: none !important; }
 body.light .chip { background: rgba(22, 33, 59, .08) !important; color: var(--text); }
+/* run 10: undo, rearm, sparkline, keyboard focus */
+.undo { margin-left: 10px; padding: 4px 10px; border: 0; border-radius: 99px; cursor: pointer; font: 700 12.5px var(--sans); color: #1B1206; background: linear-gradient(180deg, #FFE2B4, #F6B36A); }
+.rearm { display: block; margin: 8px 0 2px; font-size: 13px; color: var(--muted); }
+.rearm input { margin-right: 6px; vertical-align: -2px; }
+.spark { width: 54px; height: 18px; flex: none; }
+.alert.kfocus .glass { box-shadow: 0 0 0 2px var(--gold), 0 0 28px -6px rgba(255, 180, 100, .7); }
+.toast.show .undo { pointer-events: auto; }

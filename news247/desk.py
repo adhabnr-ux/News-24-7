@@ -105,6 +105,7 @@ def default_profile() -> dict[str, Any]:
             "forward": None,  # this phone's own copy: {"kind": "discord"|"telegram"|"ntfy", ...}
             "close_recap": False,  # the 16:15 ET market recap ("the close")
             "tomorrow": False,  # the 20:00 ET "tomorrow" card
+            "followups": False,  # an hour after an alert on your stock: how it played out (2%+ moves)
         },
         "price_alerts": [],
         "tracked": [],
@@ -120,6 +121,8 @@ def default_profile() -> dict[str, Any]:
         "rules": [],  # smart alerts: {"id", "kind", "symbol" ("*" = every watched stock), "value", "dir"}
         "rules_fired": [],  # keys of what each rule already fired on (once per headline / per day)
         "holdings": {},  # symbol -> {"shares", "cost"}
+        "taste": {},  # record key -> {"up", "down", "saved", "tracked", "opened"}: what this phone finds useful
+        "opened": [],  # alert ids recently opened (counted once)
         "follow": {"themes": [], "sectors": []},
         "digest_q": [],  # alerts held for the next digest
         "digest_at": 0.0,  # when the last digest went
@@ -392,7 +395,16 @@ class Desk:
             if "min_sev" in body:
                 floor = body.get("min_sev")
                 prefs["min_sev"] = floor if floor in SEV_RANK else None
-            for flag in ("eod", "earn_remind", "open_plan", "week", "skip_fades", "close_recap", "tomorrow"):
+            for flag in (
+                "eod",
+                "earn_remind",
+                "open_plan",
+                "week",
+                "skip_fades",
+                "close_recap",
+                "tomorrow",
+                "followups",
+            ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
             if "auto_move" in body:
@@ -436,6 +448,7 @@ class Desk:
                     "value": value,
                     "created": now,
                     "fired": None,
+                    "rearm": bool(body.get("rearm")),
                 }
                 | ({"peak": None} if kind == "trail" else {})
             )
@@ -469,6 +482,8 @@ class Desk:
             _set_levels(t, body)
             _journal(t, body)
             p["tracked"].append(t)
+            if t["alert_id"]:
+                self._taste(p, t["alert_id"], "tracked", 1)
         elif action == "track_levels":
             tid = str(body.get("id") or "")
             t = next((x for x in p["tracked"] if x["id"] == tid), None)
@@ -531,6 +546,11 @@ class Desk:
                 for k in list(votes)[:100]:
                     del votes[k]
             self._tally_vote(aid, before, v)
+            if before != v:
+                if before:
+                    self._taste(p, aid, "up" if before > 0 else "down", -1)
+                if v:
+                    self._taste(p, aid, "up" if v > 0 else "down", 1)
         elif action == "transfer_out":
             p["transfer"] = {"code": self.new_transfer(device, now), "until": now + TRANSFER_TTL_S}
         elif action == "transfer_in":
@@ -647,10 +667,19 @@ class Desk:
             if hours:
                 sn[cat] = now + hours * 3600
             p["snooze"] = sn
+        elif action == "opened":
+            aid = str(body.get("id") or "")[:40]
+            seen = p.setdefault("opened", [])
+            if aid and aid not in seen:
+                seen.append(aid)
+                del seen[:-200]
+                self._taste(p, aid, "opened", 1)
         elif action in ("save", "unsave"):
             aid = str(body.get("id") or "")[:40]
             if not aid:
                 raise ValueError("need an alert id")
+            if action == "save" and aid not in (p.get("saved") or []):
+                self._taste(p, aid, "saved", 1)
             saved = [x for x in p.get("saved") or [] if x != aid]
             p["saved"] = ([aid] + saved)[:100] if action == "save" else saved
         elif action == "kw_add":
@@ -683,6 +712,20 @@ class Desk:
             raise ValueError(f"unknown action {action!r}")
         self.save(device)
         return p
+
+    def _taste(self, p: dict[str, Any], aid: str, field: str, delta: int) -> None:
+        """Count what this phone does with an alert (vote, save, track, open) under the alert's kind."""
+        if not hasattr(self.storage, "get_alert"):
+            return
+        a = self.storage.get_alert(aid)
+        if a is None:
+            return
+        from .dossier import record_key
+
+        row = p.setdefault("taste", {}).setdefault(
+            record_key(a), {"up": 0, "down": 0, "saved": 0, "tracked": 0, "opened": 0}
+        )
+        row[field] = max(0, row.get(field, 0) + delta)
 
     def _tally_vote(self, aid: str, before: int, after: int) -> None:
         """Keep the alert's own count of 👍/👎 (all phones) in its edge, for the record."""
@@ -742,6 +785,7 @@ class Desk:
             "forward": _mask_forward((p.get("prefs") or {}).get("forward")),
             "rules": p.get("rules") or [],
             "holdings": p.get("holdings") or {},
+            "taste": taste_rows(p.get("taste") or {}),
             "follow": p.get("follow") or {"themes": [], "sectors": []},
             "share": p["share"] if (p.get("share") or {}).get("until", 0) > now else None,
             "record": {
@@ -774,6 +818,16 @@ class Desk:
         for device, p in self.profiles.items():
             changed = False
             for a in p.get("price_alerts") or []:
+                if (
+                    a.get("fired")
+                    and a.get("rearm")
+                    and datetime.fromtimestamp(a["fired"], ET).date()
+                    != datetime.fromtimestamp(now, ET).date()
+                ):
+                    a["fired"], a["fired_price"] = None, None  # every day: a new day, armed again
+                    if a["kind"] == "trail":
+                        a["peak"] = None
+                    changed = True
                 if a.get("fired"):
                     continue
                 q = price_of(a["symbol"])
@@ -834,6 +888,35 @@ DISCORD_RE = re.compile(
 TELEGRAM_TOKEN_RE = re.compile(r"^\d{5,12}:[\w-]{30,60}$")
 TELEGRAM_CHAT_RE = re.compile(r"^-?\d{3,20}$|^@[A-Za-z][\w]{4,31}$")
 NTFY_TOPIC_RE = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
+
+
+def taste_rows(taste: dict[str, dict[str, int]]) -> list[dict[str, Any]]:
+    """What this phone finds useful, per alert kind: a score from -1 (votes it down) to 1 (votes it
+    up, saves it, tracks it), shrunk toward 0 until there's enough to go on."""
+    from .dossier import RECORD_LABEL
+
+    out = []
+    for key, t in taste.items():
+        good = (
+            2 * t.get("up", 0) + 1.5 * t.get("saved", 0) + 2 * t.get("tracked", 0) + 0.3 * t.get("opened", 0)
+        )
+        bad = 2 * t.get("down", 0)
+        weight = (
+            t.get("up", 0)
+            + t.get("down", 0)
+            + t.get("saved", 0)
+            + t.get("tracked", 0)
+            + 0.3 * t.get("opened", 0)
+        )
+        if not weight:
+            continue
+        cat, _, sev = key.partition(":")
+        out.append({"key": key, "label": RECORD_LABEL.get(cat, cat.title()) + (f" · {sev}" if sev else ""), **t,
+                    "score": round((good - bad) / (good + bad + 3), 2),
+                    "suggest_off": t.get("down", 0) >= 3 and t.get("down", 0) > 2 * (t.get("up", 0) + t.get("saved", 0) + t.get("tracked", 0)),
+                    "category": cat})  # fmt: skip
+    out.sort(key=lambda r: -r["score"])
+    return out
 
 
 def clean_forward(raw: Any) -> dict[str, str] | None:

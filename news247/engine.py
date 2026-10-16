@@ -1728,7 +1728,9 @@ class Engine:
             if pre:
                 alert.edge["pre"] = pre  # how far it had moved in the 15 minutes before: priced in?
         if alert.kind != "system" and "base" not in alert.edge:
-            from .dossier import base_rate
+            from .dossier import base_rate, record_key
+
+            alert.edge.setdefault("rk", record_key(alert))  # its kind, for each phone's taste
 
             base = base_rate(self.base_rates, alert)
             if base:
@@ -2237,6 +2239,12 @@ class Engine:
                     await self.auto_why(now)
                 with contextlib.suppress(Exception):
                     await self.send_earnings_reminders(now)
+                with contextlib.suppress(Exception):
+                    await self.check_followups(now)
+                with contextlib.suppress(Exception):
+                    self.save_memory(now)
+                with contextlib.suppress(Exception):
+                    self.warm_earnings_week(now)
                 if self._tomorrow_due(now):
                     with contextlib.suppress(Exception):
                         await self.send_tomorrow(now)
@@ -2533,6 +2541,78 @@ class Engine:
         if len(self._rule_refs) > 5000:
             self._rule_refs.clear()
         return sent
+
+    async def check_followups(self, now: float | None = None) -> int:
+        """An hour after an alert on a stock a phone watches or holds: if it moved 2%+ since (from the
+        alert's reference price), that phone gets how it played out. Once per alert per phone; for
+        phones with follow-ups on."""
+        now = now or time.time()
+        sent = 0
+        for a in self.storage.recent_alerts(200, since=now - 75 * 60):
+            age = now - float(a.get("created", 0))
+            refs = (a.get("edge") or {}).get("refs") or {}
+            if a.get("kind") == "system" or not 55 * 60 <= age <= 75 * 60 or not refs:
+                continue
+            for sym, ref in list(refs.items())[:2]:
+                q = self.price_of(sym, 900, now=now)
+                if not q or not ref:
+                    continue
+                move = (q[1] / float(ref) - 1.0) * 100.0
+                if abs(move) < 2:
+                    continue
+                for device in self.desk.watchers([sym]):
+                    prefs = self.desk.get(device).get("prefs") or {}
+                    if not prefs.get("followups") or self.desk.all_muted(device, {"tickers": [sym]}, now):
+                        continue
+                    if not self._once(f"followup:{a['id']}:{device}"):
+                        continue
+                    payload = {"id": f"fu-{a['id']}", "title": f"↪ {sym} {move:+.1f}% since the alert an hour ago", "body": a["title"][:200],
+                               "severity": "MEDIUM", "kind": "system", "tickers": [sym], "tag": f"fu-{a['id']}", "ts": now, "open": f"/app/#a={a['id']}"}  # fmt: skip
+                    if await self._to_device(device, payload, urgency="normal"):
+                        sent += 1
+        return sent
+
+    def save_memory(self, now: float | None = None) -> dict[str, Any] | None:
+        """After 16:15 ET on a market day: keep the session's snapshot (market memory)."""
+        from .dossier import memory_snapshot
+
+        now = now or time.time()
+        dt = datetime.fromtimestamp(now, ET)
+        if (
+            dt.weekday() >= 5
+            or dt.date().isoformat() in self.calendar.holidays
+            or (dt.hour, dt.minute) < (16, 15)
+        ):
+            return None
+        key = f"memory:{dt.date().isoformat()}"
+        if self.storage.get_setting(key):
+            return None
+        snap = memory_snapshot(self, now)
+        if snap:
+            self.storage.set_setting(key, json.dumps(snap))
+        return snap
+
+    def warm_earnings_week(self, now: float | None = None, top: int = 8) -> list[str]:
+        """Once an hour: read the implied move and past reactions of the week's biggest reporters
+        in the background, so the Calendar can show them without a wait."""
+        from .dossier import earnings_week
+        from .personal import earnings_reactions, implied_move
+
+        now = now or time.time()
+        if now - getattr(self, "_warmed_at", 0.0) < 3600:
+            return []
+        self._warmed_at = now
+        syms = [r["symbol"] for d in earnings_week(self, now, min_cap=10e9)["days"] for r in d["rows"]][:top]
+
+        async def warm() -> None:
+            for s in syms:
+                with contextlib.suppress(Exception):
+                    await implied_move(self, s, now)
+                    await earnings_reactions(self, s, now)
+
+        if syms:
+            self._spawn(warm())
+        return syms
 
     def _tomorrow_due(self, now: float) -> bool:
         dt = datetime.fromtimestamp(now, ET)

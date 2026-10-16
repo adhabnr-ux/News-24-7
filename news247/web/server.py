@@ -122,6 +122,7 @@ class WebServer:
         app.router.add_get("/api/earnings-week", self.api_earnings_week)
         app.router.add_get("/api/inplay", self.api_inplay)
         app.router.add_get("/api/portfolio", self.api_portfolio)
+        app.router.add_get("/api/memory", self.api_memory)
         app.router.add_get("/api/tomorrow", self.api_tomorrow)
         app.router.add_get("/api/follow-options", self.api_follow_options)
         app.router.add_post("/api/rule-preview", self.api_rule_preview)
@@ -689,7 +690,17 @@ class WebServer:
         dev = self._device(request)
         if not dev:
             raise web.HTTPBadRequest(text="X-Device header (the app's device id) needed")
-        return _json(self.engine.desk.view(dev, self.engine.price_of))
+        return _json(self._desk_view(dev))
+
+    def _desk_view(self, dev: str) -> dict[str, Any]:
+        """The desk with each watched stock's last half hour, for the watchlist's sparklines."""
+        v = self.engine.desk.view(dev, self.engine.price_of)
+        for w in v["watchlist"]:
+            path = self.engine.live_quotes.path(w["symbol"])
+            pts = path.hist if path is not None else []
+            step = max(1, len(pts) // 24)
+            w["spark"] = [round(p, 4) for _, p in pts[::step]][-24:]
+        return v
 
     async def api_desk_edit(self, request: web.Request) -> web.Response:
         self._check_write(request)
@@ -703,7 +714,7 @@ class WebServer:
             raise web.HTTPBadRequest(text=str(exc)) from None
         syms = [str(body.get("symbol") or "")] + [str(s) for s in body.get("symbols") or []]
         self.engine._track_symbols([s.upper() for s in syms if s])  # quote it from now on
-        return _json(self.engine.desk.view(dev, self.engine.price_of))
+        return _json(self._desk_view(dev))
 
     async def api_smart(self, request: web.Request) -> web.Response:
         from ..dossier import smart_money
@@ -773,6 +784,11 @@ class WebServer:
         if not sym:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(await earnings_reactions(self.engine, sym))
+
+    async def api_memory(self, request: web.Request) -> web.Response:
+        from ..dossier import market_memory
+
+        return _json(market_memory(self.engine))
 
     async def api_portfolio(self, request: web.Request) -> web.Response:
         from ..dossier import portfolio

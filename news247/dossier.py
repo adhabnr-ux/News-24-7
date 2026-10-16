@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import statistics as st
@@ -1099,6 +1100,12 @@ def earnings_week(
         rows = sorted(by_day[d], key=lambda r: -(r["mcap"] or 0))
         for r in rows:
             r.pop("mcap")
+        for r in rows:  # what the background warm-up already read: options' price and the usual reaction
+            im = (engine.implied_cache.get(r["symbol"]) or (0, {}))[1]
+            nxt = next((x for x in im.get("rows") or [] if x.get("earnings")), None)
+            r["implied"] = nxt["move_pct"] if nxt else None
+            er = (engine.earnings_cache.get(r["symbol"]) or (0, {}))[1]
+            r["usual"] = er.get("avg_abs_move")
         out.append({"date": d, "in_days": rows[0]["in_days"], "rows": rows})
     return {"enabled": True, "days": out, "min_cap": min_cap}
 
@@ -1445,3 +1452,33 @@ def rule_preview(
                     moved += abs(row["h1"]) >= v
         out.update({"graded": graded, "moved": moved})
     return out
+
+
+# --------------------------------------------------------------------------- market memory
+
+
+def memory_snapshot(engine: Engine, now: float | None = None) -> dict[str, Any] | None:
+    """The session in a few numbers, kept every day (settings ``memory:<date>``) so the history builds."""
+    now = now or time.time()
+    c = close_recap(engine, now)
+    b = c["breadth"]
+    if not c["indexes"] and not b.get("n"):
+        return None
+    secs = sectors(engine, now, max_age_s=6 * 3600)["rows"]
+    return {"date": c["date"], "indexes": c["indexes"], "pct_up": b.get("pct_up"), "n": b.get("n"), "cap_weighted": b.get("cap_weighted"),
+            "regime": c["regime"]["label"], "sectors": {r["sector"]: r["chg"] for r in secs}}  # fmt: skip
+
+
+def market_memory(engine: Engine, days: int = 10) -> dict[str, Any]:
+    rows = engine.storage.db.execute(
+        "SELECT value FROM settings WHERE key LIKE 'memory:%' ORDER BY key DESC LIMIT ?", (days,)
+    ).fetchall()
+    snaps = [json.loads(r[0]) for r in rows]
+    # each sector's run over the window: how many of these sessions it rose, and its total
+    trend: dict[str, list[float]] = {}
+    for s in snaps:
+        for k, v in (s.get("sectors") or {}).items():
+            trend.setdefault(k, []).append(v)
+    sector_runs = sorted(({"sector": k, "sessions": len(v), "up": sum(1 for x in v if x > 0), "sum": round(sum(v), 2)} for k, v in trend.items()),
+                         key=lambda r: -r["sum"])  # fmt: skip
+    return {"days": snaps, "sectors": sector_runs}

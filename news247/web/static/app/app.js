@@ -51,6 +51,15 @@ function toast(msg, id, ms) {
   if (id) t.dataset.id = id; else delete t.dataset.id;
   t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), ms || (id ? 5200 : 3200));
 }
+// a toast with Undo: removals can be taken back for a few seconds
+let pendingUndo = null;
+function toastUndo(msg, fn) {
+  pendingUndo = fn;
+  const t = $("toast");
+  t.innerHTML = `${esc(msg)} <button class="undo" data-act="undo">Undo</button>`;
+  delete t.dataset.id;
+  t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => { t.classList.remove("show"); pendingUndo = null; }, 6000);
+}
 // ⓘ: what a term means, for anyone new to it
 const GLOSSARY = {
   implied: "Implied move: what the options market is paying for. The at-the-money call + put (the straddle) for an expiry, as a % of the stock: roughly the move priced in by that date, up or down.",
@@ -72,6 +81,30 @@ const GLOSSARY = {
   inplay: "In play: one ranked list from every board: the day's move, volume against normal, news buzz, options flow, a confluence alert, the radar, and whether there's a known reason.",
   digest: "Digest: instead of one push per alert, one push every 15 minutes or hour listing them. CRITICAL alerts and your own price alerts still come at once.",
 };
+// a short two-note chime for alerts while the app is open (Web Audio: nothing to download)
+let audioCtx = null;
+function chime(sev) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const notes = sev === "CRITICAL" ? [880, 660, 880] : [660, 880];
+    notes.forEach((f, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * 0.13;
+      o.frequency.value = f; o.type = "sine";
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + 0.13);
+    });
+  } catch (_) { /* no audio: fine */ }
+}
+// the deep links: for iOS Shortcuts, widgets, bookmarks and other apps
+function openLinks() {
+  const base = location.origin + "/app/";
+  const rows = [["A stock's page", base + "#t=NVDA"], ["An alert", base + "#a=ALERT_ID"], ["Search the tape", base + "#q=tariff"], ["The Brief", base + "#a=brief"], ["Your desk", base + "#a=desk"],
+    ["Calendar feed (webcal)", icsUrl("webcal")]];
+  showSheet(`<div class="meta"><span class="src">For Shortcuts, widgets and bookmarks</span></div><h2>Shortcuts &amp; links</h2>
+    <p class="muted">Every page has a link. In the iOS Shortcuts app, an <b>Open URL</b> action with one of these opens Foretape right there (add it to the home screen or say it to Siri).</p>
+    <div class="panel glass">${rows.map(([n, u]) => `<div class="li"><div class="grow"><div style="font-weight:600">${esc(n)}</div><div class="sub" style="word-break:break-all">${esc(u)}</div></div><button class="btn ghost small" data-act="copy" data-s="${esc(u)}">Copy</button></div>`).join("")}</div>
+    <p class="sub">The calendar link carries your access key: keep it private.</p>`);
+}
 function openGlossary() {
   const names = { implied: "Implied move", callwall: "Call wall", putwall: "Put wall", maxpain: "Max pain", pcratio: "Put/call volume", evidence: "The evidence tally", base: "Base rate", confluence: "Confluence", sympathy: "Sympathy move", rel: "Relative strength", ignition: "Ignition", gap: "Gap", halt: "Halt", smart: "Smart money", digest: "Digest", vwap: "VWAP and the 9:35 price", regime: "Market regime", inplay: "In play" };
   showSheet(`<div class="meta"><span class="src">Foretape, explained</span></div><h2>What the terms mean</h2>` + Object.entries(GLOSSARY).map(([k, v]) => `<h4>${esc(names[k] || k)}</h4><p class="muted" style="margin:0">${esc(v.replace(/^[^:]+: /, "").replace(/^./, (c) => c.toUpperCase()))}</p>`).join(""));
@@ -243,7 +276,8 @@ function bestScore(a) {
   const rank = { CRITICAL: 3, HIGH: 2, MEDIUM: 1, LOW: 0 }[a.severity] || 0;
   const hit = a.edge?.base?.h1?.hit ?? a.edge?.base?.close?.hit;
   const age = Math.max(0, Date.now() / 1000 - a.created) / 3600;
-  return rank * 2 + (hit != null ? (hit - 0.5) * 6 : 0) + (isMine(a) ? 2 : 0) + (a.edge?.confluence ? 1.5 : 0) - age * 0.6;
+  const taste = (desk?.taste || []).find((t) => t.key === (a.edge?.rk || a.edge?.base?.key));
+  return rank * 2 + (hit != null ? (hit - 0.5) * 6 : 0) + (isMine(a) ? 2 : 0) + (a.edge?.confluence ? 1.5 : 0) + (taste ? taste.score * 3 : 0) - age * 0.6;
 }
 function alertHTML(a, opts = {}) {
   const an = a.analysis || {}, it = a.item || {};
@@ -385,7 +419,7 @@ async function loadBrief() {
     ["Stories you had before the mainstream", e.stories], ["Median head start", e.median_lead_s != null ? dur(e.median_lead_s) : "—"],
     ["Biggest head start", e.best_lead_s != null ? dur(e.best_lead_s) : "—"],
   ].map(([k, v]) => `<div class="kv"><span>${k}</span><b class="num">${esc(v)}</b></div>`).join("") + scoreRows(b.scorecard);
-  loadDay(); loadClose(); loadTomorrow();
+  loadDay(); loadClose(); loadTomorrow(); loadMemory();
   Fx.observe($("main"));
 }
 // the scorecard: last session's big moves, and whether we had each one before the price
@@ -429,7 +463,7 @@ async function loadEarningsWeek() {
     const r = await api("/api/earnings-week");
     if (!r.enabled || !r.days.length) return "";
     return `<div class="sec-title rv"><h2>Earnings this week</h2><span>$2B+ companies · tap for the implied move</span></div><div class="panel glass tilt rv">`
-      + r.days.map((d) => `<div class="li"><div class="grow"><div style="font-weight:600">${esc(prettyDate(d.date))} <span class="sub">${inDays(d.in_days)}</span></div><div class="tks">${d.rows.slice(0, 18).map((x) => `<span class="tk${mine.has(x.symbol) ? " mine" : ""}" data-tk="${esc(x.symbol)}" role="button" title="${esc(x.name)}">${esc(x.symbol)} <small>${/before/i.test(x.when) ? "☀ pre" : /after/i.test(x.when) ? "☾ post" : ""}</small></span>`).join("")}${d.rows.length > 18 ? `<span class="tk rt">+${d.rows.length - 18}</span>` : ""}</div></div></div>`).join("") + "</div>";
+      + r.days.map((d) => `<div class="li"><div class="grow"><div style="font-weight:600">${esc(prettyDate(d.date))} <span class="sub">${inDays(d.in_days)}</span></div><div class="tks">${d.rows.slice(0, 18).map((x) => `<span class="tk${mine.has(x.symbol) ? " mine" : ""}" data-tk="${esc(x.symbol)}" role="button" title="${esc(x.name)}">${esc(x.symbol)} <small>${/before/i.test(x.when) ? "☀ pre" : /after/i.test(x.when) ? "☾ post" : ""}${x.implied != null ? ` · ±${x.implied.toFixed(1)}% priced` : ""}${x.usual != null ? ` · usually ±${x.usual.toFixed(1)}%` : ""}</small></span>`).join("")}${d.rows.length > 18 ? `<span class="tk rt">+${d.rows.length - 18}</span>` : ""}</div></div></div>`).join("") + "</div>";
   } catch (_) { return ""; }
 }
 async function loadCalendar() {
@@ -709,6 +743,7 @@ async function openSheet(id) {
   ].filter(Boolean);
   showSheet(blocks.join(""));
   loadSimilar(a);
+  if (a.kind !== "system") api("/api/desk", { method: "POST", body: JSON.stringify({ action: "opened", id: a.id }) }).catch(() => {});
 }
 // earlier alerts of the same kind on the same stock, and how they did by the close
 async function loadSimilar(a) {
@@ -812,7 +847,16 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "/") { e.preventDefault(); closeSheet(); go("tape"); setTimeout(() => $("q").focus(), 50); }
   else if (/^[1-6]$/.test(e.key)) { closeSheet(); go(TABS[+e.key - 1]); }
   else if (e.key === "w" && sheetOpen) document.querySelector("#sheetBody [data-act=watch]")?.click();
-  else if (e.key === "?") toast("Keys: / search · 1-6 tabs · w watch the open stock · Esc close", null, 6000);
+  else if ((e.key === "j" || e.key === "k") && !sheetOpen && tab === "tape") {
+    const cards = [...document.querySelectorAll(".stage .alert")];
+    if (!cards.length) return;
+    let i = cards.findIndex((c) => c.classList.contains("kfocus"));
+    cards.forEach((c) => c.classList.remove("kfocus"));
+    i = Math.max(0, Math.min(cards.length - 1, i + (e.key === "j" ? 1 : -1)));
+    cards[i].classList.add("kfocus"); cards[i].scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  else if (e.key === "o" && !sheetOpen) { const c = document.querySelector(".stage .alert.kfocus"); if (c) openSheet(c.dataset.id); }
+  else if (e.key === "?") toast("Keys: / search · 1-6 tabs · j/k move through the tape · o open · w watch the open stock · Esc close", null, 7000);
 });
 document.addEventListener("click", (e) => {
   const seg = e.target.closest("#tapeSeg button");
@@ -862,6 +906,18 @@ const FLOORS = [["", "All the server sends"], ["HIGH", "HIGH and up"], ["CRITICA
 const KIND_LABEL = { news: "Headline", radar: "Radar", options: "Options", insider: "Insider buy", macro: "Macro", tape: "Tape", system: "System", ignition: "Ignition", confluence: "Confluence" };
 
 // the watchlist in its groups (ungrouped first), each group in the order its stocks were added
+function sortWatch(wl) {
+  const how = store.get("ft.wsort") || "added";
+  if (how === "move") return [...wl].sort((x, y) => (y.chg_day ?? -999) - (x.chg_day ?? -999));
+  if (how === "name") return [...wl].sort((x, y) => x.symbol.localeCompare(y.symbol));
+  return wl;
+}
+function sparkSVG(pts) {
+  if (!pts || pts.length < 3) return "";
+  const lo = Math.min(...pts), hi = Math.max(...pts), span = hi - lo || 1, W = 54, H = 18;
+  const d = pts.map((p, i) => (i ? "L" : "M") + (i / (pts.length - 1) * W).toFixed(1) + " " + (H - 2 - (p - lo) / span * (H - 4)).toFixed(1)).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}" fill="none" stroke="${pts[pts.length - 1] >= pts[0] ? "var(--up)" : "var(--down)"}" stroke-width="1.6"/></svg>`;
+}
 function groupedWatch(wl) {
   const groups = desk.groups || {}, out = new Map([["", []]]);
   wl.forEach((w) => { const g = groups[w.symbol] || ""; if (!out.has(g)) out.set(g, []); out.get(g).push(w); });
@@ -871,8 +927,9 @@ function renderDesk() {
   if (!desk) return;
   const wl = desk.watchlist;
   $("dWatch").innerHTML = `<div class="addrow"><input id="wlIn" class="key" placeholder="Add tickers: NVDA, AMD, PLTR" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="wl-in">Add</button></div>`
-    + (wl.length ? groupedWatch(wl).map(([g, rows]) => (g ? `<div class="sub sh">${esc(g)}</div>` : "") + rows.map((w) => `<div class="li"><span class="sym" style="width:64px" data-tk="${esc(w.symbol)}" role="button">${esc(w.symbol)}${(desk.notes || {})[w.symbol] ? ` <small title="note">📝</small>` : ""}</span>
-        <span class="grow num">${fmtPx(w.price)}</span>${w.chg_day != null ? barHTML(w.chg_day) : ""}<span class="chg num ${cls(w.chg_day)}">${pct(w.chg_day)}</span>
+    + (wl.length ? `<div class="row" style="padding:0 0 6px">${[["added", "As added"], ["move", "By move"], ["name", "A-Z"]].map(([k, l]) => `<button class="btn ghost small${(store.get("ft.wsort") || "added") === k ? " sel" : ""}" data-act="wsort" data-s="${k}">${l}</button>`).join("")}</div>` : "")
+    + (wl.length ? groupedWatch(sortWatch(wl)).map(([g, rows]) => (g ? `<div class="sub sh">${esc(g)}</div>` : "") + rows.map((w) => `<div class="li"><span class="sym" style="width:64px" data-tk="${esc(w.symbol)}" role="button">${esc(w.symbol)}${(desk.notes || {})[w.symbol] ? ` <small title="note">📝</small>` : ""}</span>
+        <span class="grow num">${fmtPx(w.price)}</span>${sparkSVG(w.spark) || (w.chg_day != null ? barHTML(w.chg_day) : "")}<span class="chg num ${cls(w.chg_day)}">${pct(w.chg_day)}</span>
         <button class="x" data-act="wl-group" data-s="${esc(w.symbol)}" aria-label="Group ${esc(w.symbol)}">⋯</button><button class="x" data-act="wl-rm" data-s="${esc(w.symbol)}" aria-label="Remove ${esc(w.symbol)}">✕</button></div>`).join("")).join("")
       : `<div class="li"><span class="muted">Empty. Add tickers above, or tap ☆ Watch on any stock's page. Alerts on your stocks get the <b>Mine</b> filter on the tape, and reach your lock screen even at MEDIUM.</span></div>`);
   const pa = desk.price_alerts;
@@ -898,6 +955,12 @@ function renderDesk() {
   loadSaved();
   renderRules();
   loadPortfolio();
+  const ts = desk.taste || [];
+  $("dTasteWrap").hidden = !ts.length;
+  $("dTaste").innerHTML = ts.map((t) => `<div class="kv"><span>${esc(t.label)} <span class="sub">👍 ${t.up} · 👎 ${t.down} · saved ${t.saved} · tracked ${t.tracked} · opened ${t.opened}</span>
+      ${t.suggest_off ? `<br><button class="btn ghost small" data-act="cat-off" data-s="${esc(t.category === "news" ? "news" : t.category)}" style="margin-top:6px">You keep voting these down: turn them off here?</button>` : ""}</span>
+      <b class="num ${t.score > 0.15 ? "pos" : t.score < -0.15 ? "neg" : ""}">${t.score > 0 ? "+" : ""}${t.score.toFixed(2)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">From what you do on this phone: votes, saves, tracked calls, opens. "Best first" on the tape ranks your favorite kinds higher.</div>`;
   renderFollow();
   const sh = desk.share;
   $("dShare").innerHTML = `<div class="sub" style="margin-bottom:12px">Share your watchlist: a code anyone can use for 7 days to add your stocks to theirs (a copy; nothing else of yours is shared).</div>
@@ -920,8 +983,9 @@ function renderDesk() {
     <div class="sub" style="padding-top:8px">Display (this phone)</div>
     <div class="row" style="padding:10px 0 4px"><button class="btn ghost small${store.get("ft_clear") === "1" ? "" : " sel"}" data-act="display" data-s="cinema">Cinematic</button><button class="btn ghost small${store.get("ft_clear") === "1" ? " sel" : ""}" data-act="display" data-s="clear">Clear (no 3D, no blur)</button><button class="btn ghost small${store.get("ft_text") === "big" ? " sel" : ""}" data-act="display" data-s="text">Larger text</button>
       <button class="btn ghost small${store.get("ft_light") === "1" ? " sel" : ""}" data-act="display" data-s="light">Light</button><button class="btn ghost small${store.get("ft_compact") === "1" ? " sel" : ""}" data-act="display" data-s="compact">Compact</button>
-      <button class="btn ghost small${store.get("ft_haptic") === "1" ? " sel" : ""}" data-act="display" data-s="haptic">Vibrate on alerts</button><button class="btn ghost small${store.get("ft_onestock") === "1" ? " sel" : ""}" data-act="display" data-s="onestock">One notification per stock</button></div>
-    <div class="row" style="padding:6px 0 4px"><button class="btn ghost small${localTimes() ? " sel" : ""}" data-act="tz">${localTimes() ? "Times: your time zone" : "Times: ET"}</button><button class="btn ghost small" data-act="glossary">What the terms mean</button></div>
+      <button class="btn ghost small${store.get("ft_haptic") === "1" ? " sel" : ""}" data-act="display" data-s="haptic">Vibrate on alerts</button><button class="btn ghost small${store.get("ft_chime") === "1" ? " sel" : ""}" data-act="display" data-s="chime">Chime on alerts</button><button class="btn ghost small${store.get("ft_onestock") === "1" ? " sel" : ""}" data-act="display" data-s="onestock">One notification per stock</button></div>
+    <div class="row" style="padding:6px 0 4px"><button class="btn ghost small${localTimes() ? " sel" : ""}" data-act="tz">${localTimes() ? "Times: your time zone" : "Times: ET"}</button><button class="btn ghost small" data-act="glossary">What the terms mean</button><button class="btn ghost small" data-act="links">Shortcuts &amp; links</button></div>
+    <div class="kv"><span>Follow-ups<div class="sub">an hour after an alert on a stock you watch or hold, if it moved 2%+: how it played out</div></span><b><button class="btn ghost small${pr.followups ? " sel" : ""}" data-act="flag" data-s="followups">${pr.followups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Tomorrow, 20:00 ET (Sun-Thu)<div class="sub">after-hours movers and why, the next session's reporters (yours first) and events</div></span><b><button class="btn ghost small${pr.tomorrow ? " sel" : ""}" data-act="flag" data-s="tomorrow">${pr.tomorrow ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The close, 16:15 ET<div class="sub">a market recap: indexes, breadth, sectors, the biggest movers and why, how the alerts did</div></span><b><button class="btn ghost small${pr.close_recap ? " sel" : ""}" data-act="flag" data-s="close_recap">${pr.close_recap ? "On" : "Off"}</button></b></div>
     <div class="sub" style="padding-top:8px">A move alert for every stock you add</div>
@@ -1086,6 +1150,17 @@ async function loadDay() {
   $("bDay").innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="dayline">${tick(9, 30, "9:30")}${tick(12, 0, "12:00")}${tick(16, 0, "16:00")}${line}${dots}</svg>
     <div class="sub" style="padding:8px 0 12px">${["CRITICAL", "HIGH", "MEDIUM"].filter((k) => r.counts[k]).map((k) => `<span style="color:${SEV[k]}">●</span> ${r.counts[k]} ${k}`).join(" · ") || "No alerts yet today"}${spyChg != null ? ` · <span style="color:#9FC6FF">SPY</span> <span class="${cls(spyChg)}">${pct(spyChg)}</span> since the first mark` : ""}. Tap a dot for its alert.</div>`;
 }
+// the Brief's market memory: the last sessions side by side, built one close at a time
+async function loadMemory() {
+  let m;
+  try { m = await api("/api/memory"); } catch (_) { return; }
+  $("bMemWrap").hidden = m.days.length < 2;
+  if (m.days.length < 2) return;
+  const day = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
+  $("bMem").innerHTML = m.days.map((d) => { const best = Object.entries(d.sectors || {}).sort((x, y) => y[1] - x[1])[0];
+    return `<div class="kv"><span>${esc(day(d.date))} <span class="sub">${esc(d.regime)}${best ? ` · led by ${esc(best[0])}` : ""}</span></span><b class="num">SPY <span class="${cls(d.indexes?.SPY)}">${pct(d.indexes?.SPY)}</span> · ${d.pct_up != null ? d.pct_up.toFixed(0) + "% up" : "—"}</b></div>`; }).join("")
+    + (m.sectors.length ? `<div class="sub" style="padding:12px 0 4px">Sectors over these sessions</div>` + m.sectors.slice(0, 6).map((x) => `<div class="kv"><span>${esc(x.sector)} <span class="sub">up ${x.up} of ${x.sessions}</span></span><b class="num ${cls(x.sum)}">${pct(x.sum)}</b></div>`).join("") : "");
+}
 // the Brief's "Tomorrow": after the close, the next session ahead
 async function loadTomorrow() {
   const etH = etNowMinutes() / 60;
@@ -1225,7 +1300,7 @@ function tickerHTML(d) {
     <div class="panel glass padded paform" id="paForm" hidden>
       <div class="addrow"><select id="paKind"><option value="above">Above $</option><option value="below">Below $</option><option value="move">Moves ±% today</option><option value="trail">Falls % from high</option></select>
       <input id="paVal" class="key" inputmode="decimal" placeholder="${q ? q.price.toFixed(2) : "value"}"><button class="btn ghost small sel" data-act="pa-save" data-s="${sym}">Set</button></div>
-      <div class="row sug" id="paSug"></div><div class="sub">Checked every 15 seconds against the live price; pushed to this phone only, once.</div></div>
+      <label class="rearm"><input type="checkbox" id="paRearm"> every day (re-arms the next session after it fires)</label><div class="row sug" id="paSug"></div><div class="sub">Checked every 15 seconds against the live price; pushed to this phone only, once.</div></div>
     ${mine_pa.length || mine_tr.length ? `<div class="panel glass">${mine_pa.map((a) => `<div class="kv"><span>🔔 ${a.kind === "move" ? `±${a.value}% on the day` : a.kind === "trail" ? `falls ${a.value}% from its high` : `${a.kind} ${fmtPx(a.value)}`}</span><b><button class="x" data-act="pa-rm" data-s="${esc(a.id)}">✕</button></b></div>`).join("")}
       ${mine_tr.map((t) => `<div class="kv"><span>${t.direction === "long" ? "▲ Long" : "▼ Short"} from ${fmtPx(t.entry)} · ${ago(t.ts)} ago${levelsText(t)}</span><b class="num ${cls(t.pnl_pct)}">${pct(t.pnl_pct)}</b></div>`).join("")}</div>` : ""}`;
   const chart = (d.series || []).length >= 3 ? sparkline({ [d.symbol]: d.series }, -1) : "";
@@ -1350,7 +1425,8 @@ async function onAct(el) {
   if (a === "watch") { await deskEdit(mine.has(s) ? "watch_remove" : "watch_add", { symbol: s }); toast(mine.has(s) ? `★ ${s} is on your watchlist` : `${s} removed`); refreshTickerSheet(); }
   else if (a === "wl-add") { const v = prompt("Add to your watchlist (tickers, comma separated):"); if (v && syms(v).length) { await deskEdit("watch_add", { symbols: syms(v) }); } }
   else if (a === "wl-in") { const v = syms($("wlIn").value); if (v.length) { if (await deskEdit("watch_add", { symbols: v })) $("wlIn").value = ""; } }
-  else if (a === "wl-rm") await deskEdit("watch_remove", { symbol: s });
+  else if (a === "wl-rm") { const g = (desk.groups || {})[s]; if (await deskEdit("watch_remove", { symbol: s })) toastUndo(`${s} removed`, async () => { await deskEdit("watch_add", { symbol: s }); if (g) await deskEdit("watch_group", { symbol: s, group: g }); }); }
+  else if (a === "undo") { const fn = pendingUndo; pendingUndo = null; $("toast").classList.remove("show"); if (fn) { await fn(); toast("Restored"); } }
   else if (a === "pa-form") { const f = $("paForm"); f.hidden = !f.hidden; if (!f.hidden) { renderSuggest(); $("paVal").focus(); } }
   else if (a === "pa-sug") { $("paKind").value = el.dataset.k; $("paVal").value = el.dataset.v; }
   else if (a === "term") toast(GLOSSARY[s] || s, null, 9000);
@@ -1361,11 +1437,15 @@ async function onAct(el) {
   else if (a === "onboard") openOnboard();
   else if (a === "ob-save") saveOnboard();
   else if (a === "pa-save") {
-    const kind = $("paKind").value, value = parseFloat($("paVal").value);
+    const kind = $("paKind").value, value = parseFloat($("paVal").value), rearm = $("paRearm")?.checked;
     if (!(value > 0)) { toast("Enter a price (or a % for a move)"); return; }
-    if (await deskEdit("alert_add", { symbol: s, kind, value })) { toast(`🔔 Set: ${s} ${kind === "move" ? `moves ±${value}%` : kind === "trail" ? `falls ${value}% from its high` : `${kind} $${value}`}`); refreshTickerSheet(); }
+    if (await deskEdit("alert_add", { symbol: s, kind, value, rearm })) { toast(`🔔 Set: ${s} ${kind === "move" ? `moves ±${value}%` : kind === "trail" ? `falls ${value}% from its high` : `${kind} $${value}`}`); refreshTickerSheet(); }
   }
-  else if (a === "pa-rm") { await deskEdit("alert_remove", { id: s }); refreshTickerSheet(); }
+  else if (a === "pa-rm") {
+    const old = (desk.price_alerts || []).find((x) => x.id === s);
+    await deskEdit("alert_remove", { id: s }); refreshTickerSheet();
+    if (old && !old.fired) toastUndo("Price alert removed", () => deskEdit("alert_add", { symbol: old.symbol, kind: old.kind, value: old.value, rearm: old.rearm }));
+  }
   else if (a === "track") {
     const r = await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid || "" });
     if (r) { const t = r.tracked[r.tracked.length - 1]; toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s} from ${fmtPx(t?.entry)} · on your desk`); refreshTickerSheet(); }
@@ -1398,13 +1478,17 @@ async function onAct(el) {
     if (kind.startsWith("vwap_")) { dir = kind.slice(5); kind = "vwap"; }
     if (await deskEdit("rule_add", { kind, dir, symbol: $("ruleSym").value.trim() || "*", value: $("ruleVal").value.trim() })) toast("⚡ Smart alert added");
   }
-  else if (a === "rule-rm") await deskEdit("rule_remove", { id: s });
+  else if (a === "rule-rm") { const r = (desk.rules || []).find((x) => x.id === s); if (await deskEdit("rule_remove", { id: s }) && r) toastUndo("Smart alert removed", () => deskEdit("rule_add", { kind: r.kind, symbol: r.symbol, value: r.value, dir: r.dir })); }
+  else if (a === "wsort") { store.set("ft.wsort", s); renderDesk(); }
+  else if (a === "cat-off") { if (await deskEdit("prefs", { cats: { [s]: false } })) toast("Turned off for this phone (Desk → What reaches you to turn back on)"); }
+  else if (a === "links") openLinks();
+  else if (a === "copy") { try { await navigator.clipboard.writeText(s); toast("Copied"); } catch (_) { toast(s); } }
   else if (a === "hold-add") {
     const sym = syms($("hSym").value)[0];
     if (!sym) { toast("Enter a ticker"); return; }
     if (await deskEdit("hold_set", { symbol: sym, shares: $("hShares").value.trim(), cost: $("hCost").value.trim() })) toast(`${sym} added to your portfolio`);
   }
-  else if (a === "hold-rm") await deskEdit("hold_set", { symbol: s, shares: 0 });
+  else if (a === "hold-rm") { const h = (desk.holdings || {})[s]; if (await deskEdit("hold_set", { symbol: s, shares: 0 }) && h) toastUndo(`${s} removed from your portfolio`, () => deskEdit("hold_set", { symbol: s, shares: h.shares, cost: h.cost ?? "" })); }
   else if (a === "follow") { const on = !(desk.follow?.[el.dataset.k] || []).includes(s); await deskEdit("follow", { kind: el.dataset.k, name: s, on }); }
   else if (a === "rule-prev") previewRule();
   else if (a === "share-list") await deskEdit("share_list", {});
@@ -1416,6 +1500,7 @@ async function onAct(el) {
     if (s === "text") store.set("ft_text", store.get("ft_text") === "big" ? "" : "big");
     else if (s === "light") flip("ft_light");
     else if (s === "compact") flip("ft_compact");
+    else if (s === "chime") { flip("ft_chime"); if (store.get("ft_chime") === "1") chime("HIGH"); }
     else if (s === "haptic") { flip("ft_haptic"); if (store.get("ft_haptic") === "1") navigator.vibrate?.(30); }
     else if (s === "onestock") { flip("ft_onestock"); navigator.serviceWorker?.ready.then((r) => r.active?.postMessage({ type: "onestock", on: store.get("ft_onestock") === "1" })); }
     else { store.set("ft_clear", s === "clear" ? "1" : ""); if (s === "cinema") store.set("ft_light", ""); }
@@ -1451,7 +1536,7 @@ async function onAct(el) {
     if (await deskEdit("vote", { id: s, v: +el.dataset.v })) { toast(+el.dataset.v ? "Thanks: counted" : "Vote removed"); openSheet(s); }
   }
   else if (a === "digest") await deskEdit("prefs", { digest: +s });
-  else if (a === "flag") await deskEdit("prefs", { [s]: ["skip_fades", "close_recap", "tomorrow"].includes(s) ? !desk.prefs[s] : desk.prefs[s] === false });
+  else if (a === "flag") await deskEdit("prefs", { [s]: ["skip_fades", "close_recap", "tomorrow", "followups"].includes(s) ? !desk.prefs[s] : desk.prefs[s] === false });
   else if (a === "xfer-out") await deskEdit("transfer_out", {});
   else if (a === "xfer-in") {
     const code = $("xferIn").value.trim();
@@ -1611,6 +1696,7 @@ function connect() {
   es.onerror = () => { dropped = true; live.classList.remove("live"); };
   es.addEventListener("alert", (e) => {
     const a = JSON.parse(e.data); a._new = true; a.since = a.since || {};
+    if (store.get("ft_chime") === "1" && !document.hidden && (a.severity === "HIGH" || a.severity === "CRITICAL" || isMine(a))) chime(a.severity);
     if (store.get("ft_haptic") === "1" && !document.hidden && (a.severity === "HIGH" || a.severity === "CRITICAL" || isMine(a))) navigator.vibrate?.(a.severity === "CRITICAL" ? [40, 60, 40, 60, 80] : [30, 40, 30]);
     alerts = [a, ...alerts.filter((x) => x.id !== a.id)].slice(0, 150);
     renderTape();
