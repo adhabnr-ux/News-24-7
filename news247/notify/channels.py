@@ -15,9 +15,11 @@ import subprocess
 import sys
 import time
 from collections import deque
+from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..http import HttpClient, HTTPError
 from ..models import Alert, Severity
@@ -752,6 +754,12 @@ class WhatsAppCloudNotifier(PhoneChannel, Notifier):
         return {**super().describe(), "template_status": self.cloud.template_status}
 
 
+HELD_TEXT = {  # why an alert was kept back from the lock screen: the push log's wording
+    "digest": "kept for your digest",
+    "burst": "held back in a rush of alerts, folded into one summary",
+}
+
+
 class WebPushNotifier(Notifier):
     """Push notifications to the Foretape app on your phone (standard Web Push: free, no account,
     no phone number). Phones subscribe from the app (/app); alerts are encrypted for each phone
@@ -783,6 +791,7 @@ class WebPushNotifier(Notifier):
         # what the push service answered; saved with the settings so it survives a restart
         self.log: dict[str, deque[dict[str, Any]]] = {}
         self.log_dirty = False
+        self.stats: dict[str, dict[str, dict[str, int]]] = {}  # device -> day -> status -> count
         self.gone: dict[str, str] = {}  # endpoint -> device, for subscriptions dropped as expired
 
     # ------------------------------------------------------------------ setup
@@ -835,6 +844,11 @@ class WebPushNotifier(Notifier):
         if q and q[0]["id"] == entry["id"] and q[0]["status"] == status:
             return  # one entry per push, however many browsers the phone has
         q.appendleft(entry)
+        day = datetime.fromtimestamp(entry["ts"], ZoneInfo("America/New_York")).date().isoformat()
+        days = self.stats.setdefault(device, {})
+        days.setdefault(day, {})[status] = days.setdefault(day, {}).get(status, 0) + 1
+        for old in sorted(days)[:-14]:  # two weeks of daily counts
+            days.pop(old)
         self.log_dirty = True
 
     def note_results(self, payload: dict[str, Any], results: dict[str, str]) -> None:
@@ -864,12 +878,17 @@ class WebPushNotifier(Notifier):
             data = _json.loads(raw)
         except ValueError:
             return
+        if "log" in data and isinstance(data["log"], dict):  # {"log": ..., "stats": ...}
+            self.stats = data.get("stats") or {}
+            data = data["log"]
         self.log = {d: deque(rows[: self.LOG_SIZE], maxlen=self.LOG_SIZE) for d, rows in data.items()}
 
     def save_log(self) -> bool:
         if self.storage is None or not self.log_dirty:
             return False
-        self.storage.set_setting("push_log", _json.dumps({d: list(q) for d, q in self.log.items()}))
+        self.storage.set_setting(
+            "push_log", _json.dumps({"log": {d: list(q) for d, q in self.log.items()}, "stats": self.stats})
+        )
         self.log_dirty = False
         return True
 
@@ -1016,8 +1035,8 @@ class WebPushNotifier(Notifier):
                 if not self.allow(s, alert):
                     why = self.why(s, alert) if self.why is not None else None
                     self.note(s.device, payload, "filtered", why or "your settings")
-                elif self.hold is not None and self.hold(s, alert):  # held for that phone's digest
-                    self.note(s.device, payload, "held", "kept for your digest")
+                elif self.hold is not None and (held := self.hold(s, alert)):  # kept for a summary
+                    self.note(s.device, payload, "held", HELD_TEXT.get(held, HELD_TEXT["digest"]))
                 else:
                     only.append(s.endpoint)
             self.filtered += len(self.subs) - len(only)

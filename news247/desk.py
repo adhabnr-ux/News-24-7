@@ -31,6 +31,12 @@ with each request. Its profile holds:
   watched for pushes.
 * **follow**: themes (the scorer's: AI launches, export controls, FDA actions...) and sectors;
   MEDIUM alerts on them reach this phone like a watched stock's.
+* **stock_push**: a dial per stock: HIGH only, everything (past this phone's floor), or off.
+* **focus**: a stretch (an hour, until the open) in which only CRITICAL alerts push.
+* **burst**: past N alert pushes in 10 minutes, the rest fold into one summary.
+* **reminders**: "remind me" on an alert: it comes back as a push in an hour, at the close or the open.
+* **seen**: when (and at what price) each stock page was last opened, for "since you last looked".
+* **restore**: merge a backup (the JSON export) into this desk, every part checked as if typed in.
 
 Profiles live in SQLite (``profiles`` table) and, when ``STATE_DB`` is set, in the state database
 too, so a fresh container on a free host keeps them.
@@ -42,7 +48,7 @@ import json
 import re
 import secrets
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -68,6 +74,14 @@ RULE_KINDS = {  # kind -> (lowest value, highest value, default)
     "gap": (1.0, 50.0, 4.0),  # this % from yesterday's close before the open
 }
 MAX_MUTE_H = 72.0
+STOCK_PUSH_LEVELS = ("high", "all", "off")  # a stock with no entry is on "default"
+MAX_STOCK_PUSH = 100
+MAX_REMINDERS = 30
+BURST_CHOICES = (0, 4, 6, 10)  # alert pushes per 10 minutes before the rest are folded into a summary
+BURST_WINDOW_S = 600.0
+BURST_WAIT_S = 300.0  # a folded alert waits this long for company before its summary goes out
+MAX_SEEN = 150
+REMIND_WHEN = {"1h": 3600.0, "3h": 10800.0}
 TAG_RE = re.compile(r"#([a-z][a-z0-9-]{1,19})")
 MACRO_TICKERS = {
     "SPY",
@@ -108,6 +122,7 @@ def default_profile() -> dict[str, Any]:
             "followups": False,  # an hour after an alert on your stock: how it played out (2%+ moves)
             "port_alert": 0,  # %: push when the portfolio is up or down this much today (0 = off)
             "mute_sources": [],  # sources whose alerts never push to this phone
+            "burst": 0,  # alert pushes per 10 min before the rest fold into one summary (0 = never)
         },
         "price_alerts": [],
         "tracked": [],
@@ -127,6 +142,10 @@ def default_profile() -> dict[str, Any]:
         "kw_neg": [],  # words that keep a headline off this phone (never push), e.g. "crypto", "airdrop"
         "opened": [],  # alert ids recently opened (counted once)
         "follow": {"themes": [], "sectors": []},
+        "stock_push": {},  # symbol -> "high" | "all" | "off" (absent: the phone's own settings)
+        "focus_until": 0.0,  # epoch: until then only CRITICAL alerts push
+        "reminders": [],  # [{"id", "alert_id", "title", "tickers", "due", "created"}]
+        "seen": {},  # symbol -> {"ts", "px"}: the last time its page was opened
         "digest_q": [],  # alerts held for the next digest
         "digest_at": 0.0,  # when the last digest went
         "created": time.time(),
@@ -179,8 +198,26 @@ def in_quiet(quiet: dict[str, Any] | None, now: float | None = None) -> bool:
     return (a <= cur < b) if a <= b else (cur >= a or cur < b)
 
 
+def session_edge(kind: str, now: float, calendar: Any = None) -> float:
+    """The next regular-session "open" (09:30 ET) or "close" (16:00, 13:00 on early-close days)
+    after ``now`` (at least 30 s ahead), skipping weekends and the calendar's holidays."""
+    holidays = set(getattr(calendar, "holidays", None) or ())
+    early = set(getattr(calendar, "early", None) or ())
+    day = datetime.fromtimestamp(now, ET)
+    for i in range(14):
+        d = (day + timedelta(days=i)).date()
+        if d.weekday() >= 5 or d.isoformat() in holidays:
+            continue
+        h, m = (9, 30) if kind == "open" else ((13, 0) if d.isoformat() in early else (16, 0))
+        t = datetime(d.year, d.month, d.day, h, m, tzinfo=ET).timestamp()
+        if t > now + 30:
+            return t
+    return now + 86400.0
+
+
 class Desk:
     def __init__(self, storage: Any, state: Any = None) -> None:
+        self.calendar: Any = None  # the engine's Calendar (holidays), for "until the open"
         self.storage = storage
         self.state = state  # StateStore (optional): survives a fresh container
         self.profiles: dict[str, dict[str, Any]] = {}
@@ -232,7 +269,12 @@ class Desk:
         return [
             d
             for d, p in self.profiles.items()
-            if want & (set(p.get("watchlist") or []) | set(p.get("holdings") or {}))
+            if want
+            & (
+                set(p.get("watchlist") or [])
+                | set(p.get("holdings") or {})
+                | {t for t, lv in (p.get("stock_push") or {}).items() if lv == "all"}
+            )
         ]
 
     def followers(self, themes: list[str], sectors: list[str]) -> list[str]:
@@ -295,8 +337,42 @@ class Desk:
             else getattr(getattr(alert, "severity", None), "name", "")
         )
         sev = str(sev_name)
+        t_now = now or time.time()
+        tickers = [
+            t
+            for t in (
+                (alert.get("tickers") if isinstance(alert, dict) else getattr(alert, "tickers", None)) or []
+            )
+            if t
+        ]
+        dial = self.stock_level(p, tickers)
+        sym0 = tickers[0] if tickers else ""
+        if dial == "off":
+            return out(
+                "stock_off",
+                f"you set {sym0} to never push",
+                f"Let {sym0} push again",
+                "stock_push",
+                {"symbol": sym0, "level": "default"},
+            )
+        if dial == "high" and SEV_RANK.get(sev, 0) < SEV_RANK["HIGH"]:
+            return out(
+                "stock_high",
+                f"you set {sym0} to HIGH alerts only and this is {sev}",
+                f"Push everything on {sym0}",
+                "stock_push",
+                {"symbol": sym0, "level": "all"},
+            )
+        if sev != "CRITICAL" and (p.get("focus_until") or 0) > t_now:
+            return out(
+                "focus",
+                "focus mode is on (only CRITICAL comes through)",
+                "End focus",
+                "focus",
+                {"minutes": 0},
+            )
         if sev != "CRITICAL":
-            if (p.get("snooze") or {}).get(cat, 0) > (now or time.time()):
+            if (p.get("snooze") or {}).get(cat, 0) > t_now:
                 return out(
                     "snooze",
                     f"{cat} alerts were snoozed",
@@ -305,7 +381,7 @@ class Desk:
                     {"cat": cat, "hours": 0},
                 )
             edge = (alert.get("edge") if isinstance(alert, dict) else getattr(alert, "edge", None)) or {}
-            if prefs.get("skip_fades") and (edge.get("base") or {}).get("fades"):
+            if dial != "all" and prefs.get("skip_fades") and (edge.get("base") or {}).get("fades"):
                 return out("fades", "alerts like this usually fade, and you skip those",
                            "Stop skipping fades", "prefs", {"skip_fades": False})  # fmt: skip
         if self.all_muted(device, alert, now):
@@ -324,7 +400,7 @@ class Desk:
                 return out("word", f"it has your never-push word “{word}”", f"Remove “{word}”",
                            "neg_remove", {"keyword": word})  # fmt: skip
         floor = prefs.get("min_sev")
-        if cat != "system" and floor in SEV_RANK and SEV_RANK.get(sev, 0) < SEV_RANK[floor]:
+        if dial != "all" and cat != "system" and floor in SEV_RANK and SEV_RANK.get(sev, 0) < SEV_RANK[floor]:
             return out(
                 "floor",
                 f"it's {sev}, under your {floor} floor",
@@ -336,6 +412,22 @@ class Desk:
             return out(
                 "quiet", "it came in your quiet hours", "Turn quiet hours off", "prefs", {"quiet": None}
             )
+        return None
+
+    @staticmethod
+    def stock_level(p: dict[str, Any], tickers: list[str]) -> str | None:
+        """The per-stock dial that applies to an alert about these stocks: "off" when every one of
+        them is off, "all" when any is set to everything, "high" when every one is HIGH-only."""
+        dial = p.get("stock_push") or {}
+        if not dial or not tickers:
+            return None
+        got = [dial.get(t) for t in tickers]
+        if "all" in got:
+            return "all"
+        if all(g == "off" for g in got):
+            return "off"
+        if all(g == "high" for g in got):
+            return "high"
         return None
 
     def all_muted(self, device: str, alert: Any, now: float | None = None) -> bool:
@@ -359,14 +451,32 @@ class Desk:
         sev = sev if isinstance(sev, str) else getattr(sev, "name", "")
         if sev == "CRITICAL":
             return False
+        self._queue(p, get, sev, now)
+        return True
+
+    def _queue(self, p: dict[str, Any], get: Any, sev: str, now: float | None) -> None:
         q = p.setdefault("digest_q", [])
         aid = str(get("id") or "")
         if aid and any(x["id"] == aid for x in q):
-            return True
+            return
         q.append({"id": aid, "title": str(get("title") or "")[:160], "severity": sev, "tickers": list(get("tickers") or [])[:4],
                   "ts": now or time.time()})  # fmt: skip
         del q[:-50]
         self._dirty = True
+
+    def burst_hold(self, device: str, alert: Any, recent: int, now: float | None = None) -> bool:
+        """Burst protection: a phone that already got ``burst`` alert pushes in the last 10 minutes
+        has the rest folded into one summary (sent a few minutes later). CRITICAL always comes."""
+        p = self.profiles.get(device)
+        n = int(((p or {}).get("prefs") or {}).get("burst") or 0)
+        if not p or n <= 0 or recent < n:
+            return False
+        get = (lambda k: alert.get(k)) if isinstance(alert, dict) else (lambda k: getattr(alert, k, None))
+        sev = get("severity")
+        sev = sev if isinstance(sev, str) else getattr(sev, "name", "")
+        if sev == "CRITICAL":
+            return False
+        self._queue(p, get, sev, now)
         return True
 
     def due_digests(self, now: float | None = None) -> list[tuple[str, list[dict[str, Any]]]]:
@@ -380,6 +490,12 @@ class Desk:
                 continue
             if mins and now - (p.get("digest_at") or 0) < mins * 60:
                 continue
+            if (
+                not mins
+                and (p.get("prefs") or {}).get("burst")
+                and now - min(x["ts"] for x in q) < BURST_WAIT_S
+            ):
+                continue  # folded by burst protection: wait a few minutes for the rest of the rush
             out.append((device, list(q)))
             p["digest_q"], p["digest_at"] = [], now
             self.save(device)
@@ -503,6 +619,14 @@ class Desk:
                 if v not in (0, 1, 2, 3, 5):
                     raise ValueError("port_alert is 0 (off), 1, 2, 3 or 5")
                 prefs["port_alert"] = v
+            if "burst" in body:
+                try:
+                    n = int(body.get("burst") or 0)
+                except (TypeError, ValueError):
+                    n = -1
+                if n not in BURST_CHOICES:
+                    raise ValueError("burst is 0 (off), 4, 6 or 10 pushes per 10 minutes")
+                prefs["burst"] = n
             if "mute_source" in body:
                 src = str(body.get("mute_source") or "").strip()[:60]
                 ms = [x for x in prefs.get("mute_sources") or [] if x != src]
@@ -830,8 +954,12 @@ class Desk:
             p["keywords"] = [x for x in p.get("keywords") or [] if x["k"] != k]
         elif action == "mute":
             sym = clean_symbol(body.get("symbol"))
+            until = str(body.get("until") or "")
             try:
-                hours = float(body.get("hours") or 4)
+                if until in ("open", "close"):  # until the next session open / close
+                    hours = min(MAX_MUTE_H, (session_edge(until, now, self.calendar) - now) / 3600)
+                else:
+                    hours = float(body.get("hours") or 4)
             except (TypeError, ValueError):
                 raise ValueError("hours must be a number") from None
             if not sym or not 0 < hours <= MAX_MUTE_H:
@@ -842,10 +970,304 @@ class Desk:
         elif action == "unmute":
             sym = clean_symbol(body.get("symbol"))
             p["muted"] = {s: u for s, u in (p.get("muted") or {}).items() if s != sym and u > now}
+        elif action == "stock_push":
+            sym = clean_symbol(body.get("symbol"))
+            level = str(body.get("level") or "default")
+            if not sym or level not in (*STOCK_PUSH_LEVELS, "default"):
+                raise ValueError("need a symbol and a level: default, high, all or off")
+            dial = p.setdefault("stock_push", {})
+            if level == "default":
+                dial.pop(sym, None)
+            else:
+                if sym not in dial and len(dial) >= MAX_STOCK_PUSH:
+                    raise ValueError(f"at most {MAX_STOCK_PUSH} stocks with their own setting")
+                dial[sym] = level
+        elif action == "focus":
+            until = str(body.get("until") or "")
+            try:
+                minutes = float(body.get("minutes") or 0)
+            except (TypeError, ValueError):
+                raise ValueError("minutes must be a number") from None
+            if until == "open":
+                end = session_edge("open", now, self.calendar)
+            elif 0 <= minutes <= 24 * 60:
+                end = now + minutes * 60 if minutes else 0.0
+            else:
+                raise ValueError("focus is 0 (off) to 1440 minutes, or until the open")
+            p["focus_until"] = end
+        elif action == "remind":
+            aid = str(body.get("id") or "")[:40]
+            when = str(body.get("when") or "")
+            alert = self.storage.get_alert(aid) if aid and hasattr(self.storage, "get_alert") else None
+            if alert is None:
+                raise ValueError("no such alert")
+            if when in REMIND_WHEN:
+                due = now + REMIND_WHEN[when]
+            elif when in ("open", "close"):
+                due = session_edge(when, now, self.calendar)
+            else:
+                raise ValueError("remind me in 1h, 3h, at the open or at the close")
+            rem = [r for r in p.get("reminders") or [] if r["alert_id"] != aid]
+            if len(rem) >= MAX_REMINDERS:
+                raise ValueError(f"at most {MAX_REMINDERS} reminders")
+            rem.append({"id": secrets.token_hex(4), "alert_id": aid, "title": str(alert.get("title") or "")[:160],
+                        "tickers": [t for t in alert.get("tickers") or [] if t][:3], "due": due, "created": now})  # fmt: skip
+            p["reminders"] = sorted(rem, key=lambda r: r["due"])
+        elif action == "remind_clear":
+            rid = str(body.get("id") or "")
+            p["reminders"] = [r for r in p.get("reminders") or [] if r["id"] != rid and r["alert_id"] != rid]
+        elif action == "viewed":
+            sym = clean_symbol(body.get("symbol"))
+            if not sym:
+                raise ValueError("no valid symbol")
+            q = price_of(sym) if price_of else None
+            seen = p.setdefault("seen", {})
+            seen.pop(sym, None)
+            seen[sym] = {"ts": now, "px": q[1] if q else None}
+            for old in list(seen)[:-MAX_SEEN]:
+                seen.pop(old, None)
+        elif action == "restore":
+            p["restored"] = self._restore(device, p, body.get("desk") or body, bool(body.get("prefs")), now)
         else:
             raise ValueError(f"unknown action {action!r}")
         self.save(device)
         return p
+
+    def due_reminders(self, now: float | None = None) -> list[tuple[str, dict[str, Any]]]:
+        """(device, reminder) for every "remind me" that has come due; each is dropped as it is returned."""
+        now = now or time.time()
+        out = []
+        for device, p in self.profiles.items():
+            rem = p.get("reminders") or []
+            due = [r for r in rem if r["due"] <= now]
+            if not due:
+                continue
+            p["reminders"] = [r for r in rem if r["due"] > now]
+            out.extend((device, r) for r in due)
+            self.save(device)
+        return out
+
+    def _restore(
+        self, device: str, p: dict[str, Any], data: Any, with_prefs: bool, now: float
+    ) -> dict[str, int]:
+        """Merge a backup (the app's JSON export) into this desk. Nothing is replaced: stocks,
+        alerts, words and rules are added when missing, and every one goes through the same checks
+        as if it were typed in. Returns how many of each were added."""
+        if not isinstance(data, dict):
+            raise ValueError("that isn't a Foretape desk backup")
+        if isinstance(data.get("desk"), dict):
+            data = data["desk"]
+        if not any(
+            k in data for k in ("watchlist", "price_alerts", "tracked", "holdings", "keywords", "rules")
+        ):
+            raise ValueError("that isn't a Foretape desk backup")
+        n = dict.fromkeys(
+            (
+                "stocks",
+                "alerts",
+                "holdings",
+                "keywords",
+                "words",
+                "notes",
+                "rules",
+                "calls",
+                "follows",
+                "dials",
+            ),
+            0,
+        )
+
+        def lst(key: str, cap: int = 100) -> list[Any]:
+            v = data.get(key)
+            return v[:cap] if isinstance(v, list) else []
+
+        def dct(key: str, cap: int = 150) -> dict[str, Any]:
+            v = data.get(key)
+            return dict(list(v.items())[:cap]) if isinstance(v, dict) else {}
+
+        def go(action: str, body: dict[str, Any]) -> bool:
+            try:
+                self.apply(device, action, body)
+                return True
+            except (ValueError, TypeError, KeyError, AttributeError):
+                return False
+
+        have = set(p["watchlist"])
+        fresh = [s for s in (clean_symbol(x) for x in lst("watchlist", MAX_WATCH)) if s and s not in have]
+        for sym in fresh:  # one at a time so auto-move alerts and the cap behave as when typed
+            if go("watch_add", {"symbol": sym}):
+                n["stocks"] += 1
+        for sym, g in dct("groups").items():
+            if isinstance(g, str):
+                go("watch_group", {"symbol": sym, "group": g})
+        for sym, h in dct("holdings", 100).items():
+            if (
+                sym not in p.get("holdings", {})
+                and isinstance(h, dict)
+                and go("hold_set", {"symbol": sym, "shares": h.get("shares"), "cost": h.get("cost")})
+            ):
+                n["holdings"] += 1  # fmt: skip
+        have_pa = {(a["symbol"], a["kind"], a["value"]) for a in p["price_alerts"] if not a.get("fired")}
+        for a in lst("price_alerts", MAX_PRICE_ALERTS):
+            if not isinstance(a, dict) or a.get("fired"):
+                continue
+            try:
+                key = (clean_symbol(a.get("symbol")), str(a.get("kind")), float(a.get("value")))
+            except (TypeError, ValueError):
+                continue
+            if key not in have_pa and go(
+                "alert_add",
+                {
+                    "symbol": a.get("symbol"),
+                    "kind": a.get("kind"),
+                    "value": a.get("value"),
+                    "rearm": a.get("rearm"),
+                },
+            ):
+                have_pa.add(key)
+                n["alerts"] += 1  # fmt: skip
+        have_kw = {k["k"] for k in p.get("keywords") or []}
+        for k in lst("keywords", MAX_KEYWORDS):
+            word = str(k.get("k") if isinstance(k, dict) else k or "").strip().lower()
+            if word and word not in have_kw and go("kw_add", {"keyword": word}):
+                have_kw.add(word)
+                n["keywords"] += 1
+        for w in lst("kw_neg", 30):
+            if str(w).strip().lower() not in (p.get("kw_neg") or []) and go("neg_add", {"keyword": w}):
+                n["words"] += 1
+        for sym, note in dct("notes").items():
+            sym = clean_symbol(sym)
+            if (
+                sym
+                and sym not in p.get("notes", {})
+                and isinstance(note, dict)
+                and go("note", {"symbol": sym, "text": note.get("text")})
+            ):
+                n["notes"] += 1  # fmt: skip
+        have_rules = {(r["kind"], r["symbol"], r["value"], r["dir"]) for r in p.get("rules") or []}
+        for r in lst("rules", MAX_RULES):
+            if not isinstance(r, dict):
+                continue
+            try:
+                key = (
+                    r.get("kind"),
+                    "*" if r.get("symbol") == "*" else clean_symbol(r.get("symbol")),
+                    float(r.get("value") or 0),
+                    r.get("dir") or "",
+                )
+            except (TypeError, ValueError):
+                continue
+            if key not in have_rules and go(
+                "rule_add",
+                {
+                    "kind": r.get("kind"),
+                    "symbol": r.get("symbol"),
+                    "value": r.get("value"),
+                    "dir": r.get("dir"),
+                },
+            ):
+                have_rules.add(key)
+                n["rules"] += 1  # fmt: skip
+        f = data.get("follow") if isinstance(data.get("follow"), dict) else {}
+        for kind in ("themes", "sectors"):
+            for name in (f.get(kind) or [])[:30]:
+                if name not in (p.get("follow") or {}).get(kind, []) and go(
+                    "follow", {"kind": kind, "name": name}
+                ):
+                    n["follows"] += 1
+        for sym, lv in dct("stock_push", MAX_STOCK_PUSH).items():
+            if sym not in p.get("stock_push", {}) and go("stock_push", {"symbol": sym, "level": lv}):
+                n["dials"] += 1
+        for src in (
+            (data.get("prefs") or {}).get("mute_sources") or [] if isinstance(data.get("prefs"), dict) else []
+        ):
+            go("prefs", {"mute_source": src})
+        # paper calls and the journal: added when their id is new, with every field checked
+        ids = {t["id"] for t in [*p["tracked"], *p["closed"]]}
+
+        def call(t: Any, closed: bool) -> dict[str, Any] | None:
+            if not isinstance(t, dict):
+                return None
+            sym, d = clean_symbol(t.get("symbol")), t.get("direction")
+            try:
+                entry = round(float(t.get("entry")), 4)
+            except (TypeError, ValueError):
+                return None
+            if not sym or d not in ("long", "short") or entry <= 0:
+                return None
+
+            def num(k: str) -> float | None:
+                try:
+                    v = float(t[k]) if t.get(k) is not None else None
+                except (TypeError, ValueError):
+                    return None
+                return v if v is not None and v > 0 else None
+
+            tid = str(t.get("id") or "")
+            out = {"id": tid if re.fullmatch(r"[0-9a-f]{10}", tid) and tid not in ids else secrets.token_hex(5),
+                   "symbol": sym, "direction": d, "entry": entry, "ts": float(t.get("ts") or now),
+                   "stop": num("stop"), "target": num("target"),
+                   "tags": [x for x in (t.get("tags") or []) if isinstance(x, str) and re.fullmatch(r"[a-z][a-z0-9-]{1,19}", x)][:5],
+                   "note": str(t.get("note") or "")[:200]}  # fmt: skip
+            if closed:
+                try:
+                    out.update(
+                        exit=num("exit"),
+                        closed=float(t.get("closed") or now),
+                        pnl_pct=float(t["pnl_pct"]) if t.get("pnl_pct") is not None else None,
+                    )
+                except (TypeError, ValueError):
+                    return None
+                if t.get("lesson"):
+                    out["lesson"] = str(t["lesson"])[:200]
+            ids.add(out["id"])
+            return out
+
+        for t in lst("tracked", MAX_TRACKED):
+            c = call(t, False)
+            if (
+                c
+                and len(p["tracked"]) < MAX_TRACKED
+                and not any(x["id"] == (t.get("id") if isinstance(t, dict) else None) for x in p["tracked"])
+            ):
+                p["tracked"].append(c)
+                n["calls"] += 1  # fmt: skip
+        for t in lst("closed", 50):
+            c = call(t, True)
+            if (
+                c
+                and len(p["closed"]) < 50
+                and not any(x["id"] == (t.get("id") if isinstance(t, dict) else None) for x in p["closed"])
+            ):
+                p["closed"].append(c)
+                n["calls"] += 1  # fmt: skip
+        if with_prefs and isinstance(data.get("prefs"), dict):
+            src = data["prefs"]
+            body = {
+                k: src[k]
+                for k in (
+                    "eod",
+                    "earn_remind",
+                    "open_plan",
+                    "week",
+                    "skip_fades",
+                    "close_recap",
+                    "tomorrow",
+                    "followups",
+                    "watch_push",
+                    "min_sev",
+                    "digest",
+                    "port_alert",
+                    "auto_move",
+                    "burst",
+                    "quiet",
+                )
+                if k in src
+            }
+            if isinstance(src.get("cats"), dict):
+                body["cats"] = src["cats"]
+            go("prefs", body)  # a bad value drops the whole prefs block, not the rest of the restore
+        return n
 
     def _taste(self, p: dict[str, Any], aid: str, field: str, delta: int) -> None:
         """Count what this phone does with an alert (vote, save, track, open) under the alert's kind."""
@@ -923,6 +1345,10 @@ class Desk:
             "kw_neg": p.get("kw_neg") or [],
             "imported": p.pop("imported", None),
             "follow": p.get("follow") or {"themes": [], "sectors": []},
+            "stock_push": p.get("stock_push") or {},
+            "focus": p["focus_until"] if (p.get("focus_until") or 0) > now else None,
+            "reminders": sorted(p.get("reminders") or [], key=lambda r: r["due"]),
+            "restored": p.pop("restored", None),
             "share": p["share"] if (p.get("share") or {}).get("until", 0) > now else None,
             "record": {
                 "closed": len(closed),

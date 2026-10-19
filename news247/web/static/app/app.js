@@ -63,6 +63,7 @@ function toastUndo(msg, fn) {
 }
 // ⓘ: what a term means, for anyone new to it
 const GLOSSARY = {
+  dial: "The push dial: how loud this one stock is on your phone. Default follows your settings; HIGH only skips its MEDIUM alerts; Everything pushes even MEDIUM alerts and ignores your floor and the fades filter (your categories, mutes and quiet hours still apply); Off never pushes it.",
   implied: "Implied move: what the options market is paying for. The at-the-money call + put (the straddle) for an expiry, as a % of the stock: roughly the move priced in by that date, up or down.",
   callwall: "Call wall: the strike above the stock with the most call open interest. Dealers hedging those calls can make it act like a ceiling into expiry; a clean break through it can speed up.",
   putwall: "Put wall: the strike below the stock with the most put open interest. It often acts like a floor into expiry.",
@@ -853,6 +854,7 @@ function alertActions(a) {
     ${(desk?.saved || []).includes(a.id) ? `<button class="btn ghost small sel" data-act="unsave" data-s="${esc(a.id)}">★ Saved</button>` : `<button class="btn ghost small" data-act="save" data-s="${esc(a.id)}">☆ Save</button>`}
     <button class="btn ghost small" data-act="copy-a">⧉ Copy as text</button>
     <button class="btn ghost small" data-act="why-push" data-s="${esc(a.id)}">📲 Did this reach my phone?</button></div>
+    ${a.kind === "system" ? "" : remindRow(a)}
     <div id="whyPush"></div>
     ${track ? `<div class="sub" style="margin-top:8px">Tracking takes the live price as your entry and keeps the P&amp;L on your desk. Paper only: the system never trades.</div>` : ""}`;
 }
@@ -955,7 +957,7 @@ async function deskEdit(action, body = {}) {
 function renderStrip() {
   const wl = desk?.watchlist || [];
   $("wl").hidden = !desk;
-  $("wl").innerHTML = wl.map((w) => `<button class="wlc" data-tk="${esc(w.symbol)}"><b>${esc(w.symbol)}</b><small class="num ${cls(w.chg_day)}">${w.chg_day != null ? pct(w.chg_day) : "—"}</small></button>`).join("")
+  $("wl").innerHTML = (desk?.focus ? `<button class="wlc focus" data-act="focus" data-m="0" title="Focus mode: only CRITICAL alerts push. Tap to end it.">🎯 Focus until ${new Date(desk.focus * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · end</button>` : "") + wl.map((w) => `<button class="wlc" data-tk="${esc(w.symbol)}"><b>${esc(w.symbol)}</b><small class="num ${cls(w.chg_day)}">${w.chg_day != null ? pct(w.chg_day) : "—"}</small></button>`).join("")
     + `<button class="wlc add" data-act="wl-add">${wl.length ? "＋" : "☆ Build your watchlist"}</button>`;
 }
 const fmtPx = (v) => (v == null ? "—" : "$" + (v >= 1000 ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : v >= 1 ? v.toFixed(2) : v.toFixed(4)));
@@ -1063,6 +1065,10 @@ function renderDesk() {
     <div class="kv"><span>The open plan, 9:20 ET<div class="sub">your stocks pre-market, the top gappers and why, today's timed events</div></span><b><button class="btn ghost small${pr.open_plan !== false ? " sel" : ""}" data-act="flag" data-s="open_plan">${pr.open_plan !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Your week, Friday 16:30 ET<div class="sub">your calls, how the alerts on your stocks did, next week's reports and big dates</div></span><b><button class="btn ghost small${pr.week !== false ? " sel" : ""}" data-act="flag" data-s="week">${pr.week !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>End-of-day report card<div class="sub">16:05 ET: your watchlist's day, your calls, what fired, how the alerts did</div></span><b><button class="btn ghost small${pr.eod !== false ? " sel" : ""}" data-act="eod">${pr.eod !== false ? "On" : "Off"}</button></b></div>
+    <div class="sub" style="padding-top:8px">Focus: only CRITICAL comes through${desk.focus ? ` · <span class="gold">on until ${new Date(desk.focus * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>` : ""}</div>
+    <div class="row" style="padding:10px 0 4px"><button class="btn ghost small" data-act="focus" data-m="60">1 hour</button><button class="btn ghost small" data-act="focus" data-m="180">3 hours</button><button class="btn ghost small" data-act="focus" data-u="open">Until the open</button>${desk.focus ? `<button class="btn ghost small sel" data-act="focus" data-m="0">End focus</button>` : ""}</div>
+    <div class="sub" style="padding-top:8px">Burst protection: after this many pushes in 10 minutes, the rest fold into one summary (CRITICAL still comes)</div>
+    <div class="row" style="padding:10px 0 4px">${[[0, "Off"], [4, "4"], [6, "6"], [10, "10"]].map(([k, l]) => `<button class="btn ghost small${(pr.burst || 0) === k ? " sel" : ""}" data-act="burst" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="kv"><span>Watchlist pushes<div class="sub">a MEDIUM alert on a stock you watch still reaches your lock screen</div></span><b><button class="btn ghost small${pr.watch_push ? " sel" : ""}" data-act="wpush">${pr.watch_push ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Quiet hours (ET)<div class="sub">${pr.quiet ? `only CRITICAL between ${esc(q.start)} and ${esc(q.end)}` : "off: everything you allow, any hour"}</div></span>
       <b class="qh"><input type="time" id="qStart" value="${esc(q.start || "22:00")}"><input type="time" id="qEnd" value="${esc(q.end || "07:00")}">
@@ -1169,6 +1175,13 @@ function renderKeywords() {
     ${(desk.kw_neg || []).length ? `<div class="row" style="padding:0 0 12px">${desk.kw_neg.map((k) => `<span class="kwc neg">${esc(k)}<button class="x" data-act="neg-rm" data-s="${esc(k)}" aria-label="Remove">✕</button></span>`).join("")}</div>` : ""}
     ${hits.length ? `<div class="sub" style="padding:4px 0">Recent hits</div>` + hits.slice(0, 8).map((h) => `<div class="li"><div class="grow"><div class="sub">🔑 ${esc(h.k)} · ${esc(outlet(h.source))} · ${ago(h.ts)} ago</div><a href="${esc(h.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(h.title)}</a></div></div>`).join("") : ""}`;
   const muted = Object.entries(desk.muted || {});
+  const dials = Object.entries(desk.stock_push || {});
+  $("dDial").hidden = !dials.length;
+  $("dDial").innerHTML = dials.map(([sym, lv]) => `<div class="kv"><span><span data-tk="${esc(sym)}" role="button">${esc(sym)}</span> <span class="sub">${DIAL_TEXT[lv]}</span></span><b class="dialb">${dialBtns(sym, lv)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Set per stock on its page: HIGH only, everything (even MEDIUM, even under your floor) or nothing.</div>`;
+  const rem = desk.reminders || [];
+  $("dRemind").hidden = !rem.length;
+  $("dRemind").innerHTML = rem.map((r) => `<div class="kv"><span data-id="${esc(r.alert_id)}" role="button">⏰ ${esc(r.title)} <span class="sub">${esc(new Date(r.due * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span></span><b><button class="x" data-act="remind-clear" data-s="${esc(r.id)}" aria-label="Cancel the reminder">✕</button></b></div>`).join("");
   $("dMuted").hidden = !muted.length;
   $("dMuted").innerHTML = muted.map(([sym, until]) => `<div class="kv"><span>🔕 <span data-tk="${esc(sym)}" role="button">${esc(sym)}</span> <span class="sub">for ${esc(dur(until - Date.now() / 1000).replace(/ \d+s$/, ""))} more</span></span><b><button class="btn ghost small" data-act="unmute" data-s="${esc(sym)}">Unmute</button></b></div>`).join("");
 }
@@ -1354,7 +1367,8 @@ function tickerHTML(d) {
     <button class="btn ghost small" data-act="track" data-s="${sym}" data-dir="short">▼ Short</button>
     <button class="btn ghost small" data-act="share-t" data-s="${sym}" data-title="${esc(d.symbol + (d.name ? " · " + d.name : ""))}">Share ↗</button>
     <button class="btn ghost small" data-act="rule-menu">⚡ Smart alert</button>
-    ${(desk?.muted || {})[d.symbol] > Date.now() / 1000 ? `<button class="btn ghost small sel" data-act="unmute" data-s="${sym}">🔕 Muted · unmute</button>` : `<button class="btn ghost small" data-act="mute" data-s="${sym}" data-h="4">🔕 Mute 4h</button>`}</div>
+    ${(desk?.muted || {})[d.symbol] > Date.now() / 1000 ? `<button class="btn ghost small sel" data-act="unmute" data-s="${sym}">🔕 Muted · unmute</button>` : `<button class="btn ghost small" data-act="mute" data-s="${sym}" data-h="4">🔕 Mute 4h</button><button class="btn ghost small" data-act="mute" data-s="${sym}" data-u="open">🔕 until the open</button>`}</div>
+    ${dialRow(d.symbol)}
     <div class="panel glass padded paform" id="ruleForm" hidden><div class="sub" style="margin-bottom:8px">Push to this phone when…</div><div class="row">
       <button class="btn ghost small" data-act="rule-quick" data-k="headline" data-v="10" data-s="${sym}">any headline on ${sym}</button>
       <button class="btn ghost small" data-act="rule-quick" data-k="news_move" data-v="3" data-s="${sym}">a headline, then a 3% move</button>
@@ -1404,7 +1418,7 @@ function tickerHTML(d) {
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
   const implied = `<h4>What options price in ${tip("implied")}</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
-  return [head + relLine + sessLine + earnLine, acts, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
+  return [head + relLine + sessLine + earnLine, sinceBlock(lookCache[d.symbol]), acts, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0, tickerNow = null;
 const impliedNow = {};
@@ -1453,11 +1467,13 @@ async function openTicker(sym) {
   $("toast").classList.remove("show");
   const n = ++tickerReq;
   const hit = tickerCache.get(sym);
+  const visit = (d) => api("/api/desk", { method: "POST", body: JSON.stringify({ action: "viewed", symbol: d.symbol }) }).catch(() => {});  // after the page is built, so it reads the visit before this one
   if (hit && Date.now() - hit.at < 180e3) {  // prefetched: show it now, then bring it up to date in place
+    lookCache[hit.d.symbol] = hit.d.since_look || null;
     tickerNow = hit.d; showSheet(tickerHTML(hit.d)); $("sheet").dataset.sym = hit.d.symbol; noteRecent(hit.d);
+    visit(hit.d).then(() => tickerCache.delete(sym));  // its "since" is spent: the next visit fetches a fresh one
     loadImplied(hit.d.symbol).finally(() => loadEarnings(hit.d.symbol));
     api("/api/ticker/" + encodeURIComponent(sym)).then((d) => {
-      tickerCache.set(sym, { d, at: Date.now() });
       if (n !== tickerReq || $("sheet").dataset.sym !== d.symbol) return;
       tickerNow = d;
       const y = $("sheet").scrollTop, imp = $("implied")?.innerHTML, pe = $("pastEarn")?.innerHTML;
@@ -1471,11 +1487,12 @@ async function openTicker(sym) {
   let d;
   try { d = await api("/api/ticker/" + encodeURIComponent(sym)); } catch (_) { toast(`No page for ${sym}`); return; }
   if (n !== tickerReq) return;  // a newer tap won
-  tickerCache.set(sym, { d, at: Date.now() });
+  lookCache[d.symbol] = d.since_look || null;
   tickerNow = d;
   showSheet(tickerHTML(d));
   $("sheet").dataset.sym = d.symbol;
   noteRecent(d);
+  visit(d);
   loadImplied(d.symbol).finally(() => loadEarnings(d.symbol));
 }
 // stock pages open instantly for the stocks you watch: fetched quietly in the background, kept 3 minutes
@@ -1558,6 +1575,22 @@ async function share(title, url) {
   try { await navigator.clipboard.writeText(title + "\n" + url); toast("Link copied"); } catch (_) { toast(url); }
 }
 const syms = (txt) => String(txt || "").toUpperCase().split(/[\s,;]+/).map((s) => s.replace(/^\$/, "")).filter((s) => /^[A-Z][A-Z0-9.-]{0,9}$/.test(s));
+const DIAL_TEXT = { high: "HIGH alerts only", all: "pushes everything", off: "never pushes" };
+const dialBtns = (sym, lv) => [["default", "Default"], ["high", "HIGH only"], ["all", "Everything"], ["off", "Off"]].map(([k, l]) => `<button class="btn ghost small${(lv || "default") === k ? " sel" : ""}" data-act="dial" data-s="${esc(sym)}" data-lv="${k}">${l}</button>`).join("");
+// a stock's own push level, on its page
+const dialRow = (sym) => `<div class="dialrow"><div class="sub">Pushes for ${esc(sym)} ${tip("dial")}</div><div class="row">${dialBtns(sym, (desk?.stock_push || {})[sym])}</div></div>`;
+let lookCache = {};  // symbol -> "since you last looked", kept while its page is open (the visit itself resets it on the server)
+const sinceBlock = (sl) => !sl ? "" : `<div class="since glass"><div class="sub">Since you last looked · ${ago(sl.ts)} ago</div>
+  ${sl.quiet ? `<div>Nothing new on it.</div>` : `<div class="srow">${sl.move_pct != null ? `<b class="num ${cls(sl.move_pct)}">${pct(sl.move_pct)}</b>` : ""}${sl.alerts ? `<span>${sl.alerts} alert${sl.alerts === 1 ? "" : "s"}</span>` : ""}${sl.headlines ? `<span>${sl.headlines} headline${sl.headlines === 1 ? "" : "s"}</span>` : ""}</div>
+  ${sl.top.map((a) => `<div class="li" data-id="${esc(a.id)}" role="button"><div class="grow"><div class="sub">${esc(a.severity)} · ${ago(a.created)} ago</div><div style="font-weight:600">${esc(a.title)}</div></div></div>`).join("")}`}</div>`;
+// "remind me" on an alert: it comes back as a push
+function remindRow(a) {
+  const r = (desk?.reminders || []).find((x) => x.alert_id === a.id);
+  if (r) return `<div class="remind"><span class="sub">⏰ Reminder set for ${esc(new Date(r.due * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }))}</span><button class="btn ghost small" data-act="remind-clear" data-s="${esc(r.id)}">Cancel</button></div>`;
+  return `<div class="sub" style="margin-top:12px">Remind me about this</div><div class="acts">${[["1h", "in 1 hour"], ["3h", "in 3 hours"], ["close", "at the close"], ["open", "at the open"]].map(([w, l]) => `<button class="btn ghost small" data-act="remind" data-s="${esc(a.id)}" data-w="${w}">⏰ ${l}</button>`).join("")}</div>`;
+}
+// the gates between an alert and this phone, one line each
+const gatesHTML = (steps) => `<div class="wsteps">${steps.map((st) => `<div class="wstep">${st.ok === true ? `<i class="ok">✓</i>` : st.ok === false ? `<i class="no">✕</i>` : `<i class="mid">•</i>`}<span>${esc(st.text)}</span></div>`).join("")}</div>`;
 async function onAct(el) {
   const a = el.dataset.act, s = el.dataset.s;
   if (a === "watch") { await deskEdit(mine.has(s) ? "watch_remove" : "watch_add", { symbol: s }); toast(mine.has(s) ? `★ ${s} is on your watchlist` : `${s} removed`); refreshTickerSheet(); }
@@ -1601,7 +1634,10 @@ async function onAct(el) {
   }
   else if (a === "kw-in") { const v = $("kwIn").value.trim(); if (v && await deskEdit("kw_add", { keyword: v })) $("kwIn").value = ""; }
   else if (a === "kw-rm") await deskEdit("kw_remove", { keyword: s });
-  else if (a === "mute") { if (await deskEdit("mute", { symbol: s, hours: +el.dataset.h || 4 })) { toast(`🔕 ${s} muted on this phone for ${el.dataset.h || 4}h`); refreshTickerSheet(); } }
+  else if (a === "mute") {
+    const u = el.dataset.u;
+    if (await deskEdit("mute", u ? { symbol: s, until: u } : { symbol: s, hours: +el.dataset.h || 4 })) { toast(`🔕 ${s} muted on this phone ${u ? "until the " + u : "for " + (el.dataset.h || 4) + "h"}`); refreshTickerSheet(); }
+  }
   else if (a === "unmute") { await deskEdit("unmute", { symbol: s }); refreshTickerSheet(); }
   else if (a === "ics") { location.href = icsUrl("webcal"); }
   else if (a === "ics-copy") { try { await navigator.clipboard.writeText(icsUrl("https")); toast("Calendar link copied. In Google Calendar: Other calendars → From URL."); } catch (_) { toast(icsUrl("https")); } }
@@ -1707,11 +1743,22 @@ async function onAct(el) {
   else if (a === "share-t") share(el.dataset.title || s, location.origin + "/app/#t=" + s);
   else if (a === "search-clear") { $("q").value = ""; $("searchRes").innerHTML = ""; renderRecent(); }
   else if (a === "close") closeSheet();
+  else if (a === "dial") { if (await deskEdit("stock_push", { symbol: s, level: el.dataset.lv })) { toast(el.dataset.lv === "default" ? `${s}: its normal push settings` : `📲 ${s}: ${DIAL_TEXT[el.dataset.lv]}`); refreshTickerSheet(); } }
+  else if (a === "focus") {
+    const r = await deskEdit("focus", el.dataset.u ? { until: el.dataset.u } : { minutes: +el.dataset.m });
+    if (r) toast(r.focus ? `🎯 Focus on until ${new Date(r.focus * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}: only CRITICAL comes through` : "Focus mode ended");
+  }
+  else if (a === "burst") { if (await deskEdit("prefs", { burst: +s })) toast(+s ? `After ${s} pushes in 10 minutes, the rest fold into one summary` : "Burst protection is off"); }
+  else if (a === "remind") { const r = await deskEdit("remind", { id: s, when: el.dataset.w }); if (r) { const m = r.reminders.find((x) => x.alert_id === s); toast(`⏰ I'll remind you ${new Date(m.due * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`); if (sheetAlert?.id === s) { const h = el.closest(".acts"); if (h) { h.previousElementSibling?.remove(); h.outerHTML = remindRow(sheetAlert); } } } }
+  else if (a === "remind-clear") { if (await deskEdit("remind_clear", { id: s })) { toast("Reminder cancelled"); if (sheetAlert) { const b = el.closest(".remind"); if (b) b.outerHTML = remindRow(sheetAlert); } } }
+  else if (a === "whatif") whatIf();
+  else if (a === "restore") $("restoreFile").click();
   else if (a === "why-push") whyPush(s);
   else if (a === "push-fix") {
     const fx = JSON.parse(el.dataset.fix || "{}");
-    if (fx.app === "push-on") { if (await pushOn()) whyPush(el.dataset.aid); return; }
-    if (fx.action && await deskEdit(fx.action, fx.body || {})) { toast("Done: " + fx.label); whyPush(el.dataset.aid); }
+    const again = () => { if (el.dataset.aid) whyPush(el.dataset.aid); else if ($("wiOut")) whatIf(); };
+    if (fx.app === "push-on") { if (await pushOn()) again(); return; }
+    if (fx.action && await deskEdit(fx.action, fx.body || {})) { toast("Done: " + fx.label); again(); }
   }
   else if (a === "copy-a") copyAlert(sheetAlert);
   else if (a === "push-log") openPushLog();
@@ -2129,10 +2176,9 @@ async function whyPush(id) {
   el.innerHTML = `<div class="panel glass"><div class="li"><span class="muted">Checking this phone…</span></div></div>`;
   let r;
   try { r = await api("/api/why-push/" + encodeURIComponent(id)); } catch (e) { el.innerHTML = `<div class="panel glass"><div class="li"><span class="muted">${esc(e.message || "Couldn't check.")}</span></div></div>`; return; }
-  const icon = (ok) => ok === true ? `<i class="ok">✓</i>` : ok === false ? `<i class="no">✕</i>` : `<i class="mid">•</i>`;
   el.innerHTML = `<div class="panel glass padded whyp ${r.got ? "got" : r.got === false ? "not" : ""}">
     <div class="wverdict">${r.got ? "Delivered" : r.got === false ? "Not delivered" : "Should have arrived"}</div><p>${esc(r.verdict)}</p>
-    <div class="wsteps">${r.steps.map((st) => `<div class="wstep">${icon(st.ok)}<span>${esc(st.text)}</span></div>`).join("")}</div>
+    ${gatesHTML(r.steps)}
     ${r.fix ? `<button class="btn primary small" data-act="push-fix" data-aid="${esc(id)}" data-fix="${esc(JSON.stringify(r.fix))}">${esc(r.fix.label)}</button>` : ""}
     ${r.settings_now ? `<div class="sub" style="margin-top:10px">Worked out from your settings as they are now: this alert isn't in the push log.</div>` : ""}
     <div class="row" style="margin-top:10px"><button class="btn ghost small" data-act="push-log">This phone's push log</button><button class="btn ghost small" data-act="health">Is it working?</button></div></div>`;
@@ -2146,13 +2192,22 @@ async function pushOn() {
     await subscribe(true); refreshPushUI(); toast("Alerts are on"); return true;
   } catch (e) { toast("Couldn't turn on alerts: " + e.message); return false; }
 }
-const LOG_LABEL = { sent: ["✓", "ok", "delivered"], held: ["⏸", "mid", "kept for your digest"], filtered: ["⦸", "mid", "kept back"], failed: ["✕", "no", "failed"], gone: ["✕", "no", "subscription expired"] };
+// the last 7 days of pushes to this phone: delivered, held for a summary, kept back by its settings
+function weekChart(week) {
+  if (!week?.length || !week.some((d) => d.sent + d.held + d.filtered + d.failed)) return "";
+  const top = Math.max(1, ...week.map((d) => d.sent + d.held + d.filtered + d.failed));
+  const seg = (n, c) => n ? `<i class="${c}" style="height:${(n / top * 54).toFixed(1)}px" title="${n}"></i>` : "";
+  return `<div class="wk" role="img" aria-label="Pushes in the last 7 days">${week.map((d) => `<div class="wkd"><div class="wkb">${seg(d.failed, "f")}${seg(d.filtered, "k")}${seg(d.held, "h")}${seg(d.sent, "s")}</div><small>${new Date(d.date + "T12:00:00").toLocaleDateString([], { weekday: "narrow" })}</small><b class="num">${d.sent}</b></div>`).join("")}</div>
+    <div class="sub wkl"><i class="s"></i>delivered <i class="h"></i>held for a summary <i class="k"></i>kept back <i class="f"></i>failed</div>`;
+}
+const LOG_LABEL = { sent: ["✓", "ok", "delivered"], held: ["⏸", "mid", "held for a summary"], filtered: ["⦸", "mid", "kept back"], failed: ["✕", "no", "failed"], gone: ["✕", "no", "subscription expired"] };
 async function openPushLog() {
   let r;
   try { r = await api("/api/push-log"); } catch (e) { toast(e.message); return; }
   const today = Object.entries(r.today).map(([k, n]) => `${n} ${(LOG_LABEL[k] || [, , k])[2]}`).join(" · ");
   showSheet(`<h2>Push log</h2><p class="muted">The last ${r.size} pushes meant for this phone: what was delivered, what your settings kept back and why, and what the push service answered.</p>
     ${today ? `<div class="sub" style="margin:10px 0 2px">Today: ${esc(today)}</div>` : ""}
+    ${weekChart(r.week)}${r.hint ? `<div class="sub gold" style="margin-bottom:8px">${esc(r.hint)}</div>` : ""}
     <div class="panel glass plog">${r.rows.length ? r.rows.map((x) => {
       const [ic, c, l] = LOG_LABEL[x.status] || ["•", "mid", x.status], alert = /^[0-9a-f]{16}$/.test(x.id);
       return `<div class="li"${alert ? ` data-id="${esc(x.id)}" role="button"` : ""}><i class="${c}">${ic}</i><div class="grow"><div style="font-weight:600">${esc(x.title)}</div>
@@ -2173,8 +2228,18 @@ async function openHealth() {
   showSheet(`<h2>Is it working?</h2><p class="muted">${bad.length ? `${bad.length} thing${bad.length > 1 ? "s" : ""} to look at.` : "Everything from the news feeds to this phone checks out."}</p>
     <div class="panel glass health">${rows.map((c) => `<div class="li"><i class="${c.ok === true ? "ok" : c.ok === false ? "no" : "mid"}">${c.ok === true ? "✓" : c.ok === false ? "✕" : "•"}</i><div class="grow"><div style="font-weight:600">${esc(c.title)}</div><div class="sub">${esc(c.text)}</div>
       ${c.fix ? `<button class="btn ghost small" style="margin-top:8px" data-act="push-fix" data-fix="${esc(JSON.stringify(c.fix))}">${esc(c.fix.label)}</button>` : ""}</div></div>`).join("")}</div>
+    <h4>Would I get it?</h4><div class="panel glass padded"><div class="sub" style="margin-bottom:10px">Pick a kind of alert and see whether it would reach this phone, with your settings as they are now.</div>
+      <div class="addrow"><select id="wiCat">${CATS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select><select id="wiSev"><option>HIGH</option><option>MEDIUM</option><option>CRITICAL</option></select></div>
+      <div class="addrow"><input id="wiSym" class="key" placeholder="on this stock (optional)" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn ghost small sel" data-act="whatif">Check</button></div><div id="wiOut"></div></div>
     <div class="row" style="margin-top:14px"><button class="btn ghost small" data-act="push-log">Push log</button><button class="btn ghost small" id="hTest">Send a test alert</button></div>`);
   $("hTest").onclick = () => $("testBtn").click();
+}
+async function whatIf() {
+  let r;
+  try { r = await api("/api/would-push", { method: "POST", body: JSON.stringify({ category: $("wiCat").value, severity: $("wiSev").value, symbol: $("wiSym").value.trim() }) }); }
+  catch (e) { $("wiOut").innerHTML = `<div class="sub neg" style="padding-top:10px">${esc(String(e.message || e).slice(0, 160))}</div>`; return; }
+  $("wiOut").innerHTML = `<div class="whyp ${r.got ? "got" : "not"}" style="padding-top:12px"><div class="wverdict">${r.got ? "Yes" : "No"}</div><p>${esc(r.verdict)}</p>${gatesHTML(r.steps)}
+    ${r.fix ? `<button class="btn primary small" data-act="push-fix" data-fix="${esc(JSON.stringify(r.fix))}" data-aid="">${esc(r.fix.label)}</button>` : ""}</div>`;
 }
 // an alert as plain text, for a group chat or a note
 async function copyAlert(a) {
@@ -2217,12 +2282,26 @@ document.addEventListener("click", (e) => {
   box.innerHTML = `<span>🔔 Alert when ${esc(sym)} goes <b>${kind}</b> <b class="num">${fmtPx(v)}</b> <span class="sub">(${pct((v / px - 1) * 100)} from here)</span></span>
     <button class="btn primary small" data-act="lvl-set" data-s="${esc(sym)}" data-k="${kind}" data-v="${v}">Set it</button>`;
 });
+// restore a backup: the JSON from "Backup": its stocks, alerts, words, rules and calls are added to this desk
+$("restoreFile").addEventListener("change", async () => {
+  const f = $("restoreFile").files[0];
+  $("restoreFile").value = "";
+  if (!f) return;
+  let data;
+  try { data = JSON.parse(await f.text()); } catch (_) { toast("That file isn't a Foretape backup"); return; }
+  if (!confirm("Add what's in this backup (stocks, price alerts, words, rules, calls, notes) to your desk?\nNothing you have now is replaced or deleted." + ($("restorePrefs")?.checked ? "\nIt will also bring back its settings." : ""))) return;
+  const r = await deskEdit("restore", { desk: data.desk || data, prefs: !!$("restorePrefs")?.checked });
+  if (!r) return;
+  const n = r.restored || {}, L = { stocks: "stocks", alerts: "price alerts", holdings: "holdings", keywords: "keywords", words: "never-push words", notes: "notes", rules: "smart alerts", calls: "calls", follows: "follows", dials: "push dials" };
+  const bits = Object.entries(L).filter(([k]) => n[k]).map(([k, l]) => `${n[k]} ${l}`);
+  toast(bits.length ? "Restored: " + bits.join(", ") : "Nothing new in that backup: you already have it all", null, 7000);
+});
 // the command palette (⌘K / Ctrl-K, or the ⌘ button): any page, stock, alert or setting by typing
 const Palette = {
   open: false, sel: 0, items: [],
   show() {
     if (!TOKEN || $("main").hidden) return;
-    this.open = true; $("pal").hidden = false; $("palIn").value = ""; this.render(); requestAnimationFrame(() => $("palIn").focus());
+    this.open = true; $("pal").hidden = false; $("palIn").value = ""; this.render(); $("palIn").focus(); requestAnimationFrame(() => $("palIn").focus());
   },
   hide() { this.open = false; $("pal").hidden = true; },
   toggle() { this.open ? this.hide() : this.show(); },
@@ -2230,6 +2309,7 @@ const Palette = {
     const Q = q.trim().toLowerCase(), out = [], has = (t) => !Q || t.toLowerCase().includes(Q);
     // best match first: a title that starts with what you typed, then a word in it, then anywhere
     const rank = (t) => !Q ? 0 : t.toLowerCase().startsWith(Q) ? 3 : new RegExp("\\b" + Q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(t.toLowerCase()) ? 2 : 1;
+    (window.Cmd ? Cmd.parse(q) : []).forEach((c) => out.push({ ic: "⚡", t: c.label, sub: "press Enter to do it", r: 9, run: async () => { if (await deskEdit(c.action, c.body)) toast(c.done); } }));
     const sym = syms(q).length === 1 && /^\$?[A-Za-z][A-Za-z0-9.-]{0,5}$/.test(q.trim()) ? syms(q)[0] : "";
     // typed in capitals or with a $, it's surely a ticker; in lowercase, a matching page or setting comes first
     if (sym) out.push({ ic: "◎", t: `Open ${sym}`, sub: "stock page", run: () => openTicker(sym), r: /^\$|^[A-Z0-9.-]+$/.test(q.trim()) ? 5 : 2.5 });
@@ -2242,6 +2322,10 @@ const Palette = {
       ["Is it working?", "check feeds, prices and this phone", openHealth], ["Push log", "the last pushes to this phone", openPushLog],
       ["Send a test alert", "to this phone", () => $("testBtn").click()], ["Turn on alerts", "on this device", pushOn],
       ["Glossary", "what every term means", openGlossary], ["Links", "every page in one place", openLinks],
+      ["Focus for 1 hour", "only CRITICAL comes through", () => deskEdit("focus", { minutes: 60 }).then((r) => r && toast("🎯 Focus on for an hour"))],
+      ["End focus mode", "", () => deskEdit("focus", { minutes: 0 }).then((r) => r && toast("Focus mode ended"))],
+      ["Would I get it? (test my push settings)", "", openHealth],
+      ["Back up my desk (JSON)", "", () => exportDesk("json")], ["Restore from a backup", "add a saved desk to this one", () => $("restoreFile").click()],
       ["Export my alerts (CSV)", "", () => exportDesk("csv")], ["First-run setup", "pick what you care about", openOnboard],
     ];
     acts.forEach(([t, sub, fn]) => { if (has(t)) out.push({ ic: "⚙", t, sub, run: fn, r: rank(t) }); });

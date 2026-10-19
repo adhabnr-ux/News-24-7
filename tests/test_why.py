@@ -70,7 +70,11 @@ def lookup(server):
         (
             200,
             fixture_text(
-                "gnews_cci.xml", RECENT=rfc822(time.time() - 300), OLD=rfc822(time.time() - 9 * 86400)
+                "gnews_cci.xml",
+                RECENT=rfc822(time.time() - 300),
+                OLD=rfc822(
+                    datetime(2026, 10, 1, 12, 0, tzinfo=ET).timestamp()
+                ),  # before any test alert's window, whatever today is
             ),
         ),
     )

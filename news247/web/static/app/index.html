@@ -222,6 +222,9 @@
       <div class="sec-title rv"><h2>What reaches you</h2></div>
       <div class="panel glass tilt rv" id="dPrefs"></div>
       <div class="panel glass tilt" id="dMuted" hidden></div>
+      <div class="panel glass tilt" id="dDial" hidden></div>
+      <div class="sec-title rv"><h2>Reminders</h2><span>alerts coming back to you</span></div>
+      <div class="panel glass tilt" id="dRemind" hidden></div>
       <div class="row" style="justify-content:center;margin:18px 0 0"><button class="btn ghost small" data-act="onboard">Set up from scratch: stocks, words, push style</button></div>
       <div class="sec-title rv"><h2>Share your watchlist</h2><span>by code</span></div>
       <div class="panel glass tilt rv padded" id="dShare"></div>
@@ -229,7 +232,10 @@
       <div class="panel glass tilt rv padded" id="dMove"></div>
       <div class="sec-title rv"><h2>Your data</h2><span>yours to keep</span></div>
       <div class="panel glass tilt rv padded"><div class="sub" style="margin-bottom:12px">Download everything on this desk as a backup, or your tracked and closed calls with the journal as a spreadsheet.</div>
-        <div class="row"><button class="btn ghost small" data-act="export" data-f="json">Backup (JSON)</button><button class="btn ghost small" data-act="export" data-f="csv">Calls (CSV)</button></div></div>
+        <div class="row"><button class="btn ghost small" data-act="export" data-f="json">Backup (JSON)</button><button class="btn ghost small" data-act="export" data-f="csv">Calls (CSV)</button><button class="btn ghost small" data-act="restore">Restore a backup…</button></div>
+        <label class="rearm"><input type="checkbox" id="restorePrefs"> also bring back its settings (floors, quiet hours, digest…)</label>
+        <div class="sub" style="margin-top:6px">A restore adds to this desk: nothing you have now is replaced. Handy on a new phone.</div>
+        <input type="file" id="restoreFile" accept="application/json,.json" hidden></div>
       <div class="sec-title rv"><h2>Your calendar</h2><span>catalysts + your earnings dates</span></div>
       <div class="panel glass tilt rv padded"><div class="sub" style="margin-bottom:12px">Subscribe once: FOMC, jobs reports, expiries, holidays, binary events, and the report dates of the stocks you watch, kept up to date in Apple, Google or Outlook Calendar. The link carries your access key: keep it to yourself.</div>
         <div class="row"><button class="btn ghost small" data-act="ics">Add to Calendar</button><button class="btn ghost small" data-act="ics-copy">Copy the link</button></div></div>
@@ -276,10 +282,11 @@
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="grab"></div><button class="close" id="closeSheet" aria-label="Close">✕</button><div class="inner" id="sheetBody"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<div class="pal" id="pal" hidden><div class="palbox glass" role="dialog" aria-label="Jump anywhere"><input id="palIn" placeholder="A stock, a page, an alert, a setting…" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Jump anywhere"><div class="pallist" id="palList" role="listbox"></div><div class="palfoot sub">↑↓ to move · Enter to open · Esc to close</div></div></div>
+<div class="pal" id="pal" hidden><div class="palbox glass" role="dialog" aria-label="Jump anywhere"><input id="palIn" placeholder="A stock, a page, or “ACME above 105”, “mute ACME 2h”…" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Jump anywhere"><div class="pallist" id="palList" role="listbox"></div><div class="palfoot sub">↑↓ to move · Enter to open · Esc to close</div></div></div>
 <div class="offline" id="offline" hidden></div>
 
 <script src="/app/scene.js"></script>
+<script src="/app/cmd.js"></script>
 <script src="/app/app.js"></script>
 </body>
 </html>

@@ -641,3 +641,19 @@ i.ok { color: var(--up); } i.no { color: var(--down); } i.mid { color: var(--gol
 .palfoot { padding: 8px 18px 12px; border-top: 1px solid var(--hair); }
 body.light .pal { background: rgba(240, 236, 228, .6); }
 body.light .palbox input, body.light .pi { color: #16213B; }
+/* run 13: push dial, since you last looked, focus, reminders, week chart, what-if */
+.dialrow { margin: 4px 0 2px; } .dialrow .row { padding: 6px 0 2px; }
+.dialb { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.since { margin: 12px 0 4px; padding: 12px 14px; border-radius: 16px; font-size: 14px; }
+.since .srow { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; margin: 4px 0 6px; }
+.since .li { padding: 6px 0 0; }
+.wlc.focus { color: var(--gold); box-shadow: inset 0 0 0 1px rgba(255, 217, 160, .5); white-space: nowrap; }
+.remind { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.wk { display: flex; gap: 8px; align-items: flex-end; margin: 12px 0 4px; }
+.wkd { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.wkb { display: flex; flex-direction: column; justify-content: flex-end; width: 100%; max-width: 30px; height: 54px; border-radius: 6px; overflow: hidden; background: rgba(255, 255, 255, .05); }
+.wkd small { color: var(--faint); font-size: 10.5px; } .wkd b { font-size: 11.5px; }
+.wk i, .wkl i { display: block; } .wk i.s, .wkl i.s { background: var(--up); } .wk i.h, .wkl i.h { background: var(--mid); }
+.wk i.k, .wkl i.k { background: var(--gold); } .wk i.f, .wkl i.f { background: var(--down); }
+.wkl { margin-bottom: 10px; } .wkl i { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 10px; border-radius: 3px; vertical-align: -1px; } .wkl i:first-child { margin-left: 0; }
+#wiOut .whyp { margin-top: 0; }

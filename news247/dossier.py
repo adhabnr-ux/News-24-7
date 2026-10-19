@@ -756,6 +756,37 @@ HALT_TITLE = re.compile(
 )  # sources/halts.py: "TRADING HALT SYM (Name) — Label [CODE]"
 
 
+def since_you_looked(
+    engine: Engine, device: str, sym: str, now: float | None = None
+) -> dict[str, Any] | None:
+    """What happened on a stock since this phone last opened its page: the move from the price it
+    saw then, and the alerts and headlines that came in. None when it hasn't looked before, looked
+    in the last 20 minutes, or looked more than 60 days ago."""
+    now = now or time.time()
+    seen = ((engine.desk.profiles.get(device) or {}).get("seen") or {}).get(sym)
+    if not seen or not 1200 <= now - seen["ts"] <= 60 * 86400:
+        return None
+    q = engine.price_of(sym)
+    move = round((q[1] / seen["px"] - 1.0) * 100.0, 2) if q and seen.get("px") else None
+    alerts = engine.storage.alerts_for_ticker(sym, since=seen["ts"], limit=30)
+    rank = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1}
+    top = sorted(alerts, key=lambda a: (-rank.get(a.get("severity"), 0), -a.get("created", 0)))[:3]
+    heads = engine.storage.items_for_ticker(sym, since=seen["ts"], limit=30, min_score=20.0)
+    if move is None and not alerts and not heads:
+        return {"ts": seen["ts"], "quiet": True, "move_pct": None, "alerts": 0, "headlines": 0, "top": []}
+    return {
+        "ts": seen["ts"],
+        "quiet": False,
+        "move_pct": move,
+        "alerts": len(alerts),
+        "headlines": len(heads),
+        "top": [
+            {"id": a["id"], "title": a["title"], "severity": a["severity"], "created": a["created"]}
+            for a in top
+        ],
+    }
+
+
 RESUME_TITLE = re.compile(r"^▶ (\S+) resumes trading at (\S+) ET")
 
 

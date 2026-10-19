@@ -19,6 +19,7 @@ from .analysis.dedup import Story, StoryClusterer
 from .analysis.llm import LLMClient, apply_verdict
 from .analysis.scorer import Scorer
 from .config import CASH_HOURS_ONLY_QUIET, PROXIES, Config
+from .desk import BURST_WINDOW_S
 from .edge import ET, Calendar, EdgeDesk, brief_push, build_brief
 from .http import HttpClient
 from .market.detector import MoveDetector
@@ -32,6 +33,7 @@ from .market.universe import Universe, fmt_cap
 from .market.why import WhyHunter
 from .models import Alert, Analysis, NewsItem, PriceMove, Severity, SourceTier
 from .notify import Dispatcher
+from .notify.channels import HELD_TEXT
 from .notify.format import move_headline, window_label
 from .scorecard import Scorecard, scorecard_line
 from .sources import Source, SourceContext, build_sources
@@ -247,9 +249,10 @@ class Engine:
         ] = {}  # SPY/QQQ every 5 minutes today (the day timeline)
         if self.webpush is not None:
             self.webpush.allow = lambda sub, alert: self.desk.allows(sub.device, alert)  # type: ignore[attr-defined]
-            self.webpush.hold = lambda sub, alert: self.desk.hold(sub.device, alert)  # type: ignore[attr-defined]
+            self.webpush.hold = lambda sub, alert: self._held(sub.device, alert)  # type: ignore[attr-defined]
             self.webpush.forward = lambda device, payload: self._spawn(self._forward(device, payload))  # type: ignore[attr-defined]
             self.webpush.why = lambda sub, alert: self.desk.block_reason(sub.device, alert)  # type: ignore[attr-defined]
+        self.desk.calendar = self.calendar
         self._load_phone_controls()
         self.recent: deque[tuple[NewsItem, Analysis]] = deque()
         # meaningful news kept back to the previous session, so a move at 09:45 can cite the
@@ -2170,6 +2173,23 @@ class Engine:
             best = (last[0], last[1], (last[1] / pc - 1.0) * 100.0 if pc else None)
         return best
 
+    def _held(self, device: str, alert: Any) -> str | None:
+        """Is this alert kept back from this phone's lock screen for a summary? "digest" (the phone
+        is in digest mode) or "burst" (it already got its limit in the last 10 minutes); else None."""
+        if self.desk.hold(device, alert):
+            return "digest"
+        wp = self.webpush
+        n = int(((self.desk.profiles.get(device) or {}).get("prefs") or {}).get("burst") or 0)
+        if wp is None or n <= 0:
+            return None
+        now = time.time()
+        recent = sum(
+            1
+            for e in wp.log.get(device, ())  # type: ignore[attr-defined]
+            if e["status"] == "sent" and len(e["id"]) == 16 and now - e["ts"] < BURST_WINDOW_S
+        )
+        return "burst" if self.desk.burst_hold(device, alert, recent, now) else None
+
     async def _push_watchers(self, alert: Alert) -> None:
         """A MEDIUM alert (shown in the app, not pushed) on a stock someone watches: push it to
         those phones, with their preferences (category, quiet hours) respected."""
@@ -2193,13 +2213,16 @@ class Engine:
         payload["title"] = "★ " + payload["title"]
         devices = set()
         for d in dict.fromkeys(self.desk.watchers(alert.tickers[:6]) + self.desk.followers(themes, secs)):
-            if not (self.desk.get(d).get("prefs") or {}).get("watch_push", True):
+            prof = self.desk.get(d)
+            if not (prof.get("prefs") or {}).get("watch_push", True) and (
+                self.desk.stock_level(prof, alert.tickers[:6]) != "all"
+            ):
                 continue
             why = self.desk.block_reason(d, alert)
             if why:
                 wp.note(d, payload, "filtered", why)  # type: ignore[attr-defined]
-            elif self.desk.hold(d, alert):
-                wp.note(d, payload, "held", "kept for your digest")  # type: ignore[attr-defined]
+            elif held := self._held(d, alert):
+                wp.note(d, payload, "held", HELD_TEXT[held])  # type: ignore[attr-defined]
             else:
                 devices.add(d)
         only = [s.endpoint for s in wp.subs.values() if s.device in devices]  # type: ignore[attr-defined]
@@ -2251,6 +2274,8 @@ class Engine:
                     await self.send_earnings_reminders(now)
                 with contextlib.suppress(Exception):
                     await self.check_followups(now)
+                with contextlib.suppress(Exception):
+                    await self.check_reminders(now)
                 with contextlib.suppress(Exception):
                     await self.check_portfolio_risk(now)
                 with contextlib.suppress(Exception):
@@ -2329,6 +2354,27 @@ class Engine:
                        "tickers": [t["symbol"]], "tag": f"lv-{t['id']}", "ts": now, "open": f"/app/#t={t['symbol']}"}  # fmt: skip
             await self._to_device(device, payload)
         return [(d, a) for d, a, _ in fired]
+
+    async def check_reminders(self, now: float | None = None) -> int:
+        """ "Remind me" on an alert: when it comes due, the alert comes back to that phone, with
+        how the stock has moved since."""
+        now = now or time.time()
+        sent = 0
+        for device, r in self.desk.due_reminders(now):
+            alert = self.storage.get_alert(r["alert_id"]) or {}
+            refs = (alert.get("edge") or {}).get("refs") or {}
+            bits = []
+            for sym in r.get("tickers") or []:
+                q, ref = self.price_of(sym), refs.get(sym)
+                if q and ref:
+                    bits.append(f"{sym} {(q[1] / ref - 1.0) * 100.0:+.1f}% since the alert")
+            payload = {"id": f"rm-{r['id']}", "title": f"⏰ {r['title'][:150]}",
+                       "body": " · ".join(bits) or "You asked to be reminded about this alert.",
+                       "severity": "HIGH", "kind": "system", "tickers": (r.get("tickers") or [])[:2],
+                       "tag": f"rm-{r['alert_id'][:20]}", "ts": now, "open": f"/app/#a={r['alert_id']}"}  # fmt: skip
+            if await self._to_device(device, payload):
+                sent += 1
+        return sent
 
     async def _keyword_push(self, item: NewsItem, analysis: Analysis, story_id: int) -> int:
         """A scored headline naming a phone's keyword goes to that phone, even below the alert
@@ -2801,7 +2847,7 @@ class Engine:
             n_high = sum(1 for a in held if a["severity"] == "HIGH")
             mins = (self.desk.get(device).get("prefs") or {}).get("digest") or 0
             payload = {"id": f"dg-{device[:8]}-{int(now)}", "title": f"📬 {len(held)} alert{'s' if len(held) > 1 else ''}"
-                       + (f" ({n_high} HIGH)" if n_high else "") + (f" · last {mins} min" if mins else ""),
+                       + (f" ({n_high} HIGH)" if n_high else "") + (f" · last {mins} min" if mins else " held back in a rush"),
                        "body": "\n".join(lines)[:600], "severity": "MEDIUM", "kind": "system", "tickers": [],
                        "tag": f"dg-{device[:8]}", "ts": now, "open": "/app/"}  # fmt: skip
             if await self._to_device(device, payload, urgency="normal"):

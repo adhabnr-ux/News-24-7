@@ -10,7 +10,7 @@ phone's settings as they are now, and says that too.
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -25,7 +25,7 @@ STATUS_TEXT = {
     "sent": "reached this phone",
     "failed": "the push service turned it down",
     "gone": "this phone's subscription had expired",
-    "held": "kept for your digest",
+    "held": "held for a summary",
     "filtered": "kept back by your settings",
 }
 
@@ -58,6 +58,9 @@ def _watch_path(engine: Engine, device: str, alert: dict[str, Any]) -> str:
     p = engine.desk.profiles.get(device) or {}
     mine = set(p.get("watchlist") or []) | set(p.get("holdings") or {})
     tickers = [t for t in (alert.get("tickers") or [])[:6] if t]
+    everything = [t for t in tickers if (p.get("stock_push") or {}).get(t) == "all"]
+    if everything:
+        return f"{everything[0]}, which you set to push everything"
     hit = [t for t in tickers if t in mine]
     if hit:
         return f"{hit[0]}, which you {'hold' if hit[0] in (p.get('holdings') or {}) else 'watch'}"
@@ -71,14 +74,11 @@ def _watch_path(engine: Engine, device: str, alert: dict[str, Any]) -> str:
     return ""
 
 
-def why_push(engine: Engine, device: str, alert_id: str, now: float | None = None) -> dict[str, Any] | None:
-    """Did this alert reach this phone, and if not, the first thing that stopped it, with the one
-    tap that would change it. ``steps`` is the whole path, gate by gate."""
-    now = now or time.time()
-    a = engine.storage.get_alert(alert_id)
-    if a is None:
-        return None
-    created = float(a.get("created") or now)
+def _walk(
+    engine: Engine, device: str, a: dict[str, Any], created: float
+) -> tuple[list[dict[str, Any]], str, dict[str, Any] | None]:
+    """Every gate between an alert (a stored one, or a made-up one) and this phone, in order:
+    (steps, the first thing that blocks it or "", the one tap that would fix that)."""
     sev_name = str(a.get("severity") or "LOW")
     try:
         sev = Severity.parse(sev_name)
@@ -114,7 +114,8 @@ def why_push(engine: Engine, device: str, alert_id: str, now: float | None = Non
             gate(True, f"It's {sev.name}: every phone gets {floor.name} and up")
         elif sev == Severity.MEDIUM and _watch_path(engine, device, a):
             prefs = (engine.desk.profiles.get(device) or {}).get("prefs") or {}
-            if prefs.get("watch_push", True):
+            dial = engine.desk.stock_level(engine.desk.profiles.get(device) or {}, tickers)
+            if prefs.get("watch_push", True) or dial == "all":
                 gate(True, f"It's MEDIUM, but it's about {_watch_path(engine, device, a)}")
             else:
                 gate(False, "You turned off pushes for MEDIUM alerts on your stocks",
@@ -137,8 +138,31 @@ def why_push(engine: Engine, device: str, alert_id: str, now: float | None = Non
         prefs = (engine.desk.profiles.get(device) or {}).get("prefs") or {}
         if prefs.get("digest") and sev != Severity.CRITICAL:
             gate(None, "You're in digest mode: it goes into your next digest instead of buzzing")
+        elif prefs.get("burst") and sev != Severity.CRITICAL:
+            gate(
+                None,
+                f"Burst protection is on: after {prefs['burst']} pushes in 10 minutes the rest fold into one summary",
+            )
         if engine.dispatcher.paused:
             gate(False, "Pushes are paused on the server right now")
+    return steps, blocked, fix
+
+
+def why_push(engine: Engine, device: str, alert_id: str, now: float | None = None) -> dict[str, Any] | None:
+    """Did this alert reach this phone, and if not, the first thing that stopped it, with the one
+    tap that would change it. ``steps`` is the whole path, gate by gate."""
+    now = now or time.time()
+    a = engine.storage.get_alert(alert_id)
+    if a is None:
+        return None
+    created = float(a.get("created") or now)
+    sev_name = str(a.get("severity") or "LOW")
+    try:
+        sev = Severity.parse(sev_name)
+    except KeyError:
+        sev = Severity.LOW
+    wp = engine.webpush
+    steps, blocked, fix = _walk(engine, device, a, created)
 
     entry = next((e for e in _log(engine, device) if e["id"] == alert_id), None)
     if entry is not None:
@@ -146,7 +170,7 @@ def why_push(engine: Engine, device: str, alert_id: str, now: float | None = Non
         got = entry["status"] == "sent"
         verdict = {
             "sent": f"It reached this phone at {when}.",
-            "held": f"It was kept for your digest at {when}.",
+            "held": f"It was {entry['detail']} at {when}.",
             "filtered": f"Your settings kept it back at {when}: {entry['detail']}.",
             "failed": f"The push service turned it down at {when}: {entry['detail']}.",
             "gone": f"At {when} this phone's subscription had expired: turn alerts on again.",
@@ -192,7 +216,20 @@ def push_log(engine: Engine, device: str, now: float | None = None) -> dict[str,
     for r in rows:
         if r["ts"] >= day0:
             today[r["status"]] = today.get(r["status"], 0) + 1
-    return {"rows": rows, "today": today, "size": getattr(engine.webpush, "LOG_SIZE", 40)}
+    week = push_week(engine, device, now)
+    avg = sum(d["sent"] for d in week) / 7
+    hint = ""
+    if avg >= 25:
+        hint = (
+            "That's a lot of buzzing: a digest or burst protection would calm it (Desk → What reaches you)."
+        )
+    return {
+        "rows": rows,
+        "today": today,
+        "size": getattr(engine.webpush, "LOG_SIZE", 40),
+        "week": week,
+        "hint": hint,
+    }
 
 
 def phone_health(engine: Engine, device: str, now: float | None = None) -> dict[str, Any]:
@@ -319,3 +356,67 @@ def _ago(s: float) -> str:
     if s < 172800:
         return f"{s / 3600:.0f}h"
     return f"{s / 86400:.0f} days"
+
+
+# the kinds of alert a phone can ask "would I get this?" about: (kind, edge, item extra)
+WHAT_IF = {
+    "news": ("news", {}, {}),
+    "radar": ("price", {"radar": True}, {}),
+    "options": ("options", {}, {}),
+    "insider": ("news", {}, {"insider_buy": True}),
+    "confluence": ("confluence", {}, {}),
+    "macro": ("news", {}, {}),
+}
+
+
+def would_push(
+    engine: Engine, device: str, category: str, severity: str, symbol: str = "", now: float | None = None
+) -> dict[str, Any]:
+    """ "Would I get it?": walk a made-up alert (this kind, this severity, this stock) through the
+    same gates a real one meets, with this phone's settings as they are now."""
+    now = now or time.time()
+    if category not in WHAT_IF:
+        raise ValueError("category is news, radar, options, insider, confluence or macro")
+    sev = severity.upper()
+    if sev not in ("MEDIUM", "HIGH", "CRITICAL"):
+        raise ValueError("severity is MEDIUM, HIGH or CRITICAL")
+    from .desk import clean_symbol
+
+    sym = clean_symbol(symbol) if symbol else None
+    if symbol and not sym:
+        raise ValueError("not a stock symbol")
+    kind, edge, extra = WHAT_IF[category]
+    tickers = [sym] if sym else (["SPY"] if category == "macro" else [])
+    a = {
+        "id": "what-if",
+        "kind": kind,
+        "severity": sev,
+        "title": f"A {sev} {category} alert" + (f" on {sym}" if sym else ""),
+        "tickers": tickers,
+        "edge": edge,
+        "created": now,
+        "item": {"source": "", "extra": extra} if extra else None,
+        "analysis": {},
+    }
+    steps, blocked, fix = _walk(engine, device, a, now)
+    return {
+        "title": a["title"],
+        "got": not blocked,
+        "verdict": ("Yes: it would reach this phone." if not blocked else blocked + "."),
+        "steps": steps,
+        "fix": fix,
+    }
+
+
+def push_week(engine: Engine, device: str, now: float | None = None) -> list[dict[str, Any]]:
+    """The last 7 days of pushes to this phone, oldest first: how many were delivered, held for a
+    summary, kept back by its settings or failed (counted as they happen)."""
+    now = now or time.time()
+    days = (getattr(engine.webpush, "stats", None) or {}).get(device) or {}
+    out = []
+    for i in range(6, -1, -1):
+        d = (datetime.fromtimestamp(now, ET) - timedelta(days=i)).date().isoformat()
+        c = days.get(d) or {}
+        out.append({"date": d, "sent": c.get("sent", 0), "held": c.get("held", 0),
+                    "filtered": c.get("filtered", 0), "failed": c.get("failed", 0) + c.get("gone", 0)})  # fmt: skip
+    return out

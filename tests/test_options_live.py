@@ -131,7 +131,7 @@ def contract(
     return Contract(
         symbol="BIIB261016C00247500",
         underlying="BIIB",
-        expiry=date(2026, 10, 16),
+        expiry=kw.pop("expiry", date(2026, 10, 16)),
         cp="C",
         strike=247.5,
         bid=bid,
@@ -147,6 +147,7 @@ def contract(
     )
 
 
+SOON = date.today() + timedelta(days=4)  # for the tests that run on the real clock: never already expired
 NOW = datetime(2026, 10, 12, 9, 34, tzinfo=ET).timestamp()  # four minutes after the gap
 
 
@@ -365,7 +366,7 @@ class FakeSource:
 
 async def test_urgent_names_are_read_at_once_with_the_reason_on_the_alert():
     now = time.time()
-    c = contract(now, bid=0.70, ask=0.95, last=0.08, last_age_s=900, quote_age_s=2)
+    c = contract(now, bid=0.70, ask=0.95, last=0.08, last_age_s=900, quote_age_s=2, expiry=SOON)
     ch = live_chain(c)
     ch.quote_time = c.quote_time
     src = FakeSource({"BIIB": ch})
@@ -398,7 +399,7 @@ async def test_urgent_names_are_read_at_once_with_the_reason_on_the_alert():
 
 async def test_reading_a_hot_chain_puts_its_contracts_on_the_tripwire():
     now = time.time()
-    c = contract(now, bid=0.10, ask=0.15, last=0.08, last_age_s=60, quote_age_s=2)
+    c = contract(now, bid=0.10, ask=0.15, last=0.08, last_age_s=60, quote_age_s=2, expiry=SOON)
     ch = live_chain(c)
     u = uni(li("BIIB", 33e9, 3.0))
     cfg = ocfg(alpaca_key="PK", alpaca_secret="SK", provider="alpaca", fallback=False)
@@ -475,7 +476,7 @@ async def test_the_radar_sweep_shares_prices_and_news_reads_chains_at_once(tmp_p
 async def test_quote_led_alert_says_how_it_was_caught(tmp_path):
     eng, cap = engine(tmp_path)
     now = time.time()
-    c = contract(now, bid=0.70, ask=0.95, last=0.08, last_age_s=900, quote_age_s=4)
+    c = contract(now, bid=0.70, ask=0.95, last=0.08, last_age_s=900, quote_age_s=4, expiry=SOON)
     c.underlying = "XYZ"
     c.symbol = "XYZ261016C00247500"
     ch = live_chain(c)

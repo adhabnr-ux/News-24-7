@@ -136,6 +136,7 @@ class WebServer:
         app.router.add_get("/api/week", self.api_week)
         app.router.add_get("/api/why-push/{id}", self.api_why_push)
         app.router.add_get("/api/push-log", self.api_push_log)
+        app.router.add_post("/api/would-push", self.api_would_push)
         app.router.add_get("/api/list/{code}", self.api_list)
         app.router.add_get("/api/phone-health", self.api_phone_health)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
@@ -405,6 +406,7 @@ class WebServer:
         "app.css": "text/css",
         "app.js": "application/javascript",
         "scene.js": "application/javascript",
+        "cmd.js": "application/javascript",
         "launch.webp": "image/webp",
         "depth.png": "image/png",
         "fonts/instrument-serif-normal.woff2": "font/woff2",
@@ -675,6 +677,10 @@ class WebServer:
             raise web.HTTPBadRequest(text="not a symbol")
         dev = self._device(request)
         d["watching"] = bool(dev and d["symbol"] in (self.engine.desk.get(dev).get("watchlist") or []))
+        if dev:
+            from ..dossier import since_you_looked
+
+            d["since_look"] = since_you_looked(self.engine, dev, d["symbol"])
         return _json(d)
 
     async def api_search(self, request: web.Request) -> web.Response:
@@ -876,6 +882,27 @@ class WebServer:
         out = why_push(self.engine, self._need_device(request), request.match_info["id"])
         if out is None:
             raise web.HTTPNotFound(text="no such alert")
+        return _json(out)
+
+    async def api_would_push(self, request: web.Request) -> web.Response:
+        """ "Would I get it?": a made-up alert (kind, severity, stock) walked through this phone's gates."""
+        from ..pushcheck import would_push
+
+        dev = self._need_device(request)
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        try:
+            out = would_push(
+                self.engine,
+                dev,
+                str(body.get("category") or "news"),
+                str(body.get("severity") or "HIGH"),
+                str(body.get("symbol") or ""),
+            )
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
         return _json(out)
 
     async def api_list(self, request: web.Request) -> web.Response:
