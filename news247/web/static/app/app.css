@@ -668,3 +668,12 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 /* run 15: room left */
 .roombar { height: 5px; margin: 7px 0 5px; border-radius: 99px; background: rgba(255, 255, 255, .08); overflow: hidden; }
 .roombar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--gold), var(--up)); }
+/* run 16: trade plan, coach */
+.pbar { position: relative; height: 10px; margin: 6px 4px 14px; border-radius: 99px; background: rgba(255, 255, 255, .07); }
+.pbar i { position: absolute; top: -3px; width: 4px; height: 16px; margin-left: -2px; border-radius: 2px; }
+.pbar .pstop { background: var(--down); } .pbar .ptarget { background: var(--up); } .pbar .pentry { background: var(--cream); }
+.pfill { position: absolute; top: 0; bottom: 0; border-radius: 99px; background: rgba(140, 235, 196, .35); } .pfill.short { background: rgba(140, 235, 196, .35); }
+.coachstats { padding: 14px 0 6px; justify-content: space-between; }
+.coachi { align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.45; }
+.coachi i { flex: none; width: 18px; font-style: normal; font-weight: 700; text-align: center; }
+.coachi.good i { color: var(--up); } .coachi.bad i { color: var(--down); } .coachi.info i { color: var(--gold); }

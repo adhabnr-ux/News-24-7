@@ -153,6 +153,8 @@ class WebServer:
         app.router.add_post("/api/would-push", self.api_would_push)
         app.router.add_get("/api/lab", self.api_lab)
         app.router.add_get("/api/room", self.api_room)
+        app.router.add_get("/api/plan/{id}", self.api_plan)
+        app.router.add_get("/api/coach", self.api_coach)
         app.router.add_get("/api/list/{code}", self.api_list)
         app.router.add_get("/api/phone-health", self.api_phone_health)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
@@ -931,6 +933,21 @@ class WebServer:
         if out is None:
             raise web.HTTPNotFound(text="no such alert")
         return _json(out)
+
+    async def api_plan(self, request: web.Request) -> web.Response:
+        """A paper plan for an alert: entry, stop, target, reward-to-risk and size (plans.py)."""
+        from ..plans import trade_plan
+
+        a = self.engine.storage.get_alert(request.match_info["id"])
+        if a is None:
+            raise web.HTTPNotFound(text="no such alert")
+        return _json(trade_plan(self.engine, self._device(request), a))
+
+    async def api_coach(self, request: web.Request) -> web.Response:
+        """What this phone's closed paper calls say about its habits (plans.py)."""
+        from ..plans import coach
+
+        return _json(coach(self.engine, self._need_device(request)))
 
     async def api_room(self, request: web.Request) -> web.Response:
         """Room left: today's alerts that have moved less than their catalyst's typical move."""

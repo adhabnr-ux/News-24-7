@@ -126,6 +126,8 @@ def default_profile() -> dict[str, Any]:
             "mute_sources": [],  # sources whose alerts never push to this phone
             "burst": 0,  # alert pushes per 10 min before the rest fold into one summary (0 = never)
             "sympathy": True,  # a peer of your stock jumps on news and yours hasn't moved: one push
+            "account": 0.0,  # $: sizes the trade plans (0: the portfolio's value, if any)
+            "risk_pct": 1.0,  # % of the account a plan risks on one idea
         },
         "price_alerts": [],
         "tracked": [],
@@ -623,6 +625,22 @@ class Desk:
                 if v not in (0, 1, 2, 3, 5):
                     raise ValueError("port_alert is 0 (off), 1, 2, 3 or 5")
                 prefs["port_alert"] = v
+            if "account" in body:
+                try:
+                    v = float(body.get("account") or 0)
+                except (TypeError, ValueError):
+                    v = -1
+                if not 0 <= v <= 1e10:
+                    raise ValueError("account size is a dollar amount (0 clears it)")
+                prefs["account"] = v
+            if "risk_pct" in body:
+                try:
+                    v = float(body.get("risk_pct"))
+                except (TypeError, ValueError):
+                    v = -1
+                if v not in (0.25, 0.5, 1.0, 2.0):
+                    raise ValueError("risk per idea is 0.25, 0.5, 1 or 2% of the account")
+                prefs["risk_pct"] = v
             if "burst" in body:
                 try:
                     n = int(body.get("burst") or 0)
@@ -1265,6 +1283,8 @@ class Desk:
                     "port_alert",
                     "auto_move",
                     "burst",
+                    "account",
+                    "risk_pct",
                     "quiet",
                 )
                 if k in src

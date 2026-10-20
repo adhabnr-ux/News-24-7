@@ -65,6 +65,7 @@ function toastUndo(msg, fn) {
 const GLOSSARY = {
   sympathy: "Sympathy: when one company jumps on news, its peers sometimes follow (same customers, same regulator, same read-through). Foretape flags the peer you watch that hasn't moved yet, then grades every flag an hour later and at the close, so you can see whether these catch up.",
   catalyst: "Catalyst record: Foretape reads each headline for its kind of news (contract win, FDA approval, earnings beat, downgrade, offering...) and the company's size (under $2B, $2-10B, $10B+), then grades every such alert an hour later, at the close and the next day. The record is how that kind of news has traded here, at that size (any size when there are fewer than 6).",
+  plan: "A plan for it: the stop sits where the news would be proven wrong (back through the price before it), the target at the typical close move for this kind of news at this company size, else what options price. The size risks your chosen share of the account between entry and stop. Paper only, not advice.",
   dial: "The push dial: how loud this one stock is on your phone. Default follows your settings; HIGH only skips its MEDIUM alerts; Everything pushes even MEDIUM alerts and ignores your floor and the fades filter (your categories, mutes and quiet hours still apply); Off never pushes it.",
   implied: "Implied move: what the options market is paying for. The at-the-money call + put (the straddle) for an expiry, as a % of the stock: roughly the move priced in by that date, up or down.",
   callwall: "Call wall: the strike above the stock with the most call open interest. Dealers hedging those calls can make it act like a ceiling into expiry; a clean break through it can speed up.",
@@ -812,13 +813,39 @@ async function openSheet(id) {
     `<div id="similar"></div>`,
     an.reasons?.length ? `<h4>Why Foretape flagged it</h4><details><summary>Score ${Math.round(an.score)} / 100 — show the breakdown</summary><ul class="reasons" style="margin-top:10px">${an.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></details>` : "",
     a.url ? `<div style="margin-top:26px"><a class="btn primary" href="${esc(a.url)}" target="_blank" rel="noopener">${rd && !rel.length ? "Open the quote" : "Open the source"} ↗</a></div>` : "",
+    a.kind !== "system" ? `<div id="planBox"></div>` : "",
     alertActions(a),
     voteRow(a),
   ].filter(Boolean);
   showSheet(blocks.join(""));
   loadSimilar(a);
+  loadPlan(a);
   if (a.kind !== "system") api("/api/desk", { method: "POST", body: JSON.stringify({ action: "opened", id: a.id }) }).catch(() => {});
 }
+// a paper plan for the alert: entry, stop, target, reward-to-risk and a size from your account
+async function loadPlan(a) {
+  const el = $("planBox");
+  if (!el) return;
+  let p;
+  try { p = await api("/api/plan/" + encodeURIComponent(a.id)); } catch (_) { return; }
+  if (sheetAlert?.id !== a.id || !$("planBox")) return;
+  if (!p.ok) { el.innerHTML = p.why && p.status ? `<h4>A plan for it ${tip("plan")}</h4><div class="panel glass"><div class="li"><span class="muted">${esc(p.why)}</span></div></div>` : ""; return; }
+  const up = p.direction === "up", lo = Math.min(p.stop, p.target), hi = Math.max(p.stop, p.target), X = (v) => ((v - lo) / (hi - lo || 1) * 100).toFixed(1);
+  const pr = desk?.prefs || {};
+  el.innerHTML = `<h4>A plan for it ${tip("plan")}</h4><div class="panel glass padded plan">
+    <div class="pbar"><i class="pstop" style="left:${X(p.stop)}%"></i><i class="pentry" style="left:${X(p.entry)}%"></i><i class="ptarget" style="left:${X(p.target)}%"></i>
+      <span class="pfill ${up ? "" : "short"}" style="left:${Math.min(X(p.entry), X(p.target))}%;width:${Math.abs(X(p.target) - X(p.entry))}%"></span></div>
+    <div class="kv"><span>${up ? "▲ Long" : "▼ Short"} ${esc(p.symbol)} from here</span><b class="num">${fmtPx(p.entry)}</b></div>
+    <div class="kv"><span>Stop <span class="sub">${esc(p.stop_basis)}</span></span><b class="num neg">${fmtPx(p.stop)} <span class="sub">−${p.risk_pct.toFixed(2)}%</span></b></div>
+    <div class="kv"><span>Target <span class="sub">${esc(p.target_basis)}</span></span><b class="num pos">${fmtPx(p.target)} <span class="sub">+${p.reward_pct.toFixed(2)}%</span></b></div>
+    <div class="kv"><span>Reward to risk</span><b class="num ${p.rr >= 1.5 ? "pos" : p.rr < 1 ? "neg" : ""}">${p.rr.toFixed(2)} : 1</b></div>
+    ${p.shares != null ? `<div class="kv"><span>Size <span class="sub">risking ${money$0(p.risk_budget)} (${p.risk_pct_account}% of ${money$0(p.account)}${p.account_basis ? ", " + esc(p.account_basis) : ""})</span></span><b class="num">${p.shares.toLocaleString()} shares ≈ ${money$0(p.position)} <span class="sub">${p.position_pct}%</span></b></div>`
+      : `<div class="addrow"><input id="acctIn" class="key" inputmode="decimal" placeholder="Your account size, $ (sizes the plan)"><button class="btn ghost small" data-act="acct-save">Save</button></div>`}
+    <div class="row" style="padding-top:6px">${[0.25, 0.5, 1, 2].map((v) => `<button class="btn ghost small${(pr.risk_pct ?? 1) === v ? " sel" : ""}" data-act="risk-pct" data-s="${v}">risk ${v}%</button>`).join("")}</div>
+    <button class="btn primary small" style="margin-top:12px" data-act="plan-track" data-s="${esc(p.symbol)}" data-dir="${up ? "long" : "short"}" data-aid="${esc(a.id)}" data-stop="${p.stop}" data-target="${p.target}">${up ? "▲" : "▼"} Track it with this plan</button>
+    <div class="sub" style="margin-top:10px">Paper only: a plan from history and prices, not advice. The system never trades.</div></div>`;
+}
+const money$0 = (v) => "$" + Math.round(v).toLocaleString();
 // earlier alerts of the same kind on the same stock, and how they did by the close
 async function loadSimilar(a) {
   if (!(a.tickers || []).length || a.kind === "system") return;
@@ -1096,6 +1123,18 @@ function renderDesk() {
     <div class="kv"><span>Quiet hours (ET)<div class="sub">${pr.quiet ? `only CRITICAL between ${esc(q.start)} and ${esc(q.end)}` : "off: everything you allow, any hour"}</div></span>
       <b class="qh"><input type="time" id="qStart" value="${esc(q.start || "22:00")}"><input type="time" id="qEnd" value="${esc(q.end || "07:00")}">
       <button class="btn ghost small" data-act="quiet">${pr.quiet ? "Update" : "Set"}</button>${pr.quiet ? `<button class="btn ghost small" data-act="quiet-off">Off</button>` : ""}</b></div>`;
+}
+// the coach: what your closed paper calls say about your habits
+async function loadCoach() {
+  const el = $("dCoach");
+  if (!el) return;
+  let c;
+  try { c = await api("/api/coach"); } catch (_) { return; }
+  if (!c.enough) { el.innerHTML = `<div class="li"><span class="muted">${c.n ? `${c.n} closed call${c.n === 1 ? "" : "s"} so far. ` : ""}Close ${c.need - c.n} more paper call${c.need - c.n === 1 ? "" : "s"} and the coach reads them for habits: the size of your winners against your losers, how long you hold each, whether you exit before the move is done, which kinds of news work for you.</span></div>`; return; }
+  const s = c.summary;
+  el.innerHTML = `<div class="labstats coachstats"><span><b class="num">${Math.round(s.win_rate * 100)}%</b><small>won</small></span><span><b class="num ${cls(s.expectancy)}">${pct(s.expectancy)}</b><small>a call</small></span><span><b class="num">${s.payoff != null ? s.payoff.toFixed(2) + "×" : "—"}</b><small>win / loss size</small></span><span><b class="num">${s.profit_factor != null ? s.profit_factor.toFixed(2) : "—"}</b><small>profit factor</small></span></div>`
+    + c.insights.map((i) => `<div class="li coachi ${i.tone}"><i>${i.tone === "good" ? "✓" : i.tone === "bad" ? "!" : "•"}</i><div class="grow">${esc(i.text)}</div></div>`).join("")
+    + `<div class="sub" style="padding:8px 0 12px">From your ${c.n} closed paper calls on this phone. Patterns, not verdicts: a handful of calls can mislead.</div>`;
 }
 // the strategy lab: following every alert like this, $stake each, on paper, from the graded history
 const lab = (() => { try { return { kind: "all", sev: "HIGH", horizon: "close", scope: "all", fades: "", ...JSON.parse(store.get("ft_lab") || "{}") }; } catch (_) { return { kind: "all", sev: "HIGH", horizon: "close", scope: "all", fades: "" }; } })();
@@ -1805,6 +1844,9 @@ async function onAct(el) {
   else if (a === "share-t") share(el.dataset.title || s, location.origin + "/app/#t=" + s);
   else if (a === "search-clear") { $("q").value = ""; $("searchRes").innerHTML = ""; renderRecent(); }
   else if (a === "close") closeSheet();
+  else if (a === "plan-track") { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); }
+  else if (a === "acct-save") { const v = parseFloat(String($("acctIn")?.value || "").replace(/[$,\s]/g, "")); if (!(v >= 0)) { toast("Enter your account size in dollars"); return; } if (await deskEdit("prefs", { account: v }) && sheetAlert) loadPlan(sheetAlert); }
+  else if (a === "risk-pct") { if (await deskEdit("prefs", { risk_pct: +s })) { if (sheetAlert && $("planBox")) loadPlan(sheetAlert); toast(`Plans risk ${s}% of your account on one idea`); } }
   else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }
   else if (a === "dial") { if (await deskEdit("stock_push", { symbol: s, level: el.dataset.lv })) { toast(el.dataset.lv === "default" ? `${s}: its normal push settings` : `📲 ${s}: ${DIAL_TEXT[el.dataset.lv]}`); refreshTickerSheet(); } }
   else if (a === "focus") {
@@ -2226,7 +2268,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
