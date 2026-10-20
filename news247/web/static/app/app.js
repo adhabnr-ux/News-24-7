@@ -939,7 +939,7 @@ async function loadPlan(a) {
       : `<div class="addrow"><input id="acctIn" class="key" inputmode="decimal" placeholder="Your account size, $ (sizes the plan)"><button class="btn ghost small" data-act="acct-save">Save</button></div>`}
     ${p.edge_size ? `<div class="kv"><span>Size by edge <span class="sub">${esc(p.edge_size.why)}</span></span><b class="num ${p.edge_size.risk_pct > 0 ? "" : "neg"}">${p.edge_size.risk_pct > 0 ? `risk ${p.edge_size.risk_pct}%${p.edge_size.shares != null ? ` · ${p.edge_size.shares.toLocaleString()} sh` : ""}` : "skip"}</b></div>` : ""}
     <div class="row" style="padding-top:6px">${[0.25, 0.5, 1, 2].map((v) => `<button class="btn ghost small${(pr.risk_pct ?? 1) === v ? " sel" : ""}" data-act="risk-pct" data-s="${v}">risk ${v}%</button>`).join("")}</div>
-    <button class="btn primary small" style="margin-top:12px" data-act="plan-track" data-s="${esc(p.symbol)}" data-dir="${up ? "long" : "short"}" data-aid="${esc(a.id)}" data-stop="${p.stop}" data-target="${p.target}">${up ? "▲" : "▼"} Track it with this plan</button>
+    <button class="btn primary small" style="margin-top:12px" data-act="plan-track" data-s="${esc(p.symbol)}" data-dir="${up ? "long" : "short"}" data-aid="${esc(a.id)}" data-stop="${p.stop}" data-target="${p.target}" data-shares="${p.edge_size?.shares ?? p.shares ?? ""}">${up ? "▲" : "▼"} Track it with this plan</button>
     <div class="sub" style="margin-top:10px">Paper only: a plan from history and prices, not advice. The system never trades.</div></div>`;
 }
 const money$0 = (v) => "$" + Math.round(v).toLocaleString();
@@ -1480,7 +1480,24 @@ function eqSVG(lines) {
   const path = (pts) => pts.map((p, i) => (i ? "L" : "M") + X(p[0]) + " " + Y(p[1])).join(" ");
   return `<svg class="eqsvg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Equity curves"><line x1="0" x2="${W}" y1="${Y(0)}" y2="${Y(0)}" class="eq0"/>${lines.filter((l) => (l.c.points || []).length > 1).map((l) => `<path d="${path(l.c.points)}" fill="none" stroke="${l.col}" stroke-width="${l.w || 1.8}"/>`).join("")}</svg>`;
 }
+// your risk, in one place: open risk across paper calls, clusters, a sector shock, events, a cap
+async function loadBook() {
+  let r;
+  try { r = await api("/api/risk"); } catch (_) { return; }
+  $("dBookWrap").hidden = !r.calls.length && !r.unbounded.length && !r.shocks.length;
+  if ($("dBookWrap").hidden) return;
+  const usd = (v) => v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(Math.round(v)).toLocaleString();
+  $("dBook").innerHTML = `<div class="kv"><span>Open risk <span class="sub">lost if every stop were hit, from here${r.account ? ` · of ${usd(r.account)}` : " (set an account size to see it as a share)"}</span></span><b class="num ${r.over ? "neg" : ""}">${usd(r.total_usd)}${r.total_pct != null ? ` <span class="sub">${r.total_pct}%${r.cap ? ` of a ${r.cap}% cap` : ""}</span>` : ""}</b></div>
+    <div class="row" style="padding:6px 0">${[[0, "No cap"], [2, "2%"], [3, "3%"], [5, "5%"], [8, "8%"]].map(([k, l]) => `<button class="btn ghost small${(r.cap || 0) === k ? " sel" : ""}" data-act="risk-cap" data-s="${k}">${l}</button>`).join("")}</div>`
+    + r.calls.map((c) => `<div class="kv sub"><span>${c.direction === "long" ? "▲" : "▼"} ${esc(c.symbol)}${c.auto ? " 🤖" : ""} · stop ${fmtPx(c.stop)} · ${c.from_here.toFixed(1)}% away${c.sized === "risk per idea" ? " · sized at your risk per idea" : ""}</span><b class="num neg">${usd(c.risk_usd)}</b></div>`).join("")
+    + (r.unbounded.length ? `<div class="kv"><span class="neg">No stop on ${r.unbounded.map(esc).join(", ")}</span><b class="sub">unbounded</b></div>` : "")
+    + r.clusters.map((c) => `<div class="kv"><span>${c.side === "long" ? "Long" : "Short"} ${c.symbols.length} ${esc(c.sector)} names <span class="sub">${c.symbols.map(esc).join(", ")}: one sector move hits them all</span></span><b class="sub">cluster</b></div>`).join("")
+    + r.shocks.map((x) => `<div class="kv"><span>If ${esc(x.sector)} falls ${r.shock}% <span class="sub">net ${x.net >= 0 ? "long" : "short"} ${usd(Math.abs(x.net))}</span></span><b class="num ${cls(x.cost)}">${x.cost >= 0 ? "+" : ""}${usd(x.cost)}</b></div>`).join("")
+    + r.events.map((e) => `<div class="kv sub"><span>📅 ${esc(e.title)} · ${inDays(e.in_days)}</span><b>${esc(e.on)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Calls without a size are counted at your risk per idea, from their original stop. Paper only.</div>`;
+}
 async function loadEquity() {
+  loadBook();
   let r;
   try { r = await api("/api/equity"); } catch (_) { return; }
   const lines = [{ name: "Your calls", c: r.yours, col: "var(--gold)", w: 2.4 }, ...r.autopilots.map((a) => ({ name: "🤖 " + a.label, c: a, col: "var(--ice)" })), { name: "Every alert at the close", c: r.every_alert, col: "#A99CFF", w: 1.4 }, { name: "SPY", c: r.spy, col: "var(--faint)", w: 1.4 }];
@@ -1490,6 +1507,12 @@ async function loadEquity() {
   const stat = (c) => c.n ? `<b class="num"><span class="${cls(c.total)}">${pct(c.total)}</span> <span class="sub">max dd ${pct(c.max_dd)}${c.win != null ? ` · ${Math.round(c.win * 100)}% won` : ""}${c.sharpe != null ? ` · Sharpe ${c.sharpe}` : ""} · ${c.n}</span></b>` : `<b class="sub">none yet</b>`;
   $("dEq").innerHTML = eqSVG(lines) + lines.map((l) => `<div class="kv"><span><i class="eqkey" style="background:${l.col}"></i>${esc(l.name)}</span>${stat(l.c)}</div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Each call the same size, summed in the order they closed; max dd is the deepest fall from a high. SPY is its daily closes over the same days, from market memory. Paper only.</div>`;
+  const al = await api("/api/alpha").catch(() => null);
+  if (al && (al.yours.n || al.every_alert.n)) {
+    const split = (name, x) => x.n ? `<div class="kv"><span>${name} <span class="sub">${x.n} · beat the market on ${Math.round(x.hit_beyond * 100)}%</span></span><b class="num"><span class="${cls(x.total)}">${pct(x.total)}</span> <span class="sub">= market ${pct(x.market)} + beyond <span class="${cls(x.beyond)}">${pct(x.beyond)}</span></span></b></div>` : "";
+    $("dEq").innerHTML += `<div class="kv head"><span>Skill or the market?</span><b>what SPY gave, and the rest</b></div>` + split("Your calls", al.yours) + split("Autopilots", al.autopilots) + split("Every alert at the close", al.every_alert)
+      + (al.no_reading ? `<div class="sub" style="padding:2px 0">${al.no_reading} older call${al.no_reading === 1 ? "" : "s"} opened before calls noted the market</div>` : "");
+  }
 }
 // what your settings kept back: every alert this phone's settings held off its lock screen, graded
 let cost = null;
@@ -2198,13 +2221,14 @@ async function onAct(el) {
   else if (a === "dev-rm") { if (confirm("Stop pushes to that device? It can turn alerts on again any time.")) { try { await api("/api/devices/remove", { method: "POST", body: JSON.stringify({ id: s }) }); toast("Removed"); loadDevices(); } catch (e) { toast(e.message); } } }
   else if (a === "cat-mute") { const off = !(desk.cat_off || []).includes(s), label = (desk.catalyst_kinds || []).find((k) => k.key === s)?.label || s; if (await deskEdit("cat_mute", { key: s, on: off })) toast(off ? `${label} news won't push to this phone` : `${label} news pushes again`); }
   else if (a === "edge-bar") { if (await deskEdit("prefs", { edge_min: s || null })) toast(s ? (s.startsWith("odds") ? `Only alerts the odds model rates ${s.slice(4)}%+ push now (no odds: not held back; CRITICAL always comes)` : "Only news whose kind clears the bar pushes now (CRITICAL always comes)") : "Every kind of news may push"); }
-  else if (a === "plan-track") preCheck(s, el.dataset.dir, el.dataset.aid || "", async () => { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); });
+  else if (a === "plan-track") preCheck(s, el.dataset.dir, el.dataset.aid || "", async () => { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target, shares: el.dataset.shares || null })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); });
   else if (a === "acct-save") { const v = parseFloat(String($("acctIn")?.value || "").replace(/[$,\s]/g, "")); if (!(v >= 0)) { toast("Enter your account size in dollars"); return; } if (await deskEdit("prefs", { account: v }) && sheetAlert) loadPlan(sheetAlert); }
   else if (a === "risk-pct") { if (await deskEdit("prefs", { risk_pct: +s })) { if (sheetAlert && $("planBox")) loadPlan(sheetAlert); toast(`Plans risk ${s}% of your account on one idea`); } }
   else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }
   else if (a === "edge-pick") { Object.assign(lab, { catalyst: s, band: el.dataset.b, horizon: el.dataset.h, kind: "all", scope: "all", fades: "" }); store.set("ft_lab", JSON.stringify(lab)); await loadLab(); $("dLab")?.querySelector(".labhead")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
   else if (a === "lab-auto") { if (await deskEdit("autopilot_add", { catalyst: lab.catalyst, band: lab.band, min_sev: lab.sev, exit: lab.horizon })) { toast("🤖 Autopilot on: each new alert like this opens a paper call here", null, 6000); renderAutopilots(); } }
   else if (a === "ev-fix") { const f = weekEv?.costly?.fix; if (f && await deskEdit(f.action, f.body)) { toast("Done: " + f.label.toLowerCase()); loadWeek(); } }
+  else if (a === "risk-cap") { if (await deskEdit("prefs", { risk_cap: +s })) { toast(+s ? `Open risk past ${s}% of the account gets flagged` : "No cap on open risk"); loadBook(); loadActions(); } }
   else if (a === "tune-apply") { const o = tuneR?.[s]; if (o && await deskEdit("prefs", { edge_min: o.edge_min, budget: o.budget })) { toast(`Using ${o.label}`); loadTune(); loadCost(); } }
   else if (a === "budget") { if (await deskEdit("prefs", { budget: +s })) toast(+s ? `Only your ${s} best alerts a day push now (your stocks and CRITICAL still come)` : "Every alert that clears your settings may push"); }
   else if (a === "odds-follow") { if (await deskEdit("autopilot_add", { catalyst: "all", band: "all", min_sev: "HIGH", exit: "close", min_odds: 60 })) { toast("🤖 Following the model: each new HIGH alert it rates 60%+ opens a paper call here", null, 6000); renderAutopilots(); } }

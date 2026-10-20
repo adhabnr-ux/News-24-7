@@ -141,6 +141,14 @@ def pre_trade(
         add("report", "bad" if er["in_days"] == 0 else "warn",
             f"{sym} reports{when} {'today' if er['in_days'] == 0 else 'tomorrow'}: a gap can go straight through a stop")  # fmt: skip
     _concentration(engine, device, sym, long, add)
+    from .risk import desk_risk
+
+    rk = desk_risk(engine, device, now)
+    if rk["account"] and rk["total_pct"] is not None:
+        new = round(rk["total_pct"] + rk["per_idea"], 1)
+        cap = rk["cap"]
+        add("book", "bad" if cap and new > cap else "info",
+            f"Open risk {rk['total_pct']:.1f}% of the account → {new:.1f}% with this one" + (f" (your cap {cap:g}%)" if cap else ""))  # fmt: skip
     bad = sum(c["tone"] == "bad" for c in checks)
     warn = sum(c["tone"] == "warn" for c in checks)
     verdict = "think twice" if bad else "caution" if warn >= 2 else "go"

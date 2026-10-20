@@ -167,6 +167,8 @@ class WebServer:
         app.router.add_get("/api/misses", self.api_misses)
         app.router.add_get("/api/tune", self.api_tune)
         app.router.add_get("/api/stakes", self.api_stakes)
+        app.router.add_get("/api/risk", self.api_risk)
+        app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
         app.router.add_post("/api/link", self.api_link)
@@ -1037,6 +1039,18 @@ class WebServer:
         from ..stakes import event_stakes
 
         return _json(event_stakes(self.engine, self._device(request) or ""))
+
+    async def api_risk(self, request: web.Request) -> web.Response:
+        """Your risk in one place: open risk, unbounded calls, clusters, sector shocks, events (risk.py)."""
+        from ..risk import desk_risk
+
+        return _json(desk_risk(self.engine, self._need_device(request)))
+
+    async def api_alpha(self, request: web.Request) -> web.Response:
+        """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""
+        from ..alpha import attribution
+
+        return _json(attribution(self.engine, self._need_device(request)))
 
     async def api_equity(self, request: web.Request) -> web.Response:
         """Equity curves: your calls, each autopilot, every alert at the close, and SPY (equity.py)."""

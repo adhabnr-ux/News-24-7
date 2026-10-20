@@ -137,6 +137,7 @@ def default_profile() -> dict[str, Any]:
             "manage": True,  # nudges on open paper calls: breakeven at +1R, a gain given back, dead money
             "budget": 0,  # pushes a day: only alerts among the N best a day by expected move (0 = off)
             "confirm": True,  # an alert on your stock holding up an hour in, with 80%+ live odds
+            "risk_cap": 0,  # % of the account: open risk across paper calls past this gets flagged (0 = off)
         },
         "price_alerts": [],
         "tracked": [],
@@ -720,6 +721,14 @@ class Desk:
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
+            if "risk_cap" in body:
+                try:
+                    v = float(body.get("risk_cap") or 0)
+                except (TypeError, ValueError):
+                    v = -1
+                if v not in (0, 2, 3, 5, 8):
+                    raise ValueError("risk cap is 0 (off), 2, 3, 5 or 8 % of the account")
+                prefs["risk_cap"] = v
             if "budget" in body:
                 try:
                     v = int(body.get("budget") or 0)
@@ -845,6 +854,16 @@ class Desk:
             }
             _set_levels(t, body)
             _journal(t, body)
+            if body.get("shares") not in (None, ""):
+                try:
+                    sh = int(float(body["shares"]))
+                except (TypeError, ValueError):
+                    sh = 0
+                if 0 < sh <= 10_000_000:
+                    t["shares"] = sh  # a size, when the plan gave one: open risk in dollars (risk.py)
+            spy = _market(price_of)
+            if spy:
+                t["mkt_entry"] = spy  # the market at entry: the call's return split from it (alpha.py)
             p["tracked"].append(t)
             if t["alert_id"]:
                 self._taste(p, t["alert_id"], "tracked", 1)
@@ -871,6 +890,9 @@ class Desk:
                 exit_ = q[1] if q else None
                 pnl = _pnl(t, exit_)
                 done = {**t, "exit": exit_, "closed": now, "pnl_pct": pnl}
+                spy = _market(price_of)
+                if spy and t.get("mkt_entry"):
+                    done["mkt_exit"] = spy
                 if body.get("lesson"):
                     done["lesson"] = str(body["lesson"])[:200]
                 p["closed"] = ([done] + p["closed"])[:50]
@@ -1445,6 +1467,7 @@ class Desk:
                     "manage",
                     "budget",
                     "confirm",
+                    "risk_cap",
                     "watch_push",
                     "min_sev",
                     "digest",
@@ -1771,6 +1794,17 @@ def _journal(t: dict[str, Any], body: dict[str, Any]) -> None:
     tags += TAG_RE.findall(str(body.get("note") or "").lower())
     if "note" in body or "tags" in body:
         t["tags"] = list(dict.fromkeys(x for x in tags if re.fullmatch(r"[a-z][a-z0-9-]{1,19}", x)))[:5]
+
+
+def _market(price_of: Any) -> float | None:
+    """SPY now, when the price source has it: a reading, never a reason for an edit to fail."""
+    if not price_of:
+        return None
+    try:
+        q = price_of("SPY")
+    except Exception:  # noqa: BLE001 - a source that doesn't carry SPY
+        return None
+    return q[1] if q and q[1] else None
 
 
 def _under(t: dict[str, Any], which: str) -> bool:

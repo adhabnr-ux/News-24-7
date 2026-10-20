@@ -78,6 +78,7 @@ def action_center(engine: Engine, device: str, now: float | None = None, limit: 
     items += _holdings(p, quote, now)
     items += _settings(engine, device, now)
     items += _model(engine, p, now)
+    items += _risk(engine, device, p, now)
     done = {k: t for k, t in (p.get("act_done") or {}).items() if now - t < ACT_DONE_S}
     shown = [i for i in items if i["key"] not in done]
     shown.sort(key=lambda i: (-i["urgency"], -(i["ts"] or 0)))
@@ -361,6 +362,21 @@ def _settings(engine: Engine, device: str, now: float) -> list[dict[str, Any]]:
         for g in r["gates"]
         if g["verdict"] == "costing"
     ]
+
+
+def _risk(engine: Engine, device: str, p: dict[str, Any], now: float) -> list[dict[str, Any]]:
+    """Open risk across the paper calls past the phone's own cap (risk.py)."""
+    if not ((p.get("prefs") or {}).get("risk_cap") or 0) or not p.get("tracked"):
+        return []
+    from .risk import desk_risk
+
+    r = desk_risk(engine, device, now)
+    if not r["over"]:
+        return []
+    day = datetime.fromtimestamp(now, ET).date().isoformat()
+    return [_item(f"risk:{day}", "risk", 66, "⚖", f"Open risk {r['total_pct']:.1f}% of the account: over your {r['cap']:g}% cap",
+                  f"{_usd(r['total_usd'])} across {len(r['calls'])} calls if every stop were hit"
+                  + (f"; {len(r['unbounded'])} with no stop" if r["unbounded"] else ""), "", "#a=desk", ts=now)]  # fmt: skip
 
 
 def _model(engine: Engine, p: dict[str, Any], now: float) -> list[dict[str, Any]]:
