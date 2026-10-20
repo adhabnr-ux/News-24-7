@@ -795,7 +795,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadClimate(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadRecall(); loadClimate(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -1018,6 +1018,23 @@ async function loadDrift() {
   $("driftBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>5 sessions → a month</b></div>`
     + r.rows.map((x) => `<div class="kv"><span>${esc(x.key === "*" ? "Every alert" : x.label)} <span class="chipv ${DRIFT_TAG[x.verdict][1]}">${DRIFT_TAG[x.verdict][0]}</span>${x.x_d20 && x.x_d20.n >= r.need ? ` <span class="sub">${pct(x.x_d20.median)} vs SPY (${x.x_d20.n})</span>` : ""}</span><b class="num">${pct(x.d5.median)} → <span class="${cls(x.d20.median)}">${pct(x.d20.median)}</span> <span class="sub">${Math.round(x.d20.hit * 100)}% · ${x.d20.n}</span></b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every alert is graded 20 sessions on. Kinds the market takes weeks to price keep drifting; kinds it overshoots give it back. Medians, its way. Five sessions after news on your stock, a drift check says which its kind did here (Settings → Drift check).</div>`;
+}
+// what we caught, what we missed (Watch): every big move against the alerts on it
+const MISS_WHY = { "under the line": "a headline under the alert line", "no headline": "no headline in the feeds" };
+async function loadRecall() {
+  let r;
+  try { r = await api("/api/recall"); } catch (_) { return; }
+  const any = r.all || r.today_rate;
+  $("recallWrap").hidden = !any;
+  if (!any) return;
+  const rate = (x) => x ? `<span class="${x.rate >= 0.6 ? "pos" : x.rate < 0.4 ? "neg" : ""}">${Math.round(x.rate * 100)}%</span> <span class="sub">${x.caught} of ${x.n}</span>` : `<span class="sub">—</span>`;
+  $("recallBoard").innerHTML = (r.today_rate ? `<div class="kv"><span>Today so far <span class="sub">$300M+ companies moving 5%+</span></span><b class="num">${rate(r.today_rate)}</b></div>` : "")
+    + (r.all ? `<div class="kv"><span>The last ${r.sessions} session${r.sessions === 1 ? "" : "s"}</span><b class="num">${rate(r.all)}</b></div>`
+      + r.bands.map((b) => `<div class="kv"><span class="sub">${esc(b.band || "?")}</span><b class="num">${rate(b)}</b></div>`).join("") : "")
+    + (r.lead ? `<div class="kv"><span>Lead time <span class="sub">first alert to the move's high (or low)</span></span><b class="num">${r.lead.median} min <span class="sub">before it on ${Math.round(r.lead.before * 100)}% · ${r.lead.n}</span></b></div>` : "")
+    + (r.all && r.all.n > r.all.caught ? `<div class="kv"><span>Why the misses missed</span><b class="num">${r.why["under the line"]} under the line${r.under_score != null ? ` <span class="sub">(median score ${r.under_score})</span>` : ""} · ${r.why["no headline"]} no headline</b></div>` : "")
+    + [...(r.today || []).filter((x) => !x.caught).map((x) => ({ ...x, day: "today" })), ...r.missed].slice(0, 10).map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span><b>${esc(x.symbol)}</b> <span class="${cls(x.chg)}">${pct(x.chg)}</span> <span class="sub">${esc(x.day)} · ${esc(MISS_WHY[x.why] || x.why)}${x.top_title ? `: “${esc(x.top_title.slice(0, 70))}” (${x.top_score})` : ""}</span></span><b class="num neg">missed</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every company worth $300M+ that moved 5%+ in a session, checked against the alerts on it since the previous close. A miss with a headline under the line says the threshold was too high for it; one with no headline is a source gap or a move with no news. Kept for every session at 16:05 ET.</div>`;
 }
 // news climate (Watch): each kind of news, the last two weeks against its record before them
 const CLIM = { hot: ["🔥 hot", "pos"], cold: ["🧊 cold", "neg"], normal: ["", ""] };
@@ -1724,12 +1741,17 @@ async function loadExits() {
 async function loadCallRecord() {
   let r;
   try { r = await api("/api/call"); } catch (_) { return; }
-  $("dCallWrap").hidden = !r.rows.length;
-  if (!r.rows.length) return;
+  const rp = r.replay;
+  $("dCallWrap").hidden = !r.rows.length && !(rp && rp.verbs.length);
+  if ($("dCallWrap").hidden) return;
   const cell = (x) => x ? `<span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span>` : `<span class="sub">—</span>`;
   $("dCall").innerHTML = `<div class="kv head"><span>The call</span><b>its way: 1 hour · close · next day</b></div>`
     + r.rows.map((x) => `<div class="kv"><span>${x.icon} ${esc(x.label)}</span><b class="num">${cell(x.h1)}<br>${cell(x.close)}<br>${cell(x.d1)}</b></div>`).join("")
-    + `<div class="sub" style="padding:4px 0 12px">Every alert gets one call from its records (odds, its kind, the stock, how fast that news plays out, the open, how late it was, the regime, the firm, the flow, the insider). Each is graded with its alert: if "act now" doesn't beat "skip", the rule is wrong, and this is where it shows. Set the push bar to "the call: act or wait" under Settings.</div>`;
+    + (rp && rp.verbs.length ? `<div class="kv head"><span>Replayed on ${rp.all.n} graded alerts</span><b>by the close</b></div>`
+      + rp.verbs.map((x) => `<div class="kv"><span>${x.icon} ${esc(x.label)} <span class="sub">vs every alert ${Math.round(rp.all.hit * 100)}%</span></span><b class="num">${cell(x)}</b></div>`).join("")
+      + (rp.facts.length ? `<div class="kv head"><span>Which facts sorted winners from losers</span><b>for · against</b></div>`
+        + rp.facts.map((f) => `<div class="kv"><span>${esc(f.label)}${f.sorts != null ? ` <span class="chipv ${f.sorts >= 0.1 ? "pos" : f.sorts <= 0 ? "neg" : ""}">${f.sorts >= 0 ? "+" : ""}${Math.round(f.sorts * 100)} pts</span>` : ""}</span><b class="num">${cell(f.for)}<br>${cell(f.against)}</b></div>`).join("") : "") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Every alert gets one call from its records (odds, its kind, the stock, how fast that news plays out, the open, how late it was, the regime, the firm, the flow, the insider). Each is graded with its alert: if "act now" doesn't beat "skip", the rule is wrong, and this is where it shows. The replay runs the same rule on every graded alert from what it carried when it went out (older alerts had fewer facts); a fact that sorts well puts more of its "for" alerts than its "against" alerts on the right side. Set the push bar to "the call: act or wait" under Settings.</div>`;
 }
 // what your settings kept back: every alert this phone's settings held off its lock screen, graded
 let cost = null;

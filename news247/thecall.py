@@ -43,47 +43,55 @@ def the_call(e: dict[str, Any], outside: bool = False) -> dict[str, Any] | None:
     is graded yet (no call is better than a made-up one)."""
     pro: list[str] = []
     con: list[str] = []
+    facts: list[list[str]] = []  # [key, "+" or "-"]: which facts spoke, for the replay's per-fact record
+
+    def add(side: str, key: str, text: str) -> None:
+        (pro if side == "+" else con).append(text)
+        facts.append([key, side])
+
     o = e.get("odds") or {}
     if o.get("p") is not None:
         if o["p"] >= 0.6:
-            pro.append(f"odds {round(o['p'] * 100)}%")
+            add("+", "odds", f"odds {round(o['p'] * 100)}%")
         elif o["p"] < 0.45:
-            con.append(f"odds {round(o['p'] * 100)}%")
+            add("-", "odds", f"odds {round(o['p'] * 100)}%")
         if o.get("ev") is not None and o["ev"] < 0:
-            con.append(f"expected {o['ev']:+.1f}%")
+            add("-", "ev", f"expected {o['ev']:+.1f}%")
     cb = e.get("cat_base") or e.get("base") or {}
     c = _rec(cb)
     if c:
         what = cb.get("label") or "its kind"
         what = what[:1].lower() + what[1:]
         if c["hit"] >= 0.6:
-            pro.append(f"{what} went its way {round(c['hit'] * 100)}%")
+            add("+", "record", f"{what} went its way {round(c['hit'] * 100)}%")
         elif c["hit"] <= 0.4:
-            con.append(f"{what} went its way {round(c['hit'] * 100)}%")
+            add("-", "record", f"{what} went its way {round(c['hit'] * 100)}%")
     for key, horizon, what in (("firm_base", "close", "the firm's calls"), ("flow_base", "close", "flow like it"),
                                ("insider_base", "d5", "insider buys like it")):  # fmt: skip
         r = _rec(e.get(key), horizon)
         if r and r["hit"] >= 0.6:
-            pro.append(f"{what} {round(r['hit'] * 100)}%")
+            add("+", key.replace("_base", ""), f"{what} {round(r['hit'] * 100)}%")
         elif r and r["hit"] <= 0.4:
-            con.append(f"{what} {round(r['hit'] * 100)}%")
+            add("-", key.replace("_base", ""), f"{what} {round(r['hit'] * 100)}%")
     cl = e.get("climate") or {}
     if cl.get("state") in ("hot", "cold"):
-        (pro if cl["state"] == "hot" else con).append(
-            f"{cl['state']} lately ({round(cl['recent']['hit'] * 100)}% in two weeks)"
+        add(
+            "+" if cl["state"] == "hot" else "-",
+            "climate",
+            f"{cl['state']} lately ({round(cl['recent']['hit'] * 100)}% in two weeks)",
         )
     rb = e.get("regime_base")
     if rb and rb.get("n", 0) >= MIN_N and rb["hit"] <= 0.4:
-        con.append(f"on {rb['regime']} days {round(rb['hit'] * 100)}%")
+        add("-", "regime", f"on {rb['regime']} days {round(rb['hit'] * 100)}%")
     ps = e.get("persona") or {}
     if ps.get("trait") == "fights":
-        con.append(f"{ps['symbol']} fights its news")
+        add("-", "persona", f"{ps['symbol']} fights its news")
     elif ps.get("trait") in ("runs", "drifts"):
-        pro.append(f"{ps['symbol']} {ps['label'].lower()}")
+        add("+", "persona", f"{ps['symbol']} {ps['label'].lower()}")
     lt = e.get("late") or {}
     lrec = _rec(lt.get("rec"))
     if lt.get("min", 0) >= 15 and lrec and lrec["hit"] < 0.5:
-        con.append(f"late to the story ({lt['min']:.0f} min)")
+        add("-", "late", f"late to the story ({lt['min']:.0f} min)")
     if not pro and not con and not e.get("clock") and not e.get("open_base"):
         return None
     ck = (e.get("clock") or {}).get("half")
@@ -107,7 +115,7 @@ def the_call(e: dict[str, Any], outside: bool = False) -> dict[str, Any] | None:
         verb, why = "watch", (pro[:1] + con[:1]) or ["a mixed record"]
     icon, label = VERBS[verb]
     return {"verb": verb, "label": label, "line": f"{icon} The call: {label.lower()} · {', '.join(why)}",
-            "for": pro, "against": con}  # fmt: skip
+            "for": pro, "against": con, "facts": facts}  # fmt: skip
 
 
 def call_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
@@ -135,3 +143,65 @@ def call_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
                      **{h: ({"n": len(xs), "hit": round(sum(x > 0 for x in xs) / len(xs), 2), "median": round(st.median(xs), 2)} if xs else None)
                         for h, xs in g.items()}}  # fmt: skip
     return out
+
+
+FACT_LABEL = {"odds": "The odds", "ev": "A negative expected move", "record": "Its kind's record", "firm": "The firm's record",
+              "flow": "The flow's record", "insider": "The insider's shape", "climate": "The climate", "regime": "Days like today",
+              "persona": "The stock's personality", "late": "Late to the story"}  # fmt: skip
+
+
+def replay(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
+    """The call's rule run on every graded alert, from what its edge carried when it went out (so
+    older alerts, sent before some facts existed, are judged on fewer of them): its record by verb,
+    and for each fact, how alerts it spoke for and against did against every alert."""
+    from .opening import outside
+
+    now = now or time.time()
+    holidays = getattr(engine.calendar, "holidays", set())
+    verbs: dict[str, list[float]] = {}
+    facts: dict[tuple[str, str], list[float]] = {}
+    every: list[float] = []
+    for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
+        e = a.get("edge") or {}
+        o = e.get("outcome") or {}
+        if not o or a.get("kind") == "system":
+            continue
+        row = next(iter(o.values()))
+        if not row.get("sign") or row.get("close") is None:
+            continue
+        x = row["sign"] * row["close"]
+        every.append(x)
+        call = the_call(e, outside(float(a.get("created") or 0), holidays))
+        if call is None:
+            continue
+        verbs.setdefault(call["verb"], []).append(x)
+        for key, side in {tuple(f) for f in call["facts"]}:
+            facts.setdefault((key, side), []).append(x)
+
+    def stats(xs: list[float]) -> dict[str, Any]:
+        return {
+            "n": len(xs),
+            "hit": round(sum(v > 0 for v in xs) / len(xs), 2),
+            "median": round(st.median(xs), 2),
+        }
+
+    base = stats(every) if every else None
+    rows = []
+    for key in FACT_LABEL:
+        pro, con = facts.get((key, "+")), facts.get((key, "-"))
+        if not pro and not con:
+            continue
+        r = {
+            "key": key,
+            "label": FACT_LABEL[key],
+            "for": stats(pro) if pro else None,
+            "against": stats(con) if con else None,
+        }
+        if r["for"] and r["against"] and min(r["for"]["n"], r["against"]["n"]) >= MIN_N:
+            r["sorts"] = round(
+                r["for"]["hit"] - r["against"]["hit"], 2
+            )  # how well it sorted winners from losers
+        rows.append(r)
+    rows.sort(key=lambda r: -(r.get("sorts") if r.get("sorts") is not None else -9))
+    return {"all": base, "verbs": [{"verb": v, "label": VERBS[v][1], "icon": VERBS[v][0], **stats(verbs[v])} for v in VERBS if v in verbs],
+            "facts": rows, "days": days}  # fmt: skip

@@ -250,6 +250,7 @@ class Engine:
         self.coverage_rates: dict[str, Any] = {}  # how late to the story, how far it spread (coverage.py)
         self.call_rates: dict[str, Any] = {}  # the call's own record by verb (thecall.py)
         self.climate_rates: dict[str, Any] = {}  # each kind's last two weeks against its record (climate.py)
+        self.call_replay: dict[str, Any] = {}  # the call's rule run on every graded alert (thecall.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2471,6 +2472,10 @@ class Engine:
 
                     await send_overnight(self, now)
                 with contextlib.suppress(Exception):
+                    from .recall import snapshot as recall_snapshot
+
+                    recall_snapshot(self, now)  # the session's big movers, caught or missed
+                with contextlib.suppress(Exception):
                     self.grade_confirm(now)
                 with contextlib.suppress(Exception):
                     from .exits import grade_exits
@@ -3842,6 +3847,9 @@ class Engine:
         from .overnight import overnight_rates
 
         self.overnight_rates = overnight_rates(self, 180, now)
+        from .thecall import replay as call_replay
+
+        self.call_replay = call_replay(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

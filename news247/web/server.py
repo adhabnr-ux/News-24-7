@@ -182,6 +182,7 @@ class WebServer:
         app.router.add_get("/api/planvs", self.api_planvs)
         app.router.add_get("/api/overnight", self.api_overnight)
         app.router.add_get("/api/myedge", self.api_myedge)
+        app.router.add_get("/api/recall", self.api_recall)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1134,7 +1135,9 @@ class WebServer:
         from ..thecall import VERBS
 
         rates = self.engine.call_rates
-        return _json({"rows": [rates[v] for v in VERBS if v in rates]})
+        return _json(
+            {"rows": [rates[v] for v in VERBS if v in rates], "replay": self.engine.call_replay or None}
+        )
 
     async def api_climate(self, request: web.Request) -> web.Response:
         """News climate: each kind's last two weeks against its record before, hot or cold beyond chance (climate.py)."""
@@ -1159,6 +1162,12 @@ class WebServer:
         from ..myedge import my_edge
 
         return _json(my_edge(self.engine, self._need_device(request)))
+
+    async def api_recall(self, request: web.Request) -> web.Response:
+        """What we caught, what we missed: every big move of the last 20 sessions and today (recall.py)."""
+        from ..recall import recall_report
+
+        return _json(recall_report(self.engine))
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""
