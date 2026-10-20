@@ -84,6 +84,13 @@ def the_call(
     if fb.get("n", 0) >= MIN_N and (fb["hit"] >= 0.6 or fb["hit"] <= 0.4):
         what = fb["label"][:1].lower() + fb["label"][1:]
         add("+" if fb["hit"] >= 0.6 else "-", "float", f"{what} {round(fb['hit'] * 100)}%")
+    vb = e.get("rvol_base") or {}
+    if vb.get("n", 0) >= MIN_N and (vb["hit"] >= 0.6 or vb["hit"] <= 0.4):
+        add(
+            "+" if vb["hit"] >= 0.6 else "-",
+            "rvol",
+            f"{vb['label'][:1].lower() + vb['label'][1:]} {round(vb['hit'] * 100)}%",
+        )
     db = _rec(e.get("dilution_base"))
     if db and (db["hit"] >= 0.6 or db["hit"] <= 0.4):
         lbl = e["dilution_base"]["label"]
@@ -188,7 +195,8 @@ def call_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
 FACT_LABEL = {"odds": "The odds", "ev": "A negative expected move", "record": "Its kind's record", "firm": "The firm's record",
               "flow": "The flow's record", "insider": "The insider's shape", "climate": "The climate", "regime": "Days like today",
               "persona": "The stock's personality", "late": "Late to the story", "macro": "Macro days",
-              "float": "Float and short interest", "dilution": "Dilution risk"}  # fmt: skip
+              "float": "Float and short interest", "dilution": "Dilution risk",
+              "rvol": "Volume at the alert"}  # fmt: skip
 
 
 def replay(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:

@@ -144,6 +144,8 @@ def default_profile() -> dict[str, Any]:
             "waits": True,  # the wait is over: at the open, at the patient entry (waits.py)
             "catchup": True,  # the mainstream caught up on a story on your stock: what's left (catchup.py)
             "leg2": True,  # a news stock breaking to a new high well after its alert (secondleg.py)
+            "volconf": True,  # 15 minutes in: confirmed by volume, or no volume behind it (volconfirm.py)
+            "bookmacro": True,  # a market-wide headline: what headlines like it meant for your book (bookmacro.py)
         },
         "price_alerts": [],
         "tracked": [],
@@ -735,6 +737,8 @@ class Desk:
                 "waits",
                 "catchup",
                 "leg2",
+                "volconf",
+                "bookmacro",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1502,6 +1506,8 @@ class Desk:
                     "waits",
                     "catchup",
                     "leg2",
+                    "volconf",
+                    "bookmacro",
                     "watch_push",
                     "min_sev",
                     "digest",

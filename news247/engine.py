@@ -275,6 +275,8 @@ class Engine:
         self.halt_rates: dict[str, Any] = {}  # what stocks did after a halt resumed (haltrec.py)
         self.leg_rates: dict[str, Any] = {}  # new highs well after the news, graded (secondleg.py)
         self.theme_rates: dict[str, Any] = {}  # ETFs after market-wide headlines, per theme (macrotape.py)
+        # news by relative volume, at the alert and 15 minutes in (volconfirm.py)
+        self.rvol_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -1960,6 +1962,16 @@ class Engine:
             from .macrotape import movers, theme_of
             from .macrotape import stamp as etf_stamp
 
+            if alert.tickers and alert.kind != "system":
+                from .volconfirm import read as rvol_read
+                from .volconfirm import rvol_for
+
+                r0 = rvol_read(self, alert.tickers[0])
+                if r0 is not None:  # the market's vote on the news: its volume for the time of day
+                    alert.edge["rvol"] = {"r0": r0}
+                    rb = rvol_for(self.rvol_rates, (alert.edge.get("catalyst") or {}).get("key"), r0, "r0")
+                    if rb:
+                        alert.edge["rvol_base"] = rb
             etf_refs = etf_stamp(self, alert)
             if etf_refs:  # a market-wide headline: the ETF basket now, graded after (macrotape.py)
                 alert.edge["etf_refs"] = etf_refs
@@ -2024,6 +2036,10 @@ class Engine:
             self.stats["pushed"] += 1
             self._spawn(self.dispatcher.dispatch(alert))
             self._spawn(self._push_watchers(alert))
+            if alert.edge.get("etf_refs") and any(p.get("holdings") for p in self.desk.profiles.values()):
+                from .bookmacro import send_book
+
+                self._spawn(send_book(self, alert.to_dict()))  # what headlines like it meant for each book
             if (alert.edge.get("catalyst") or alert.edge.get("odds")) and any(
                 p.get("autopilots") for p in self.desk.profiles.values()
             ):
@@ -2566,6 +2582,10 @@ class Engine:
                     from .peerlearn import grade as peers_grade
 
                     peers_grade(self, now)
+                with contextlib.suppress(Exception):
+                    from .volconfirm import send_confirms
+
+                    await send_confirms(self, now)  # 15 minutes in: is the market trading it?
                 with contextlib.suppress(Exception):
                     from .macrotape import grade as etfs_grade
 
@@ -4131,6 +4151,9 @@ class Engine:
         from .macrotape import theme_rates
 
         self.theme_rates = theme_rates(self, 365, now)
+        from .volconfirm import rvol_rates
+
+        self.rvol_rates = rvol_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

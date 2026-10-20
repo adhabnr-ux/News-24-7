@@ -30,8 +30,8 @@ THEMES = {
     "election_shock": "Election", "asia_market_shock": "Asian market", "pandemic_shock": "Pandemic",
     "crypto_policy": "Crypto policy", "ai_slowdown": "AI slowdown", "ai_capex_retreat": "AI capex",
 }  # fmt: skip
-BASKET = ("SPY", "QQQ", "IWM", "SMH", "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLRE", "KRE",
-          "TLT", "GLD", "USO")  # fmt: skip
+BASKET = ("SPY", "QQQ", "IWM", "SMH", "IGV", "XBI", "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLRE",
+          "XLB", "XLC", "KRE", "TLT", "GLD", "USO")  # fmt: skip
 MIN_N = 5
 
 

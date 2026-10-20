@@ -796,7 +796,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -935,6 +935,8 @@ async function openSheet(id) {
       <div class="kv"><span>It first broke ${Math.round(e.late.min)} minutes before this alert${e.late.source ? ` <span class="sub">${esc(outlet(e.late.source))}</span>` : ""}</span><b class="num">${e.late.rec?.close ? `<span class="${e.late.rec.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.late.rec.close.hit * 100)}%</span> <span class="sub">its way for alerts that late · ${e.late.rec.close.n}</span>` : ""}</b></div>
       <div class="sub" style="padding:4px 0 12px">Minutes from the story's first headline, from any outlet, to the one this alert came from. By then part of the market had it. History, not a forecast.</div></div>` : "",
     e.float ? `<div class="kv clim"><span class="${e.float_base ? (e.float_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">🧮 Float ${fmtShares(e.float.float)}${e.float.short != null ? ` · ${Math.round(e.float.short * 100)}% short` : ""}${e.float_base ? `: ${esc(e.float_base.label[0].toLowerCase() + e.float_base.label.slice(1))} went its way ${Math.round(e.float_base.hit * 100)}% by the close (median ${pct(e.float_base.median)}${e.float_base.run != null ? `, winners ran ${pct(e.float_base.run)}` : ""}, ${e.float_base.n})` : ""}</span></div>` : "",
+    e.rvol ? `<div class="kv clim"><span class="${e.rvol_base ? (e.rvol_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">📊 Volume ${e.rvol.r0 != null ? `${e.rvol.r0}x normal at the alert` : ""}${e.rvol.r15 != null ? `${e.rvol.r0 != null ? ", " : ""}${e.rvol.r15}x 15 minutes in` : ""}${e.rvol_base ? `: ${esc(e.rvol_base.label[0].toLowerCase() + e.rvol_base.label.slice(1))} went its way ${Math.round(e.rvol_base.hit * 100)}% (${e.rvol_base.n})` : ""}</span></div>` : "",
+    e.theme_rec ? `<div class="kv clim" id="bookTheme" data-id="${esc(a.id)}"></div>` : "",
     e.leg2 ? `<div class="kv clim"><span class="pos">🚀 Second leg: a new day's extreme ${new Date(e.leg2.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} at ${fmtPx(e.leg2.px)} (${pct(e.leg2.its)} its way) after ${e.leg2.rest_min} minutes without one</span></div>` : "",
     e.theme_rec ? `<div class="kv clim"><span>🌐 ${esc(e.theme_rec.label)} headlines here (${e.theme_rec.n}), in the hour: ${e.theme_rec.movers.map((m) => `${esc(m.symbol)} <span class="${cls(m.median)}">${pct(m.median)}</span>`).join(" · ")}</span></div>` : "",
     e.dilution ? `<div class="kv clim"><span class="${e.dilution_base?.close ? (e.dilution_base.close.hit >= 0.5 ? "pos" : "neg") : "sub"}">📄 ${e.dilution.state === "selling" ? `Selling shares: ${e.dilution.sales} prospectus${e.dilution.sales === 1 ? "" : "es"} (424B) in 6 months, the last ${esc(e.dilution.last_sale)}` : e.dilution.state === "shelf" ? `A shelf on file (S-3/F-3, ${esc(e.dilution.shelf)}): it can sell shares` : "No shelf on file"}${e.dilution_base?.close ? `. ${esc(e.dilution_base.label)}: ${Math.round(e.dilution_base.close.hit * 100)}% its way by the close (${e.dilution_base.close.n})${e.dilution_base.d5 ? `, ${Math.round(e.dilution_base.d5.hit * 100)}% five sessions on` : ""}` : ""}</span></div>` : "",
@@ -988,6 +990,7 @@ async function openSheet(id) {
   loadSimilar(a);
   loadPlan(a);
   loadClockLive(a);
+  loadBookTheme();
   if (a.kind !== "system") api("/api/desk", { method: "POST", body: JSON.stringify({ action: "opened", id: a.id }) }).catch(() => {});
 }
 // the news clock: where alerts of its kind stood at 5, 15, 30 and 60 minutes against their close
@@ -1185,6 +1188,27 @@ async function loadCatchup() {
   $("cuBoard").innerHTML = `<div class="kv head"><span>When the mainstream caught up</span><b>went further by the close</b></div>` + r.rows.map(row).join("")
     + (r.kinds.length ? `<div class="kv head"><span>By kind of news</span><b></b></div>` + r.kinds.map(row).join("") : "")
     + `<div class="sub" style="padding:4px 0 12px">When CNBC, Reuters, Bloomberg, the WSJ and the like carry a story Foretape already alerted on, the stock's price is noted: the day splits into the head start and what came after. A phone whose stock it is gets a push with where it stands and this record (Settings → Mainstream caught up).</div>`;
+}
+// your book on a market-wide headline (sheet)
+async function loadBookTheme() {
+  const el = $("bookTheme");
+  if (!el) return;
+  let r;
+  try { r = await api("/api/book-theme/" + el.dataset.id); } catch (_) { return; }
+  const x = r.estimate;
+  if (!x) { el.remove(); return; }
+  el.innerHTML = `<span class="${cls(x.dollars)}">💼 Your book: ${x.dollars < 0 ? "−" : "+"}$${Math.abs(x.dollars).toLocaleString(undefined, { maximumFractionDigits: 0 })} (${pct(x.pct)}) in the hour after ${esc(x.label.toLowerCase())} headlines like it, by its sectors' records: ${x.rows.slice(0, 4).map((r) => `${esc(r.symbol)} via ${esc(r.etf)} ${pct(r.median)}`).join(" · ")}</span>`;
+}
+// relative volume (Watch): is the market trading the news, or ignoring it?
+async function loadRvol() {
+  let r;
+  try { r = await api("/api/rvol"); } catch (_) { return; }
+  $("rvWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const row = (x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span></b></div>`;
+  $("rvBoard").innerHTML = `<div class="kv head"><span>15 minutes in</span><b>its way by the close</b></div>` + r.rows.map(row).join("")
+    + (r.kinds.length ? `<div class="kv head"><span>By kind of news</span><b></b></div>` + r.kinds.map(row).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Each alert notes its stock's volume against its normal for the time of day when it goes out and 15 minutes in. When the band 15 minutes in has a clear record (60%+ or 40%-, ${r.need}+ graded), phones with the stock get a push: confirmed by volume, or no volume behind it (Settings → Volume confirmation). The first read's record counts in the call.</div>`;
 }
 // second legs (Watch): new highs well after the news, graded from the breakout to the close
 async function loadLegs() {
@@ -1605,6 +1629,8 @@ function renderDesk() {
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Event day<div class="sub">the morning of an FDA decision or readout on your stock: both outcomes as they've traded here, what options price, what you hold</div></span><b><button class="btn ghost small${pr.event_day !== false ? " sel" : ""}" data-act="flag" data-s="event_day">${pr.event_day !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Into the close<div class="sub">15:40 ET: each open call, and whether alerts that stood the same at the close went on by the next one: hold or close, with report risk</div></span><b><button class="btn ghost small${pr.overnight !== false ? " sel" : ""}" data-act="flag" data-s="overnight">${pr.overnight !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Volume confirmation<div class="sub">15 minutes after news on your stock: confirmed by volume, or no volume behind it, when news on that much volume has a clear record here</div></span><b><button class="btn ghost small${pr.volconf !== false ? " sel" : ""}" data-act="flag" data-s="volconf">${pr.volconf !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Your book on market-wide news<div class="sub">a tariff, Fed, oil or war headline: what headlines like it meant for your holdings, by their sectors' records, when it's 0.3%+ of the book</div></span><b><button class="btn ghost small${pr.bookmacro !== false ? " sel" : ""}" data-act="flag" data-s="bookmacro">${pr.bookmacro !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Second legs<div class="sub">a stock with news today breaking to a new high (its way) an hour or more after the alert, after a rest: the classic second entry, with how second legs like it ended</div></span><b><button class="btn ghost small${pr.leg2 !== false ? " sel" : ""}" data-act="flag" data-s="leg2">${pr.leg2 !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Mainstream caught up<div class="sub">when CNBC, Reuters or the like carry a story on your stock that Foretape alerted on first: where it stands, and how much stories like it went further after the catch-up</div></span><b><button class="btn ghost small${pr.catchup !== false ? " sel" : ""}" data-act="flag" data-s="catchup">${pr.catchup !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The wait is over<div class="sub">when the call said wait: at the open, where it opened and how news like it went on from there; at the patient entry, when the price comes back to it</div></span><b><button class="btn ghost small${pr.waits !== false ? " sel" : ""}" data-act="flag" data-s="waits">${pr.waits !== false ? "On" : "Off"}</button></b></div>

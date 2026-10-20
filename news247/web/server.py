@@ -190,6 +190,8 @@ class WebServer:
         app.router.add_get("/api/dilution", self.api_dilution)
         app.router.add_get("/api/catchup", self.api_catchup)
         app.router.add_get("/api/legs", self.api_legs)
+        app.router.add_get("/api/rvol", self.api_rvol)
+        app.router.add_get("/api/book-theme/{alert_id}", self.api_book_theme)
         app.router.add_get("/api/themes", self.api_themes)
         app.router.add_get("/api/halts/record", self.api_halt_record)
         app.router.add_get("/api/changes", self.api_changes)
@@ -1266,6 +1268,22 @@ class WebServer:
         from ..macrotape import board
 
         return _json(board(self.engine.theme_rates))
+
+    async def api_rvol(self, request: web.Request) -> web.Response:
+        """News by relative volume 15 minutes in, graded by the close (volconfirm.py)."""
+        from ..volconfirm import board
+
+        return _json(board(self.engine.rvol_rates))
+
+    async def api_book_theme(self, request: web.Request) -> web.Response:
+        """This phone's book on a market-wide headline: its sectors' records for that theme (bookmacro.py)."""
+        from ..bookmacro import estimate
+        from ..macrotape import theme_of
+
+        a = self.engine.storage.get_alert(request.match_info["alert_id"])
+        th = theme_of(a) if a else None
+        est = estimate(self.engine, self._need_device(request), th) if th else None
+        return _json({"estimate": est})
 
     async def api_advice(self, request: web.Request) -> web.Response:
         """The setting changes the records back for this phone, ranked, each one tap from applied (advice.py)."""
