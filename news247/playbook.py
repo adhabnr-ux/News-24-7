@@ -148,6 +148,19 @@ def playbook(engine: Engine, key: str, now: float | None = None) -> dict[str, An
 
         out["exits"] = {**ex, "names": EXIT_STYLES}
         rules.append(_checked(exit_line(ex), ex, EXIT_STYLES, "close"))
+    co = _get(engine, "combo_rates").get(key)
+    if co and co.get("best"):
+        from .combos import DEFAULT, NAMES, combo_line
+
+        out["combos"] = co
+        rules.append(_checked(combo_line(co), co, NAMES, DEFAULT))
+    rp = _get(engine, "repeat_rates").get(key)
+    if rp and rp.get("repeat") and rp.get("first"):
+        out["repeat"] = rp
+        rules.append(
+            f"A second headline on the same stock within a week went its way {round(rp['repeat']['hit'] * 100)}% "
+            f"({rp['repeat']['n']}); first headlines {round(rp['first']['hit'] * 100)}% ({rp['first']['n']})."
+        )
     so = _get(engine, "stop_rates").get(key)
     if so and so.get("best"):
         from .stops_kind import STYLES as STOP_STYLES

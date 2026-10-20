@@ -58,6 +58,7 @@ LABELS = {
     "late": "{v} to its story",
     "persona": "a stock that {v}",
     "macroday": "a macro day",
+    "repeat": "{v}",
     "climate": "its kind running {v}",
 }
 # the records added since the model was first fitted, and what each one's inputs start with: the
@@ -69,6 +70,7 @@ GROUPS = {
     "Late to the story": ("late=",),
     "The stock's personality": ("persona=",),
     "Macro days": ("macroday",),
+    "Repeat headlines": ("repeat=",),
     "The news climate": ("climate=",),
     "Kind of news and size": ("cat=", "band=", "cat:none"),
     "Already moved": ("pre", "pre:none"),
@@ -150,6 +152,8 @@ def features(a: dict[str, Any], regime: str | None, universe: Any = None) -> dic
         x[f"persona={edge['persona']['trait']}"] = 1.0
     if edge.get("macro"):
         x["macroday"] = 1.0
+    if edge.get("repeat"):
+        x[f"repeat={'same' if edge['repeat'].get('same') else 'other'}"] = 1.0
     if (edge.get("climate") or {}).get("state") in ("hot", "cold"):
         x[f"climate={edge['climate']['state']}"] = 1.0
     return x
@@ -187,6 +191,11 @@ def _label(name: str) -> str:
             from .volconfirm import LABEL as VOL
 
             v = VOL.get(v, v)
+        elif k == "repeat":
+            v = {
+                "same": "a repeat headline of the same kind",
+                "other": "a second headline, another kind",
+            }.get(v, v)
         elif k == "persona":
             from .persona import TRAITS
 

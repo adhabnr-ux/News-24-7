@@ -423,6 +423,20 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
 - **The playbook's promises against its results:** the paper autopilots are the forward test of everything the desk learns, since they act on alerts nobody had seen when the records were fit. Each autopilot's closed calls are now graded against **the plain way on the same alerts**: in at the alert price, out at that session's close, in the call's direction. The difference is what the rule's choices (when to get in and out, where to stop) added or cost, alert for alert, so a good or bad week for the market cancels out. With 10+ graded calls a rule gets a verdict: its choices **add** (+0.25% a call or more), **cost** (-0.25% or worse), or come out **about even**.
 
   The playbook autopilot also records what the record **promised** when it opened each call: its kind's chosen exit average, or its entry's average when it didn't enter at the alert. So *"the record promised +1.00%, live +0.75%"* says whether the picks keep their word out of sample, kind by kind. On each autopilot's card on the Desk; `GET /api/autopilots/forward` (per phone).
+- **The whole playbook, backtested together:** the best way in and the best way out were picked one at a time, but they aren't independent: a stock bought on its second leg has already run, and holding it into tomorrow may be a different trade from holding one bought at the alert. So every pair is replayed on each graded alert, from its own entry price to its own exit:
+  - in at the alert: out an hour in, at the close, the next day, five sessions on, or at the plan's bracket;
+  - in at the open, at the patient entry, on the second leg or when the call turns: out at the close, the next day or five sessions on (none of them can be sold an hour after the alert);
+  - in on volume confirmation (15 minutes in): out an hour in, at the close, the next day or five sessions on.
+
+  Per kind of news the best pair is the one with the best average (8+ alerts had it), checked out of sample against the plain way (in at the alert, out at the close). For example: *"🧭 The playbook for contract win news here, in and out together: at the alert, out the next day (+2.0% on average, 75% its way, 12); the plain way +1.0%"*.
+
+  The playbook autopilot now trades the pair (its kind's separate picks only when no pair is graded yet). Its promise is the pair's average, exactly the backtest of what it does. On the alert's sheet, the kind's playbook, the 9:20 game plan and the Watch tab's **The whole playbook, together** board, with each kind's top three pairs. `GET /api/combos`.
+- **The second headline graded:** a stock that just moved on a headline often gets another within days: a follow-up contract, a second analyst, the 8-K behind the press release. Each alert now knows whether it's a **repeat**: the same stock had a directional alert in the 7 days before it, more than 30 minutes before (one story from several outlets counts once). Per kind of news the record compares:
+  - first headlines against repeats (how often each went its way by the close, and the average);
+  - repeats of the same kind against another kind;
+  - repeats after a first headline that worked against one that didn't.
+
+  The alert's sheet flags it: *"🔁 The 2nd headline on ACME in 2 days. Repeat contract win headlines went their way 38% here (21); first ones 61% (30)"*, with the headline before it. So does the 9:20 game plan. The odds model takes it as an input (*Repeat headlines* in what each record adds). The playbook carries a rule for it, and the Watch tab has **The second headline** board. `GET /api/repeats`.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

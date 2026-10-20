@@ -32,6 +32,11 @@ EDGE = 0.25  # % a call either way for a verdict
 def promise(edge: dict[str, Any]) -> dict[str, Any] | None:
     """What the record said a playbook call would make, from the alert's stamps: {kind, in, out, stop, promise}."""
     en, ex, so = edge.get("entry_rec") or {}, edge.get("exit_rec") or {}, edge.get("stop_rec") or {}
+    cr = edge.get("combo_rec") or {}
+    if cr.get("in"):  # the pair, backtested together: its average is the exact promise (combos.py)
+        return {"kind": cr.get("kind"), "label": cr.get("label"), "in": cr["in"], "out": cr["out"],
+                "stop": so.get("best") if so.get("width") else None,
+                "promise": (cr.get("styles") or {}).get(cr["best"], {}).get("avg")}  # fmt: skip
     if not en.get("best") or not ex.get("best"):
         return None
     if en["best"] == "alert":

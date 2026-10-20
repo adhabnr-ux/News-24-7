@@ -35,34 +35,44 @@ def _from(sign: int, close: float, entry_move: float) -> float:
     return sign * ((1 + close / 100) / (1 + entry_move / 100) - 1) * 100
 
 
-def entries(a: dict[str, Any]) -> dict[str, float]:
-    """{style: move from that entry to the close, its way, %} for the styles this alert had."""
+def entry_moves(a: dict[str, Any]) -> tuple[int, dict[str, Any], dict[str, float]] | None:
+    """(sign, outcome row, {style: the entry's own move from the alert price, raw %}) for the styles
+    this alert had; None when it isn't graded."""
     e = a.get("edge") or {}
     o = e.get("outcome") or {}
     refs = e.get("refs") or {}
     if not o:
-        return {}
+        return None
     sym, row = next(iter(o.items()))
     sign, close = row.get("sign"), row.get("close")
     if not sign or close is None:
-        return {}
-    out = {"alert": sign * close}
+        return None
+    mv = {"alert": 0.0}
     if row.get("open") is not None:
-        out["open"] = _from(sign, close, row["open"])
+        mv["open"] = row["open"]
     pt = (e.get("plan") or {}).get("patient") or {}
     mae = (e.get("exc") or {}).get("mae")
     if pt.get("dip") and mae is not None and mae <= -pt["dip"]:
-        out["patient"] = _from(sign, close, -sign * pt["dip"])
+        mv["patient"] = -sign * pt["dip"]
     ref = refs.get(sym)
     if ref:
         for style, px in (("leg2", (e.get("leg2") or {}).get("px")),
                           ("turn", (e.get("call_now") or {}).get("px") if (e.get("call_now") or {}).get("verb") == "act" else None)):  # fmt: skip
             if px:
-                out[style] = _from(sign, close, (px / ref - 1) * 100)
+                mv[style] = (px / ref - 1) * 100
     r15 = (e.get("rvol") or {}).get("r15")
     if r15 is not None and r15 >= 5 and row.get("m15") is not None:
-        out["vol15"] = _from(sign, close, row["m15"])
-    return {k: round(v, 2) for k, v in out.items()}
+        mv["vol15"] = row["m15"]
+    return sign, row, mv
+
+
+def entries(a: dict[str, Any]) -> dict[str, float]:
+    """{style: move from that entry to the close, its way, %} for the styles this alert had."""
+    got = entry_moves(a)
+    if not got:
+        return {}
+    sign, row, mv = got
+    return {k: round(_from(sign, row["close"], m), 2) for k, m in mv.items()}
 
 
 def entry_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:

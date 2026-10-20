@@ -69,6 +69,14 @@ def test_an_unstable_pick_and_a_thin_one():
         dated(close=[0.2] * 12, d1=[1.0] * 9), "close", "d1"
     )  # the next day only on the oldest alerts
     assert thin["held"] is None and use({"best": "d1", "holdout": thin}, "close") == "d1"
+    luck = check(
+        dated(close=[0.5] * 12, d1=[0.0] * 8 + [3.0] * 4), "close", "d1"
+    )  # only the newest alerts liked it
+    assert luck["pick"] == "close" and luck["held"] is False
+    assert (
+        words(luck, NAMES, "close")
+        == "on the older alerts nothing beat at the close: not stable, so at the close"
+    )
     assert check(dated(close=[0.1] * 6), "close", "close") is None  # too few to split
     assert check(dated(close=[0.1] * 12), "close", "close")["held"] is True  # the default needs no check
 

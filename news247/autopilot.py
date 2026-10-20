@@ -107,7 +107,7 @@ def matches(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
     if rule.get("follow") in ("leg2", "turn"):
         return False  # these open on their signal, later in the day (signal_matches)
     if rule.get("follow") == "playbook":  # in now only when its kind enters best at the alert
-        return ((alert.get("edge") or {}).get("entry_rec") or {}).get("best") == "alert"
+        return playbook_in(alert) == "alert"
     if rule.get("follow") == "call":  # the call decides: act now opens at once (waits are scheduled)
         return ((alert.get("edge") or {}).get("call") or {}).get("verb") == "act"
     if rule.get("min_odds"):
@@ -131,7 +131,7 @@ def signal_matches(rule: dict[str, Any], alert: dict[str, Any], signal: str) -> 
     if not rule.get("on") or alert.get("kind") == "system" or not _direction(alert):
         return False
     if rule.get("follow") == "playbook":
-        if ((alert.get("edge") or {}).get("entry_rec") or {}).get("best") != signal:
+        if playbook_in(alert) != signal:
             return False
     elif rule.get("follow") != signal:
         return False
@@ -153,7 +153,7 @@ def waits_for_open(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
     if SEV_RANK.get(str(alert.get("severity")), 0) < SEV_RANK[rule["min_sev"]]:
         return False
     if rule.get("follow") == "playbook":  # its kind enters best at the session's first print
-        return ((alert.get("edge") or {}).get("entry_rec") or {}).get("best") == "open"
+        return playbook_in(alert) == "open"
     call = (alert.get("edge") or {}).get("call") or {}
     return call.get("verb") == "wait" and call.get("wait_for") == "open"
 
@@ -169,9 +169,21 @@ def exit_time(exit_: str, ts: float, calendar: Any = None) -> float:
     return first
 
 
+def playbook_in(alert: dict[str, Any]) -> str | None:
+    """The way in the playbook takes: the graded pair's (combos.py), else its kind's best entry."""
+    e = alert.get("edge") or {}
+    return (e.get("combo_rec") or {}).get("in") or (e.get("entry_rec") or {}).get("best")
+
+
+def playbook_out(alert: dict[str, Any]) -> str | None:
+    """The way out the playbook takes: the graded pair's (combos.py), else its kind's best exit."""
+    e = alert.get("edge") or {}
+    return (e.get("combo_rec") or {}).get("out") or (e.get("exit_rec") or {}).get("best")
+
+
 def playbook_exit(alert: dict[str, Any]) -> tuple[str, bool]:
     """(the exit time key, whether the plan's stop and target ride along) for its kind's best exit."""
-    best = ((alert.get("edge") or {}).get("exit_rec") or {}).get("best") or "close"
+    best = playbook_out(alert) or "close"
     return ("close", True) if best == "bracket" else (best, False)
 
 

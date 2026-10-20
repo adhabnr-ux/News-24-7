@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import pytest
@@ -18,6 +20,8 @@ from news247.web.server import WebServer
 from .test_desk import DEV, DEV2, news
 from .test_personal import quotes, semis_engine
 from .test_run3 import phones
+
+ET = ZoneInfo("America/New_York")
 
 
 def market_open(eng):
@@ -38,6 +42,8 @@ async def test_a_peer_jumps_and_your_stock_has_not_moved(tmp_path, server):
     try:
         a, _ = phones(eng, server)
         now = time.time()
+        if 16 <= datetime.fromtimestamp(now + 3600, ET).hour < 17:
+            now -= 7200  # keep the hour-later grade out of the 16:00-16:30 ET close window
         quotes(eng, now, ACME=6.0, BETA=0.5, DLTA=5.0, GAMA=0.0)
         eng.desk.apply(DEV, "watch_add", {"symbol": "BETA"})
         eng.desk.apply(DEV2, "watch_add", {"symbol": "GAMA"})  # health care: not a peer

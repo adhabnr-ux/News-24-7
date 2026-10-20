@@ -196,6 +196,8 @@ class WebServer:
         app.router.add_get("/api/entries", self.api_entries)
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
         app.router.add_get("/api/stops-kind", self.api_stops_kind)
+        app.router.add_get("/api/combos", self.api_combos)
+        app.router.add_get("/api/repeats", self.api_repeats)
         app.router.add_get("/api/autopilots/forward", self.api_autopilots_forward)
         app.router.add_get("/api/learned", self.api_learned)
         app.router.add_get("/api/reaction", self.api_reaction)
@@ -1326,6 +1328,17 @@ class WebServer:
         from ..forward import forward
 
         return _json(forward(self.engine, self._need_device(request)))
+
+    async def api_combos(self, request: web.Request) -> web.Response:
+        """Every way in paired with every way out per kind of news (combos.py)."""
+        from ..combos import board
+
+        return _json(board(self.engine.combo_rates))
+
+    async def api_repeats(self, request: web.Request) -> web.Response:
+        """First headlines against repeats on the same stock within a week, per kind (repeat.py)."""
+        rows = sorted(self.engine.repeat_rates.values(), key=lambda r: (r["kind"] != "*", -r["repeat"]["n"]))
+        return _json({"rows": rows[:14]})
 
     async def api_exits_kind(self, request: web.Request) -> web.Response:
         """Every exit per kind of news, graded side by side (exits_kind.py)."""

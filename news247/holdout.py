@@ -77,6 +77,8 @@ def words(h: dict[str, Any] | None, names: dict[str, str], default: str) -> str:
     if h["held"]:
         return f"checked on the newest third: held ({h['avg']:+.1f}% vs {h['base']:+.1f}% {d}, {h['n']})"
     if h["pick"] != h["best"]:
+        if h["pick"] == default:
+            return f"on the older alerts nothing beat {d}: not stable, so {d}"
         return f"the older alerts picked {names[h['pick']].lower()} instead: not stable, so {d}"
     return f"on the newest third it made {h['avg']:+.1f}% vs {h['base']:+.1f}% {d} ({h['n']}): didn't hold, so {d}"
 

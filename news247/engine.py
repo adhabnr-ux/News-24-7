@@ -285,6 +285,10 @@ class Engine:
         self.exit_rates: dict[str, Any] = {}  # every exit per kind of news, side by side (exits_kind.py)
         # every stop per kind of news, side by side (stops_kind.py)
         self.stop_rates: dict[str, Any] = {}
+        # every way in paired with every way out per kind of news (combos.py)
+        self.combo_rates: dict[str, Any] = {}
+        # first headlines against repeats on the same stock within a week (repeat.py)
+        self.repeat_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2001,6 +2005,12 @@ class Engine:
             )
             if mc:  # a Fed or jobs-report day: how its kind did on days like it
                 alert.edge["macro"] = mc
+            if alert.tickers:
+                from .repeat import stamp as repeat_stamp
+
+                rp = repeat_stamp(self, alert.to_dict())
+                if rp:  # a second headline on this stock within a week, and how repeats did (repeat.py)
+                    alert.edge["repeat"] = rp
             # the odds and the plan read every fact stamped above (float, dilution, volume, lateness...)
             from .odds import predict
 
@@ -2030,6 +2040,8 @@ class Engine:
                         k: pt[k] for k in ("limit", "dip", "p_now", "p_filled") if k in pt
                     }
             ek = (alert.edge.get("catalyst") or {}).get("key")
+            from .combos import DEFAULT as COMBO_DEFAULT
+            from .combos import NAMES as COMBO_NAMES
             from .entries import STYLES as IN_NAMES
             from .exits_kind import STYLES as OUT_NAMES
             from .holdout import stamp
@@ -2039,10 +2051,14 @@ class Engine:
             # sample (exits_kind.py, stops_kind.py, entries.py, holdout.py)
             for field, rates, default, names, extra in (("exit_rec", self.exit_rates, "close", OUT_NAMES, ()),
                                                         ("stop_rec", self.stop_rates, "none", STOP_NAMES, ("w1",)),
-                                                        ("entry_rec", self.entry_rates, "alert", IN_NAMES, ())):  # fmt: skip
+                                                        ("entry_rec", self.entry_rates, "alert", IN_NAMES, ()),
+                                                        ("combo_rec", self.combo_rates, COMBO_DEFAULT, COMBO_NAMES, ())):  # fmt: skip
                 kr = rates.get(ek) if ek else None
                 if kr and kr.get("best"):
                     alert.edge[field] = stamp(kr, ek, default, names, extra)
+            cr = alert.edge.get("combo_rec")
+            if cr:  # the pair's way in and way out, for the playbook autopilot (combos.py)
+                cr["in"], cr["out"] = cr["best"].split("|")
             from .thecall import the_call
 
             call = the_call(
@@ -2834,12 +2850,12 @@ class Engine:
         """A new alert matching a phone's autopilot opens a paper call there, with its plan's stop
         and target and the rule's exit time (autopilot.py). At most three a rule a day. A rule
         following the call schedules a "wait for the open" alert for the session's first print."""
-        from .autopilot import PER_RULE_PER_DAY, matches, opened_today, waits_for_open
+        from .autopilot import PER_RULE_PER_DAY, matches, opened_today, playbook_in, waits_for_open
         from .desk import session_edge
 
         def plays_patient(a: dict[str, Any]) -> bool:
             e = a.get("edge") or {}
-            return (e.get("entry_rec") or {}).get("best") == "patient" and bool(
+            return playbook_in({"edge": e}) == "patient" and bool(
                 ((e.get("plan") or {}).get("patient") or {}).get("limit")
             )
 
@@ -4086,6 +4102,7 @@ class Engine:
             for e in self.calendar.upcoming(days=1, now=now)
             if e.get("in_days") == 0 and e.get("time") and (e.get("impact") or 1) >= 2
         ]
+        from .autopilot import playbook_in, playbook_out
         from .entries import STYLES as IN_STYLES
         from .exits_kind import STYLES as OUT_STYLES
 
@@ -4093,10 +4110,16 @@ class Engine:
             """How its kind enters and exits best here, and its float and dilution flags."""
             e = (self.storage.get_alert(alert_id) or {}).get("edge") or {}
             bits = []
-            if (e.get("entry_rec") or {}).get("best"):
-                bits.append(f"in {IN_STYLES[e['entry_rec']['best']].lower()}")
-            if (e.get("exit_rec") or {}).get("best"):
-                bits.append(f"out {OUT_STYLES[e['exit_rec']['best']].lower()}")
+            pin, pout = playbook_in({"edge": e}), playbook_out({"edge": e})  # the pair when it's graded
+            if pin:
+                bits.append(f"in {IN_STYLES[pin].lower()}")
+            if pout:
+                bits.append(f"out {OUT_STYLES[pout].lower()}")
+            rp = e.get("repeat") or {}
+            if rp:
+                bits.append(
+                    f"🔁 {rp['nth']}{'nd' if rp['nth'] == 2 else 'rd' if rp['nth'] == 3 else 'th'} headline in a week"
+                )
             sr = e.get("stop_rec") or {}
             if sr.get("best") == "none":
                 bits.append("no stop")
@@ -4366,6 +4389,12 @@ class Engine:
         from .stops_kind import stop_rates
 
         self.stop_rates = stop_rates(self, 180, now)
+        from .combos import combo_rates
+
+        self.combo_rates = combo_rates(self, 180, now)
+        from .repeat import repeat_rates
+
+        self.repeat_rates = repeat_rates(self, 180, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 
