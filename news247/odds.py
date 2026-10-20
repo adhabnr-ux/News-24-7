@@ -51,6 +51,29 @@ LABELS = {
     "regime": "{v} day",
     "conf": "other evidence lined up",
     "small": "small cap",
+    "float": "{v}",
+    "short": "{v} (short interest)",
+    "dil": "{v}",
+    "vol": "{v} at the alert",
+    "late": "{v} to its story",
+    "persona": "a stock that {v}",
+    "macroday": "a macro day",
+    "climate": "its kind running {v}",
+}
+# the records added since the model was first fitted, and what each one's inputs start with: the
+# held-out test is rerun without each to say what it adds (ablation)
+GROUPS = {
+    "Float and short interest": ("float=", "short="),
+    "Dilution risk": ("dil=",),
+    "Volume at the alert": ("vol=",),
+    "Late to the story": ("late=",),
+    "The stock's personality": ("persona=",),
+    "Macro days": ("macroday",),
+    "The news climate": ("climate=",),
+    "Kind of news and size": ("cat=", "band=", "cat:none"),
+    "Already moved": ("pre", "pre:none"),
+    "Time of day": ("hour=",),
+    "The market regime": ("regime=",),
 }
 HOURS = (
     (0, 9.5, "before the open"),
@@ -107,6 +130,28 @@ def features(a: dict[str, Any], regime: str | None, universe: Any = None) -> dic
         x["conf"] = 1.0
     if edge.get("smallcap"):
         x["small"] = 1.0
+    fl = edge.get("float") or {}
+    if fl.get("fband"):
+        x[f"float={fl['fband']}"] = 1.0
+    if fl.get("sband"):
+        x[f"short={fl['sband']}"] = 1.0
+    if (edge.get("dilution") or {}).get("state"):
+        x[f"dil={edge['dilution']['state']}"] = 1.0
+    r0 = (edge.get("rvol") or {}).get("r0")
+    if r0 is not None:
+        from .volconfirm import band
+
+        x[f"vol={band(r0)}"] = 1.0
+    if (edge.get("late") or {}).get("min") is not None:
+        from .coverage import late_bin
+
+        x[f"late={late_bin(edge['late']['min'])}"] = 1.0
+    if (edge.get("persona") or {}).get("trait"):
+        x[f"persona={edge['persona']['trait']}"] = 1.0
+    if edge.get("macro"):
+        x["macroday"] = 1.0
+    if (edge.get("climate") or {}).get("state") in ("hot", "cold"):
+        x[f"climate={edge['climate']['state']}"] = 1.0
     return x
 
 
@@ -126,6 +171,26 @@ def _label(name: str) -> str:
                  "confluence": "a confluence", "macro": "a macro"}.get(v, v)  # fmt: skip
         elif k == "dir":
             v = {"up": "a long", "down": "a short"}.get(v, "a no-direction")
+        elif k == "float":
+            from .floatshort import F_LABEL
+
+            v = F_LABEL.get(v, v)
+        elif k == "short":
+            from .floatshort import S_LABEL
+
+            v = S_LABEL.get(v, v)
+        elif k == "dil":
+            from .dilution import LABEL as DIL
+
+            v = DIL.get(v, v)
+        elif k == "vol":
+            from .volconfirm import LABEL as VOL
+
+            v = VOL.get(v, v)
+        elif k == "persona":
+            from .persona import TRAITS
+
+            v = TRAITS[v][0].lower() if v in TRAITS else v
         text = LABELS.get(k, "{v}").format(v=v)
         return text[0].upper() + text[1:]
     text = LABELS.get(name, name)
@@ -240,7 +305,7 @@ HORIZONS = {"d1": "the next day's close", "d5": "five sessions on"}
 
 
 def _test_and_fit(
-    rows: list[tuple[float, dict[str, float], int]],
+    rows: list[tuple[float, dict[str, float], int]], refit: bool = True
 ) -> tuple[dict[str, Any], dict[str, Any], bool]:
     """Fit on the older three quarters, score on the newest quarter against guessing the hit rate,
     then refit on everything: (the test, the model for use, whether it earned its place)."""
@@ -256,7 +321,28 @@ def _test_and_fit(
     t = {"n": len(test), "train": len(train), "brier": round(brier, 4), "brier_guess": round(brier0, 4),
          "skill": round(skill, 3), "auc": _auc(ps, ys), "hit": round(sum(ys) / len(ys), 3),
          "guess": round(guess, 3), "reliability": _reliability(ps, ys), "from": test[0][0], "to": test[-1][0]}  # fmt: skip
-    return t, _fit(rows), len(test) >= MIN_TEST and skill > 0
+    return t, (_fit(rows) if refit else m), len(test) >= MIN_TEST and skill > 0
+
+
+def _drop(
+    rows: list[tuple[float, dict[str, float], int]], prefixes: tuple[str, ...]
+) -> list[tuple[float, dict[str, float], int]]:
+    return [(t, {k: v for k, v in x.items() if not k.startswith(prefixes)}, y) for t, x, y in rows]
+
+
+def ablation(rows: list[tuple[float, dict[str, float], int]], skill: float) -> list[dict[str, Any]]:
+    """What each record adds: the held-out test rerun without its inputs. "adds" is the skill lost
+    without it (in points of the Brier skill); "seen" the share of test alerts that carry it."""
+    cut = int(len(rows) * (1 - HOLDOUT))
+    test = rows[cut:]
+    out = []
+    for name, prefixes in GROUPS.items():
+        seen = sum(1 for _, x, _ in test if any(k.startswith(prefixes) for k in x)) / max(1, len(test))
+        if seen < 0.1:
+            continue
+        t, _, _ = _test_and_fit(_drop(rows, prefixes), refit=False)
+        out.append({"name": name, "adds": round((skill - t["skill"]) * 100, 1), "seen": round(seen, 2)})
+    return sorted(out, key=lambda r: -r["adds"])
 
 
 def _payoff_for(pay: dict[str, Any], key: str | None) -> tuple[dict[str, Any] | None, str]:
@@ -304,7 +390,12 @@ def health(pairs: list[tuple[float, int]], base: float) -> dict[str, Any]:
     return {"n": len(recent), "skill": round(skill, 3), "gap": round(gap, 3), "paused": bool(why), "why": why}
 
 
-def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
+ABLATE_EVERY = 86400  # what each record adds moves slowly, and costs a dozen refits: once a day
+
+
+def fit_odds(
+    engine: Engine, days: float = 180, now: float | None = None, prev: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Fit, test on the newest quarter, refit on everything. {"ready", "trusted", "model", "test", ...}."""
     now = now or time.time()
     live: list[tuple[float, float, int]] = []
@@ -319,6 +410,10 @@ def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dic
     test, full, trusted = _test_and_fit(rows)
     out["test"] = test
     out["model"] = full
+    if prev and prev.get("adds") is not None and now - prev.get("adds_at", 0) < ABLATE_EVERY:
+        out["adds"], out["adds_at"] = prev["adds"], prev["adds_at"]
+    else:
+        out["adds"], out["adds_at"] = ablation(rows, test["skill"]), now
     out["payoff"] = payoffs(moves)
     out["ready"] = True
     out["test_trusted"] = trusted  # it passed its test: shadow odds keep being kept while it's paused

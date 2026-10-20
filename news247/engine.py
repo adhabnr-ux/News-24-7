@@ -277,6 +277,7 @@ class Engine:
         self.theme_rates: dict[str, Any] = {}  # ETFs after market-wide headlines, per theme (macrotape.py)
         # news by relative volume, at the alert and 15 minutes in (volconfirm.py)
         self.rvol_rates: dict[str, Any] = {}
+        self.turn_rates: dict[str, Any] = {}  # calls that turned during the day, graded (callnow.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -1898,33 +1899,6 @@ class Engine:
                 ob = self.open_rates.get(f"{ck_key}|*") or self.open_rates.get("*|*")
                 if ob:
                     alert.edge["open_base"] = ob  # news from outside the session: what it did after the bell
-            from .odds import predict
-
-            odds = predict(self.odds, alert.to_dict(), self.regime_label())
-            if not odds and self.odds.get("paused"):
-                sh = predict(self.odds, alert.to_dict(), self.regime_label(), shadow=True)
-                if sh:
-                    alert.edge["odds_shadow"] = {"p": sh["p"]}  # not shown or used: how it recovers
-            if odds:
-                alert.edge["odds"] = odds  # one calibrated number, with what moved it
-                if odds.get("ev") is not None and self.ev_hist[0]:
-                    evs, days = self.ev_hist
-                    # how many alerts a day are at least this good: what an attention budget reads
-                    alert.edge["ev_top"] = round(sum(1 for v in evs if v >= odds["ev"]) / days, 1)
-            from .plans import trade_plan
-
-            try:
-                plan = trade_plan(self, "", alert.to_dict(), time.time())
-            except Exception:  # noqa: BLE001 - a plan is a bonus, never a reason not to publish
-                plan = {}
-            if plan.get("ok"):  # the plan from the live price, for the push: stop, target, reward-to-risk
-                alert.edge["plan"] = {"dir": plan["direction"], "symbol": plan["symbol"], "entry": plan["entry"],
-                                      "stop": plan["stop"], "target": plan["target"], "rr": plan["rr"]}  # fmt: skip
-                pt = plan.get("patient")
-                if pt:  # the patient entry, for the wait-for-a-pullback push and its grade (waits.py)
-                    alert.edge["plan"]["patient"] = {
-                        k: pt[k] for k in ("limit", "dip", "p_now", "p_filled") if k in pt
-                    }
             if alert.item is not None:
                 from .coverage import late_bin
                 from .coverage import read as read_coverage
@@ -2020,6 +1994,34 @@ class Engine:
             )
             if mc:  # a Fed or jobs-report day: how its kind did on days like it
                 alert.edge["macro"] = mc
+            # the odds and the plan read every fact stamped above (float, dilution, volume, lateness...)
+            from .odds import predict
+
+            odds = predict(self.odds, alert.to_dict(), self.regime_label())
+            if not odds and self.odds.get("paused"):
+                sh = predict(self.odds, alert.to_dict(), self.regime_label(), shadow=True)
+                if sh:
+                    alert.edge["odds_shadow"] = {"p": sh["p"]}  # not shown or used: how it recovers
+            if odds:
+                alert.edge["odds"] = odds  # one calibrated number, with what moved it
+                if odds.get("ev") is not None and self.ev_hist[0]:
+                    evs, days = self.ev_hist
+                    # how many alerts a day are at least this good: what an attention budget reads
+                    alert.edge["ev_top"] = round(sum(1 for v in evs if v >= odds["ev"]) / days, 1)
+            from .plans import trade_plan
+
+            try:
+                plan = trade_plan(self, "", alert.to_dict(), time.time())
+            except Exception:  # noqa: BLE001 - a plan is a bonus, never a reason not to publish
+                plan = {}
+            if plan.get("ok"):  # the plan from the live price, for the push: stop, target, reward-to-risk
+                alert.edge["plan"] = {"dir": plan["direction"], "symbol": plan["symbol"], "entry": plan["entry"],
+                                      "stop": plan["stop"], "target": plan["target"], "rr": plan["rr"]}  # fmt: skip
+                pt = plan.get("patient")
+                if pt:  # the patient entry, for the wait-for-a-pullback push and its grade (waits.py)
+                    alert.edge["plan"]["patient"] = {
+                        k: pt[k] for k in ("limit", "dip", "p_now", "p_filled") if k in pt
+                    }
             from .thecall import the_call
 
             call = the_call(
@@ -2586,6 +2588,10 @@ class Engine:
                     from .volconfirm import send_confirms
 
                     await send_confirms(self, now)  # 15 minutes in: is the market trading it?
+                with contextlib.suppress(Exception):
+                    from .callnow import send_turns
+
+                    await send_turns(self, now)  # the call re-read with the day's live facts
                 with contextlib.suppress(Exception):
                     from .macrotape import grade as etfs_grade
 
@@ -4154,6 +4160,9 @@ class Engine:
         from .volconfirm import rvol_rates
 
         self.rvol_rates = rvol_rates(self, 180, now)
+        from .callnow import turn_rates
+
+        self.turn_rates = turn_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")
@@ -4165,7 +4174,7 @@ class Engine:
             from .odds import fit_odds
 
             self._odds_at = now or time.time()
-            self.odds = fit_odds(self, 180, now)
+            self.odds = fit_odds(self, 180, now, prev=self.odds)
 
     def _eod_due(self, now: float) -> bool:
         dt = datetime.fromtimestamp(now, ET)

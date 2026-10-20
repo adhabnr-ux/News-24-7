@@ -39,7 +39,10 @@ def _rec(x: dict[str, Any] | None, key: str = "close") -> dict[str, Any] | None:
 
 
 def the_call(
-    e: dict[str, Any], outside: bool = False, muted: frozenset[str] = frozenset()
+    e: dict[str, Any],
+    outside: bool = False,
+    muted: frozenset[str] = frozenset(),
+    extra: list[tuple[str, str, str]] | None = None,
 ) -> dict[str, Any] | None:
     """{"verb", "label", "line", "for", "against"} from an alert's edge, or None when nothing on it
     is graded yet (no call is better than a made-up one)."""
@@ -121,6 +124,8 @@ def the_call(
     lrec = _rec(lt.get("rec"))
     if lt.get("min", 0) >= 15 and lrec and lrec["hit"] < 0.5:
         add("-", "late", f"late to the story ({lt['min']:.0f} min)")
+    for side, key, text in extra or []:  # facts graded live during the day (callnow.py)
+        add(side, key, text)
     if not pro and not con and not e.get("clock") and not e.get("open_base"):
         return None
     ck = (e.get("clock") or {}).get("half")
@@ -149,6 +154,8 @@ def the_call(
         out["wait_for"] = "open" if why[0].startswith("for the open") else "pullback"
     if hushed:
         out["muted"] = sorted(set(hushed))
+    if extra:
+        out["live_facts"] = [list(f) for f in extra if f[1] not in muted]
     return out
 
 
@@ -196,7 +203,8 @@ FACT_LABEL = {"odds": "The odds", "ev": "A negative expected move", "record": "I
               "flow": "The flow's record", "insider": "The insider's shape", "climate": "The climate", "regime": "Days like today",
               "persona": "The stock's personality", "late": "Late to the story", "macro": "Macro days",
               "float": "Float and short interest", "dilution": "Dilution risk",
-              "rvol": "Volume at the alert"}  # fmt: skip
+              "rvol": "Volume at the alert", "vol15": "Volume 15 minutes in", "catchup": "The mainstream catch-up",
+              "leg2": "A second leg"}  # fmt: skip
 
 
 def replay(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:

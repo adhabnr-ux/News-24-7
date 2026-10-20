@@ -1156,6 +1156,7 @@ class WebServer:
 
         rates = self.engine.call_rates
         return _json({"rows": [rates[v] for v in VERBS if v in rates], "replay": self.engine.call_replay or None,
+                      "turns": [{**self.engine.turn_rates[v], "label": VERBS[v][1], "icon": VERBS[v][0]} for v in VERBS if v in self.engine.turn_rates],
                       "muted": self.engine.call_muted, "waits": self.engine.wait_rates})  # fmt: skip
 
     async def api_climate(self, request: web.Request) -> web.Response:

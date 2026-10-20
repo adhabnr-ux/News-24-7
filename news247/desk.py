@@ -146,6 +146,7 @@ def default_profile() -> dict[str, Any]:
             "leg2": True,  # a news stock breaking to a new high well after its alert (secondleg.py)
             "volconf": True,  # 15 minutes in: confirmed by volume, or no volume behind it (volconfirm.py)
             "bookmacro": True,  # a market-wide headline: what headlines like it meant for your book (bookmacro.py)
+            "callnow": True,  # the call on an alert changed with the day's live facts (callnow.py)
         },
         "price_alerts": [],
         "tracked": [],
@@ -739,6 +740,7 @@ class Desk:
                 "leg2",
                 "volconf",
                 "bookmacro",
+                "callnow",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1508,6 +1510,7 @@ class Desk:
                     "leg2",
                     "volconf",
                     "bookmacro",
+                    "callnow",
                     "watch_push",
                     "min_sev",
                     "digest",
