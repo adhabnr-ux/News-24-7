@@ -64,6 +64,7 @@ function toastUndo(msg, fn) {
 // ⓘ: what a term means, for anyone new to it
 const GLOSSARY = {
   sympathy: "Sympathy: when one company jumps on news, its peers sometimes follow (same customers, same regulator, same read-through). Foretape flags the peer you watch that hasn't moved yet, then grades every flag an hour later and at the close, so you can see whether these catch up.",
+  catalyst: "Catalyst record: Foretape reads each headline for its kind of news (contract win, FDA approval, earnings beat, downgrade, offering...) and the company's size (under $2B, $2-10B, $10B+), then grades every such alert an hour later, at the close and the next day. The record is how that kind of news has traded here, at that size (any size when there are fewer than 6).",
   dial: "The push dial: how loud this one stock is on your phone. Default follows your settings; HIGH only skips its MEDIUM alerts; Everything pushes even MEDIUM alerts and ignores your floor and the fades filter (your categories, mutes and quiet hours still apply); Off never pushes it.",
   implied: "Implied move: what the options market is paying for. The at-the-money call + put (the straddle) for an expiry, as a % of the stock: roughly the move priced in by that date, up or down.",
   callwall: "Call wall: the strike above the stock with the most call open interest. Dealers hedging those calls can make it act like a ceiling into expiry; a clean break through it can speed up.",
@@ -225,6 +226,8 @@ function footRow(a) {
   return parts.length ? `<div class="foot">${parts.join("")}</div>` : "";
 }
 function baseRow(a) {
+  const cb = a.edge?.cat_base;
+  if (cb?.close) return `<div class="base"><b>${esc(cb.label)}</b> <span class="faint">${esc(cb.band_label)}</span> went their way <b class="${cb.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(cb.close.hit * 100)}%</b> by the close, median <b class="${cls(cb.close.median)}">${pct(cb.close.median)}</b> <span class="faint">· ${cb.close.n} graded ${tip("catalyst")}</span></div>`;
   const b = a.edge?.base;
   if (!b) return "";
   const bits = [b.h1 && `<b class="${b.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(b.h1.hit * 100)}%</b> in 1h`, b.close && `<b class="${b.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(b.close.hit * 100)}%</b> by the close`].filter(Boolean);
@@ -669,8 +672,22 @@ async function loadRadar() {
 }
 // the radar board is live: while Watch is on screen it refreshes every 30 s
 setInterval(() => { if (tab === "watch" && !document.hidden && !sheetOpen) loadRadar(); }, 30000);
+// room left: today's alerts that haven't made their catalyst's typical move yet
+async function loadRoom() {
+  let r;
+  try { r = await api("/api/room"); } catch (_) { return; }
+  $("roomWrap").hidden = !r.rows.length;
+  $("room").innerHTML = r.rows.map((x) => { const w = Math.min(100, Math.max(0, x.since / x.typical * 100));
+    return `<div class="li" data-id="${esc(x.id)}" role="button"><span class="sym" style="width:58px">${esc(x.symbol)}</span><div class="grow">
+      <div style="font-weight:600">${esc(x.title)}</div>
+      <div class="sub">${esc(x.catalyst)} · ${esc(x.band)}: ${Math.round(x.hit * 100)}% of ${x.n} went their way, median ${pct(x.typical)} by the close</div>
+      <div class="roombar" title="so far ${pct(x.since)} of a typical ${pct(x.typical)}"><i style="width:${w.toFixed(0)}%"></i></div>
+      <div class="sub">so far <b class="num ${cls(x.since)}">${pct(x.since)}</b> its way${x.pre != null ? ` · ${pct(x.pre)} in the 15 min before` : ""} · ${ago(x.created)} ago</div></div>
+      <span class="chg num pos" style="width:auto;min-width:64px">${pct(x.room)}<small class="rsess">room</small></span></div>`; }).join("")
+    + `<div class="sub" style="padding:4px 0 12px">The typical move is the median for that catalyst at that company size, from Foretape's own graded alerts. History, not a forecast: many never make it.</div>`;
+}
 async function loadWatch() {
-  loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay();
+  loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -774,6 +791,10 @@ async function openSheet(id) {
       <div class="sub" style="margin-top:10px">Fires when 3+ independent kinds of evidence line up on one side (weight 4+, at least one from the last 2 hours); pushed at weight 7+. Each stock and side once a day.</div></div>` : "",
     a.kind !== "system" ? (() => { const es = edgeScore(a); return `<h4>Edge score</h4><div class="panel glass"><div class="kv"><span>Composite of the stats on this page</span><b class="num ${es.score >= 60 ? "pos" : es.score < 45 ? "neg" : ""}">${es.score} / 100</b></div>${es.parts.map(([n, v, w, why]) => `<div class="kv"><span>${n} <span class="sub">× ${Math.round(w * 100)}% · ${esc(why)}</span></span><b class="num">${Math.round(v * 100)}</b></div>`).join("")}<div class="sub" style="padding:4px 0 12px">A weighted summary of measured facts (how alerts like it did, whether the stock had already moved, how much evidence agrees, severity), not a forecast.</div></div>`; })() : "",
     priceInBlock(a),
+    e.cat_base ? `<h4>${esc(e.cat_base.label)} news, ${esc(e.cat_base.band_label)} ${tip("catalyst")}</h4><div class="panel glass">
+      ${[["An hour later", e.cat_base.h1], ["At the close", e.cat_base.close], ["The next day", e.cat_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went its way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
+      ${e.cat_base.typical != null ? `<div class="kv"><span>Typical close move, either way</span><b class="num">±${e.cat_base.typical.toFixed(1)}%</b></div>` : ""}
+      <div class="sub" style="padding:4px 0 12px">Every graded alert Foretape read as ${esc(e.cat_base.label.toLowerCase())} news on a ${esc(e.cat_base.band_label === "any size" ? "company of any size" : e.cat_base.band_label + " company")}, last 180 days, each from its own reference price. History, not a forecast.</div></div>` : (e.catalyst ? `<div class="sub" style="margin-top:14px">Read as <b>${esc(e.catalyst.label)}</b> news: too few graded so far for its own record.</div>` : ""),
     e.base ? `<h4>How alerts like this did ${tip("base")}</h4><div class="panel glass">
       ${e.base.h1 ? `<div class="kv"><span>An hour later</span><b class="num"><span class="${e.base.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.h1.hit * 100)}%</span> went its way · median ${pct(e.base.h1.median)} · ${e.base.h1.n} graded</b></div>` : ""}
       ${e.base.close ? `<div class="kv"><span>At the close</span><b class="num"><span class="${e.base.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.close.hit * 100)}%</span> went its way · median ${pct(e.base.close.median)} · ${e.base.close.n} graded</b></div>` : ""}
@@ -1124,6 +1145,7 @@ async function loadRecord() {
     recordCache = r;
     const bucketRows = (title, rows) => rows.length ? `<div class="kv head"><span>${title}</span><b>1 hour · close</b></div>` + rows.map((x) => `<div class="kv"><span>${esc(x.bucket)}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("") : "";
     $("dRecord").innerHTML += bucketRows("Already moved before the alert?", r.priced_in || []) + bucketRows("By time of day (ET)", r.by_time || []);
+    if ((r.catalysts || []).length) $("dRecord").innerHTML += `<div class="kv head"><span>By catalyst ${tip("catalyst")}</span><b>close · median · typical size</b></div>` + r.catalysts.map((c) => `<div class="kv"><span>${esc(c.label)} <span class="sub">${c.close.n}${c.bands.length > 1 ? " · " + c.bands.map((b) => `${esc(b.band_label)} ${Math.round(b.close.hit * 100)}%`).join(" · ") : ""}</span></span><b class="rec"><b class="num ${c.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(c.close.hit * 100)}%</b> <span class="sub">${pct(c.close.median)} · ±${(c.typical || 0).toFixed(1)}%</span></b></div>`).join("");
     const sy = r.sympathy;
     if (sy?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Sympathy flags ${tip("sympathy")}</span><b>1 hour · close</b></div><div class="kv"><span>${sy.flags} peer${sy.flags === 1 ? "" : "s"} flagged, 120 days <span class="sub">did it catch up?</span></span><b class="rec">${cell(sy.h1)}<br>${cell(sy.close)}</b></div>`;
     const src = await api("/api/sources").catch(() => ({ rows: [] }));
@@ -2366,6 +2388,7 @@ const Palette = {
       ["Focus for 1 hour", "only CRITICAL comes through", () => deskEdit("focus", { minutes: 60 }).then((r) => r && toast("🎯 Focus on for an hour"))],
       ["End focus mode", "", () => deskEdit("focus", { minutes: 0 }).then((r) => r && toast("Focus mode ended"))],
       ["Would I get it? (test my push settings)", "", openHealth],
+      ["Room left", "today's alerts short of their typical move", () => { closeSheet(); go("watch"); setTimeout(() => $("roomWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Strategy lab", "following every alert, on paper", () => { closeSheet(); go("desk"); setTimeout(() => $("dLab")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Back up my desk (JSON)", "", () => exportDesk("json")], ["Restore from a backup", "add a saved desk to this one", () => $("restoreFile").click()],
       ["Export my alerts (CSV)", "", () => exportDesk("csv")], ["First-run setup", "pick what you care about", openOnboard],

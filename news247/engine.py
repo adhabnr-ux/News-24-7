@@ -232,6 +232,7 @@ class Engine:
         from .desk import Desk
 
         self.desk = Desk(self.storage, self.state_store)
+        self.catalyst_rates: dict[str, Any] = {}  # (catalyst, size band) -> graded record (catalysts.py)
         self.base_rates: dict[
             str, Any
         ] = {}  # record_key -> graded stats (dossier.track_record), for each new alert
@@ -1740,6 +1741,14 @@ class Engine:
             base = base_rate(self.base_rates, alert)
             if base:
                 alert.edge["base"] = base  # how alerts like this did: on the card, the sheet, the push
+            from .catalysts import catalyst_base, classify
+
+            cat = classify(alert.to_dict(), self.universe)
+            if cat:
+                alert.edge["catalyst"] = cat  # what kind of news, at what size: graded per catalyst
+                cb = catalyst_base(self.catalyst_rates, cat)
+                if cb:
+                    alert.edge["cat_base"] = cb
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:
@@ -3166,6 +3175,9 @@ class Engine:
         from .dossier import track_record
 
         self.base_rates = {r["kind"]: r for r in track_record(self, 60, now)["rows"]}
+        from .catalysts import catalyst_rates
+
+        self.catalyst_rates = catalyst_rates(self, 180, now)
 
     def _eod_due(self, now: float) -> bool:
         dt = datetime.fromtimestamp(now, ET)

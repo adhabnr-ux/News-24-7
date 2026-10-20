@@ -152,6 +152,7 @@ class WebServer:
         app.router.add_get("/api/push-log", self.api_push_log)
         app.router.add_post("/api/would-push", self.api_would_push)
         app.router.add_get("/api/lab", self.api_lab)
+        app.router.add_get("/api/room", self.api_room)
         app.router.add_get("/api/list/{code}", self.api_list)
         app.router.add_get("/api/phone-health", self.api_phone_health)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
@@ -931,6 +932,12 @@ class WebServer:
             raise web.HTTPNotFound(text="no such alert")
         return _json(out)
 
+    async def api_room(self, request: web.Request) -> web.Response:
+        """Room left: today's alerts that have moved less than their catalyst's typical move."""
+        from ..catalysts import room_left
+
+        return _json(room_left(self.engine))
+
     async def api_lab(self, request: web.Request) -> web.Response:
         """The strategy lab: following every alert like this, on paper (see dossier.strategy_lab)."""
         from ..dossier import strategy_lab
@@ -1129,6 +1136,9 @@ class WebServer:
         from ..dossier import sympathy_record
 
         out["sympathy"] = sympathy_record(self.engine)
+        from ..catalysts import catalyst_table
+
+        out["catalysts"] = catalyst_table(self.engine.catalyst_rates)
         return _json(out)
 
     async def api_foretape(self, request: web.Request) -> web.Response:

@@ -958,9 +958,10 @@ class WebPushNotifier(Notifier):
         line = EdgeDesk.push_line(alert)
         if line and line not in body and line.split(" · ")[-1] not in body:
             body = f"{body}\n{line}" if body else line
+        from ..catalysts import cat_line
         from ..dossier import base_line
 
-        base = base_line(alert.edge.get("base"))
+        base = cat_line(alert.edge.get("cat_base")) or base_line(alert.edge.get("base"))
         if base:
             body = f"{body}\n{base}" if body else base
         play = alert.edge.get("play") or {}

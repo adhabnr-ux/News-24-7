@@ -665,3 +665,6 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .labstats { display: flex; gap: 16px; flex-wrap: wrap; }
 .labstats span { display: flex; flex-direction: column; align-items: flex-end; } .labstats small { color: var(--faint); font-size: 11px; }
 .labc { width: 100%; height: auto; display: block; margin: 6px 0 10px; }
+/* run 15: room left */
+.roombar { height: 5px; margin: 7px 0 5px; border-radius: 99px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.roombar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--gold), var(--up)); }
