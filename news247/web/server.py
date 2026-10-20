@@ -197,6 +197,7 @@ class WebServer:
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
         app.router.add_get("/api/stops-kind", self.api_stops_kind)
         app.router.add_get("/api/combos", self.api_combos)
+        app.router.add_get("/api/liquidity", self.api_liquidity)
         app.router.add_get("/api/playbook-curve", self.api_playbook_curve)
         app.router.add_get("/api/combos/work", self.api_combo_work)
         app.router.add_get("/api/promises", self.api_promises)
@@ -1355,6 +1356,12 @@ class WebServer:
 
         c = curve(self.engine)
         return _json({**c, "line": line(c), "nights": self.engine.night_rates})
+
+    async def api_liquidity(self, request: web.Request) -> web.Response:
+        """The plain way, 5 minutes late and the playbook per liquidity band (liquidity.py)."""
+        from ..liquidity import board
+
+        return _json(board(self.engine.liq_rates))
 
     async def api_combos(self, request: web.Request) -> web.Response:
         """Every way in paired with every way out per kind of news (combos.py)."""

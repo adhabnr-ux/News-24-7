@@ -301,6 +301,8 @@ class Engine:
         self.promise_rates: dict[str, Any] = {}
         # overnight moves on event nights (the stock's earnings, a binary event) and ordinary ones (eventrisk.py)
         self.night_rates: dict[str, Any] = {}
+        # the plain way, 5 minutes late and the playbook per liquidity band (liquidity.py)
+        self.liq_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2031,6 +2033,11 @@ class Engine:
                     alert.edge["crowd"] = cw
                 from .denials import act as deny_act
                 from .denials import stamp as deny_stamp
+                from .liquidity import stamp as liq_stamp
+
+                lq = liq_stamp(self, alert.tickers[0])
+                if lq:  # its stock's dollar volume band, and whether thin names pay here (liquidity.py)
+                    alert.edge["liq"] = lq
                 from .eventrisk import tonight
 
                 with contextlib.suppress(
@@ -4585,6 +4592,9 @@ class Engine:
         from .eventrisk import night_rates
 
         self.night_rates = night_rates(self, 365, now)
+        from .liquidity import liq_rates
+
+        self.liq_rates = liq_rates(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 

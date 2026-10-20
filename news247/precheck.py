@@ -4,8 +4,9 @@ Tapping Track on an alert or a stock opens a paper call. Just before it does, th
 the desk already knows about that call in one place: the odds and expected move, how its kind of
 news has done (on days like today too), how the firm's calls have done when an analyst made it,
 whether the stock has already made its typical move since the alert, whether the market is
-fading it, the plan's reward-to-risk, a report before the exit, and how much of the desk is
-already on the same side of the same sector. Each line is good, a warning or a red flag, with
+fading it, the plan's reward-to-risk, a report before the exit, how much of the desk is already on
+the same side of the same sector, and what the playbook would do with it (pass, wait for its way
+in, or take it its way). Each line is good, a warning or a red flag, with
 the number behind it, and the verdict sums them up. It never blocks the call: paper only, and
 the choice is yours.
 """
@@ -182,6 +183,8 @@ def pre_trade(
         with_news = a is not None and _direction(a) == ("up" if long else "down")
         tone = TONE[ps["trait"]] if with_news else "info"
         add("persona", "warn" if tone == "bad" else tone, f"{persona_line(ps)}: {TRAITS[ps['trait']][1]}")
+    if a is not None:  # what the playbook would do with this alert (autopilot.py, combos.py)
+        _playbook(a, long, add)
     _concentration(engine, device, sym, long, add)
     from .risk import desk_risk
 
@@ -196,6 +199,42 @@ def pre_trade(
     verdict = "think twice" if bad else "caution" if warn >= 2 else "go"
     return {"symbol": sym, "direction": side, "verdict": verdict, "checks": checks,
             "good": sum(c["tone"] == "good" for c in checks), "warn": warn, "bad": bad}  # fmt: skip
+
+
+def _playbook(a: dict[str, Any], long: bool, add: Any) -> None:
+    """The playbook's view: it passes (and why), it waits for its way in, or it takes it its way."""
+    from .autopilot import playbook_in, playbook_out, playbook_pass
+    from .combos import DEFAULT, NAMES
+    from .dossier import _direction
+
+    cr = (a.get("edge") or {}).get("combo_rec") or {}
+    why = playbook_pass(a)
+    if why:
+        add("playbook", "bad", f"The playbook passes on this one: {why}")
+        return
+    if not cr.get("best"):
+        return
+    if _direction(a) != ("up" if long else "down"):
+        add("playbook", "warn", "Against its news: the playbook only trades news its own way")
+        return
+    pin, pout = playbook_in(a), playbook_out(a)
+    pair = f"{pin}|{pout}"
+    styles = cr.get("styles") or {}
+    rec = styles.get(cr["best"]) or {}
+    plain = (styles.get(DEFAULT) or {}).get("avg")
+    name = NAMES.get(pair, pair).lower()
+    avg = f" ({rec['avg']:+.1f}% on average, {rec.get('n', '?')})" if rec.get("avg") is not None else ""
+    if pin != "alert":
+        add(
+            "playbook",
+            "warn",
+            f"The playbook waits: {name}{avg}"
+            + (f"; in now and out at the close made {plain:+.1f}%" if plain is not None else ""),
+        )
+    elif pout != "close":
+        add("playbook", "good", f"The playbook takes it, {name}{avg}: mind the exit")
+    else:
+        add("playbook", "good", f"The playbook takes it the plain way{avg}")
 
 
 def _concentration(engine: Engine, device: str, sym: str, long: bool, add: Any) -> None:

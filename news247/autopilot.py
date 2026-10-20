@@ -184,6 +184,8 @@ def playbook_pass(alert: dict[str, Any]) -> str:
     if cr.get("drift"):
         d = cr["drift"]
         return f"its kind is drifting: the last {d['n']} live alerts made {d['live']:+.1f}% against {d['promised']:+.1f}% promised"
+    if (e.get("liq") or {}).get("pass"):
+        return e["liq"]["why"]  # thin names here don't pay even 5 minutes late (liquidity.py)
     ps = e.get("persona") or {}
     if ps.get("trait") == "fights":
         return f"this stock fights its news here ({round((ps.get('hit') or 0) * 100)}% of its {ps.get('n')} alerts went their way)"

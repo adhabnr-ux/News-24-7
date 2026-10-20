@@ -797,7 +797,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadTrack(); loadPromises(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadTrack(); loadPromises(); loadLiquidity(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -941,6 +941,7 @@ async function openSheet(id) {
     e.combo_rec && e.combo_rec.styles && e.combo_rec.styles[e.combo_rec.best] ? `<div class="kv clim"><span class="pos">🧭 The playbook for ${esc(e.combo_rec.label.toLowerCase())} news here, in and out together: <b>${esc((e.combo_rec.name || COMBO_NAMES[e.combo_rec.best] || e.combo_rec.best).toLowerCase())}</b> (${pct(e.combo_rec.styles[e.combo_rec.best].avg)} on average, ${Math.round(e.combo_rec.styles[e.combo_rec.best].hit * 100)}% its way, ${e.combo_rec.styles[e.combo_rec.best].n}${e.combo_rec.styles[e.combo_rec.best].lo != null ? `; likely ${pct(e.combo_rec.styles[e.combo_rec.best].lo)} to ${pct(e.combo_rec.styles[e.combo_rec.best].hi)}` : ""})${e.combo_rec.proven === false ? ` <span class="sub">· unproven: the plain way's average is inside its range</span>` : ""}${e.combo_rec.smooth ? ` <span class="sub">· it takes the smoother way: ${esc((COMBO_NAMES[e.combo_rec.smooth.pair] || e.combo_rec.smooth.out).toLowerCase())}, ${pct(e.combo_rec.smooth.avg)} with ${Math.round((1 - e.combo_rec.smooth.sd / e.combo_rec.smooth.best_sd) * 100)}% less swing</span>` : ""}${e.combo_rec.late ? ` <span class="sub ${e.combo_rec.late.fast ? "neg" : ""}">· 5 minutes late ${pct(e.combo_rec.late.avg)} (${e.combo_rec.late.n})${e.combo_rec.late.fast ? ": too fast to trade by hand" : ""}</span>` : ""}${e.combo_rec.best !== "alert|close" && e.combo_rec.styles["alert|close"] ? `; the plain way ${pct(e.combo_rec.styles["alert|close"].avg)}` : ""}${e.combo_rec.check ? ` · <span class="sub">${e.combo_rec.held === false ? "✗" : e.combo_rec.held ? "✓" : "…"} ${esc(e.combo_rec.check)}</span>` : ""}</span></div>` : "",
     e.denies ? `<div class="kv clim"><span class="neg">⚠ ${esc(e.denies.line)}</span></div>` : "",
     e.denied ? `<div class="kv clim"><span class="neg">⚠ Denied since: “${esc(e.denied.title)}”</span></div>` : "",
+    e.liq && e.liq.pass ? `<div class="kv clim"><span class="neg">💧 ${esc(e.liq.why[0].toUpperCase() + e.liq.why.slice(1))}: the playbook sits it out</span></div>` : "",
     e.crowd && e.crowd.line ? `<div class="kv clim"><span class="${e.crowd.rec && e.crowd.rec.here.hit < e.crowd.rec.first.hit ? "neg" : ""}">👥 ${esc(e.crowd.line)}</span></div>` : "",
     e.repeat ? `<div class="kv clim"><span class="${e.repeat.rec && e.repeat.rec.repeat && e.repeat.rec.first && e.repeat.rec.repeat.hit < e.repeat.rec.first.hit ? "neg" : ""}">🔁 ${esc(e.repeat.line)}<div class="sub">Before it: ${esc(e.repeat.prev_title)}</div></span></div>` : "",
     e.stop_rec ? `<div class="kv clim"><span class="pos">🛑 Stop ${esc(e.stop_rec.label.toLowerCase())} news here: <b>${e.stop_rec.best === "none" ? "no stop (out at the close)" : e.stop_rec.width ? `${e.stop_rec.width.toFixed(1)}% from the entry` : "at the plan's stop"}</b> (${pct(e.stop_rec.styles[e.stop_rec.best].avg)} on average, ${e.stop_rec.styles[e.stop_rec.best].n})${e.stop_rec.best !== "none" && e.stop_rec.styles.none ? `; no stop ${pct(e.stop_rec.styles.none.avg)}` : ""}${e.stop_rec.styles.w1 && e.stop_rec.best !== "w1" && e.stop_rec.styles.w1.shaken != null ? `; a 1% stop shook out ${Math.round(e.stop_rec.styles.w1.shaken * 100)}% of the calls it cut` : ""}${e.stop_rec.check ? ` · <span class="sub">${e.stop_rec.held === false ? "✗" : e.stop_rec.held ? "✓" : "…"} ${esc(e.stop_rec.check)}</span>` : ""}</span></div>` : "",
@@ -1144,6 +1145,17 @@ async function loadExitsKind() {
     + `<div class="sub" style="padding:4px 0 12px">The same alerts, exited five ways from the alert price: an hour in, at the close, the next day, five sessions on, and the plan's bracket (its stop or target, whichever came first; the stop when both did the same day, else the close). The best is the one with the best average (${r.need}+ graded).</div>`;
 }
 let COMBO_NAMES = {};
+// liquidity bands (Watch): where the paper edge is a tradeable edge
+async function loadLiquidity() {
+  let r;
+  try { r = await api("/api/liquidity"); } catch (_) { return; }
+  $("lqWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const st = (s) => s ? `<span class="${cls(s.avg)}">${pct(s.avg)}</span> <span class="sub">${s.n}</span>` : "—";
+  $("lqBoard").innerHTML = `<div class="kv head"><span>Dollar volume</span><b>plain · 5 min late · playbook</b></div>`
+    + r.rows.map((x) => `<div class="kv"><span>${esc(x.label)}${x.untradeable ? `<div class="sub neg">paper fills only: the playbook sits thin stocks out</div>` : ""}</span><b class="num">${st(x.plain)} · ${st(x.late)} · ${st(x.playbook)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Each alert carries its stock's dollar volume when it went out. A paper call fills at the alert price; in a thin stock, nobody's does. <i>5 min late</i>: the same alerts from where the stock stood 5 minutes in: the tradeability test. When thin stocks lost even 5 minutes late on ${r.need}+ graded, the playbook sits them out.</div>`;
+}
 // the playbook's track record (Watch): every stamped alert, the playbook's way against the plain way
 async function loadTrack() {
   let r;

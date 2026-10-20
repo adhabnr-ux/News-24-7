@@ -520,6 +520,17 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - the plain way (in at the alert, out at the close).
 
   With them come the totals, the average per alert, how often each went its way, how many it took, and the playbook's worst drawdown: *"Since 2026-09-20, on 214 alerts: the playbook +38.1% in all (+0.18% an alert), the plain way +12.4% (+0.06%); its worst drawdown -6.2%."* It runs whether or not anyone follows the playbook. `GET /api/playbook-curve`.
+- **The playbook in the pre-trade check:** just before you track a call from an alert, the check now adds the playbook's view, at the moment of decision:
+  - *"The playbook passes on this one: …"* (red), with its reason: the kind doesn't pay here, the stock fights its news, the kind is drifting, it's a thin stock;
+  - *"The playbook waits: on the second leg, out at the close (+1.4% on average, 20); in now and out at the close made +0.6%"* (caution);
+  - *"The playbook takes it, at the alert, out the next day (+1.4% on average, 20): mind the exit"* (good);
+  - against the alert's own direction, it says the playbook only trades news its own way.
+- **Liquidity bands:** a paper call fills at the alert price. In a stock trading $50M a day, that's roughly what a person gets; in one trading $500K, it isn't. Each alert now carries its stock's dollar volume when it went out: **thin** (under $2M a day), **light** ($2M-20M), **liquid** ($20M-200M) or **deep** ($200M+). Per band, the record grades:
+  - the plain way;
+  - the same alerts **5 minutes late** (the tradeability test);
+  - the playbook's own way.
+
+  When thin stocks lost even 5 minutes late on 15+ graded, their paper edge is a fill nobody gets. The playbook then sits thin stocks out: the autopilot passes, the sheet and the board say why. The Watch tab's **Liquidity** board shows all four bands. `GET /api/liquidity`.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.
