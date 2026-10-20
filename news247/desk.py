@@ -118,6 +118,7 @@ def default_profile() -> dict[str, Any]:
             "earn_remind": True,  # a push before a watched stock reports
             "open_plan": True,  # the 9:20 ET open plan
             "week": True,  # Friday's "your week"
+            "learned": True,  # Friday's "what the record learned this week"
             "skip_fades": False,  # don't push alert groups whose base rate says they fade
             "auto_move": 0,  # %: a "moves ±N% on the day" price alert for every stock added (0 = off)
             "forward": None,  # this phone's own copy: {"kind": "discord"|"telegram"|"ntfy", ...}
@@ -725,6 +726,7 @@ class Desk:
                 "earn_remind",
                 "open_plan",
                 "week",
+                "learned",
                 "skip_fades",
                 "close_recap",
                 "tomorrow",
@@ -1507,6 +1509,7 @@ class Desk:
                     "earn_remind",
                     "open_plan",
                     "week",
+                    "learned",
                     "skip_fades",
                     "close_recap",
                     "tomorrow",

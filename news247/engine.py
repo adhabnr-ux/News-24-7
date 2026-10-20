@@ -283,6 +283,8 @@ class Engine:
         self.entry_rates: dict[str, Any] = {}  # every entry style per kind of news, side by side (entries.py)
         self.tape_rates: dict[str, Any] = {}  # cold, normal and hot tapes: the rest of the day (tapeday.py)
         self.exit_rates: dict[str, Any] = {}  # every exit per kind of news, side by side (exits_kind.py)
+        # every stop per kind of news, side by side (stops_kind.py)
+        self.stop_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2032,6 +2034,10 @@ class Engine:
             if xr and xr.get("best"):  # how to exit its kind of news here (exits_kind.py)
                 alert.edge["exit_rec"] = {"kind": ek, "label": xr["label"], "best": xr["best"], "n": xr["n"],
                                           "styles": {s: xr["styles"][s] for s in (xr["best"], "close") if s in xr["styles"]}}  # fmt: skip
+            sr = self.stop_rates.get(ek) if ek else None
+            if sr and sr.get("best"):  # where its kind of news puts the stop here (stops_kind.py)
+                alert.edge["stop_rec"] = {"kind": ek, "label": sr["label"], "best": sr["best"], "width": sr.get("width"), "n": sr["n"],
+                                           "styles": {s: sr["styles"][s] for s in (sr["best"], "none", "w1") if s in sr["styles"]}}  # fmt: skip
             er = self.entry_rates.get(ek) if ek else None
             if er and er.get("best"):  # how to enter its kind of news here (entries.py)
                 alert.edge["entry_rec"] = {"kind": ek, "label": er["label"], "best": er["best"], "n": er["n"],
@@ -2751,6 +2757,8 @@ class Engine:
                 if self._week_due(now):
                     with contextlib.suppress(Exception):
                         await self.send_week_cards(now)
+                    with contextlib.suppress(Exception):
+                        await self.send_learned(now)
                 with contextlib.suppress(Exception):
                     await self.send_open_plans(now)
                 with contextlib.suppress(Exception):
@@ -2891,14 +2899,19 @@ class Engine:
         if not plan.get("ok"):
             return 0
         direction = "long" if plan["direction"] == "up" else "short"
-        exit_key, levels = rule["exit"], True
+        exit_key, levels, pb_stop = rule["exit"], True, None
         if rule.get("follow") == "playbook":  # out its kind's best way: a time exit, or the plan's bracket
             from .autopilot import playbook_exit
 
             exit_key, levels = playbook_exit(alert)
+            sr = (alert.get("edge") or {}).get("stop_rec") or {}
+            if not levels and sr.get("width"):  # its kind's best stop from the record (stops_kind.py)
+                from .stops_kind import stop_price
+
+                pb_stop = stop_price(plan["entry"], direction, sr["width"])
         try:
             self.desk.apply(dev, "track_add", {"symbol": plan["symbol"], "direction": direction, "alert_id": alert["id"],
-                                               "stop": plan["stop"] if levels else None, "target": plan["target"] if levels else None,
+                                               "stop": plan["stop"] if levels else pb_stop, "target": plan["target"] if levels else None,
                                                "entry": plan["entry"], "note": f"#autopilot {rule['label']}"[:200]}, self.price_of)  # fmt: skip
         except ValueError:
             return 0
@@ -2906,7 +2919,8 @@ class Engine:
         t["auto"], t["exit_at"] = rule["id"], exit_time(exit_key, now, self.calendar)
         self.desk.save(dev)
         payload = {"id": f"ap-{t['id']}", "title": f"🤖 Autopilot: {direction} {plan['symbol']} at ${plan['entry']:,.2f}{how}",
-                   "body": f"{alert.get('title', '')[:120]}\nStop ${plan['stop']:,.2f} · target ${plan['target']:,.2f} · {rule['label']}",
+                   "body": f"{alert.get('title', '')[:120]}\n" + (f"Stop ${t['stop']:,.2f}" if t.get("stop") else "No stop")
+                   + (f" · target ${t['target']:,.2f}" if t.get("target") else "") + f" · {rule['label']}",
                    "severity": "HIGH", "kind": "system", "tickers": [plan["symbol"]], "tag": f"ap-{t['id']}",
                    "ts": now, "open": f"/app/#t={plan['symbol']}"}  # fmt: skip
         await self._to_device(dev, payload, urgency="normal")
@@ -3905,6 +3919,25 @@ class Engine:
                 sent += 1
         return sent
 
+    async def send_learned(self, now: float | None = None) -> int:
+        """Friday's "what the record learned this week": the verdicts that changed since a week ago."""
+        from .learned import learned, push
+
+        now = now or time.time()
+        if self.webpush is None or self.dispatcher.paused:
+            return 0
+        payload = push(learned(self, now), now)
+        if not payload:
+            return 0
+        sent = 0
+        for device in {s.device for s in self.webpush.subs.values() if s.device}:  # type: ignore[attr-defined]
+            prof = self.desk.profiles.get(device) or {}  # server-wide news: no profile needed
+            if not (prof.get("prefs") or {}).get("learned", True):
+                continue
+            if await self._to_device(device, dict(payload), urgency="normal"):
+                sent += 1
+        return sent
+
     async def send_digests(self, now: float | None = None) -> int:
         """Phones in digest mode: what was held since the last one, in one push."""
         now = now or time.time()
@@ -4057,6 +4090,11 @@ class Engine:
                 bits.append(f"in {IN_STYLES[e['entry_rec']['best']].lower()}")
             if (e.get("exit_rec") or {}).get("best"):
                 bits.append(f"out {OUT_STYLES[e['exit_rec']['best']].lower()}")
+            sr = e.get("stop_rec") or {}
+            if sr.get("best") == "none":
+                bits.append("no stop")
+            elif sr.get("width"):
+                bits.append(f"stop {sr['width']:.1f}%")
             if (e.get("float") or {}).get("fband") == "tiny":
                 bits.append("tiny float")
             if (e.get("dilution") or {}).get("state") == "selling":
@@ -4318,6 +4356,13 @@ class Engine:
         from .exits_kind import exit_rates
 
         self.exit_rates = exit_rates(self, 180, now)
+        from .stops_kind import stop_rates
+
+        self.stop_rates = stop_rates(self, 180, now)
+        with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
+            from .learned import save_snapshot
+
+            save_snapshot(self, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

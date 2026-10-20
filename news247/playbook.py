@@ -140,6 +140,13 @@ def playbook(engine: Engine, key: str, now: float | None = None) -> dict[str, An
 
         out["exits"] = {**ex, "names": EXIT_STYLES}
         rules.append(exit_line(ex))
+    so = _get(engine, "stop_rates").get(key)
+    if so and so.get("best"):
+        from .stops_kind import STYLES as STOP_STYLES
+        from .stops_kind import stop_line
+
+        out["stops"] = {**so, "names": STOP_STYLES}
+        rules.append(stop_line(so))
     cl = _get(engine, "climate_rates").get(key)
     if cl and cl.get("recent"):
         out["climate"] = cl

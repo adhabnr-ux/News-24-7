@@ -390,6 +390,26 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
 
   It's exited the way its kind exits best: an hour in, at the close, the next day, five sessions on, or the plan's bracket (only the bracket carries the plan's stop and target, as its record was graded that way). It's a forward test of the whole learning system, with its own record and equity curve; *"🤖 Follow the playbook on paper"* on the entries board turns it on.
 - **The morning game plan:** the 9:20 push now gives each of your pre-market gappers its kind's best way in and out, with its float and dilution flags (*"ACME +6.0% on its news · … · in on the second leg, out the next day, tiny float, ⚠ selling shares"*), and says when yesterday's tape was cold or hot.
+- **Where to put the stop for each kind of news:** the piece between the entries and the exits. Each graded alert kept its worst dip, its way, until its session's close, so any stop can be replayed on it from the alert price:
+  - no stop (out at the close);
+  - 1%, 2%, 3% and 5%;
+  - the record's stop: just past where 80% of its kind's winners bottomed (the playbook's heat rule);
+  - the plan's own stop.
+
+  A stop that was reached fills at its price, before any gain that day (the conservative read). Per kind of news, the best stop is the one with the best average (8+ graded). Two numbers price the trade-off each stop makes: how often it **cut** the call, and how many of those it **shook out** (the stock finished the day its way anyway). For example: *"🛑 Stop contract win news here: 2.0% from the entry (+0.7% on average, 12); no stop -0.7%; a 1% stop shook out 67% of the calls it cut"*.
+
+  It's on every alert's sheet, each playbook (as a rule of thumb) and the Watch tab's **Where to put the stop** board. The playbook autopilot now uses it: a call on a time exit carries its kind's stop, while the plan's bracket keeps the plan's stop and target. The 9:20 game plan names it too (*"in at the open, out the next day, stop 3.0%"*). `GET /api/stops-kind`.
+- **What the record learned this week:** the records re-fit every hour, so a playbook can change without anyone noticing. Each day the desk now keeps a snapshot of its verdicts:
+  - per kind of news: its best way in, way out and stop, and how often it went its way by the close;
+  - per signal: its grade.
+
+  The Watch tab's **What the record learned this week** compares today's verdicts with the snapshot from a week ago:
+  - new kinds of news on the record, with their whole playbook;
+  - new best entries, exits and stops (*"Contract win: exit the next day now (+1.1% on average), was at the close"*);
+  - odds that moved 8+ points on 15+ graded;
+  - signals that changed grade.
+
+  Every Friday a push says it in four lines. Settings → *What the record learned, Friday* turns it off. `GET /api/learned`.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

@@ -797,7 +797,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadEntries(); loadExitsKind(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -938,6 +938,7 @@ async function openSheet(id) {
       <div class="sub" style="padding:4px 0 12px">Minutes from the story's first headline, from any outlet, to the one this alert came from. By then part of the market had it. History, not a forecast.</div></div>` : "",
     e.float ? `<div class="kv clim"><span class="${e.float_base ? (e.float_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">🧮 Float ${fmtShares(e.float.float)}${e.float.short != null ? ` · ${Math.round(e.float.short * 100)}% short` : ""}${e.float_base ? `: ${esc(e.float_base.label[0].toLowerCase() + e.float_base.label.slice(1))} went its way ${Math.round(e.float_base.hit * 100)}% by the close (median ${pct(e.float_base.median)}${e.float_base.run != null ? `, winners ran ${pct(e.float_base.run)}` : ""}, ${e.float_base.n})` : ""}</span></div>` : "",
     e.exit_rec ? `<div class="kv clim"><span class="pos">🚪 Exit ${esc(e.exit_rec.label.toLowerCase())} news here: <b>${esc((EXIT_NAMES[e.exit_rec.best] || e.exit_rec.best).toLowerCase())}</b> (${pct(e.exit_rec.styles[e.exit_rec.best].avg)} on average, ${Math.round(e.exit_rec.styles[e.exit_rec.best].hit * 100)}% its way, ${e.exit_rec.styles[e.exit_rec.best].n})${e.exit_rec.best !== "close" && e.exit_rec.styles.close ? `; at the close ${pct(e.exit_rec.styles.close.avg)}` : ""}</span></div>` : "",
+    e.stop_rec ? `<div class="kv clim"><span class="pos">🛑 Stop ${esc(e.stop_rec.label.toLowerCase())} news here: <b>${e.stop_rec.best === "none" ? "no stop (out at the close)" : e.stop_rec.width ? `${e.stop_rec.width.toFixed(1)}% from the entry` : "at the plan's stop"}</b> (${pct(e.stop_rec.styles[e.stop_rec.best].avg)} on average, ${e.stop_rec.styles[e.stop_rec.best].n})${e.stop_rec.best !== "none" && e.stop_rec.styles.none ? `; no stop ${pct(e.stop_rec.styles.none.avg)}` : ""}${e.stop_rec.styles.w1 && e.stop_rec.best !== "w1" && e.stop_rec.styles.w1.shaken != null ? `; a 1% stop shook out ${Math.round(e.stop_rec.styles.w1.shaken * 100)}% of the calls it cut` : ""}</span></div>` : "",
     e.entry_rec ? `<div class="kv clim"><span class="pos">🎯 How to enter ${esc(e.entry_rec.label.toLowerCase())} news here: <b>${esc((ENTRY_NAMES[e.entry_rec.best] || e.entry_rec.best).toLowerCase())}</b> (${pct(e.entry_rec.styles[e.entry_rec.best].avg)} on average from the entry, ${Math.round(e.entry_rec.styles[e.entry_rec.best].hit * 100)}% its way, ${e.entry_rec.styles[e.entry_rec.best].n} of ${e.entry_rec.n})${e.entry_rec.best !== "alert" && e.entry_rec.styles.alert ? `; at the alert ${pct(e.entry_rec.styles.alert.avg)}` : ""}</span></div>` : "",
     e.rvol ? `<div class="kv clim"><span class="${e.rvol_base ? (e.rvol_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">📊 Volume ${e.rvol.r0 != null ? `${e.rvol.r0}x normal at the alert` : ""}${e.rvol.r15 != null ? `${e.rvol.r0 != null ? ", " : ""}${e.rvol.r15}x 15 minutes in` : ""}${e.rvol_base ? `: ${esc(e.rvol_base.label[0].toLowerCase() + e.rvol_base.label.slice(1))} went its way ${Math.round(e.rvol_base.hit * 100)}% (${e.rvol_base.n})` : ""}</span></div>` : "",
     e.theme_rec ? `<div class="kv clim" id="bookTheme" data-id="${esc(a.id)}"></div>` : "",
@@ -1136,6 +1137,30 @@ async function loadExitsKind() {
     + r.rows.map((x) => { const b = x.best ? x.styles[x.best] : null, c = x.styles.close;
       return `<div class="kv"><span>${esc(x.label)} <span class="sub">${x.n}</span><div class="sub">${Object.entries(x.styles).filter(([, s]) => s.n >= r.need).map(([k, s]) => `${esc(EXIT_NAMES[k])} ${pct(s.avg)}`).join(" · ")}</div></span><b class="num">${b ? `${esc(EXIT_NAMES[x.best])}<br><span class="${cls(b.avg)}">${pct(b.avg)}</span> <span class="sub">${Math.round(b.hit * 100)}%</span>${c && x.best !== "close" ? `<br><span class="sub">close ${pct(c.avg)}</span>` : ""}` : "—"}</b></div>`; }).join("")
     + `<div class="sub" style="padding:4px 0 12px">The same alerts, exited five ways from the alert price: an hour in, at the close, the next day, five sessions on, and the plan's bracket (its stop or target, whichever came first; the stop when both did the same day, else the close). The best is the one with the best average (${r.need}+ graded).</div>`;
+}
+const STOP_NAMES = { none: "No stop", w1: "1%", w2: "2%", w3: "3%", w5: "5%", heat: "The record's stop", plan: "The plan's stop" };
+// where to put the stop for each kind of news (Watch): every stop, priced side by side
+async function loadStopsKind() {
+  let r;
+  try { r = await api("/api/stops-kind"); } catch (_) { return; }
+  $("soWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  $("soBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>best stop · average · stopped · shaken out</b></div>`
+    + r.rows.map((x) => { const b = x.best ? x.styles[x.best] : null, n = x.styles.none;
+      const name = x.best === "heat" && x.width ? `${x.width.toFixed(1)}% (the record's)` : STOP_NAMES[x.best] || "—";
+      return `<div class="kv"><span>${esc(x.label)} <span class="sub">${x.n}</span><div class="sub">${Object.entries(x.styles).filter(([, s]) => s.n >= r.need).map(([k, s]) => `${esc(STOP_NAMES[k])} ${pct(s.avg)}${s.stopped ? ` (${Math.round(s.stopped * 100)}% cut${s.shaken != null ? `, ${Math.round(s.shaken * 100)}% of them shaken out` : ""})` : ""}`).join(" · ")}</div></span><b class="num">${b ? `${esc(name)}<br><span class="${cls(b.avg)}">${pct(b.avg)}</span>${x.best !== "none" ? ` <span class="sub">${Math.round(b.stopped * 100)}% cut</span>` : ""}${n && x.best !== "none" ? `<br><span class="sub">no stop ${pct(n.avg)}</span>` : ""}` : "—"}</b></div>`; }).join("")
+    + `<div class="sub" style="padding:4px 0 12px">The same alerts, replayed with every stop from the alert price: none (out at the close), 1%, 2%, 3%, 5%, the record's stop (just past where 80% of the kind's winners bottomed) and the plan's own. A stop that was reached fills at its price, before any gain that day. <i>Shaken out</i>: the calls a stop cut that finished the day their way anyway. The best is the one with the best average (${r.need}+ graded).</div>`;
+}
+// what the record learned this week (Watch): the verdicts that changed since a week ago
+async function loadLearned() {
+  let r;
+  try { r = await api("/api/learned"); } catch (_) { return; }
+  $("lwWrap").hidden = !r.since;
+  if (!r.since) return;
+  const icon = { new: "🆕", entry: "🎯", exit: "🚪", stop: "🛑", odds: "📈", signal: "📡" };
+  $("lwBoard").innerHTML = (r.items.length ? r.items.map((x) => `<div class="kv"><span>${icon[x.what] || "•"} ${esc(x.text)}</span></div>`).join("")
+    : `<div class="kv"><span class="sub">No verdict changed since ${esc(r.since)}: the playbooks stand.</span></div>`)
+    + `<div class="sub" style="padding:4px 0 12px">Compared with the record as it stood on ${esc(r.since)}: new kinds of news on the record, new best ways in and out, new stops, odds that moved 8+ points on 15+ graded, and signals that changed grade. A push says it every Friday.</div>`;
 }
 // your reaction time (Desk): from the push to your paper call, and what the wait cost
 async function loadReaction() {
@@ -1742,6 +1767,7 @@ function renderDesk() {
     <div class="kv"><span>Earnings-day reminders<div class="sub">before a stock you watch reports: what options price, its usual move</div></span><b><button class="btn ghost small${pr.earn_remind !== false ? " sel" : ""}" data-act="flag" data-s="earn_remind">${pr.earn_remind !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The open plan, 9:20 ET<div class="sub">your stocks pre-market, the top gappers and why, today's timed events</div></span><b><button class="btn ghost small${pr.open_plan !== false ? " sel" : ""}" data-act="flag" data-s="open_plan">${pr.open_plan !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Your week, Friday 16:30 ET<div class="sub">your calls, how the alerts on your stocks did, next week's reports and big dates</div></span><b><button class="btn ghost small${pr.week !== false ? " sel" : ""}" data-act="flag" data-s="week">${pr.week !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>What the record learned, Friday<div class="sub">the verdicts that changed this week: new ways in and out, new stops, odds and signals that moved</div></span><b><button class="btn ghost small${pr.learned !== false ? " sel" : ""}" data-act="flag" data-s="learned">${pr.learned !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>End-of-day report card<div class="sub">16:05 ET: your watchlist's day, your calls, what fired, how the alerts did</div></span><b><button class="btn ghost small${pr.eod !== false ? " sel" : ""}" data-act="eod">${pr.eod !== false ? "On" : "Off"}</button></b></div>
     <div class="sub" style="padding-top:8px">Focus: only CRITICAL comes through${desk.focus ? ` · <span class="gold">on until ${new Date(desk.focus * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>` : ""}</div>
     <div class="row" style="padding:10px 0 4px"><button class="btn ghost small" data-act="focus" data-m="60">1 hour</button><button class="btn ghost small" data-act="focus" data-m="180">3 hours</button><button class="btn ghost small" data-act="focus" data-u="open">Until the open</button>${desk.focus ? `<button class="btn ghost small sel" data-act="focus" data-m="0">End focus</button>` : ""}</div>
@@ -3557,6 +3583,7 @@ function route() {
   if (!m) return;
   if (m[1] === "brief") return go("brief");
   if (m[1] === "desk") return go("desk");
+  if (m[1] === "learned") { go("watch"); setTimeout(() => $("lwWrap")?.scrollIntoView({ behavior: "smooth", block: "start" }), 600); return; }
   if (m[1] !== "test") openSheet(m[1]);
 }
 addEventListener("hashchange", route);

@@ -195,6 +195,8 @@ class WebServer:
         app.router.add_get("/api/signals", self.api_signals)
         app.router.add_get("/api/entries", self.api_entries)
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
+        app.router.add_get("/api/stops-kind", self.api_stops_kind)
+        app.router.add_get("/api/learned", self.api_learned)
         app.router.add_get("/api/reaction", self.api_reaction)
         app.router.add_post("/api/track-alert", self.api_track_alert)
         app.router.add_get("/api/tape", self.api_tape)
@@ -1323,6 +1325,18 @@ class WebServer:
         from ..exits_kind import board
 
         return _json(board(self.engine.exit_rates))
+
+    async def api_stops_kind(self, request: web.Request) -> web.Response:
+        """Every stop per kind of news, priced side by side (stops_kind.py)."""
+        from ..stops_kind import board
+
+        return _json(board(self.engine.stop_rates))
+
+    async def api_learned(self, request: web.Request) -> web.Response:
+        """The verdicts the record changed since a week ago (learned.py)."""
+        from ..learned import learned
+
+        return _json(learned(self.engine))
 
     async def api_reaction(self, request: web.Request) -> web.Response:
         """This phone's delay from push to paper call, and what it costs (reaction.py)."""
