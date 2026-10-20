@@ -262,6 +262,7 @@ class Engine:
         self.vol_rates: dict[str, Any] = {}  # options cheap or rich against the news, graded (volnews.py)
         self.call_muted: list[str] = []  # facts the replay shows sorting nothing (thecall.py)
         self.pair_rates: dict[str, Any] = {}  # who follows whose news, per pair (peerlearn.py)
+        self.wait_rates: dict[str, Any] = {}  # did waiting for the open or a pullback pay (waits.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -1894,6 +1895,11 @@ class Engine:
             if plan.get("ok"):  # the plan from the live price, for the push: stop, target, reward-to-risk
                 alert.edge["plan"] = {"dir": plan["direction"], "symbol": plan["symbol"], "entry": plan["entry"],
                                       "stop": plan["stop"], "target": plan["target"], "rr": plan["rr"]}  # fmt: skip
+                pt = plan.get("patient")
+                if pt:  # the patient entry, for the wait-for-a-pullback push and its grade (waits.py)
+                    alert.edge["plan"]["patient"] = {
+                        k: pt[k] for k in ("limit", "dip", "p_now", "p_filled") if k in pt
+                    }
             if alert.item is not None:
                 from .coverage import late_bin
                 from .coverage import read as read_coverage
@@ -2480,6 +2486,10 @@ class Engine:
                     from .peerlearn import grade as peers_grade
 
                     peers_grade(self, now)
+                with contextlib.suppress(Exception):
+                    from .waits import send_waits
+
+                    await send_waits(self, now)  # the wait is over: at the open, at the patient entry
                 if now - last_month >= 600:
                     last_month = now
                     with contextlib.suppress(Exception):
@@ -2496,6 +2506,10 @@ class Engine:
                             from .bars import fill as bars_fill
 
                             await bars_fill(self, now)  # the closes a sleeping server missed, from daily bars
+                        with contextlib.suppress(Exception):
+                            from .intrafill import fill as intra_fill
+
+                            await intra_fill(self, now)  # the minutes it missed, from one-minute bars
                     with contextlib.suppress(Exception):
                         from .coverage import stamp_coverage
 
@@ -3997,6 +4011,9 @@ class Engine:
         from .peerlearn import pair_rates
 
         self.pair_rates = pair_rates(self, 180, now)
+        from .waits import wait_rates
+
+        self.wait_rates = wait_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

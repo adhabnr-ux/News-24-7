@@ -887,7 +887,9 @@ async function openSheet(id) {
     e.call ? `<div class="callbox v-${esc(e.call.verb)}"><div class="callhead">${CALL_ICON[e.call.verb] || ""} The call: <b>${esc(e.call.label.toLowerCase())}</b></div>
       <div class="sub">${esc(e.call.line.split(" · ").slice(1).join(" · "))}</div>
       ${(e.call.for || []).length ? `<div class="callrow pos">For: ${e.call.for.map(esc).join(" · ")}</div>` : ""}${(e.call.against || []).length ? `<div class="callrow neg">Against: ${e.call.against.map(esc).join(" · ")}</div>` : ""}
-      ${e.call.rec ? `<div class="sub" style="margin-top:6px">"${esc(e.call.label)}" calls here went their way ${Math.round(e.call.rec.hit * 100)}% by the close (median ${pct(e.call.rec.median)}, ${e.call.rec.n})</div>` : ""}</div>` : "",
+      ${e.call.rec ? `<div class="sub" style="margin-top:6px">"${esc(e.call.label)}" calls here went their way ${Math.round(e.call.rec.hit * 100)}% by the close (median ${pct(e.call.rec.median)}, ${e.call.rec.n})</div>` : ""}
+      ${e.call.verb === "wait" && e.plan?.patient && e.call.wait_for === "pullback" && !e.wait ? `<div class="sub" style="margin-top:6px">Waiting for ${fmtPx(e.plan.patient.limit)}, the patient entry (${pct(-e.plan.patient.dip)} from the alert): a push says when it's back there.</div>` : ""}
+      ${e.wait ? `<div class="callrow ${e.wait.for === "open" ? "" : "pos"}">⏰ The wait ended ${new Date(e.wait.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} at ${fmtPx(e.wait.px)}${e.wait.for === "open" ? ` (the open: ${pct(e.wait.its)} from the alert)` : " (back to the patient entry)"}</div>` : ""}</div>` : "",
     capBlock,
     rel.length ? `<h4>The headline behind it</h4><div class="panel glass">${rel.map((x) => `<div class="li"><div class="grow">
         <a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a>
@@ -1109,7 +1111,7 @@ async function loadAdvice() {
     + `<div class="sub" style="padding:4px 0 12px">Every panel's verdict on a setting, read together for this phone and ranked by how much evidence is behind it. Nothing changes until you tap; "Not now" hides one.</div>`;
 }
 // uptime and the record's coverage (Desk)
-const H_LABEL = { close: "That close", d1: "The next close", d5: "Five sessions on", d20: "A month on" };
+const H_LABEL = { h1: "An hour in", m15: "15 minutes in (the news clock)", open: "The first print (news before the bell)", heat: "Heat (best run, worst dip)", close: "That close", d1: "The next close", d5: "Five sessions on", d20: "A month on" };
 async function loadUptime() {
   let r;
   try { r = await api("/api/uptime"); } catch (_) { return; }
@@ -1118,10 +1120,10 @@ async function loadUptime() {
   if ($("dUpWrap").hidden) return;
   $("dUp").innerHTML = (L.awake != null ? `<div class="kv"><span>Awake in market hours <span class="sub">the last ${L.sessions} sessions, ${L.market_h} h</span></span><b class="num"><span class="${L.awake >= 0.98 ? "pos" : L.awake < 0.9 ? "neg" : "gold"}">${(L.awake * 100).toFixed(1)}%</span>${L.asleep_h ? ` <span class="sub">${L.asleep_h} h asleep</span>` : ""}</b></div>` : "")
     + L.outages.slice(0, 6).map((o) => `<div class="kv"><span class="sub">${new Date(o.from * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })} → ${new Date(o.to * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><b class="num neg">${Math.round(o.market_s / 60)} min of the session</b></div>`).join("")
-    + `<div class="kv head"><span>The record, graded</span><b>alerts due · graded · from daily bars</b></div>`
+    + `<div class="kv head"><span>The record, graded</span><b>alerts due · graded · filled from bars</b></div>`
     + C.horizons.map((h) => `<div class="kv"><span>${H_LABEL[h.horizon]}</span><b class="num">${h.share != null ? `<span class="${h.share >= 0.9 ? "pos" : h.share < 0.7 ? "neg" : "gold"}">${Math.round(h.share * 100)}%</span>` : "—"} <span class="sub">${h.graded} of ${h.due}${h.filled ? ` · ${h.filled} filled` : ""}</span></b></div>`).join("")
-    + `<div class="row" style="padding:6px 0"><button class="btn ghost small" data-act="bars-fill">Fill the gaps from daily bars now</button></div>`
-    + `<div class="sub" style="padding:4px 0 12px">The desk notes a heartbeat every minute; a gap in it during the session is time nothing was read, and a push says so on waking. Grades a sleeping server missed at a session's close are filled from the exchange's daily bars a few times an hour (marked as filled); the hour and minute checkpoints can't be.</div>`;
+    + `<div class="row" style="padding:6px 0"><button class="btn ghost small" data-act="bars-fill">Fill the gaps from bars now</button></div>`
+    + `<div class="sub" style="padding:4px 0 12px">The desk notes a heartbeat every minute; a gap in it during the session is time nothing was read, and a push says so on waking. Stamps a sleeping server missed are filled twice an hour from the exchange's bars, marked as filled: the closes from daily bars, and the minutes (the news clock, the hour, the first print, heat, each peer's hour and close) from one-minute bars, up to 25 days back.</div>`;
 }
 let lineR = null;
 // the alert line, tested (Desk): headlines that scored just under it, graded as if they'd gone out
@@ -1505,6 +1507,7 @@ function renderDesk() {
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Event day<div class="sub">the morning of an FDA decision or readout on your stock: both outcomes as they've traded here, what options price, what you hold</div></span><b><button class="btn ghost small${pr.event_day !== false ? " sel" : ""}" data-act="flag" data-s="event_day">${pr.event_day !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Into the close<div class="sub">15:40 ET: each open call, and whether alerts that stood the same at the close went on by the next one: hold or close, with report risk</div></span><b><button class="btn ghost small${pr.overnight !== false ? " sel" : ""}" data-act="flag" data-s="overnight">${pr.overnight !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>The wait is over<div class="sub">when the call said wait: at the open, where it opened and how news like it went on from there; at the patient entry, when the price comes back to it</div></span><b><button class="btn ghost small${pr.waits !== false ? " sel" : ""}" data-act="flag" data-s="waits">${pr.waits !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Drift check<div class="sub">five sessions after news on your stock: whether its kind of news kept drifting for a month here, or gave it back</div></span><b><button class="btn ghost small${pr.drift !== false ? " sel" : ""}" data-act="flag" data-s="drift">${pr.drift !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Confirmations<div class="sub">an alert on your stock holding up an hour in, when alerts like it finished their way 80%+ of the time</div></span><b><button class="btn ghost small${pr.confirm !== false ? " sel" : ""}" data-act="flag" data-s="confirm">${pr.confirm !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Divergence<div class="sub">a strong kind of news, and the stock going the other way 15-90 minutes later (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.diverge !== false ? " sel" : ""}" data-act="flag" data-s="diverge">${pr.diverge !== false ? "On" : "Off"}</button></b></div>
@@ -1842,6 +1845,17 @@ async function loadExits() {
     + r.rows.filter((x) => x.verdict).slice(0, 10).map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span>${x.direction === "long" ? "▲" : "▼"} ${esc(x.symbol)} <span class="${cls(x.pnl)}">${pct(x.pnl)}</span> <span class="sub">${ago(x.closed)} ago · ${esc(x.kind)}</span></span><b class="num"><span class="${EXIT_VERDICT[x.verdict][1]}">${EXIT_VERDICT[x.verdict][0]} ${pct(x.its[x.at])}</span> <span class="sub">${x.at === "d5" ? "5 sessions" : x.at === "d1" ? "next close" : "that close"}</span></b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Each closed call graded after the fact from its exit price, in the call's direction: + = it kept going your way after you left, − = it turned and the exit saved that. Older calls opened from an alert are graded from the alert's own closes. Paper only; history, not a forecast.</div>`;
 }
+// did waiting pay? each "wait" call graded against acting at the alert price, by the close (waits.py)
+const WAIT_LABEL = { open: "⏸ Waited for the open", pullback: "⏸ Waited for the pullback" };
+const WAIT_VERDICT = { paid: ["waiting paid", "pos"], cost: ["acting did better", "neg"], wash: ["about even", ""], thin: ["too few to judge", "faint"] };
+function waitsBlock(w) {
+  const rows = ["open", "pullback"].filter((k) => w && w[k]);
+  if (!rows.length) return "";
+  return `<div class="kv head"><span>Did waiting pay?</span><b>beat acting · on average</b></div>`
+    + rows.map((k) => { const x = w[k], v = WAIT_VERDICT[x.verdict];
+      return `<div class="kv"><span>${WAIT_LABEL[k]} <span class="chipv ${v[1]}">${v[0]}</span><div class="sub">${x.filled} of ${x.n} entered${x.missed ? `, ${x.missed} never came back to the level (they went ${pct(x.missed_act)} without you)` : ""}${x.wait_hit != null ? `; entered, ${Math.round(x.wait_hit * 100)}% went their way vs ${Math.round(x.act_hit * 100)}% from the alert` : ""}</div></span><b class="num"><span class="${x.paid >= 0.5 ? "pos" : "neg"}">${Math.round(x.paid * 100)}%</span> <span class="${cls(x.gain)}">${pct(x.gain)}</span> <span class="sub">${x.n}</span></b></div>`; }).join("")
+    + `<div class="sub" style="padding:2px 0 8px">Each wait against acting at the alert price, by the close, its way: the open means entering at the first print; the pullback, a limit at the patient entry (filled when the alert's worst dip reached it, and earning nothing when it didn't). When a wait ends, phones that got the alert, or watch, hold or have a call on the stock, get a push.</div>`;
+}
 // the call's own record: does "act now" beat "skip"?
 async function loadCallRecord() {
   let r;
@@ -1856,6 +1870,7 @@ async function loadCallRecord() {
       + rp.verbs.map((x) => `<div class="kv"><span>${x.icon} ${esc(x.label)} <span class="sub">vs every alert ${Math.round(rp.all.hit * 100)}%</span></span><b class="num">${cell(x)}</b></div>`).join("")
       + (rp.facts.length ? `<div class="kv head"><span>Which facts sorted winners from losers</span><b>for · against</b></div>`
         + rp.facts.map((f) => `<div class="kv"><span>${esc(f.label)}${f.sorts != null ? ` <span class="chipv ${f.sorts >= 0.1 ? "pos" : f.sorts <= 0 ? "neg" : ""}">${f.sorts >= 0 ? "+" : ""}${Math.round(f.sorts * 100)} pts</span>` : ""}${(r.muted || []).includes(f.key) ? ` <span class="chipv faint">muted</span>` : ""}</span><b class="num">${cell(f.for)}<br>${cell(f.against)}</b></div>`).join("") : "") : "")
+    + waitsBlock(r.waits)
     + `<div class="row" style="padding:8px 0 4px"><button class="btn ghost small" data-act="call-follow">🤖 Follow the call on paper</button></div>`
     + `<div class="sub" style="padding:4px 0 12px">Every alert gets one call from its records (odds, its kind, the stock, how fast that news plays out, the open, how late it was, the regime, the firm, the flow, the insider). Each is graded with its alert: if "act now" doesn't beat "skip", the rule is wrong, and this is where it shows. The replay runs the same rule on every graded alert from what it carried when it went out (older alerts had fewer facts); a fact that sorts well puts more of its "for" alerts than its "against" alerts on the right side. A fact that sorts nothing (20+ alerts each way) is muted: it stops counting in the call until it sorts again. Set the push bar to "the call: act or wait" under Settings.</div>`;
 }
@@ -2602,7 +2617,7 @@ async function onAct(el) {
     } catch (err) { toast(String(err.message || err)); }
   }
   else if (a === "advice-skip") { const x = adviceR?.items?.[+el.dataset.n]; if (x && await deskEdit("advice_dismiss", { key: x.key })) loadAdvice(); }
-  else if (a === "bars-fill") { toast("Reading daily bars…"); try { const r = await api("/api/bars/fill", { method: "POST", body: "{}" }); toast(r.filled ? `Filled ${r.filled} grade${r.filled === 1 ? "" : "s"} from daily bars` : "Nothing to fill"); loadUptime(); } catch (err) { toast(String(err.message || err)); } }
+  else if (a === "bars-fill") { toast("Reading the exchange's bars…"); try { const r = await api("/api/bars/fill", { method: "POST", body: "{}" }); toast(r.filled ? `Filled ${r.filled} stamp${r.filled === 1 ? "" : "s"}: ${r.daily || 0} from daily bars, ${r.minutes || 0} from minute bars` : "Nothing to fill"); loadUptime(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-set") { if (!confirm(`Lower the alert line from ${lineR?.line} to ${s} for every phone? Headlines scoring ${s}+ become alerts. You can put it back any time.`)) return; try { await api("/api/line", { method: "POST", body: JSON.stringify({ medium: +s, why: lineR?.line_text || "" }) }); toast(`The alert line is ${s} now`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-reset") { try { const r = await api("/api/line", { method: "POST", body: JSON.stringify({ reset: true }) }); toast(`The alert line is back to ${r.line}`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "call-follow") { if (await deskEdit("autopilot_add", { follow: "call", catalyst: "all", band: "all", min_sev: "HIGH", exit: "close" })) { toast("🤖 Following the call: act-now calls open a paper call at once, wait-for-the-open calls at the open", null, 6000); renderAutopilots(); } }

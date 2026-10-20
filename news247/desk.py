@@ -141,6 +141,7 @@ def default_profile() -> dict[str, Any]:
             "event_day": True,  # the morning of an FDA decision or readout on your stock: both branches
             "drift": True,  # five sessions after news on your stock: whether its kind kept drifting for a month
             "overnight": True,  # 15:40 ET: hold each open call into tomorrow, or close it (overnight.py)
+            "waits": True,  # the wait is over: at the open, at the patient entry (waits.py)
         },
         "price_alerts": [],
         "tracked": [],
@@ -729,6 +730,7 @@ class Desk:
                 "event_day",
                 "drift",
                 "overnight",
+                "waits",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1489,6 +1491,7 @@ class Desk:
                     "event_day",
                     "drift",
                     "overnight",
+                    "waits",
                     "watch_push",
                     "min_sev",
                     "digest",

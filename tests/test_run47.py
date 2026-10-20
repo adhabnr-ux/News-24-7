@@ -194,7 +194,11 @@ async def test_run47_over_the_api(tmp_path, monkeypatch):
     async def fake(engine, sym, first, last):
         return {}
 
+    async def no_minutes(engine, sym, start, end):
+        return []
+
     monkeypatch.setattr(bars, "fetch", fake)
+    monkeypatch.setattr("news247.intrafill.fetch", no_minutes)
     await eng.http.start()
     srv = TestServer(WebServer(eng, eng.cfg.web).app)
     await srv.start_server()
@@ -203,12 +207,13 @@ async def test_run47_over_the_api(tmp_path, monkeypatch):
         async with aiohttp.ClientSession() as s:
             async with s.get(srv.make_url("/api/uptime"), headers=h) as r:
                 body = await r.json()
-                assert "ledger" in body and [x["horizon"] for x in body["coverage"]["horizons"]] == [
+                hz = [x["horizon"] for x in body["coverage"]["horizons"]]
+                assert "ledger" in body and hz[-4:] == [
                     "close",
                     "d1",
                     "d5",
                     "d20",
-                ]
+                ]  # after the minutes (run 49)
             async with s.post(srv.make_url("/api/bars/fill"), headers=h, json={}) as r:
                 assert (await r.json())["filled"] == 0
     finally:

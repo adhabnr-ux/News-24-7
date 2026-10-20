@@ -1146,7 +1146,7 @@ class WebServer:
 
         rates = self.engine.call_rates
         return _json({"rows": [rates[v] for v in VERBS if v in rates], "replay": self.engine.call_replay or None,
-                      "muted": self.engine.call_muted})  # fmt: skip
+                      "muted": self.engine.call_muted, "waits": self.engine.wait_rates})  # fmt: skip
 
     async def api_climate(self, request: web.Request) -> web.Response:
         """News climate: each kind's last two weeks against its record before, hot or cold beyond chance (climate.py)."""
@@ -1219,16 +1219,24 @@ class WebServer:
     async def api_uptime(self, request: web.Request) -> web.Response:
         """When the desk was asleep in market hours, and how much of the record is graded (uptime.py, bars.py)."""
         from ..bars import coverage
+        from ..intrafill import coverage as intra_coverage
         from ..uptime import ledger
 
-        return _json({"ledger": ledger(self.engine), "coverage": coverage(self.engine)})
+        cov = coverage(self.engine)
+        cov["horizons"] = intra_coverage(self.engine) + cov["horizons"]
+        return _json({"ledger": ledger(self.engine), "coverage": cov})
 
     async def api_bars_fill(self, request: web.Request) -> web.Response:
         """Fill the missing close grades from daily bars now, instead of waiting for the next pass (bars.py)."""
         from ..bars import coverage, fill
+        from ..intrafill import coverage as intra_coverage
+        from ..intrafill import fill as intra_fill
 
         n = await fill(self.engine)
-        return _json({"filled": n, "coverage": coverage(self.engine)})
+        m = await intra_fill(self.engine)
+        cov = coverage(self.engine)
+        cov["horizons"] = intra_coverage(self.engine) + cov["horizons"]
+        return _json({"filled": n + m, "daily": n, "minutes": m, "coverage": cov})
 
     async def api_playbooks(self, request: web.Request) -> web.Response:
         """Every kind of news with a graded record: the index of playbooks (playbook.py)."""
