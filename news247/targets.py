@@ -142,6 +142,17 @@ def targets_for(engine: Engine, sym: str, now: float | None = None, days: float 
         "rows": latest[:12],
         "history": rows[:15],
     }
+    from .firms import ACTIONS, firm_base
+
+    rates = getattr(engine, "firm_rates", None) or {}
+    for r in latest:
+        if r["firm"] and r["action"] in ACTIONS:
+            fb = firm_base(
+                rates,
+                {"firm": r["firm"], "action": r["action"], "label": f"{r['firm']} {ACTIONS[r['action']]}"},
+            )
+            if fb:
+                r["record"] = {"label": fb["label"], **fb["close"]}  # how this firm's calls like it did here
     if latest:
         tos = [r["to"] for r in latest]
         med = st.median(tos)

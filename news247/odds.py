@@ -132,8 +132,11 @@ def _label(name: str) -> str:
     return text[0].upper() + text[1:]
 
 
-def _rows(engine: Engine, days: float, now: float) -> list[tuple[float, dict[str, float], int]]:
-    """(created, features, went its way?) for every graded alert, oldest first."""
+def _rows(
+    engine: Engine, days: float, now: float, live: list[tuple[float, int]] | None = None
+) -> list[tuple[float, dict[str, float], int]]:
+    """(created, features, went its way?) for every graded alert, oldest first. ``live`` collects
+    (the odds it went out with, went its way?) for the alerts that carried odds: the forward test."""
     regimes: dict[str, str | None] = {}
     out = []
     for a in engine.storage.recent_alerts(6000, since=now - days * 86400):
@@ -147,9 +150,11 @@ def _rows(engine: Engine, days: float, now: float) -> list[tuple[float, dict[str
         if day not in regimes:
             raw = engine.storage.get_setting(f"memory:{day}")
             regimes[day] = json.loads(raw).get("regime") if raw else None
-        out.append(
-            (a["created"], features(a, regimes[day], engine.universe), int(row["sign"] * row["close"] > 0))
-        )
+        y = int(row["sign"] * row["close"] > 0)
+        out.append((a["created"], features(a, regimes[day], engine.universe), y))
+        p = ((a.get("edge") or {}).get("odds") or {}).get("p")
+        if live is not None and p is not None:
+            live.append((float(p), y))
     out.sort(key=lambda r: r[0])
     return out
 
@@ -189,11 +194,37 @@ def _auc(ps: list[float], ys: list[int]) -> float | None:
     return round(wins / (len(pos) * len(neg)), 3)
 
 
+def _reliability(ps: list[float], ys: list[int]) -> list[dict[str, Any]]:
+    """Of the alerts given 60-70%, how many went their way? One row per band that has any."""
+    rel = []
+    for lo, hi in BUCKETS:
+        got = [(p, y) for p, y in zip(ps, ys, strict=True) if lo <= p < hi]
+        if got:
+            rel.append({"lo": lo, "hi": min(hi, 1.0), "n": len(got), "predicted": round(sum(p for p, _ in got) / len(got), 3),
+                        "actual": round(sum(y for _, y in got) / len(got), 3)})  # fmt: skip
+    return rel
+
+
+def live_record(pairs: list[tuple[float, int]]) -> dict[str, Any]:
+    """The forward test: alerts that went out carrying odds, graded since. Nothing here was used to
+    fit the model that gave them their odds."""
+    if not pairs:
+        return {"n": 0}
+    ps, ys = [p for p, _ in pairs], [y for _, y in pairs]
+    avg = sum(ps) / len(ps)
+    return {"n": len(ps), "predicted": round(avg, 3), "actual": round(sum(ys) / len(ys), 3),
+            "brier": round(sum((p - y) ** 2 for p, y in pairs) / len(pairs), 4),
+            "brier_guess": round(sum((avg - y) ** 2 for y in ys) / len(ys), 4),
+            "auc": _auc(ps, ys), "reliability": _reliability(ps, ys)}  # fmt: skip
+
+
 def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
     """Fit, test on the newest quarter, refit on everything. {"ready", "trusted", "model", "test", ...}."""
     now = now or time.time()
-    rows = _rows(engine, days, now)
-    out: dict[str, Any] = {"n": len(rows), "need": MIN_TRAIN, "ready": False, "trusted": False, "fitted": now}
+    live: list[tuple[float, int]] = []
+    rows = _rows(engine, days, now, live)
+    out: dict[str, Any] = {"n": len(rows), "need": MIN_TRAIN, "ready": False, "trusted": False, "fitted": now,
+                           "live": live_record(live)}  # fmt: skip
     if len(rows) < MIN_TRAIN:
         return out
     cut = int(len(rows) * (1 - HOLDOUT))
@@ -205,12 +236,7 @@ def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dic
     guess = m["base"]
     brier0 = sum((guess - y) ** 2 for y in ys) / len(ys)
     skill = 1 - brier / brier0 if brier0 else 0.0
-    rel = []
-    for lo, hi in BUCKETS:
-        got = [(p, y) for p, y in zip(ps, ys, strict=True) if lo <= p < hi]
-        if got:
-            rel.append({"lo": lo, "hi": min(hi, 1.0), "n": len(got), "predicted": round(sum(p for p, _ in got) / len(got), 3),
-                        "actual": round(sum(y for _, y in got) / len(got), 3)})  # fmt: skip
+    rel = _reliability(ps, ys)
     out["test"] = {"n": len(test), "train": len(train), "brier": round(brier, 4), "brier_guess": round(brier0, 4),
                    "skill": round(skill, 3), "auc": _auc(ps, ys), "hit": round(sum(ys) / len(ys), 3),
                    "guess": round(guess, 3), "reliability": rel,

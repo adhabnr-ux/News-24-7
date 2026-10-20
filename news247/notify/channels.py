@@ -970,6 +970,11 @@ class WebPushNotifier(Notifier):
         ol = odds_line(alert.edge.get("odds"))
         if ol:
             base = f"{ol}\n{base}" if base else ol
+        from ..firms import firm_line
+
+        fl = firm_line(alert.edge.get("firm_base"))
+        if fl:
+            base = f"{base}\n{fl}" if base else fl
         if base:
             body = f"{body}\n{base}" if body else base
         play = alert.edge.get("play") or {}

@@ -236,6 +236,7 @@ class Engine:
         self.regime_rates: dict[str, Any] = {}  # (catalyst, market regime) -> graded record
         self._regime_now: tuple[float, str] = (0.0, "unknown")  # the live regime, read every 5 minutes
         self.odds: dict[str, Any] = {}  # the calibrated odds model and its out-of-sample test (odds.py)
+        self.firm_rates: dict[str, Any] = {}  # analyst firm x kind of call -> graded record (firms.py)
         self._odds_at = 0.0  # when it was last fitted (hourly)
         self.base_rates: dict[
             str, Any
@@ -1767,6 +1768,14 @@ class Engine:
                 rb = regime_base(self.regime_rates, cat["key"], self.regime_label())
                 if rb:
                     alert.edge["regime_base"] = rb  # the same kind of news, on days like today
+            from .firms import firm_base, read_call
+
+            call = read_call(alert.to_dict())
+            if call:
+                alert.edge["firm"] = call  # an analyst's call by a named firm: graded per firm
+                fb = firm_base(self.firm_rates, call)
+                if fb:
+                    alert.edge["firm_base"] = fb
             from .odds import predict
 
             odds = predict(self.odds, alert.to_dict(), self.regime_label())
@@ -1778,7 +1787,9 @@ class Engine:
             self.stats["pushed"] += 1
             self._spawn(self.dispatcher.dispatch(alert))
             self._spawn(self._push_watchers(alert))
-            if alert.edge.get("catalyst") and any(p.get("autopilots") for p in self.desk.profiles.values()):
+            if (alert.edge.get("catalyst") or alert.edge.get("odds")) and any(
+                p.get("autopilots") for p in self.desk.profiles.values()
+            ):
                 self._spawn(self.autopilot_open(alert.to_dict()))
         else:
             log.info("startup backfill (dashboard only): %s", alert.title[:100])
@@ -2809,12 +2820,19 @@ class Engine:
             bits.append(f"{(pt['to'] / px - 1) * 100:+.0f}% from the price (${px:,.2f})")
         if pt["rating"]:
             bits.append(pt["rating"])
+        from .firms import ACTIONS, firm_base, firm_line
+
+        record = ""
+        if pt["firm"] and pt["action"] in ACTIONS:
+            record = firm_line(firm_base(self.firm_rates, {"firm": pt["firm"], "action": pt["action"],
+                                                          "label": f"{pt['firm']} {ACTIONS[pt['action']]}"}))  # fmt: skip
         probe = {"kind": "news", "severity": "HIGH", "tickers": [sym], "edge": {}}
         sent = 0
         for device in self.desk.watchers([sym]):
             if not self.desk.allows(device, probe):
                 continue
-            payload = {"id": f"pt-{item.uid[-20:]}", "title": title[:160], "body": " · ".join(bits) + f"\n{item.title[:200]}",
+            payload = {"id": f"pt-{item.uid[-20:]}", "title": title[:160],
+                       "body": " · ".join(bits) + f"\n{item.title[:200]}" + (f"\n{record}" if record else ""),
                        "severity": "HIGH", "kind": "system", "tickers": [sym], "url": item.url,
                        "tag": f"pt-{sym}", "ts": time.time(), "open": f"/app/#t={sym}"}  # fmt: skip
             if await self._to_device(device, payload):
@@ -3557,6 +3575,9 @@ class Engine:
         from .catalysts import regime_rates
 
         self.regime_rates = regime_rates(self, 180, now)
+        from .firms import firm_rates
+
+        self.firm_rates = firm_rates(self, 365, now)
         if (now or time.time()) - self._odds_at >= 3600:
             from .odds import fit_odds
 

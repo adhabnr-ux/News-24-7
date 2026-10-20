@@ -20,6 +20,7 @@ ET = ZoneInfo("America/New_York")
 MAX_RULES = 5
 PER_RULE_PER_DAY = 3
 EXITS = {"h1": "an hour later", "close": "at the close", "d1": "at the next day's close"}
+ODDS_CHOICES = (0, 55, 60, 65, 70)  # a rule can follow the odds model: only alerts it rates this high
 
 
 def rule_label(rule: dict[str, Any]) -> str:
@@ -29,7 +30,8 @@ def rule_label(rule: dict[str, Any]) -> str:
         LABELS.get(rule["catalyst"], "Any kind of news") if rule["catalyst"] != "all" else "Any kind of news"
     )
     band = BAND_LABEL.get(rule["band"], "any size") if rule["band"] != "all" else "any size"
-    return f"{kind}, {band}, {rule['min_sev']}+, out {EXITS[rule['exit']]}"
+    odds = f", odds {rule['min_odds']}%+" if rule.get("min_odds") else ""
+    return f"{kind}, {band}, {rule['min_sev']}+{odds}, out {EXITS[rule['exit']]}"
 
 
 def clean_rule(body: dict[str, Any], now: float) -> dict[str, Any]:
@@ -50,8 +52,14 @@ def clean_rule(body: dict[str, Any], now: float) -> dict[str, Any]:
         raise ValueError("severity is MEDIUM, HIGH or CRITICAL")
     if exit_ not in EXITS:
         raise ValueError("exit is h1, close or d1")
+    try:
+        min_odds = int(body.get("min_odds") or 0)
+    except (TypeError, ValueError):
+        min_odds = -1
+    if min_odds not in ODDS_CHOICES:
+        raise ValueError("odds are 0 (any), 55, 60, 65 or 70")
     rule = {"id": secrets.token_hex(4), "catalyst": catalyst, "band": band, "min_sev": min_sev, "exit": exit_,
-            "on": True, "created": now}  # fmt: skip
+            "min_odds": min_odds, "on": True, "created": now}  # fmt: skip
     rule["label"] = rule_label(rule)
     return rule
 
@@ -65,9 +73,15 @@ def matches(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
         return False
     if not _direction(alert):
         return False
+    if rule.get("min_odds"):
+        o = (alert.get("edge") or {}).get("odds") or {}
+        if o.get("p") is None or o["p"] * 100 < rule["min_odds"]:
+            return False  # following the model: only alerts it rates this high
     c = (alert.get("edge") or {}).get("catalyst")
     if not c:
-        return False  # only news Foretape could read for a kind: that's what the record is about
+        # only news Foretape could read for a kind (that's what the record is about), unless the rule
+        # follows the model on any kind of news: its odds are the record then
+        return bool(rule.get("min_odds")) and rule["catalyst"] == "all" and rule["band"] == "all"
     if rule["catalyst"] != "all" and c["key"] != rule["catalyst"]:
         return False
     return rule["band"] == "all" or c["band"] == rule["band"]

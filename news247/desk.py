@@ -216,6 +216,9 @@ EDGE_BARS = {  # an alert's catalyst record must clear this to push (when the ph
     "hit50": "went its way half the time or more by the close",
     "hit60": "went its way 60% of the time or more by the close",
     "move2": "typically moves 2% or more by the close, either way",
+    "odds55": "has odds of 55% or more by the close (the odds model)",
+    "odds60": "has odds of 60% or more by the close (the odds model)",
+    "odds65": "has odds of 65% or more by the close (the odds model)",
 }
 
 
@@ -440,7 +443,12 @@ class Desk:
                 return out("catalyst_off", f"you turned off {kind['label'].lower()} news", f"Push {kind['label'].lower()} news again",
                            "cat_mute", {"key": kind["key"], "on": False})  # fmt: skip
             bar = prefs.get("edge_min")
-            if bar in EDGE_BARS and kind.get("key") and dial != "all":
+            odds = edge.get("odds") or {}
+            if bar in EDGE_BARS and bar.startswith("odds") and odds.get("p") is not None and dial != "all":
+                if odds["p"] * 100 < int(bar[4:]):
+                    return out("edge", f"its odds ({round(odds['p'] * 100)}%) are under your {bar[4:]}% bar",
+                               "Push every record", "prefs", {"edge_min": None})  # fmt: skip
+            elif bar in EDGE_BARS and kind.get("key") and dial != "all":
                 miss = edge_miss(edge.get("cat_base"), bar)
                 if miss:
                     return out("edge", f"{kind['label'].lower()} news has a record under your bar ({miss})",
@@ -727,7 +735,7 @@ class Desk:
             if "edge_min" in body:
                 bar = body.get("edge_min")
                 if bar not in (None, "", *EDGE_BARS):
-                    raise ValueError("edge bar is hit50, hit60, move2 or off")
+                    raise ValueError("edge bar is hit50, hit60, move2, odds55, odds60, odds65 or off")
                 prefs["edge_min"] = bar or None
             if "burst" in body:
                 try:
@@ -1156,8 +1164,8 @@ class Desk:
             if len(rules) >= MAX_AUTOPILOTS:
                 raise ValueError(f"at most {MAX_AUTOPILOTS} autopilots")
             rule = clean_rule(body, now)
-            same = ("catalyst", "band", "min_sev", "exit")
-            if any(all(r[k] == rule[k] for k in same) for r in rules):
+            same = ("catalyst", "band", "min_sev", "exit", "min_odds")
+            if any(all(r.get(k, 0) == rule[k] for k in same) for r in rules):
                 raise ValueError("that autopilot is already running")
             rules.append(rule)
         elif action in ("autopilot_remove", "autopilot_toggle"):

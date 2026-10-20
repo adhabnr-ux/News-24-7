@@ -162,6 +162,7 @@ class WebServer:
         app.router.add_get("/api/event-risk", self.api_event_risk)
         app.router.add_get("/api/actions", self.api_actions)
         app.router.add_get("/api/odds", self.api_odds)
+        app.router.add_get("/api/firms", self.api_firms)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
         app.router.add_post("/api/link", self.api_link)
         app.router.add_get("/api/devices", self.api_devices)
@@ -986,6 +987,12 @@ class WebServer:
         from ..odds import report
 
         return _json(report(self.engine.odds))
+
+    async def api_firms(self, request: web.Request) -> web.Response:
+        """Which analysts move stocks: each firm's calls, graded here, best and worst (firms.py)."""
+        from ..firms import scorecard
+
+        return _json(scorecard(self.engine.firm_rates))
 
     async def api_settings_cost(self, request: web.Request) -> web.Response:
         """What this phone's settings kept back over 14 days, graded beside what reached it (keptback.py)."""

@@ -741,8 +741,19 @@ async function loadPTBoard() {
     <div class="sub">${x.from ? `from ${fmtPx(x.from)} · ` : ""}${x.rating ? esc(x.rating) + " · " : ""}${x.upside != null ? `${pct(x.upside)} from the price · ` : ""}${ago(x.ts)} ago</div></div>
     ${x.change_pct != null ? `<span class="chg num ${cls(x.change_pct)}">${pct(x.change_pct)}</span>` : ""}</div>`).join("");
 }
+// which analysts move stocks: each firm's calls, graded on this server's own alerts
+async function loadFirms() {
+  let r;
+  try { r = await api("/api/firms"); } catch (_) { return; }
+  $("firmWrap").hidden = !r.firms;
+  if (!r.firms) return;
+  const row = (f) => { const c = f.all.close; return `<div class="kv"><span>${esc(f.firm)} <span class="sub">${c.n} graded${f.actions.length ? " · " + f.actions.map((x) => `${esc(x.label)} ${Math.round(x.close.hit * 100)}% (${x.close.n})`).join(" · ") : ""}</span></span><b class="num"><span class="${c.hit >= 0.5 ? "pos" : "neg"}">${Math.round(c.hit * 100)}%</span> <span class="sub">${pct(c.avg)}</span></b></div>`; };
+  $("firmBoard").innerHTML = (r.best.length ? `<div class="kv head"><span>Calls that followed through</span><b>its way · avg</b></div>` + r.best.map(row).join("") : "")
+    + (r.worst.length ? `<div class="kv head"><span>Calls the market faded</span><b>its way · avg</b></div>` + r.worst.map(row).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Every alert naming a firm's upgrade, downgrade or target change, graded by the close from its own reference price (${r.min_n}+ graded to be ranked${r.thin ? `; ${r.thin} more firm${r.thin === 1 ? " has" : "s have"} fewer` : ""}). History, not a forecast.</div>`;
+}
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -849,6 +860,9 @@ async function openSheet(id) {
     e.odds ? `<h4>The odds ${tip("odds")}</h4><div class="panel glass"><div class="kv"><span>Went its way by the close, for alerts like this</span><b class="num"><span class="${e.odds.p >= 0.5 ? "pos" : "neg"}">${Math.round(e.odds.p * 100)}%</span> <span class="sub">vs ${Math.round(e.odds.base * 100)}% for every alert</span></b></div>
       ${(e.odds.why || []).map((w) => `<div class="kv"><span>${esc(w.label)}</span><b class="num ${w.pts > 0 ? "pos" : "neg"}">${w.pts > 0 ? "+" : ""}${w.pts} pts</b></div>`).join("")}
       <div class="sub" style="padding:4px 0 12px">A model fitted on ${e.odds.n} graded alerts here, and used only because it beat the plain hit rate on alerts it never saw (${Math.round(e.odds.skill * 100)}% better). History, not a forecast.</div></div>` : "",
+    e.firm_base ? `<h4>${esc(e.firm_base.label)}, here</h4><div class="panel glass">
+      ${[["At the close", e.firm_base.close], ["The next day", e.firm_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went their way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
+      <div class="sub" style="padding:4px 0 12px">Every graded alert on ${esc(e.firm_base.action === "*" ? "a call" : "a call like this")} by ${esc(e.firm_base.firm)}, each from its own reference price. History, not a forecast.</div></div>` : "",
     e.cat_base ? `<h4>${esc(e.cat_base.label)} news, ${esc(e.cat_base.band_label)} ${tip("catalyst")}</h4><div class="panel glass">
       ${[["An hour later", e.cat_base.h1], ["At the close", e.cat_base.close], ["The next day", e.cat_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went its way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
       ${e.cat_base.typical != null ? `<div class="kv"><span>Typical close move, either way</span><b class="num">±${e.cat_base.typical.toFixed(1)}%</b></div>` : ""}
@@ -1183,7 +1197,7 @@ function renderDesk() {
     <div class="row catrow" style="padding:10px 0 4px">${(desk.catalyst_kinds || []).map((k) => { const off = (desk.cat_off || []).includes(k.key); return `<button class="btn ghost small${off ? "" : " sel"}" data-act="cat-mute" data-s="${esc(k.key)}" aria-pressed="${!off}">${esc(k.label)}${k.close ? ` <span class="faint">${Math.round(k.close.hit * 100)}%</span>` : ""}</button>`; }).join("")}</div>
     ${(desk.catalyst_taste || []).filter((t) => t.suggest_off).map((t) => `<div class="kv"><span class="gold">You've voted down ${t.down} ${esc(t.label.toLowerCase())} alerts and none up.</span><b><button class="btn ghost small" data-act="cat-mute" data-s="${esc(t.key)}">Stop pushing them</button></b></div>`).join("")}
     <div class="sub" style="padding-top:8px">Edge bar: only push news whose kind has a record of… ${tip("edge")}</div>
-    <div class="row" style="padding:10px 0 4px">${[["", "Any record"], ["hit50", "50%+ its way"], ["hit60", "60%+ its way"], ["move2", "moves 2%+"]].map(([k, l]) => `<button class="btn ghost small${(pr.edge_min || "") === k ? " sel" : ""}" data-act="edge-bar" data-s="${k}">${l}</button>`).join("")}</div>
+    <div class="row" style="padding:10px 0 4px">${[["", "Any record"], ["hit50", "50%+ its way"], ["hit60", "60%+ its way"], ["move2", "moves 2%+"], ["odds60", "odds 60%+"], ["odds65", "odds 65%+"]].map(([k, l]) => `<button class="btn ghost small${(pr.edge_min || "") === k ? " sel" : ""}" data-act="edge-bar" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="sub" style="padding-top:8px">Burst protection: after this many pushes in 10 minutes, the rest fold into one summary (CRITICAL still comes)</div>
     <div class="row" style="padding:10px 0 4px">${[[0, "Off"], [4, "4"], [6, "6"], [10, "10"]].map(([k, l]) => `<button class="btn ghost small${(pr.burst || 0) === k ? " sel" : ""}" data-act="burst" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="kv"><span>Watchlist pushes<div class="sub">a MEDIUM alert on a stock you watch still reaches your lock screen</div></span><b><button class="btn ghost small${pr.watch_push ? " sel" : ""}" data-act="wpush">${pr.watch_push ? "On" : "Off"}</button></b></div>
@@ -1373,6 +1387,8 @@ async function loadOdds() {
     <div class="kv"><span>The test <span class="sub">fitted on the older ${t.train}, scored on the newest ${t.n}: squared miss ${t.brier.toFixed(3)} vs ${t.brier_guess.toFixed(3)} guessing ${p100(t.guess)} every time${t.auc != null ? ` · ranks a winner over a loser ${p100(t.auc)} of the time` : ""}</span></span><b class="num">${t.n}</b></div>
     <div class="kv head"><span>When it said</span><b>it went its way</b></div>`
     + t.reliability.map((b) => `<div class="kv"><span>${p100(b.lo)}–${p100(b.hi)} <span class="sub">${b.n} alert${b.n === 1 ? "" : "s"}, ${p100(b.predicted)} on average</span></span><b class="num calib"><span class="bar" aria-hidden="true"><i style="width:${Math.round(b.actual * 100)}%"></i><i class="mark" style="left:${Math.round(b.predicted * 100)}%"></i></span><span class="${Math.abs(b.actual - b.predicted) <= 0.1 ? "pos" : "neg"}">${p100(b.actual)}</span></b></div>`).join("")
+    + (r.live?.n ? `<div class="kv head"><span>Since it went live</span><b>it went its way</b></div><div class="kv"><span>${r.live.n} alert${r.live.n === 1 ? "" : "s"} went out with odds <span class="sub">${p100(r.live.predicted)} on average · squared miss ${r.live.brier.toFixed(3)} vs ${r.live.brier_guess.toFixed(3)} for a flat ${p100(r.live.predicted)}${r.live.auc != null ? ` · ranks a winner first ${p100(r.live.auc)}` : ""}</span></span><b class="num ${Math.abs(r.live.actual - r.live.predicted) <= 0.1 ? "pos" : "neg"}">${p100(r.live.actual)}</b></div>` : "")
+    + (r.trusted ? `<div class="row" style="padding:8px 0 4px"><button class="btn ghost small" data-act="odds-follow">🤖 Follow the model on paper (60%+)</button><button class="btn ghost small${desk?.prefs?.edge_min === "odds60" ? " sel" : ""}" data-act="edge-bar" data-s="odds60">Only push 60%+ odds</button></div>` : "")
     + `<div class="kv head"><span>What moves the odds most</span><b>weight</b></div>` + (r.factors || []).slice(0, 8).map((f) => `<div class="kv"><span>${esc(f.label)}</span><b class="num ${f.weight > 0 ? "pos" : "neg"}">${f.weight > 0 ? "+" : ""}${f.weight.toFixed(2)}</b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">A logistic model on what was known when each alert went out (its kind, severity, kind of news and size, direction, how far it had already moved, time of day, the day's regime, other evidence), refitted every hour on ${r.n} graded alerts. History, not a forecast.</div>`;
 }
@@ -1804,7 +1820,7 @@ function targetsHTML(t) {
   const verb = { raise: "raised", cut: "cut", initiate: "started", maintain: "kept", set: "set" };
   return `<h4>Analyst targets ${tip("targets")}</h4><div class="panel glass">
     <div class="kv"><span>Median of ${t.n} firm${t.n === 1 ? "" : "s"} <span class="sub">${fmtPx(t.low)} – ${fmtPx(t.high)}${t.raises || t.cuts ? ` · 30 days: ${t.raises} raised, ${t.cuts} cut` : ""}</span></span><b class="num">${fmtPx(t.median)}${t.upside != null ? ` <span class="${cls(t.upside)}">${pct(t.upside)}</span>` : ""}</b></div>
-    ${t.rows.map((r) => `<div class="kv"><span>${esc(r.firm || "An analyst")} <span class="sub">${verb[r.action]}${r.from ? ` from ${fmtPx(r.from)}` : ""}${r.rating ? " · " + esc(r.rating) : ""} · ${ago(r.ts)} ago</span></span><b class="num">${fmtPx(r.to)}${r.upside != null ? ` <span class="sub ${cls(r.upside)}">${pct(r.upside)}</span>` : ""}</b></div>`).join("")}
+    ${t.rows.map((r) => `<div class="kv"><span>${esc(r.firm || "An analyst")} <span class="sub">${verb[r.action]}${r.from ? ` from ${fmtPx(r.from)}` : ""}${r.rating ? " · " + esc(r.rating) : ""} · ${ago(r.ts)} ago${r.record ? `<br>${esc(r.record.label)} here: <b class="${r.record.hit >= 0.5 ? "pos" : "neg"}">${Math.round(r.record.hit * 100)}%</b> went their way (${r.record.n})` : ""}</span></span><b class="num">${fmtPx(r.to)}${r.upside != null ? ` <span class="sub ${cls(r.upside)}">${pct(r.upside)}</span>` : ""}</b></div>`).join("")}
     <div class="sub" style="padding:4px 0 12px">Read from the headlines Foretape collects (the newest from each firm, 90 days); a firm whose change never made a headline isn't here.</div></div>`;
 }
 // stock pages open instantly for the stocks you watch: fetched quietly in the background, kept 3 minutes
@@ -2062,13 +2078,14 @@ async function onAct(el) {
   else if (a === "link-split") splitDesk();
   else if (a === "dev-rm") { if (confirm("Stop pushes to that device? It can turn alerts on again any time.")) { try { await api("/api/devices/remove", { method: "POST", body: JSON.stringify({ id: s }) }); toast("Removed"); loadDevices(); } catch (e) { toast(e.message); } } }
   else if (a === "cat-mute") { const off = !(desk.cat_off || []).includes(s), label = (desk.catalyst_kinds || []).find((k) => k.key === s)?.label || s; if (await deskEdit("cat_mute", { key: s, on: off })) toast(off ? `${label} news won't push to this phone` : `${label} news pushes again`); }
-  else if (a === "edge-bar") { if (await deskEdit("prefs", { edge_min: s || null })) toast(s ? "Only news whose kind clears the bar pushes now (CRITICAL always comes)" : "Every kind of news may push"); }
+  else if (a === "edge-bar") { if (await deskEdit("prefs", { edge_min: s || null })) toast(s ? (s.startsWith("odds") ? `Only alerts the odds model rates ${s.slice(4)}%+ push now (no odds: not held back; CRITICAL always comes)` : "Only news whose kind clears the bar pushes now (CRITICAL always comes)") : "Every kind of news may push"); }
   else if (a === "plan-track") { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); }
   else if (a === "acct-save") { const v = parseFloat(String($("acctIn")?.value || "").replace(/[$,\s]/g, "")); if (!(v >= 0)) { toast("Enter your account size in dollars"); return; } if (await deskEdit("prefs", { account: v }) && sheetAlert) loadPlan(sheetAlert); }
   else if (a === "risk-pct") { if (await deskEdit("prefs", { risk_pct: +s })) { if (sheetAlert && $("planBox")) loadPlan(sheetAlert); toast(`Plans risk ${s}% of your account on one idea`); } }
   else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }
   else if (a === "edge-pick") { Object.assign(lab, { catalyst: s, band: el.dataset.b, horizon: el.dataset.h, kind: "all", scope: "all", fades: "" }); store.set("ft_lab", JSON.stringify(lab)); await loadLab(); $("dLab")?.querySelector(".labhead")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
   else if (a === "lab-auto") { if (await deskEdit("autopilot_add", { catalyst: lab.catalyst, band: lab.band, min_sev: lab.sev, exit: lab.horizon })) { toast("🤖 Autopilot on: each new alert like this opens a paper call here", null, 6000); renderAutopilots(); } }
+  else if (a === "odds-follow") { if (await deskEdit("autopilot_add", { catalyst: "all", band: "all", min_sev: "HIGH", exit: "close", min_odds: 60 })) { toast("🤖 Following the model: each new HIGH alert it rates 60%+ opens a paper call here", null, 6000); renderAutopilots(); } }
   else if (a === "cost-fix") { const g = cost?.gates[+el.dataset.n]; if (g?.fix && await deskEdit(g.fix.action, g.fix.body)) { toast("Done: " + g.fix.label.toLowerCase()); loadCost(); loadActions(); } }
   else if (a === "act-do") { const i = acts?.items[+el.dataset.n]; if (i?.do && await deskEdit(i.do.action, i.do.body)) { toast("Done"); loadActions(); } }
   else if (a === "act-done") { const i = acts?.items[+el.dataset.n]; if (i && await deskEdit("act_done", { key: i.key })) loadActions(); }
@@ -2661,6 +2678,7 @@ const Palette = {
       ["Would I get it? (test my push settings)", "", openHealth],
       ["What's working today", "today's alerts by kind of news", () => { closeSheet(); go("watch"); setTimeout(() => $("workWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Room left", "today's alerts short of their typical move", () => { closeSheet(); go("watch"); setTimeout(() => $("roomWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
+      ["Analysts, graded", "which firms' calls followed through", () => { closeSheet(); go("watch"); setTimeout(() => $("firmWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Odds model", "how well its numbers held up", () => { closeSheet(); go("desk"); setTimeout(() => $("dOdds")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["What my settings kept back", "graded beside what reached me", () => { closeSheet(); go("desk"); setTimeout(() => $("dCostWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Needs you", "everything that wants a decision now", () => { closeSheet(); go("desk"); setTimeout(() => $("dActWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
