@@ -90,7 +90,10 @@ def test_the_model_learns_the_record_and_proves_it_out_of_sample(tmp_path):
         win["why"][0] == {"label": "Contract win news", "pts": win["why"][0]["pts"]}
         and win["why"][0]["pts"] > 0
     )
-    assert odds_line(win) == f"Odds {round(win['p'] * 100)}% by the close (model, 160 graded)"
+    assert (
+        odds_line(win)
+        == f"Odds {round(win['p'] * 100)}% by the close · expected {win['ev']:+.1f}% (model, 160 graded)"
+    )
     assert odds_line(None) == ""
     assert (
         predict(st, news("Acme hosts investor day", direction="").to_dict(), None) is None
@@ -126,7 +129,8 @@ async def test_new_alerts_carry_their_odds_in_the_push(tmp_path):
     o = eng.storage.get_alert(a.id)["edge"]["odds"]
     assert o["p"] > 0.65 and o["skill"] == eng.odds["test"]["skill"]
     body = eng.webpush.payload(a)["body"]
-    assert f"Odds {round(o['p'] * 100)}% by the close (model, 160 graded)\nContract win, $2-10B:" in body
+    line = f"Odds {round(o['p'] * 100)}% by the close · expected {o['ev']:+.1f}% (model, 160 graded)"
+    assert f"{line}\nContract win, $2-10B:" in body
 
 
 # --------------------------------------------------------------------------- what your settings cost you

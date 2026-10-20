@@ -134,6 +134,7 @@ def default_profile() -> dict[str, Any]:
             "setups": False,  # 09:25 ET: today's best setups (plans.todays_setups) in one push
             "diverge": True,  # a strong kind of news, and the stock going the other way
             "edge_min": None,  # only push news whose catalyst record clears this: hit50 | hit60 | move2
+            "manage": True,  # nudges on open paper calls: breakeven at +1R, a gain given back, dead money
         },
         "price_alerts": [],
         "tracked": [],
@@ -705,6 +706,7 @@ class Desk:
                 "retest",
                 "setups",
                 "diverge",
+                "manage",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -833,7 +835,7 @@ class Desk:
             t = next((x for x in p["tracked"] if x["id"] == tid), None)
             if t is None:
                 raise ValueError("no such tracked call")
-            _set_levels(t, body)
+            _set_levels(t, body, trail=True)
         elif action == "track_journal":
             tid = str(body.get("id") or "")
             t = next((x for x in [*p["tracked"], *p["closed"]] if x["id"] == tid), None)
@@ -1422,6 +1424,7 @@ class Desk:
                     "retest",
                     "setups",
                     "diverge",
+                    "manage",
                     "watch_push",
                     "min_sev",
                     "digest",
@@ -1755,8 +1758,10 @@ def _under(t: dict[str, Any], which: str) -> bool:
     return (which == "stop") == (t.get("direction", "long") == "long")
 
 
-def _set_levels(t: dict[str, Any], body: dict[str, Any]) -> None:
-    """A stop and a target on a tracked call, each on its side of the entry."""
+def _set_levels(t: dict[str, Any], body: dict[str, Any], trail: bool = False) -> None:
+    """A stop and a target on a tracked call, each on its side of the entry. With ``trail`` (moving
+    the levels of a call already open) a stop may go to the entry or past it to lock in a gain, as
+    long as it stays on its side of the target."""
     for which in ("stop", "target"):
         if which not in body:
             continue
@@ -1770,6 +1775,18 @@ def _set_levels(t: dict[str, Any], body: dict[str, Any]) -> None:
         except (TypeError, ValueError):
             raise ValueError(f"{which} must be a price") from None
         under = _under(t, which)
+        if trail and which == "stop" and v > 0:
+            tgt = body.get("target", t.get("target")) if "target" in body else t.get("target")
+            try:
+                tgt = float(tgt) if tgt not in (None, "") else None
+            except (TypeError, ValueError):
+                tgt = None
+            if tgt is not None and ((under and v >= tgt) or (not under and v <= tgt)):
+                side = "under" if under else "over"
+                raise ValueError(f"a {t['direction']}'s stop goes {side} its target (${tgt:,.2f})")
+            t[which] = round(v, 4)
+            t.pop(f"{which}_hit", None)
+            continue
         if v <= 0 or (under and v >= t["entry"]) or (not under and v <= t["entry"]):
             side = "under" if under else "over"
             raise ValueError(f"a {t['direction']}'s {which} goes {side} its entry (${t['entry']:,.2f})")

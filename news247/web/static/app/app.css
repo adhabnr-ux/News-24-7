@@ -701,7 +701,7 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .li.act.u1 { border-left-color: rgba(138, 147, 166, .45); }
 .li.act .aic { width: 22px; text-align: center; font-size: 15px; line-height: 1.35; flex: none; }
 .li.act .at { font-weight: 600; line-height: 1.35; }
-.li.act .btn { flex: none; align-self: center; }
+.li.act .actdo { margin-top: 7px; }
 .li.act .x { align-self: center; }
 #dRecord .now { color: var(--text); font-weight: 600; text-decoration: underline dotted; }
 

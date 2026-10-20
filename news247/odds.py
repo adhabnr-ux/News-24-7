@@ -133,7 +133,11 @@ def _label(name: str) -> str:
 
 
 def _rows(
-    engine: Engine, days: float, now: float, live: list[tuple[float, int]] | None = None
+    engine: Engine,
+    days: float,
+    now: float,
+    live: list[tuple[float, int]] | None = None,
+    moves: dict[str, list[float]] | None = None,
 ) -> list[tuple[float, dict[str, float], int]]:
     """(created, features, went its way?) for every graded alert, oldest first. ``live`` collects
     (the odds it went out with, went its way?) for the alerts that carried odds: the forward test."""
@@ -151,7 +155,12 @@ def _rows(
             raw = engine.storage.get_setting(f"memory:{day}")
             regimes[day] = json.loads(raw).get("regime") if raw else None
         y = int(row["sign"] * row["close"] > 0)
-        out.append((a["created"], features(a, regimes[day], engine.universe), y))
+        x = features(a, regimes[day], engine.universe)
+        out.append((a["created"], x, y))
+        if moves is not None:  # how big its wins and losses ran: by kind of news, and overall
+            r = float(row["sign"] * row["close"])
+            for k in ("*", *(k[4:] for k in x if k.startswith("cat="))):
+                moves.setdefault(k, []).append(r)
         p = ((a.get("edge") or {}).get("odds") or {}).get("p")
         if live is not None and p is not None:
             live.append((float(p), y))
@@ -218,11 +227,30 @@ def live_record(pairs: list[tuple[float, int]]) -> dict[str, Any]:
             "auc": _auc(ps, ys), "reliability": _reliability(ps, ys)}  # fmt: skip
 
 
+PAYOFF_MIN = 3  # wins and losses each, before a kind of news has its own payoff
+
+
+def payoffs(moves: dict[str, list[float]]) -> dict[str, dict[str, Any]]:
+    """How big wins and losses ran by the close (average move its way, and against it), per kind of
+    news with 3+ of each, and over every alert."""
+    out = {}
+    for k, xs in moves.items():
+        wins, losses = [x for x in xs if x > 0], [-x for x in xs if x <= 0]
+        if len(wins) >= PAYOFF_MIN and len(losses) >= PAYOFF_MIN:
+            out[k] = {
+                "win": round(sum(wins) / len(wins), 2),
+                "loss": round(sum(losses) / len(losses), 2),
+                "n": len(xs),
+            }
+    return out
+
+
 def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
     """Fit, test on the newest quarter, refit on everything. {"ready", "trusted", "model", "test", ...}."""
     now = now or time.time()
     live: list[tuple[float, int]] = []
-    rows = _rows(engine, days, now, live)
+    moves: dict[str, list[float]] = {}
+    rows = _rows(engine, days, now, live, moves)
     out: dict[str, Any] = {"n": len(rows), "need": MIN_TRAIN, "ready": False, "trusted": False, "fitted": now,
                            "live": live_record(live)}  # fmt: skip
     if len(rows) < MIN_TRAIN:
@@ -243,6 +271,7 @@ def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dic
                    "from": test[0][0], "to": test[-1][0]}  # fmt: skip
     full = _fit(rows)
     out["model"] = full
+    out["payoff"] = payoffs(moves)
     out["ready"] = True
     out["trusted"] = len(test) >= MIN_TEST and skill > 0
     top = sorted(full["w"].items(), key=lambda kv: -abs(kv[1]))
@@ -270,20 +299,32 @@ def predict(state: dict[str, Any] | None, a: dict[str, Any], regime: str | None)
         if abs(pts) >= 1:
             why.append({"label": _label(k), "pts": round(pts)})
     why.sort(key=lambda r: -abs(r["pts"]))
-    return {
+    out = {
         "p": round(p, 3),
         "base": round(m["base"], 3),
         "n": state["n"],
         "skill": state["test"]["skill"],
         "why": why[:4],
     }
+    pay = state.get("payoff") or {}
+    key = next((k[4:] for k in x if k.startswith("cat=")), None)
+    py, src = (pay.get(key), key) if key and pay.get(key) else (pay.get("*"), "*")
+    if py:
+        from .catalysts import LABELS as CAT
+
+        # the expected move its way: the odds times how big this kind of news' wins ran, less the
+        # odds against times how big its losses ran
+        out.update(ev=round(p * py["win"] - (1 - p) * py["loss"], 2), win=py["win"], loss=py["loss"],
+                   pay_from=f"{CAT.get(src, src).lower()} news" if src != "*" else "every alert")  # fmt: skip
+    return out
 
 
 def odds_line(o: dict[str, Any] | None) -> str:
     """For a push: "Odds 71% by the close (model, 412 graded)"."""
     if not o:
         return ""
-    return f"Odds {round(o['p'] * 100)}% by the close (model, {o['n']} graded)"
+    ev = f" · expected {o['ev']:+.1f}%" if o.get("ev") is not None else ""
+    return f"Odds {round(o['p'] * 100)}% by the close{ev} (model, {o['n']} graded)"
 
 
 def report(state: dict[str, Any] | None) -> dict[str, Any]:

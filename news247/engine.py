@@ -2327,6 +2327,10 @@ class Engine:
                 with contextlib.suppress(Exception):
                     await self.run_autopilots(now)
                 with contextlib.suppress(Exception):
+                    from .manage import check_manage
+
+                    await check_manage(self, now)
+                with contextlib.suppress(Exception):
                     await self.check_retests(now)
                 with contextlib.suppress(Exception):
                     self.grade_retests(now)

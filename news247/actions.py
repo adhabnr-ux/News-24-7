@@ -66,6 +66,7 @@ def action_center(engine: Engine, device: str, now: float | None = None, limit: 
 
     items: list[dict[str, Any]] = []
     items += _calls(p, quote, now)
+    items += _manage(engine, device, p, now)
     items += _price_alerts(p, quote)
     items += _reminders(p, now)
     items += _reports(engine, device, p, now)
@@ -128,6 +129,30 @@ def _calls(p: dict[str, Any], quote: Any, now: float) -> list[dict[str, Any]]:
                                      f"{sym} is {dist:.1f}% from your {which} ({_px(lvl)})",
                                      f"{side} from {_px(t['entry'])} · {now_line}", sym, f"#t={sym}", ts=now))  # fmt: skip
     return out
+
+
+def _manage(engine: Engine, device: str, p: dict[str, Any], now: float) -> list[dict[str, Any]]:
+    """Nudges on open calls (manage.py): breakeven, a gain given back, dead money, a report ahead."""
+    from .manage import nudges
+
+    mine = set(p.get("watchlist") or []) | set(p.get("holdings") or {})
+    icon = {"breakeven": "🛡", "giveback": "↘", "dead": "💤", "event": "📅"}
+    return [
+        _item(
+            f"mg:{n['call']}:{n['kind']}",
+            n["kind"],
+            n["urgency"],
+            icon[n["kind"]],
+            n["title"],
+            n["detail"],
+            n["symbol"],
+            f"#t={n['symbol']}",
+            n["do"],
+            now,
+        )  # fmt: skip
+        for n in nudges(engine, device, now)
+        if not (n["kind"] == "event" and n["symbol"] in mine)  # its report is already listed
+    ]
 
 
 # --------------------------------------------------------------------------- price alerts

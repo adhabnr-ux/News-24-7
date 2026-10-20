@@ -340,12 +340,14 @@ def todays_setups(
             continue
         sym = plan["symbol"]
         n = close["n"]
-        score = plan["rr"] * close["hit"] * n / (n + 10) * (1.3 if sym in mine else 1.0)
+        odds = e.get("odds") or {}
+        hit = odds.get("p") if odds.get("p") is not None else close["hit"]  # the model's read, when in use
+        score = plan["rr"] * hit * n / (n + 10) * (1.3 if sym in mine else 1.0)
         if sym in best and best[sym]["score"] >= score:
             continue
         best[sym] = {"id": a["id"], "title": a.get("title", ""), "created": a.get("created"), "severity": a.get("severity"),
                      "symbol": sym, "mine": sym in mine, "catalyst": cb["label"], "band": cb["band_label"],
-                     "record": close, "plan": plan, "score": round(score, 3)}  # fmt: skip
+                     "record": close, "plan": plan, "score": round(score, 3), "odds": odds or None}  # fmt: skip
     rows = sorted(best.values(), key=lambda r: -r["score"])[:limit]
     return {"rows": rows, "since": since}
 
@@ -358,8 +360,12 @@ def setups_push(s: dict[str, Any]) -> dict[str, Any] | None:
     for r in rows[:4]:
         pl = r["plan"]
         side = "long" if pl["direction"] == "up" else "short"
+        o = r.get("odds") or {}
+        odds = f" · odds {round(o['p'] * 100)}%" if o.get("p") is not None else ""
+        if odds and o.get("ev") is not None:
+            odds += f", exp {o['ev']:+.1f}%"
         lines.append(f"{'★' if r['mine'] else '•'} {r['symbol']} {side} · R:R {pl['rr']:.1f} · stop ${pl['stop']:,.2f} · "
-                     f"{r['catalyst'].lower()} {round(r['record']['hit'] * 100)}% ({r['record']['n']})")  # fmt: skip
+                     f"{r['catalyst'].lower()} {round(r['record']['hit'] * 100)}% ({r['record']['n']}){odds}")  # fmt: skip
     return {
         "title": f"🎯 {len(rows)} setup{'s' if len(rows) > 1 else ''} for today",
         "body": "\n".join(lines)[:600],
