@@ -238,6 +238,11 @@ class Engine:
         self._regime_now: tuple[float, str] = (0.0, "unknown")  # the live regime, read every 5 minutes
         self.odds: dict[str, Any] = {}  # the calibrated odds model and its out-of-sample test (odds.py)
         self.firm_rates: dict[str, Any] = {}  # analyst firm x kind of call -> graded record (firms.py)
+        self.h1_rates: dict[str, Any] = {}  # move after an hour -> how the day finished (liveodds.py)
+        self.ev_hist: tuple[list[float], int] = (
+            [],
+            1,
+        )  # 10 days of alerts' expected moves, and how many days
         self._odds_at = 0.0  # when it was last fitted (hourly)
         self.base_rates: dict[
             str, Any
@@ -1792,6 +1797,10 @@ class Engine:
             odds = predict(self.odds, alert.to_dict(), self.regime_label())
             if odds:
                 alert.edge["odds"] = odds  # one calibrated number, with what moved it
+                if odds.get("ev") is not None and self.ev_hist[0]:
+                    evs, days = self.ev_hist
+                    # how many alerts a day are at least this good: what an attention budget reads
+                    alert.edge["ev_top"] = round(sum(1 for v in evs if v >= odds["ev"]) / days, 1)
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:
@@ -3593,6 +3602,16 @@ class Engine:
         from .firms import firm_rates
 
         self.firm_rates = firm_rates(self, 365, now)
+        from .liveodds import h1_table
+
+        self.h1_rates = h1_table(self, 180, now)
+        evs, dates = [], set()
+        for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
+            ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")
+            if ev is not None:
+                evs.append(float(ev))
+                dates.add(datetime.fromtimestamp(a["created"], ET).date())
+        self.ev_hist = (evs, max(1, len(dates)))
         if (now or time.time()) - self._odds_at >= 3600:
             from .odds import fit_odds
 

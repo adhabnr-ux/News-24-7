@@ -96,6 +96,12 @@ def pre_trade(
                     "warn" if abs(its_way) >= 3 else "info",
                     f"{its_way:+.1f}% its way since the alert",
                 )
+        from .liveodds import live_odds
+
+        lo = live_odds(engine, a, now)
+        if lo:
+            add("live", _tone(lo["p"], 0.6, 0.4),
+                f"{lo['hours']:g} hours in, {lo['since']:+.1f}% its way: alerts like this finished their way {round(lo['p'] * 100)}% ({lo['n']})")  # fmt: skip
         day = datetime.fromtimestamp(now, ET).date().isoformat()
         try:
             dv = [

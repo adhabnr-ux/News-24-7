@@ -30,6 +30,7 @@ ET = ZoneInfo("America/New_York")
 GIVEBACK_MIN = 2.0  # % a call must have been up before giving it back counts
 GIVEBACK_SHARE = 0.3  # ...and what's left of that best: 30% or less
 DEAD_BAND = 0.5  # % from the entry that counts as flat
+CUT_ODDS = 0.3  # live odds this low, on a call going the alert's way, and it's a cut
 
 
 def _px(v: float) -> str:
@@ -59,6 +60,8 @@ def _pnl(t: dict[str, Any], price: float) -> float:
 def nudges(engine: Engine, device: str, now: float | None = None) -> list[dict[str, Any]]:
     """The nudges that hold right now on this phone's open calls (no side effects)."""
     from .autopilot import exit_time
+    from .dossier import _direction
+    from .liveodds import live_odds
 
     now = now or time.time()
     p = engine.desk.profiles.get(device) or {}
@@ -110,6 +113,13 @@ def nudges(engine: Engine, device: str, now: float | None = None) -> list[dict[s
             add("dead", 50, f"{sym} is flat {days:.0f} day{'s' if days >= 1.5 else ''} on ({_pc(pnl)}): dead money?",
                 f"{side} from {_px(t['entry'])} · now {_px(price)}.{why}",
                 {"label": "Close it", "action": "track_close", "body": {"id": t["id"], "lesson": "dead money"}})  # fmt: skip
+        a = engine.storage.get_alert(t["alert_id"]) if t.get("alert_id") else None
+        lo = live_odds(engine, a, now) if a is not None else None
+        aligned = a is not None and long == (_direction(a) == "up")  # the call is on the alert's side
+        if lo and aligned and lo["p"] <= CUT_ODDS:
+            add("cut", 72, f"{sym}: {lo['hours']:g} hours in and {_pc(lo['since'])} its way. Alerts like this finished their way {round(lo['p'] * 100)}%",
+                f"Of {lo['from']} that was {lo['band']} after an hour, {round(lo['p'] * 100)}% finished the day its way (median {lo['median']:+.1f}%, {lo['n']}).",
+                {"label": "Close it", "action": "track_close", "body": {"id": t["id"], "lesson": "cut on the live odds"}})  # fmt: skip
         e = book.lookup(sym, today) if book is not None else None
         if e and e.get("in_days") in (0, 1):
             when = (" " + e["when"]) if e.get("when") else ""
@@ -152,7 +162,7 @@ async def check_manage(engine: Engine, now: float | None = None) -> int:
             probe = {"kind": "news", "severity": "HIGH", "tickers": [n["symbol"]], "edge": {}}
             if not engine.desk.allows(dev, probe, now):
                 continue
-            icon = {"breakeven": "🛡", "giveback": "↘", "dead": "💤", "event": "📅"}[n["kind"]]
+            icon = {"breakeven": "🛡", "giveback": "↘", "dead": "💤", "event": "📅", "cut": "✂"}[n["kind"]]
             payload = {"id": f"mg-{t['id']}-{n['kind']}", "title": f"{icon} {n['title']}"[:160], "body": n["detail"][:300],
                        "severity": "HIGH", "kind": "system", "tickers": [n["symbol"]], "tag": f"mg-{t['id']}",
                        "ts": now, "open": f"/app/#t={n['symbol']}"}  # fmt: skip

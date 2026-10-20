@@ -136,7 +136,7 @@ def _manage(engine: Engine, device: str, p: dict[str, Any], now: float) -> list[
     from .manage import nudges
 
     mine = set(p.get("watchlist") or []) | set(p.get("holdings") or {})
-    icon = {"breakeven": "🛡", "giveback": "↘", "dead": "💤", "event": "📅"}
+    icon = {"breakeven": "🛡", "giveback": "↘", "dead": "💤", "event": "📅", "cut": "✂"}
     return [
         _item(
             f"mg:{n['call']}:{n['kind']}",

@@ -135,6 +135,7 @@ def default_profile() -> dict[str, Any]:
             "diverge": True,  # a strong kind of news, and the stock going the other way
             "edge_min": None,  # only push news whose catalyst record clears this: hit50 | hit60 | move2
             "manage": True,  # nudges on open paper calls: breakeven at +1R, a gain given back, dead money
+            "budget": 0,  # pushes a day: only alerts among the N best a day by expected move (0 = off)
         },
         "price_alerts": [],
         "tracked": [],
@@ -454,6 +455,13 @@ class Desk:
                 if miss:
                     return out("edge", f"{kind['label'].lower()} news has a record under your bar ({miss})",
                                "Push every record", "prefs", {"edge_min": None})  # fmt: skip
+            budget = prefs.get("budget") or 0
+            top = edge.get("ev_top")
+            if budget and top is not None and top > budget and dial != "all":
+                mine = set(p.get("watchlist") or []) | set(p.get("holdings") or {})
+                if not mine & set(tickers):  # your own stocks still come
+                    return out("budget", f"it isn't among your {budget} best a day (about {top:g} a day are this good)",
+                               "Turn the budget off", "prefs", {"budget": 0})  # fmt: skip
             word = self.neg_match(device, alert)
             if word:
                 return out("word", f"it has your never-push word “{word}”", f"Remove “{word}”",
@@ -710,6 +718,14 @@ class Desk:
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
+            if "budget" in body:
+                try:
+                    v = int(body.get("budget") or 0)
+                except (TypeError, ValueError):
+                    v = -1
+                if v not in (0, 3, 5, 10):
+                    raise ValueError("budget is 0 (off), 3, 5 or 10 a day")
+                prefs["budget"] = v
             if "port_alert" in body:
                 try:
                     v = float(body.get("port_alert") or 0)
@@ -1425,6 +1441,7 @@ class Desk:
                     "setups",
                     "diverge",
                     "manage",
+                    "budget",
                     "watch_push",
                     "min_sev",
                     "digest",

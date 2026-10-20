@@ -50,6 +50,8 @@ def _setting(b: dict[str, Any]) -> str:
         return "Your severity floor"
     if code == "quiet":
         return "Your quiet hours"
+    if code == "budget":
+        return "Your daily budget"
     return b["text"]
 
 

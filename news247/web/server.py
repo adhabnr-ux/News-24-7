@@ -731,6 +731,9 @@ class WebServer:
         from ..misses import post_mortem
 
         alert["post_mortem"] = post_mortem(self.engine, alert)  # why it missed, when it did
+        from ..liveodds import live_odds
+
+        alert["live_odds"] = live_odds(self.engine, alert)  # an hour in: how alerts like it finished
         return _json(alert)
 
     # ------------------------------------------------------------------ dossier, desk, boards
