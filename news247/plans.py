@@ -122,6 +122,20 @@ def trade_plan(
         reward_pct=round(reward / px * 100, 2),
         rr=round(reward / risk, 2),
     )
+    from .heat import patient as patient_entry
+
+    odds_p = (e.get("odds") or {}).get("p")
+    pt = patient_entry(
+        heat,
+        ref,
+        px,
+        stop,
+        target,
+        sign,
+        odds_p if odds_p is not None else (cb or {}).get("close", {}).get("hit"),
+    )
+    if pt:
+        out["patient"] = pt
     p = engine.desk.profiles.get(device) or {}
     prefs = p.get("prefs") or {}
     account = float(prefs.get("account") or 0)
@@ -149,6 +163,19 @@ def trade_plan(
             es["risk_budget"] = round(account * es["risk_pct"] / 100, 2)
         out["edge_size"] = es
     return out
+
+
+def plan_line(plan: dict[str, Any] | None, odds: dict[str, Any] | None = None) -> str:
+    """For a push: "Plan: long $100.50 · stop $98.85 · target $102.75 · R:R 1.4 · hold to the close"."""
+    if not plan:
+        return ""
+    side = "long" if plan["dir"] == "up" else "short"
+    hold = ""
+    best = (odds or {}).get("best")
+    if best:
+        hold = f" · hold to {best['label']}"
+    return (f"Plan: {side} ${plan['entry']:,.2f} · stop ${plan['stop']:,.2f} · target ${plan['target']:,.2f}"
+            f" · R:R {plan['rr']:.1f}{hold}")  # fmt: skip
 
 
 def edge_size(p: float | None, rr: float, cap_pct: float) -> dict[str, Any] | None:

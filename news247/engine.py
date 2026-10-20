@@ -1807,6 +1807,15 @@ class Engine:
                     evs, days = self.ev_hist
                     # how many alerts a day are at least this good: what an attention budget reads
                     alert.edge["ev_top"] = round(sum(1 for v in evs if v >= odds["ev"]) / days, 1)
+            from .plans import trade_plan
+
+            try:
+                plan = trade_plan(self, "", alert.to_dict(), time.time())
+            except Exception:  # noqa: BLE001 - a plan is a bonus, never a reason not to publish
+                plan = {}
+            if plan.get("ok"):  # the plan from the live price, for the push: stop, target, reward-to-risk
+                alert.edge["plan"] = {"dir": plan["direction"], "symbol": plan["symbol"], "entry": plan["entry"],
+                                      "stop": plan["stop"], "target": plan["target"], "rr": plan["rr"]}  # fmt: skip
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:

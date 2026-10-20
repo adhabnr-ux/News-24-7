@@ -70,7 +70,15 @@ def test_the_heat_of_a_kind_of_news(tmp_path):
     eng = semis_engine(tmp_path)
     heated(eng)
     h = heat_rates(eng)
-    assert h["contract"] == {"winners": 12, "dip80": 1.0, "dip_median": 0.7, "losers": 4, "run_median": 0.8}
+    keys = ("winners", "dip80", "dip_median", "losers", "run_median")
+    assert {k: h["contract"][k] for k in keys} == {
+        "winners": 12,
+        "dip80": 1.0,
+        "dip_median": 0.7,
+        "losers": 4,
+        "run_median": 0.8,
+    }
+    assert h["contract"]["l_dips"] == [1.5, 1.5, 1.5, 1.5]
     assert heat_for(h, news("Acme wins contract").to_dict(), eng.universe)["from"] == "contract win news"
     assert heat_for(h, news("Acme hosts investor day").to_dict(), eng.universe)["from"] == "every alert"
     assert heat_for({}, news("x").to_dict()) is None

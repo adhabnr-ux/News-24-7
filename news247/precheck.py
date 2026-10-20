@@ -121,6 +121,12 @@ def pre_trade(
         if plan.get("ok"):
             add("plan", _tone(plan["rr"], 1.5, 1.0),
                 f"Plan from {plan['entry']:,.2f}: stop {plan['stop']:,.2f}, target {plan['target']:,.2f}, reward-to-risk {plan['rr']:.1f}")  # fmt: skip
+            pt = plan.get("patient")
+            if pt and pt.get("p_filled") is not None:
+                add("patient", "info",
+                    f"A limit at {pt['limit']:,.2f} (the winners' median dip) fills {round(pt['fills_winners'] * 100)}% of winners "
+                    f"and {round(pt['fills_losers'] * 100)}% of losers: if filled, {round(pt['p_filled'] * 100)}% won vs "
+                    f"{round(pt['p_now'] * 100)}% now, at {pt['rr']:.1f} : 1")  # fmt: skip
             es = plan.get("edge_size")
             if es:
                 sh = f" ({es['shares']:,} sh)" if es.get("shares") else ""
