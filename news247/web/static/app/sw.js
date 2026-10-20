@@ -1,6 +1,6 @@
 /* Foretape service worker: shows pushed alerts, opens the app on tap, keeps the app shell
    available offline, and re-subscribes if the browser rotates the push subscription. */
-const SHELL = "foretape-shell-v60";
+const SHELL = "foretape-shell-v61";
 const CONF = "foretape-conf";
 const SHELL_FILES = [
   "/app/", "/app/app.css", "/app/app.js", "/app/cmd.js", "/app/scene.js", "/app/launch.webp", "/app/depth.png", "/app/logo.svg", "/app/icon-192.png", "/app/badge-96.png",
@@ -40,6 +40,7 @@ self.addEventListener("message", (e) => {
   if (e.data?.type === "token") caches.open(CONF).then((c) => c.put("/token", new Response(e.data.token)));
   if (e.data?.type === "device") caches.open(CONF).then((c) => c.put("/device", new Response(e.data.device)));
   if (e.data?.type === "onestock") caches.open(CONF).then((c) => c.put("/onestock", new Response(e.data.on ? "1" : "")));
+  if (e.data?.type === "quietcall") caches.open(CONF).then((c) => c.put("/quietcall", new Response(e.data.on ? "1" : "0")));
 });
 
 async function bumpBadge() {
@@ -71,8 +72,16 @@ self.addEventListener("push", (e) => {
   };
   e.waitUntil(Promise.all([
     // one notification per stock (a Desk setting): a newer alert on the same stock replaces the older one
-    caches.open(CONF).then((c) => c.match("/onestock")).then((r) => r?.text()).catch(() => "").then((one) => {
+    caches.open(CONF).then(async (c) => {
+      const one = await (await c.match("/onestock"))?.text().catch(() => "");
       if (one === "1" && d.tickers?.[0] && d.kind !== "system") options.tag = "sym-" + d.tickers[0];
+      // sound by the call (on unless switched off): watch and skip calls arrive silently; CRITICAL always rings
+      const quiet = (await (await c.match("/quietcall"))?.text().catch(() => "")) ?? "";
+      if (quiet !== "0" && !critical && (d.call === "watch" || d.call === "skip")) {
+        options.silent = true;
+        options.renotify = false;
+        delete options.vibrate;
+      }
       return self.registration.showNotification(title, options);  // iOS requires a visible notification for every push
     }),
     bumpBadge(),

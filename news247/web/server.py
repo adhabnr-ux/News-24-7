@@ -187,6 +187,8 @@ class WebServer:
         app.router.add_post("/api/line", self.api_line_set)
         app.router.add_get("/api/macro", self.api_macro)
         app.router.add_get("/api/vol", self.api_vol)
+        app.router.add_get("/api/playbooks", self.api_playbooks)
+        app.router.add_get("/api/playbook/{key}", self.api_playbook)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1192,6 +1194,21 @@ class WebServer:
             )
         except (TypeError, ValueError) as exc:
             raise web.HTTPBadRequest(text=str(exc)) from None
+        return _json(out)
+
+    async def api_playbooks(self, request: web.Request) -> web.Response:
+        """Every kind of news with a graded record: the index of playbooks (playbook.py)."""
+        from ..playbook import playbooks
+
+        return _json(playbooks(self.engine))
+
+    async def api_playbook(self, request: web.Request) -> web.Response:
+        """One kind of news, everything learned about it, with its rules of thumb (playbook.py)."""
+        from ..playbook import playbook
+
+        out = playbook(self.engine, request.match_info["key"])
+        if out is None:
+            raise web.HTTPNotFound(text="no such kind of news")
         return _json(out)
 
     async def api_vol(self, request: web.Request) -> web.Response:

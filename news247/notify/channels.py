@@ -1036,6 +1036,7 @@ class WebPushNotifier(Notifier):
             "body": body[:600],
             "direction": play.get("direction") or (alert.analysis.direction if alert.analysis else ""),
             "conviction": play.get("conviction", ""),
+            "call": (alert.edge.get("call") or {}).get("verb", ""),  # the phone can stay quiet on watch/skip
             "severity": alert.severity.name,
             "kind": alert.kind,
             "tickers": alert.tickers[:8],
