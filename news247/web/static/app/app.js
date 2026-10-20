@@ -795,7 +795,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadClimate(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -919,6 +919,7 @@ async function openSheet(id) {
     e.persona && e.persona.trait !== "mixed" ? `<h4>How ${esc(e.persona.symbol)} takes news</h4><div class="panel glass">
       <div class="kv"><span>${esc(e.persona.label)}</span><b class="num">${Object.entries(e.persona.path || {}).map(([h, v]) => `${{ h1: "1h", close: "close", d1: "next day", d5: "5 days", d20: "a month" }[h]} <span class="${cls(v)}">${pct(v)}</span>`).join(" · ")}</b></div>
       <div class="sub" style="padding:4px 0 12px">Its last ${e.persona.n} graded alerts here, medians, its way. History, not a forecast.</div></div>` : "",
+    e.climate ? `<div class="kv clim"><span class="${e.climate.state === "hot" ? "pos" : "neg"}">${e.climate.state === "hot" ? "🔥 Hot" : "🧊 Cold"} lately: ${esc(e.climate.label)} news went its way ${Math.round(e.climate.recent.hit * 100)}% in the last two weeks (${e.climate.recent.n}) vs ${Math.round(e.climate.before.hit * 100)}% before (${e.climate.before.n})</span></div>` : "",
     e.late ? `<h4>Late to the story</h4><div class="panel glass">
       <div class="kv"><span>It first broke ${Math.round(e.late.min)} minutes before this alert${e.late.source ? ` <span class="sub">${esc(outlet(e.late.source))}</span>` : ""}</span><b class="num">${e.late.rec?.close ? `<span class="${e.late.rec.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.late.rec.close.hit * 100)}%</span> <span class="sub">its way for alerts that late · ${e.late.rec.close.n}</span>` : ""}</b></div>
       <div class="sub" style="padding:4px 0 12px">Minutes from the story's first headline, from any outlet, to the one this alert came from. By then part of the market had it. History, not a forecast.</div></div>` : "",
@@ -1017,6 +1018,29 @@ async function loadDrift() {
   $("driftBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>5 sessions → a month</b></div>`
     + r.rows.map((x) => `<div class="kv"><span>${esc(x.key === "*" ? "Every alert" : x.label)} <span class="chipv ${DRIFT_TAG[x.verdict][1]}">${DRIFT_TAG[x.verdict][0]}</span>${x.x_d20 && x.x_d20.n >= r.need ? ` <span class="sub">${pct(x.x_d20.median)} vs SPY (${x.x_d20.n})</span>` : ""}</span><b class="num">${pct(x.d5.median)} → <span class="${cls(x.d20.median)}">${pct(x.d20.median)}</span> <span class="sub">${Math.round(x.d20.hit * 100)}% · ${x.d20.n}</span></b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every alert is graded 20 sessions on. Kinds the market takes weeks to price keep drifting; kinds it overshoots give it back. Medians, its way. Five sessions after news on your stock, a drift check says which its kind did here (Settings → Drift check).</div>`;
+}
+// news climate (Watch): each kind of news, the last two weeks against its record before them
+const CLIM = { hot: ["🔥 hot", "pos"], cold: ["🧊 cold", "neg"], normal: ["", ""] };
+async function loadClimate() {
+  let r;
+  try { r = await api("/api/climate"); } catch (_) { return; }
+  $("climWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const cell = (x) => x ? `${Math.round(x.hit * 100)}% <span class="sub">${x.n}</span>` : `<span class="sub">—</span>`;
+  $("climBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>its way: last ${r.days} days · before</b></div>`
+    + r.rows.slice(0, 14).map((x) => `<div class="kv"><span>${esc(x.label)}${x.state !== "normal" ? ` <span class="chipv ${CLIM[x.state][1]}">${CLIM[x.state][0]}</span>` : ""}</span><b class="num"><span class="${x.state === "hot" ? "pos" : x.state === "cold" ? "neg" : ""}">${cell(x.recent)}</span> · ${cell(x.before)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">By the close, its way. A kind is flagged hot or cold only when its last ${r.days} days differ from its record before by 15 points or more and beyond chance (z ≥ 1.64; ${r.min_recent}+ lately and ${r.min_before}+ before). Flagged kinds are named on their alerts and count in the call. History, not a forecast.</div>`;
+}
+// your exits against the plan's (Desk)
+async function loadPlanVs() {
+  let r;
+  try { r = await api("/api/planvs"); } catch (_) { return; }
+  $("dPlanWrap").hidden = !r.n && !r.skipped;
+  if ($("dPlanWrap").hidden) return;
+  $("dPlan").innerHTML = (r.line ? `<div class="kv"><span class="${r.verdict === "plan" ? "gold" : r.verdict === "yours" ? "pos" : ""}">${esc(r.line)}</span></div>` : `<div class="kv"><span class="sub">${r.n} of your calls replayed so far; ${r.need}+ before a verdict.</span></div>`)
+    + (r.n ? `<div class="kv"><span>Per call, on average <span class="sub">the plan better on ${Math.round(r.plan_better * 100)}% · stopped ${r.how.stopped} · target ${r.how.target} · at the close ${r.how.close}${r.ambiguous ? ` · ${r.ambiguous} hit both (read as stopped)` : ""}</span></span><b class="num">you <span class="${cls(r.yours)}">${pct(r.yours)}</span> · plan <span class="${cls(r.plan)}">${pct(r.plan)}</span></b></div>`
+      + r.rows.slice(0, 10).map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span>${x.direction === "long" ? "▲" : "▼"} ${esc(x.symbol)} <span class="sub">${ago(x.closed)} ago · the plan: ${esc(x.how)}${x.ambiguous ? " (both reached)" : ""}</span></span><b class="num">you <span class="${cls(x.yours)}">${pct(x.yours)}</span> · plan <span class="${cls(x.plan)}">${pct(x.plan)}</span></b></div>`).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Each call opened from an alert at about its price (within 0.5%, within 15 minutes) and closed in the same session, replayed with the alert's own plan: stopped if the dip reached its stop, at the target if the run reached it, else out at the close. When both were reached the order isn't recorded, so it reads as stopped. ${r.skipped ? `${r.skipped} other call${r.skipped === 1 ? "" : "s"} couldn't be replayed exactly and are left out.` : ""} Paper only.</div>`;
 }
 // coverage (Watch): alerts by how late they came to their story and how far it spread in its first hour
 async function loadCoverage() {
@@ -1823,6 +1847,7 @@ function evidenceHTML(ev) {
   if (ev.costly) rows.push(`<div class="kv"><span>Costliest setting <span class="sub">${esc(ev.costly.setting)}: kept back ${ev.costly.n} that went their way ${Math.round(ev.costly.hit * 100)}%</span></span><b>${ev.costly.fix?.action ? `<button class="btn ghost small" data-act="ev-fix">${esc(ev.costly.fix.label)}</button>` : ""}</b></div>`);
   if (ev.misses) rows.push(`<div class="kv"><span>Why the misses missed <span class="sub">${ev.misses.n} misses</span></span><b class="num">${ev.misses.causes.sector + ev.misses.causes.market} the tape · ${ev.misses.causes.news} news · <span class="neg">${ev.misses.causes.faded} the signal</span></b></div>`);
   if (ev.exits) rows.push(`<div class="kv"><span>Your exits <span class="sub">${ev.exits.graded} graded after the fact, 4 weeks</span></span><b>${ev.exits.insights.map((i) => `<span class="${i.tone === "good" ? "pos" : i.tone === "warn" ? "gold" : ""}">${esc(i.text)}</span>`).join("<br>")}${ev.exits.edge ? `${ev.exits.insights.length ? "<br>" : ""}<span class="sub">exit edge ${pct(ev.exits.edge.median)} a call vs one more session</span>` : ""}</b></div>`);
+  if (ev.planvs) rows.push(`<div class="kv"><span>Your exits vs the plan's <span class="sub">${ev.planvs.n} replayed, 4 weeks</span></span><b><span class="${ev.planvs.verdict === "plan" ? "gold" : ev.planvs.verdict === "yours" ? "pos" : ""}">${esc(ev.planvs.line)}</span></b></div>`);
   if ((ev.best || []).length || (ev.worst || []).length) rows.push(`<div class="kv"><span>Kinds of news this week</span><b>${[...(ev.best || []), ...(ev.worst || [])].map((k) => `${esc(k.label)} <span class="${cls(k.avg)}">${pct(k.avg)}</span> <span class="sub">(${k.n})</span>`).join("<br>")}</b></div>`);
   weekEv = ev;
   return rows.length ? `<div class="kv head"><span>The week in evidence</span><b>by the close</b></div>` + rows.join("") : "";
@@ -2835,7 +2860,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadPlanVs(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

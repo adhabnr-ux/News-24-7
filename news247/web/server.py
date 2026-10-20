@@ -178,6 +178,8 @@ class WebServer:
         app.router.add_get("/api/drift", self.api_drift)
         app.router.add_get("/api/coverage", self.api_coverage)
         app.router.add_get("/api/call", self.api_call)
+        app.router.add_get("/api/climate", self.api_climate)
+        app.router.add_get("/api/planvs", self.api_planvs)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1131,6 +1133,18 @@ class WebServer:
 
         rates = self.engine.call_rates
         return _json({"rows": [rates[v] for v in VERBS if v in rates]})
+
+    async def api_climate(self, request: web.Request) -> web.Response:
+        """News climate: each kind's last two weeks against its record before, hot or cold beyond chance (climate.py)."""
+        from ..climate import climate_board
+
+        return _json(climate_board(self.engine.climate_rates))
+
+    async def api_planvs(self, request: web.Request) -> web.Response:
+        """Your exits against the plan's, replayed on your closed calls from their alerts (planvs.py)."""
+        from ..planvs import plan_vs
+
+        return _json(plan_vs(self.engine, self._need_device(request)))
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""

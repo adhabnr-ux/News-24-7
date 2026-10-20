@@ -991,6 +991,11 @@ class WebPushNotifier(Notifier):
         pn = persona_line(ps) if ps and ps.get("trait") not in ("mixed", "runs") else ""
         if pn:
             base = f"{base}\n{pn}" if base else pn
+        from ..climate import climate_line
+
+        cll = climate_line(alert.edge.get("climate"))
+        if cll:
+            base = f"{base}\n{cll}" if base else cll
         from ..insiders import insider_line
 
         il = insider_line(alert.edge.get("insider_base"))

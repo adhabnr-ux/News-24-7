@@ -249,6 +249,7 @@ class Engine:
         self.drift_rates: dict[str, Any] = {}  # each kind of news a month on: drift or give back (drift.py)
         self.coverage_rates: dict[str, Any] = {}  # how late to the story, how far it spread (coverage.py)
         self.call_rates: dict[str, Any] = {}  # the call's own record by verb (thecall.py)
+        self.climate_rates: dict[str, Any] = {}  # each kind's last two weeks against its record (climate.py)
         self.ev_hist: tuple[list[float], int] = (
             [],
             1,
@@ -1871,6 +1872,11 @@ class Engine:
                 if cov and cov["late"] >= 2:  # the story was already out: how late, and how late alerts did
                     alert.edge["late"] = {"min": cov["late"], "source": cov["first_source"],
                                           "rec": self.coverage_rates.get(f"late:{late_bin(cov['late'])}")}  # fmt: skip
+            from .climate import climate_for
+
+            cl = climate_for(self.climate_rates, (alert.edge.get("catalyst") or {}).get("key"))
+            if cl:  # its kind is running hot or cold lately, beyond chance
+                alert.edge["climate"] = cl
             from .thecall import the_call
 
             call = the_call(alert.edge, outside(alert.created, self.calendar.holidays))
@@ -3823,6 +3829,9 @@ class Engine:
         from .thecall import call_rates
 
         self.call_rates = call_rates(self, 180, now)
+        from .climate import climate_rates
+
+        self.climate_rates = climate_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

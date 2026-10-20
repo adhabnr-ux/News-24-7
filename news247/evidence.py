@@ -104,6 +104,9 @@ def week_evidence(engine: Engine, device: str, now: float | None = None) -> dict
     from .exits import exit_report
 
     ex = exit_report(engine, device, 28, now)  # a month of exits: a week is too few to read
+    from .planvs import plan_vs
+
+    pv = plan_vs(engine, device, 28, now)
     exits = [i for i in ex["insights"] if i["key"] != "edge"]
     return {
         "week_of": datetime.fromtimestamp(w0, ET).date().isoformat(),
@@ -115,6 +118,7 @@ def week_evidence(engine: Engine, device: str, now: float | None = None) -> dict
         "costly": {"setting": costly["setting"], "n": costly["n"], "hit": costly["hit"], "avg": costly["avg"], "fix": costly["fix"]} if costly else None,
         "misses": {"n": ms["n"], "causes": ms["causes"], "failed": ms["failed"]} if ms["n"] else None,
         "exits": {"graded": ex["graded"], "insights": exits[:2], "edge": ex.get("edge")} if ex["insights"] else None,
+        "planvs": {"n": pv["n"], "verdict": pv["verdict"], "line": pv["line"]} if pv.get("verdict") else None,
         "best": [r for r in rows if r["avg"] > 0][:2],
         "worst": [r for r in reversed(rows) if r["avg"] < 0][:2],
     }  # fmt: skip
@@ -143,6 +147,9 @@ def evidence_lines(ev: dict[str, Any]) -> list[str]:
     ex = ev.get("exits")
     if ex and ex["insights"]:
         lines.append(ex["insights"][0]["text"])
+    pv = ev.get("planvs")
+    if pv and pv["verdict"] != "even":
+        lines.append(pv["line"])
     if ev.get("best"):
         b = ev["best"][0]
         lines.append(f"Worked: {b['label'].lower()} news {b['avg']:+.1f}% ({b['n']})")

@@ -7,7 +7,7 @@ reader to do the adding. The call does it, by a short, visible rule, and says wh
 
 - **✋ Skip:** two or more facts against it (odds under 45%, a negative expected move, a kind that
   went its way 40% or less, a stock that fights its news, a late alert when late alerts lose, a bad
-  regime record...), or one against and nothing for it.
+  regime record, a kind running cold lately...), or one against and nothing for it.
 - **⏸ Wait for the open:** news from outside the session whose kind kept going after the bell 45%
   of the time or less: the gap tends to fade first.
 - **⏸ Wait for a pullback:** a stock whose first-hour moves usually fade by the close.
@@ -67,6 +67,11 @@ def the_call(e: dict[str, Any], outside: bool = False) -> dict[str, Any] | None:
             pro.append(f"{what} {round(r['hit'] * 100)}%")
         elif r and r["hit"] <= 0.4:
             con.append(f"{what} {round(r['hit'] * 100)}%")
+    cl = e.get("climate") or {}
+    if cl.get("state") in ("hot", "cold"):
+        (pro if cl["state"] == "hot" else con).append(
+            f"{cl['state']} lately ({round(cl['recent']['hit'] * 100)}% in two weeks)"
+        )
     rb = e.get("regime_base")
     if rb and rb.get("n", 0) >= MIN_N and rb["hit"] <= 0.4:
         con.append(f"on {rb['regime']} days {round(rb['hit'] * 100)}%")
