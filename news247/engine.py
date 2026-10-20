@@ -240,6 +240,7 @@ class Engine:
         self.odds: dict[str, Any] = {}  # the calibrated odds model and its out-of-sample test (odds.py)
         self.firm_rates: dict[str, Any] = {}  # analyst firm x kind of call -> graded record (firms.py)
         self.h1_rates: dict[str, Any] = {}  # move after an hour -> how the day finished (liveodds.py)
+        self.heat_rates: dict[str, Any] = {}  # how far winners dipped and losers ran first (heat.py)
         self.ev_hist: tuple[list[float], int] = (
             [],
             1,
@@ -3689,6 +3690,9 @@ class Engine:
         from .liveodds import h1_table
 
         self.h1_rates = h1_table(self, 180, now)
+        from .heat import heat_rates
+
+        self.heat_rates = heat_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

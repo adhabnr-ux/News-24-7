@@ -138,6 +138,7 @@ def _rows(
     now: float,
     live: list[tuple[float, int]] | None = None,
     moves: dict[str, list[float]] | None = None,
+    later: dict[str, dict[str, Any]] | None = None,
 ) -> list[tuple[float, dict[str, float], int]]:
     """(created, features, went its way?) for every graded alert, oldest first. ``live`` collects
     (the odds it went out with, went its way?) for the alerts that carried odds: the forward test."""
@@ -164,6 +165,12 @@ def _rows(
         p = ((a.get("edge") or {}).get("odds") or {}).get("p")
         if live is not None and p is not None:
             live.append((float(p), y))
+        for h, acc in (later or {}).items():  # the same alert, graded the next day and five sessions on
+            if row.get(h) is not None:
+                rh = float(row["sign"] * row[h])
+                acc["rows"].append((a["created"], x, int(rh > 0)))
+                for k in ("*", *(k[4:] for k in x if k.startswith("cat="))):
+                    acc["moves"].setdefault(k, []).append(rh)
     out.sort(key=lambda r: r[0])
     return out
 
@@ -228,6 +235,33 @@ def live_record(pairs: list[tuple[float, int]]) -> dict[str, Any]:
 
 
 PAYOFF_MIN = 3  # wins and losses each, before a kind of news has its own payoff
+HORIZONS = {"d1": "the next day's close", "d5": "five sessions on"}
+
+
+def _test_and_fit(
+    rows: list[tuple[float, dict[str, float], int]],
+) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """Fit on the older three quarters, score on the newest quarter against guessing the hit rate,
+    then refit on everything: (the test, the model for use, whether it earned its place)."""
+    cut = int(len(rows) * (1 - HOLDOUT))
+    train, test = rows[:cut], rows[cut:]
+    m = _fit(train)
+    ps = [_p(m, x) for _, x, _ in test]
+    ys = [y for _, _, y in test]
+    brier = sum((p - y) ** 2 for p, y in zip(ps, ys, strict=True)) / len(ys)
+    guess = m["base"]
+    brier0 = sum((guess - y) ** 2 for y in ys) / len(ys)
+    skill = 1 - brier / brier0 if brier0 else 0.0
+    t = {"n": len(test), "train": len(train), "brier": round(brier, 4), "brier_guess": round(brier0, 4),
+         "skill": round(skill, 3), "auc": _auc(ps, ys), "hit": round(sum(ys) / len(ys), 3),
+         "guess": round(guess, 3), "reliability": _reliability(ps, ys), "from": test[0][0], "to": test[-1][0]}  # fmt: skip
+    return t, _fit(rows), len(test) >= MIN_TEST and skill > 0
+
+
+def _payoff_for(pay: dict[str, Any], key: str | None) -> tuple[dict[str, Any] | None, str]:
+    """The kind of news' own win and loss sizes when it has them, else every alert's."""
+    py, src = (pay.get(key), key) if key and pay.get(key) else (pay.get("*"), "*")
+    return py, src
 
 
 def payoffs(moves: dict[str, list[float]]) -> dict[str, dict[str, Any]]:
@@ -250,30 +284,32 @@ def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dic
     now = now or time.time()
     live: list[tuple[float, int]] = []
     moves: dict[str, list[float]] = {}
-    rows = _rows(engine, days, now, live, moves)
+    later: dict[str, dict[str, Any]] = {h: {"rows": [], "moves": {}} for h in HORIZONS}
+    rows = _rows(engine, days, now, live, moves, later)
     out: dict[str, Any] = {"n": len(rows), "need": MIN_TRAIN, "ready": False, "trusted": False, "fitted": now,
                            "live": live_record(live)}  # fmt: skip
     if len(rows) < MIN_TRAIN:
         return out
-    cut = int(len(rows) * (1 - HOLDOUT))
-    train, test = rows[:cut], rows[cut:]
-    m = _fit(train)
-    ps = [_p(m, x) for _, x, _ in test]
-    ys = [y for _, _, y in test]
-    brier = sum((p - y) ** 2 for p, y in zip(ps, ys, strict=True)) / len(ys)
-    guess = m["base"]
-    brier0 = sum((guess - y) ** 2 for y in ys) / len(ys)
-    skill = 1 - brier / brier0 if brier0 else 0.0
-    rel = _reliability(ps, ys)
-    out["test"] = {"n": len(test), "train": len(train), "brier": round(brier, 4), "brier_guess": round(brier0, 4),
-                   "skill": round(skill, 3), "auc": _auc(ps, ys), "hit": round(sum(ys) / len(ys), 3),
-                   "guess": round(guess, 3), "reliability": rel,
-                   "from": test[0][0], "to": test[-1][0]}  # fmt: skip
-    full = _fit(rows)
+    test, full, trusted = _test_and_fit(rows)
+    out["test"] = test
     out["model"] = full
     out["payoff"] = payoffs(moves)
     out["ready"] = True
-    out["trusted"] = len(test) >= MIN_TEST and skill > 0
+    out["trusted"] = trusted
+    out["horizons"] = {}
+    for h, acc in later.items():  # the same test, for holding to the next day and five sessions on
+        hr = sorted(acc["rows"], key=lambda r: r[0])
+        if len(hr) < MIN_TRAIN:
+            out["horizons"][h] = {"n": len(hr), "trusted": False}
+            continue
+        ht, hm, hok = _test_and_fit(hr)
+        out["horizons"][h] = {
+            "n": len(hr),
+            "trusted": hok,
+            "test": ht,
+            "model": hm,
+            "payoff": payoffs(acc["moves"]),
+        }
     top = sorted(full["w"].items(), key=lambda kv: -abs(kv[1]))
     out["factors"] = [
         {"name": k, "label": _label(k), "weight": round(v, 3)} for k, v in top[:12] if abs(v) >= 0.05
@@ -308,7 +344,7 @@ def predict(state: dict[str, Any] | None, a: dict[str, Any], regime: str | None)
     }
     pay = state.get("payoff") or {}
     key = next((k[4:] for k in x if k.startswith("cat=")), None)
-    py, src = (pay.get(key), key) if key and pay.get(key) else (pay.get("*"), "*")
+    py, src = _payoff_for(pay, key)
     if py:
         from .catalysts import LABELS as CAT
 
@@ -316,6 +352,25 @@ def predict(state: dict[str, Any] | None, a: dict[str, Any], regime: str | None)
         # odds against times how big its losses ran
         out.update(ev=round(p * py["win"] - (1 - p) * py["loss"], 2), win=py["win"], loss=py["loss"],
                    pay_from=f"{CAT.get(src, src).lower()} news" if src != "*" else "every alert")  # fmt: skip
+    by = {}
+    for h, hs in (state.get("horizons") or {}).items():
+        if not hs.get("trusted"):
+            continue
+        ph = _p(hs["model"], x)
+        hp, _ = _payoff_for(hs.get("payoff") or {}, key)
+        by[h] = {"p": round(ph, 3), "label": HORIZONS[h], "skill": hs["test"]["skill"],
+                 "ev": round(ph * hp["win"] - (1 - ph) * hp["loss"], 2) if hp else None}  # fmt: skip
+    if by:
+        out["by"] = by
+        evs = {"close": out.get("ev"), **{h: v["ev"] for h, v in by.items()}}
+        evs = {h: v for h, v in evs.items() if v is not None}
+        if evs:
+            best = max(evs, key=lambda h: evs[h])
+            out["best"] = {
+                "at": best,
+                "label": "the close" if best == "close" else HORIZONS[best],
+                "ev": evs[best],
+            }
     return out
 
 
@@ -331,4 +386,8 @@ def report(state: dict[str, Any] | None) -> dict[str, Any]:
     """For the track record: the out-of-sample test and the biggest factors."""
     if not state:
         return {"ready": False, "trusted": False, "n": 0, "need": MIN_TRAIN}
-    return {k: v for k, v in state.items() if k != "model"}
+    out = {k: v for k, v in state.items() if k not in ("model", "horizons")}
+    out["horizons"] = {
+        h: {k: v for k, v in hs.items() if k != "model"} for h, hs in (state.get("horizons") or {}).items()
+    }
+    return out

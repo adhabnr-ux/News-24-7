@@ -76,10 +76,20 @@ def trade_plan(
         if rows and rows[0].get("move_pct"):
             target = ref * (1 + sign * rows[0]["move_pct"] / 100)
             basis = f"what options price by {rows[0].get('expiry', 'the nearest expiry')} (±{rows[0]['move_pct']:.1f}%)"
-    # the stop: back through where it stood before the news, else half the target's distance
+    # the stop: past where most winners of its kind dipped before working (the record's heat), else
+    # back through where it stood before the news, else half the target's distance
+    from .heat import BUFFER, KEEP, heat_for
+
+    heat = heat_for(getattr(engine, "heat_rates", None) or {}, alert, engine.universe)
     pre = (e.get("pre") or {}).get(sym)
     before = ref / (1 + pre / 100) if pre is not None else None
-    if before is not None and sign * (ref - before) / ref * 100 >= 0.3:
+    if heat:
+        out["heat"] = heat
+    if heat and heat["dip80"] > 0:
+        dip = heat["dip80"] + BUFFER
+        stop = ref * (1 - sign * dip / 100)
+        stop_basis = f"past where {round(KEEP * 100)}% of winners on {heat['from']} dipped before working (−{heat['dip80']:.2f}%, {heat['winners']} winners)"
+    elif before is not None and sign * (ref - before) / ref * 100 >= 0.3:
         stop, stop_basis = before, "back through where it stood before the news"
     elif target is not None:
         stop, stop_basis = (

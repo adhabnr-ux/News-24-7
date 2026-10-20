@@ -272,7 +272,8 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
         if all(k in r for r in out.values() for k in ("h1", "close", "d1", "d5")) and out:
             continue  # fully graded
         changed = False
-        for sym, ref in list(refs.items())[:3]:
+        exc_new: dict[str, float] | None = None
+        for i, (sym, ref) in enumerate(list(refs.items())[:3]):
             if not ref:
                 continue
             row = dict(out.get(sym) or {})
@@ -280,6 +281,14 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
             if not q or not q[1] or q[0] < created:
                 continue
             move = (q[1] / float(ref) - 1.0) * 100.0
+            if i == 0 and sign and now < close_ts and q[0] <= close_ts:
+                # its best run and worst dip before the close, its way (heat.py reads these)
+                its = round(sign * move, 2)
+                exc = dict(e.get("exc") or {})
+                if its > exc.get("mfe", -1e9) or its < exc.get("mae", 1e9):
+                    exc["mfe"] = max(exc.get("mfe", its), its)
+                    exc["mae"] = min(exc.get("mae", its), its)
+                    exc_new = exc
             if "h1" not in row and now - created >= 3600 and q[0] - created < 3 * 3600:
                 row["h1"] = round(move, 2)
                 changed = True
@@ -293,6 +302,8 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
             row["sign"] = sign
             out[sym] = row
         patch: dict[str, Any] = {"outcome": out} if changed else {}
+        if exc_new is not None:
+            patch["exc"] = exc_new
         if e.get("mkt_ref"):  # the market over the same window, on the same clock
             mkt = dict(e.get("mkt_outcome") or {})
             q = engine.price_of("SPY", now=now)
