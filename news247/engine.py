@@ -2061,6 +2061,7 @@ class Engine:
                         k: pt[k] for k in ("limit", "dip", "p_now", "p_filled") if k in pt
                     }
             ek = (alert.edge.get("catalyst") or {}).get("key")
+            ck = ek or f"kind:{alert.kind}"  # the pair is graded for every kind of alert (combos.py)
             from .combos import DEFAULT as COMBO_DEFAULT
             from .combos import NAMES as COMBO_NAMES
             from .entries import STYLES as IN_NAMES
@@ -2074,17 +2075,18 @@ class Engine:
                                                         ("stop_rec", self.stop_rates, "none", STOP_NAMES, ("w1",)),
                                                         ("entry_rec", self.entry_rates, "alert", IN_NAMES, ()),
                                                         ("combo_rec", self.combo_rates, COMBO_DEFAULT, COMBO_NAMES, ())):  # fmt: skip
-                kr = rates.get(ek) if ek else None
+                key = ck if field == "combo_rec" else ek
+                kr = rates.get(key) if key else None
                 if kr and kr.get("best"):
-                    alert.edge[field] = stamp(kr, ek, default, names, extra)
+                    alert.edge[field] = stamp(kr, key, default, names, extra)
             cr = alert.edge.get("combo_rec")
             if cr:  # the pair's way in and way out, for the playbook autopilot (combos.py)
                 cr["proven"] = (
-                    bool((self.combo_rates.get(ek) or {}).get("proven")) or cr["best"] == COMBO_DEFAULT
+                    bool((self.combo_rates.get(ck) or {}).get("proven")) or cr["best"] == COMBO_DEFAULT
                 )
                 cr["in"], cr["out"] = cr["best"].split("|")
                 cr["name"] = COMBO_NAMES.get(cr["best"], cr["best"])  # readable without the board loaded
-                kr = self.combo_rates.get(ek) or {}
+                kr = self.combo_rates.get(ck) or {}
                 if (
                     kr.get("late") and kr.get("best") == cr["best"]
                 ):  # the same pair, 5 minutes late (combos.py)

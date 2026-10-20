@@ -6,7 +6,7 @@ overnight, drops a call whose news was denied. Each is on the live board, and no
 to a picture there. After the close the desk writes the day up in a few sentences:
 
     "The playbook's day: 14 directional alerts. It took 6 (3 at the alert, 2 on second legs, 1 at
-    its limit), passed on 4 (kinds that don't pay here) and 4 entries never came. Cut early: 1 by
+    its limit), passed on 4 (where the record says sit out) and 4 entries never came. Cut early: 1 by
     the time stop, 1 at the close instead of overnight, 1 denied. On paper it made +0.8% a call
     against +0.3% the plain way on the same alerts (6). Best ACME +3.1%, worst BETA -1.2%."
 
@@ -76,7 +76,7 @@ def story(d: dict[str, Any]) -> str:
         s += " It took none"
     rest = []
     if d["passed"]:
-        rest.append(f"passed on {d['passed']} (kinds that don't pay here)")
+        rest.append(f"passed on {d['passed']} (where the record says sit out)")
     if d["never"]:
         rest.append(f"{d['never']} entr{'ies' if d['never'] != 1 else 'y'} never came")
     if d["waiting"]:

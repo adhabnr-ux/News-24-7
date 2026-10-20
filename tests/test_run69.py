@@ -110,8 +110,8 @@ def test_the_day_in_a_paragraph():
     )
     assert d["avg"] == round((3.1 - 1.2 + 0.5 - 0.2) / 4, 2) and d["plain"] == round((2.0 - 0.5 + 0.4) / 3, 2)
     assert d["text"] == (
-        "The playbook's day: 6 directional alerts. It took 4 (2 at the alert, 2 on second legs), passed on 1 (kinds "
-        "that don't pay here) and 1 entry never came. Cut early: 1 by the time stop, 1 at the close instead of "
+        "The playbook's day: 6 directional alerts. It took 4 (2 at the alert, 2 on second legs), passed on 1 (where the record "
+        "says sit out) and 1 entry never came. Cut early: 1 by the time stop, 1 at the close instead of "
         "overnight. On paper it made +0.6% a call against +0.6% the plain way on the same alerts (3). "
         "Best ACME +3.1%, worst BETA -1.2%."
     )

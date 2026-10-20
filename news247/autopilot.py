@@ -169,18 +169,39 @@ def exit_time(exit_: str, ts: float, calendar: Any = None) -> float:
     return first
 
 
+def playbook_pass(alert: dict[str, Any]) -> str:
+    """Why the playbook sits this alert out ("" when it doesn't): its kind doesn't pay here, or
+    the stock fights its own news (persona.py)."""
+    e = alert.get("edge") or {}
+    cr = e.get("combo_rec") or {}
+    if cr.get("pass"):
+        best = ((cr.get("styles") or {}).get(cr.get("best") or "") or {}).get("avg")
+        return "no way in and out made money on its kind here" + (
+            f" (the best {best:+.1f}%)" if best is not None else ""
+        )
+    ps = e.get("persona") or {}
+    if ps.get("trait") == "fights":
+        return f"this stock fights its news here ({round((ps.get('hit') or 0) * 100)}% of its {ps.get('n')} alerts went their way)"
+    return ""
+
+
 def playbook_in(alert: dict[str, Any]) -> str | None:
     """The way in the playbook takes: the graded pair's (combos.py), else its kind's best entry."""
     e = alert.get("edge") or {}
-    if (e.get("combo_rec") or {}).get("pass"):
-        return None  # no way in and out made money on its kind here: the playbook passes
+    if playbook_pass(alert):
+        return None  # it sits this one out
     return (e.get("combo_rec") or {}).get("in") or (e.get("entry_rec") or {}).get("best")
 
 
 def playbook_out(alert: dict[str, Any]) -> str | None:
     """The way out the playbook takes: the graded pair's (combos.py), else its kind's best exit."""
     e = alert.get("edge") or {}
-    return (e.get("combo_rec") or {}).get("out") or (e.get("exit_rec") or {}).get("best")
+    out = (e.get("combo_rec") or {}).get("out") or (e.get("exit_rec") or {}).get("best")
+    if (e.get("persona") or {}).get("trait") == "fades_day" and out in ("close", "d1", "d5"):
+        # a stock whose first-hour moves mostly don't last the day: take the first hour when the way
+        # in allows it, else don't hold past the close (persona.py)
+        return "h1" if playbook_in(alert) in ("alert", "vol15") else "close"
+    return out
 
 
 def playbook_exit(alert: dict[str, Any]) -> tuple[str, bool]:

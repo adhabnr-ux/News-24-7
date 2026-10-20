@@ -52,6 +52,24 @@ DEFAULT = "alert|close"
 PAIRS = {"alert": ("h1", "close", "d1", "d5", "bracket"), "open": ("close", "d1", "d5"), "patient": ("close", "d1", "d5"),
          "leg2": ("close", "d1", "d5"), "turn": ("close", "d1", "d5"), "vol15": ("h1", "close", "d1", "d5")}  # fmt: skip
 NAMES = {f"{i}|{o}": f"{IN[i]}, out {OUT[o].lower()}" for i, outs in PAIRS.items() for o in outs}
+# alerts with no kind of news read get a playbook by what raised them
+KIND_LABELS = {"news": "Other news", "options": "Options flow", "confluence": "Confluence", "price": "Price moves",
+               "chatter": "Chatter", "trend": "Trends", "narrative": "Narratives", "attention": "Attention"}  # fmt: skip
+
+
+def key_of(a: dict[str, Any], catalyst: dict[str, Any] | None) -> str:
+    """The playbook's key for an alert: its kind of news, else what raised it ("kind:options")."""
+    return catalyst["key"] if catalyst else f"kind:{a.get('kind') or 'news'}"
+
+
+def label_of(key: str) -> str:
+    from .catalysts import LABELS
+
+    if key == "*":
+        return "Any news"
+    if key.startswith("kind:"):
+        return KIND_LABELS.get(key[5:], key[5:].capitalize())
+    return LABELS.get(key, key)
 
 
 def combos(a: dict[str, Any]) -> dict[str, float]:
@@ -91,7 +109,7 @@ def late(a: dict[str, Any], minutes: str = "m5") -> dict[str, float]:
 
 def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
     """{kind: {"kind", "label", "n", "styles": {"in|out": {"n", "hit", "median", "avg"}}, "best", "holdout"}}."""
-    from .catalysts import LABELS, classify
+    from .catalysts import classify
     from .holdout import check
 
     now = now or time.time()
@@ -107,7 +125,7 @@ def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> 
             continue
         lt = late(a)
         c = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)
-        for kind in ("*", c["key"]) if c else ("*",):
+        for kind in ("*", key_of(a, c)):
             counts[kind] = counts.get(kind, 0) + 1
             for pair, x in got.items():
                 pools.setdefault(kind, {}).setdefault(pair, []).append(x)
@@ -131,7 +149,7 @@ def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> 
             and DEFAULT in rows
             and rows[best]["lo"] > rows[DEFAULT]["avg"]
         )
-        out[kind] = {"kind": kind, "label": "Any news" if kind == "*" else LABELS.get(kind, kind), "n": counts[kind],
+        out[kind] = {"kind": kind, "label": label_of(kind), "n": counts[kind],
                      "styles": rows, "best": best, "proven": proven, "holdout": check(dated[kind], DEFAULT, best)}  # fmt: skip
         if best and best.startswith("alert|") and best != "alert|bracket":
             xs = (lates.get(kind) or {}).get(best.split("|")[1]) or []

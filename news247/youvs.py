@@ -36,7 +36,9 @@ def playbook_result(a: dict[str, Any]) -> tuple[float, str] | None:
     got = combos(a)
     if DEFAULT not in got:
         return None
-    if ((a.get("edge") or {}).get("combo_rec") or {}).get("pass"):
+    from .autopilot import playbook_pass
+
+    if playbook_pass(a):
         return 0.0, "pass"  # the playbook sat it out
     pin, pout = playbook_in(a), playbook_out(a)
     if not pin or not pout:

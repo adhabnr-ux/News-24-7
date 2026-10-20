@@ -45,15 +45,17 @@ def state(a: dict[str, Any], live: float | None, now: float, calendar: Any = Non
     pin, pout = playbook_in(a), playbook_out(a)
     d = _direction(a)
     cr = e.get("combo_rec") or {}
-    if cr.get("pass") and d in ("up", "down"):  # the playbook passes on its kind of news here
-        best = ((cr.get("styles") or {}).get(cr.get("best") or "") or {}).get("avg")
+    from .autopilot import playbook_pass
+
+    why_pass = playbook_pass(a)
+    if why_pass and d in ("up", "down"):  # the playbook sits it out: its kind, or the stock
         sym = (
             next(iter(e.get("outcome") or {}), None)
             or next(iter(e.get("refs") or {}), None)
             or ((a.get("tickers") or [""])[0])
         )
         return {"in": cr.get("in"), "out": cr.get("out"), "symbol": sym, "sign": 1 if d == "up" else -1, "status": "pass",
-                "why": "no way in and out made money on its kind here" + (f" (the best {best:+.1f}%)" if best is not None else "")}  # fmt: skip
+                "why": why_pass}  # fmt: skip
     if not pin or not pout or d not in ("up", "down"):
         return None
     sign = 1 if d == "up" else -1
