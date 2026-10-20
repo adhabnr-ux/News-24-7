@@ -1321,6 +1321,9 @@ class WebServer:
         from ..catalysts import divergence_record
 
         out["diverge"] = divergence_record(self.engine)
+        from ..catalysts import confirm_record
+
+        out["confirm"] = confirm_record(self.engine)
         return _json(out)
 
     async def api_foretape(self, request: web.Request) -> web.Response:

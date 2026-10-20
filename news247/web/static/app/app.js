@@ -1182,6 +1182,7 @@ function renderDesk() {
     <div class="kv"><span>Sympathy ${tip("sympathy")}<div class="sub">a peer of a stock you watch or hold jumps 4%+ on news and yours hasn't moved yet (at most 3 a day)</div></span><b><button class="btn ghost small${pr.sympathy !== false ? " sel" : ""}" data-act="flag" data-s="sympathy">${pr.sympathy !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Today's setups, 9:25 ET<div class="sub">the best alerts since the last close, each with a plan (stop, target, size), in one push before the open</div></span><b><button class="btn ghost small${pr.setups ? " sel" : ""}" data-act="flag" data-s="setups">${pr.setups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Confirmations<div class="sub">an alert on your stock holding up an hour in, when alerts like it finished their way 80%+ of the time</div></span><b><button class="btn ghost small${pr.confirm !== false ? " sel" : ""}" data-act="flag" data-s="confirm">${pr.confirm !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Divergence<div class="sub">a strong kind of news, and the stock going the other way 15-90 minutes later (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.diverge !== false ? " sel" : ""}" data-act="flag" data-s="diverge">${pr.diverge !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Second chance<div class="sub">a stock that ran its alert's way and came back to the alert price, when its kind of news went its way 60%+ of the time (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.retest !== false ? " sel" : ""}" data-act="flag" data-s="retest">${pr.retest !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Follow-ups<div class="sub">an hour after an alert on a stock you watch or hold, if it moved 2%+: how it played out</div></span><b><button class="btn ghost small${pr.followups ? " sel" : ""}" data-act="flag" data-s="followups">${pr.followups ? "On" : "Off"}</button></b></div>
@@ -1355,6 +1356,8 @@ async function loadRecord() {
         <div class="kv sub"><span>${order.map((k) => `<span style="color:${col[k]}">■</span> ${esc(ms.labels[k])} ${ms.causes[k]}`).join(" · ")}</span><b>${Math.round(ms.failed * 100)}% the signal</b></div>`
         + ms.kinds.slice(0, 8).map((k) => `<div class="kv"><span>${esc(k.label)} <span class="sub">${k.n} misses · sector ${k.sector} · market ${k.market} · news ${k.news} · faded ${k.faded}</span></span><b class="num ${k.failed >= 0.5 ? "neg" : ""}">${Math.round(k.failed * 100)}%<span class="sub"> the signal</span></b></div>`).join("");
     }
+    const cf = r.confirm;
+    if (cf?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Confirmations</span><b>close</b></div><div class="kv"><span>${cf.flags} flagged, 120 days <span class="sub">kept going its way from the flag price?</span></span><b class="rec">${cell(cf.close)}</b></div>`;
     const dv = r.diverge;
     if (dv?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Divergences</span><b>close</b></div><div class="kv"><span>${dv.flags} flagged, 120 days <span class="sub">kept going against the news by the close?</span></span><b class="rec">${cell(dv.close)}</b></div>`;
     const rt = r.retest;
@@ -1559,7 +1562,22 @@ async function loadWeek() {
     `<div class="kv"><span>Alerts on your stocks</span><b class="num">${al.graded ? `${al.right} of ${al.graded} went their way by the close` : "none graded yet"}</b></div>`,
     nx.earnings.length ? `<div class="kv"><span>Reporting next</span><b>${nx.earnings.map((e) => `<span data-tk="${esc(e.symbol)}" role="button">${esc(e.symbol)}</span> ${esc(day(e.date))}`).join(" · ")}</b></div>` : "",
     nx.events.length ? `<div class="kv"><span>Big dates</span><b>${nx.events.slice(0, 3).map((e) => `${esc(e.title)} (${esc(day(e.date))})`).join("<br>")}</b></div>` : "",
-  ].join("");
+  ].join("") + evidenceHTML(r.evidence);
+}
+let weekEv = null;
+// the week in evidence: your picks against what you passed on, the model's week, how calls ended, misses
+function evidenceHTML(ev) {
+  if (!ev) return "";
+  const st = (x) => x ? `<span class="${cls(x.avg)}">${pct(x.avg)}</span> <span class="sub">${Math.round(x.hit * 100)}% · ${x.n}</span>` : `<span class="sub">none</span>`;
+  const rows = [];
+  if (ev.picks || ev.passed) rows.push(`<div class="kv"><span>Your picks <span class="sub">alerts you tracked or saved, by the close</span></span><b class="num">${st(ev.picks)}</b></div><div class="kv"><span>What you passed on <span class="sub">reached you, not taken</span></span><b class="num">${st(ev.passed)}</b></div>`);
+  if (ev.model) rows.push(`<div class="kv"><span>The odds model <span class="sub">what it said vs what happened</span></span><b class="num">${Math.round(ev.model.said * 100)}% → <span class="${Math.abs(ev.model.went - ev.model.said) <= 0.1 ? "pos" : "neg"}">${Math.round(ev.model.went * 100)}%</span> <span class="sub">${ev.model.n}</span></b></div>`);
+  if ((ev.endings || []).length) rows.push(`<div class="kv"><span>How calls ended</span><b>${ev.endings.map((e) => `${esc(e.ending)} <span class="${cls(e.avg)}">${pct(e.avg)}</span> <span class="sub">(${e.n})</span>`).join("<br>")}</b></div>`);
+  if (ev.costly) rows.push(`<div class="kv"><span>Costliest setting <span class="sub">${esc(ev.costly.setting)}: kept back ${ev.costly.n} that went their way ${Math.round(ev.costly.hit * 100)}%</span></span><b>${ev.costly.fix?.action ? `<button class="btn ghost small" data-act="ev-fix">${esc(ev.costly.fix.label)}</button>` : ""}</b></div>`);
+  if (ev.misses) rows.push(`<div class="kv"><span>Why the misses missed <span class="sub">${ev.misses.n} misses</span></span><b class="num">${ev.misses.causes.sector + ev.misses.causes.market} the tape · ${ev.misses.causes.news} news · <span class="neg">${ev.misses.causes.faded} the signal</span></b></div>`);
+  if ((ev.best || []).length || (ev.worst || []).length) rows.push(`<div class="kv"><span>Kinds of news this week</span><b>${[...(ev.best || []), ...(ev.worst || [])].map((k) => `${esc(k.label)} <span class="${cls(k.avg)}">${pct(k.avg)}</span> <span class="sub">(${k.n})</span>`).join("<br>")}</b></div>`);
+  weekEv = ev;
+  return rows.length ? `<div class="kv head"><span>The week in evidence</span><b>by the close</b></div>` + rows.join("") : "";
 }
 // the Brief's "day in one screen": today's alerts on a time axis, over SPY
 async function loadDay() {
@@ -2131,6 +2149,7 @@ async function onAct(el) {
   else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }
   else if (a === "edge-pick") { Object.assign(lab, { catalyst: s, band: el.dataset.b, horizon: el.dataset.h, kind: "all", scope: "all", fades: "" }); store.set("ft_lab", JSON.stringify(lab)); await loadLab(); $("dLab")?.querySelector(".labhead")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
   else if (a === "lab-auto") { if (await deskEdit("autopilot_add", { catalyst: lab.catalyst, band: lab.band, min_sev: lab.sev, exit: lab.horizon })) { toast("🤖 Autopilot on: each new alert like this opens a paper call here", null, 6000); renderAutopilots(); } }
+  else if (a === "ev-fix") { const f = weekEv?.costly?.fix; if (f && await deskEdit(f.action, f.body)) { toast("Done: " + f.label.toLowerCase()); loadWeek(); } }
   else if (a === "budget") { if (await deskEdit("prefs", { budget: +s })) toast(+s ? `Only your ${s} best alerts a day push now (your stocks and CRITICAL still come)` : "Every alert that clears your settings may push"); }
   else if (a === "odds-follow") { if (await deskEdit("autopilot_add", { catalyst: "all", band: "all", min_sev: "HIGH", exit: "close", min_odds: 60 })) { toast("🤖 Following the model: each new HIGH alert it rates 60%+ opens a paper call here", null, 6000); renderAutopilots(); } }
   else if (a === "cost-fix") { const g = cost?.gates[+el.dataset.n]; if (g?.fix && await deskEdit(g.fix.action, g.fix.body)) { toast("Done: " + g.fix.label.toLowerCase()); loadCost(); loadActions(); } }

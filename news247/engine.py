@@ -48,6 +48,7 @@ BACKFILL_PUSH_MAX_AGE = 300.0  # at start-up, only push items published in the l
 CONFIRM_BONUS, CONFIRM_CAP = 6.0, 18.0
 KW_MIN_SCORE = 12.0  # a keyword push still needs a headline the scorer found some substance in
 MARKET = "SPY"  # what every grade is also read against (market-adjusted records)
+CONFIRM_ODDS = 0.8  # live odds this high, an hour or more in, and the news is "holding" (liveodds.py)
 CATALYST_MIN_SCORE = 25.0
 OVERNIGHT_MIN_SCORE = 35.0  # MEDIUM and up: kept back to the previous session for the radar/options
 MULTI_MOVE_MIN = 3
@@ -2359,6 +2360,10 @@ class Engine:
                 with contextlib.suppress(Exception):
                     self.grade_divergence(now)
                 with contextlib.suppress(Exception):
+                    await self.check_confirm(now)
+                with contextlib.suppress(Exception):
+                    self.grade_confirm(now)
+                with contextlib.suppress(Exception):
                     from .dossier import grade_sympathy
 
                     grade_sympathy(self, now)
@@ -2657,6 +2662,85 @@ class Engine:
             self.storage.set_setting("diverge_log", json.dumps(log[-500:]))
         self.storage.set_setting(sent_key, json.dumps(sorted(sent_keys)))
         return sent
+
+    async def check_confirm(self, now: float | None = None) -> int:
+        """The news is holding: an alert 1-3 hours old, moving its way (0.25%+), whose live odds say
+        alerts like it finished their way 80%+ of the time (10+ graded). One push to phones that
+        watch, hold, opened or saved it; each flag logged and graded at the close from its price."""
+        from .liveodds import live_line, live_odds
+
+        now = now or time.time()
+        if self.webpush is None or self.calendar.market_status(now).get("phase") != "open":
+            return 0
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        sent_key = f"confirm:{day}"
+        sent_keys = set(json.loads(self.storage.get_setting(sent_key) or "[]"))
+        log: list[dict[str, Any]] | None = None
+        sent = 0
+        for a in self.storage.recent_alerts(300, since=now - 3 * 3600):
+            if a.get("kind") == "system" or now - a.get("created", now) < 3600:
+                continue
+            lo = live_odds(self, a, now)
+            if not lo or lo["p"] < CONFIRM_ODDS or lo["n"] < 10 or lo["since"] < 0.25:
+                continue
+            sym = lo["symbol"]
+            q = self.price_of(sym, 900, now=now)
+            if log is None:
+                log = json.loads(self.storage.get_setting("confirm_log") or "[]")
+            if not any(e["alert_id"] == a["id"] for e in log):
+                from .dossier import _direction
+
+                sign = 1 if _direction(a) == "up" else -1
+                log.append({"ts": now, "day": day, "alert_id": a["id"], "symbol": sym, "sign": sign,
+                            "ref": q[1] if q else None, "p": lo["p"], "since": lo["since"], "close": None})  # fmt: skip
+            devices = set(self.desk.watchers([sym])) | {
+                dv
+                for dv, p in self.desk.profiles.items()
+                if a["id"] in (p.get("opened") or []) or a["id"] in (p.get("saved") or [])
+            }
+            for dev in devices:
+                key = f"{dev}:{a['id']}"
+                if key in sent_keys or not (self.desk.get(dev).get("prefs") or {}).get("confirm", True):
+                    continue
+                probe = {"kind": a.get("kind"), "severity": "HIGH", "tickers": [sym],
+                         "edge": {"catalyst": (a.get("edge") or {}).get("catalyst")}}  # fmt: skip
+                if not self.desk.allows(dev, probe, now):
+                    continue
+                sent_keys.add(key)
+                payload = {"id": f"cf-{a['id']}", "title": f"✅ {sym}'s news is holding: {lo['since']:+.1f}% {lo['hours']:g} hours in",
+                           "body": f"“{a.get('title', '')[:110]}”\n{live_line(lo)}\nA second look, not a signal.",
+                           "severity": "HIGH", "kind": "system", "tickers": [sym], "tag": f"cf-{sym}", "ts": now,
+                           "open": f"/app/#a={a['id']}"}  # fmt: skip
+                if await self._to_device(dev, payload):
+                    sent += 1
+        if log is not None:
+            self.storage.set_setting("confirm_log", json.dumps(log[-500:]))
+        self.storage.set_setting(sent_key, json.dumps(sorted(sent_keys)))
+        return sent
+
+    def grade_confirm(self, now: float | None = None) -> int:
+        """Confirmation flags graded at the close: the move its way from the price when it was flagged."""
+        now = now or time.time()
+        raw = self.storage.get_setting("confirm_log")
+        if not raw:
+            return 0
+        log = json.loads(raw)
+        graded = 0
+        for e in log:
+            if e.get("close") is not None or not e.get("ref"):
+                continue
+            close = (
+                datetime.fromtimestamp(e["ts"], ET)
+                .replace(hour=16, minute=0, second=0, microsecond=0)
+                .timestamp()
+            )
+            q = self.price_of(e["symbol"], 900, now=now)
+            if q and close <= now <= close + 1800:
+                e["close"] = round(e["sign"] * (q[1] / e["ref"] - 1.0) * 100.0, 2)
+                graded += 1
+        if graded:
+            self.storage.set_setting("confirm_log", json.dumps(log))
+        return graded
 
     def grade_divergence(self, now: float | None = None) -> int:
         """Divergence flags graded at the close: how far it went against the news, from the alert price."""

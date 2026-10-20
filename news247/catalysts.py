@@ -526,6 +526,18 @@ def divergence_record(engine: Engine, now: float | None = None, days: float = 12
     return {"flags": len(log), "close": _stats(xs)}
 
 
+def confirm_record(engine: Engine, now: float | None = None, days: float = 120) -> dict[str, Any]:
+    """How past confirmation flags did by the close, from the price when they were flagged."""
+    now = now or time.time()
+    log = [
+        e
+        for e in json.loads(engine.storage.get_setting("confirm_log") or "[]")
+        if e["ts"] >= now - days * 86400
+    ]
+    xs = [e["close"] for e in log if e.get("close") is not None]
+    return {"flags": len(log), "close": _stats(xs)}
+
+
 # --------------------------------------------------------------------------- regimes
 
 REGIME_MIN_N = 4

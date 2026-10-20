@@ -472,7 +472,10 @@ def calendar_ics(engine: Engine, device: str = "", now: float | None = None, day
 
 def week_card(engine: Engine, device: str, now: float | None = None) -> dict[str, Any] | None:
     """This phone's week (Monday on): calls closed and their record, open calls, how the alerts on
-    its stocks did at the close; and next week for its stocks: earnings and high-impact events."""
+    its stocks did at the close; and next week for its stocks: earnings and high-impact events.
+    Plus the week in evidence (evidence.py)."""
+    from .evidence import week_evidence
+
     now = now or time.time()
     p = engine.desk.profiles.get(device)
     if not p or not (p.get("watchlist") or p.get("tracked") or p.get("closed")):
@@ -515,6 +518,7 @@ def week_card(engine: Engine, device: str, now: float | None = None) -> dict[str
         "open": {"n": len(open_), "avg": round(sum(open_) / len(open_), 2) if open_ else None},
         "alerts": {"graded": graded, "right": right},
         "next": {"earnings": earnings, "events": events},
+        "evidence": week_evidence(engine, device, now),
     }  # fmt: skip
 
 
@@ -530,6 +534,9 @@ def week_push(card: dict[str, Any]) -> dict[str, Any] | None:
         lines.append(f"Open: {o['n']} call(s), avg {o['avg']:+.1f}%")
     if a["graded"]:
         lines.append(f"Alerts on your stocks: {a['right']} of {a['graded']} went their way by the close")
+    from .evidence import evidence_lines
+
+    lines += evidence_lines(card.get("evidence") or {})[:3]
     nxt = card["next"]
     if nxt["earnings"]:
         lines.append(

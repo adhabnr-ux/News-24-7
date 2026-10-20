@@ -136,6 +136,7 @@ def default_profile() -> dict[str, Any]:
             "edge_min": None,  # only push news whose catalyst record clears this: hit50 | hit60 | move2
             "manage": True,  # nudges on open paper calls: breakeven at +1R, a gain given back, dead money
             "budget": 0,  # pushes a day: only alerts among the N best a day by expected move (0 = off)
+            "confirm": True,  # an alert on your stock holding up an hour in, with 80%+ live odds
         },
         "price_alerts": [],
         "tracked": [],
@@ -715,6 +716,7 @@ class Desk:
                 "setups",
                 "diverge",
                 "manage",
+                "confirm",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1442,6 +1444,7 @@ class Desk:
                     "diverge",
                     "manage",
                     "budget",
+                    "confirm",
                     "watch_push",
                     "min_sev",
                     "digest",
