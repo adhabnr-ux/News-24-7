@@ -229,6 +229,15 @@ function footRow(a) {
   if (a.url) parts.push(`<a href="${esc(a.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${quote ? "Quote" : "Source"} ↗</a>`);
   return parts.length ? `<div class="foot">${parts.join("")}</div>` : "";
 }
+let workingNow = {};  // kind of news -> today's live grade (what's working today)
+function workRow(a) {
+  const w = workingNow[a.edge?.catalyst?.key];
+  if (!w || w.n < 2) return "";
+  return `<div class="base work">Today, ${esc(w.label.toLowerCase())} news is <b class="${cls(w.avg)}">${pct(w.avg)}</b> its way so far <span class="faint">· ${w.n} alerts</span></div>`;
+}
+async function loadWorking() {
+  try { const r = await api("/api/working"); workingNow = Object.fromEntries([...r.rows, ...r.thin].map((x) => [x.key, x])); return r; } catch (_) { return null; }
+}
 function baseRow(a) {
   const cb = a.edge?.cat_base;
   if (cb?.close) return `<div class="base"><b>${esc(cb.label)}</b> <span class="faint">${esc(cb.band_label)}</span> went their way <b class="${cb.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(cb.close.hit * 100)}%</b> by the close, median <b class="${cls(cb.close.median)}">${pct(cb.close.median)}</b> <span class="faint">· ${cb.close.n} graded ${tip("catalyst")}</span></div>`;
@@ -337,7 +346,7 @@ function alertHTML(a, opts = {}) {
       <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${a.kind !== "system" && a.edge?.base ? `<span class="edge">edge ${edgeScore(a).score}</span>` : ""}${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
-      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${plainLine(a)}${expoRow(a)}${precLine(a)}${preRow(a)}${baseRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}${collapsedChip(a)}
+      ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${plainLine(a)}${expoRow(a)}${precLine(a)}${preRow(a)}${baseRow(a)}${workRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}${collapsedChip(a)}
     </div>
   </article>`;
 }
@@ -446,6 +455,7 @@ async function load() {
   document.querySelectorAll("#levels button").forEach((b) => b.classList.toggle("sel", b.dataset.cmd === lvl));
   if (tab === "brief") loadBrief().catch(() => {});
   loadTicker();
+  loadWorking().then((r) => { if (r?.graded && tab === "tape") renderTape(); });
 }
 
 async function loadBrief() {
@@ -690,6 +700,18 @@ async function loadRoom() {
       <span class="chg num pos" style="width:auto;min-width:64px">${pct(x.room)}<small class="rsess">room</small></span></div>`; }).join("")
     + `<div class="sub" style="padding:4px 0 12px">The typical move is the median for that catalyst at that company size, from Foretape's own graded alerts. History, not a forecast: many never make it.</div>`;
 }
+async function loadWorkBoard() {
+  const r = await loadWorking();
+  if (!r) return;
+  const rows = [...r.rows, ...r.thin.map((x) => ({ ...x, thin: true }))];
+  $("workWrap").hidden = !rows.length;
+  const top = Math.max(1, ...rows.map((x) => Math.abs(x.avg)));
+  $("working").innerHTML = rows.map((x) => `<div class="li"><div class="grow"><div style="font-weight:600">${esc(x.label)} <span class="sub">${x.n} alert${x.n === 1 ? "" : "s"} · ${Math.round(x.hit * 100)}% its way so far${x.thin ? " · too few to read" : ""}</span></div>
+      <div class="wbar"><i class="${x.avg >= 0 ? "pos" : "neg"}" style="width:${(Math.abs(x.avg) / top * 50).toFixed(1)}%;${x.avg >= 0 ? "left:50%" : `right:50%`}"></i></div>
+      <div class="tks">${x.alerts.map((y) => `<span class="tk" data-id="${esc(y.id)}" role="button">${esc(y.symbol)} <small class="${cls(y.move)}">${pct(y.move)}</small></span>`).join("")}</div></div>
+      <span class="chg num ${cls(x.avg)}">${pct(x.avg)}</span></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Each of today's alerts from its own reference price, its way, so far; grouped by kind of news. Which news the market is paying for today, and which it is fading.</div>`;
+}
 async function loadPTBoard() {
   let r;
   try { r = await api("/api/targets"); } catch (_) { return; }
@@ -700,7 +722,7 @@ async function loadPTBoard() {
     ${x.change_pct != null ? `<span class="chg num ${cls(x.change_pct)}">${pct(x.change_pct)}</span>` : ""}</div>`).join("");
 }
 async function loadWatch() {
-  loadPTBoard(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -1110,6 +1132,7 @@ function renderDesk() {
       <button class="btn ghost small${store.get("ft_haptic") === "1" ? " sel" : ""}" data-act="display" data-s="haptic">Vibrate on alerts</button><button class="btn ghost small${store.get("ft_chime") === "1" ? " sel" : ""}" data-act="display" data-s="chime">Chime on alerts</button><button class="btn ghost small${store.get("ft_beginner") === "1" ? " sel" : ""}" data-act="display" data-s="beginner">Beginner mode</button><button class="btn ghost small${store.get("ft_onestock") === "1" ? " sel" : ""}" data-act="display" data-s="onestock">One notification per stock</button></div>
     <div class="row" style="padding:6px 0 4px"><button class="btn ghost small${localTimes() ? " sel" : ""}" data-act="tz">${localTimes() ? "Times: your time zone" : "Times: ET"}</button><button class="btn ghost small" data-act="glossary">What the terms mean</button><button class="btn ghost small" data-act="links">Shortcuts &amp; links</button></div>
     <div class="kv"><span>Sympathy ${tip("sympathy")}<div class="sub">a peer of a stock you watch or hold jumps 4%+ on news and yours hasn't moved yet (at most 3 a day)</div></span><b><button class="btn ghost small${pr.sympathy !== false ? " sel" : ""}" data-act="flag" data-s="sympathy">${pr.sympathy !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Second chance<div class="sub">a stock that ran its alert's way and came back to the alert price, when its kind of news went its way 60%+ of the time (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.retest !== false ? " sel" : ""}" data-act="flag" data-s="retest">${pr.retest !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Follow-ups<div class="sub">an hour after an alert on a stock you watch or hold, if it moved 2%+: how it played out</div></span><b><button class="btn ghost small${pr.followups ? " sel" : ""}" data-act="flag" data-s="followups">${pr.followups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Tomorrow, 20:00 ET (Sun-Thu)<div class="sub">after-hours movers and why, the next session's reporters (yours first) and events</div></span><b><button class="btn ghost small${pr.tomorrow ? " sel" : ""}" data-act="flag" data-s="tomorrow">${pr.tomorrow ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The close, 16:15 ET<div class="sub">a market recap: indexes, breadth, sectors, the biggest movers and why, how the alerts did</div></span><b><button class="btn ghost small${pr.close_recap ? " sel" : ""}" data-act="flag" data-s="close_recap">${pr.close_recap ? "On" : "Off"}</button></b></div>
@@ -1231,6 +1254,8 @@ async function loadRecord() {
     const bucketRows = (title, rows) => rows.length ? `<div class="kv head"><span>${title}</span><b>1 hour · close</b></div>` + rows.map((x) => `<div class="kv"><span>${esc(x.bucket)}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("") : "";
     $("dRecord").innerHTML += bucketRows("Already moved before the alert?", r.priced_in || []) + bucketRows("By time of day (ET)", r.by_time || []);
     if ((r.catalysts || []).length) $("dRecord").innerHTML += `<div class="kv head"><span>By catalyst ${tip("catalyst")}</span><b>close · median · typical size</b></div>` + r.catalysts.map((c) => `<div class="kv"><span>${esc(c.label)} <span class="sub">${c.close.n}${c.bands.length > 1 ? " · " + c.bands.map((b) => `${esc(b.band_label)} ${Math.round(b.close.hit * 100)}%`).join(" · ") : ""}</span></span><b class="rec"><b class="num ${c.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(c.close.hit * 100)}%</b> <span class="sub">${pct(c.close.median)} · ±${(c.typical || 0).toFixed(1)}%</span></b></div>`).join("");
+    const rt = r.retest;
+    if (rt?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Second chances</span><b>close</b></div><div class="kv"><span>${rt.flags} flagged, 120 days <span class="sub">back its way by the close?</span></span><b class="rec">${cell(rt.close)}</b></div>`;
     const sy = r.sympathy;
     if (sy?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Sympathy flags ${tip("sympathy")}</span><b>1 hour · close</b></div><div class="kv"><span>${sy.flags} peer${sy.flags === 1 ? "" : "s"} flagged, 120 days <span class="sub">did it catch up?</span></span><b class="rec">${cell(sy.h1)}<br>${cell(sy.close)}</b></div>`;
     const src = await api("/api/sources").catch(() => ({ rows: [] }));
@@ -2501,6 +2526,7 @@ const Palette = {
       ["Focus for 1 hour", "only CRITICAL comes through", () => deskEdit("focus", { minutes: 60 }).then((r) => r && toast("🎯 Focus on for an hour"))],
       ["End focus mode", "", () => deskEdit("focus", { minutes: 0 }).then((r) => r && toast("Focus mode ended"))],
       ["Would I get it? (test my push settings)", "", openHealth],
+      ["What's working today", "today's alerts by kind of news", () => { closeSheet(); go("watch"); setTimeout(() => $("workWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Room left", "today's alerts short of their typical move", () => { closeSheet(); go("watch"); setTimeout(() => $("roomWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Autopilots", "paper forward tests of your rules", () => { closeSheet(); go("desk"); setTimeout(() => $("dAutoWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Strategy lab", "following every alert, on paper", () => { closeSheet(); go("desk"); setTimeout(() => $("dLab")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],

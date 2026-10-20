@@ -13,6 +13,7 @@ the close, against how far this one has gone so far. History, not a forecast.
 
 from __future__ import annotations
 
+import json
 import re
 import statistics as st
 import time
@@ -436,3 +437,64 @@ def edge_finder(
         "min_n": min_n,
         "days": days,
     }
+
+
+# --------------------------------------------------------------------------- what's working today
+
+
+def working_today(engine: Engine, now: float | None = None, min_n: int = 2) -> dict[str, Any]:
+    """Today's alerts, graded live: for each kind of news, how far its alerts have moved their way
+    since they came out (from each one's own reference price), so far. Which kinds of news the
+    market is paying for today, and which it is fading."""
+    from .dossier import _direction, _since
+
+    now = now or time.time()
+    day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    groups: dict[str, list[dict[str, Any]]] = {}
+    seen: set[tuple[str, str]] = set()
+    for a in engine.storage.recent_alerts(400, since=day0):
+        if a.get("kind") == "system":
+            continue
+        c = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)
+        d = _direction(a)
+        if not c or not d:
+            continue
+        sym = (((a.get("edge") or {}).get("play") or {}).get("direct") or a.get("tickers") or [""])[0]
+        if not sym or (c["key"], sym) in seen:
+            continue
+        since = _since(a, sym, engine.price_of)
+        if since is None:
+            continue
+        seen.add((c["key"], sym))
+        groups.setdefault(c["key"], []).append({"id": a["id"], "symbol": sym, "title": a.get("title", ""),
+                                                "move": round((1 if d == "up" else -1) * since, 2)})  # fmt: skip
+    rows = []
+    for key, xs in groups.items():
+        moves = [x["move"] for x in xs]
+        rows.append({"key": key, "label": LABELS.get(key, key), "n": len(xs), "avg": round(sum(moves) / len(moves), 2),
+                     "hit": round(sum(m > 0 for m in moves) / len(moves), 2),
+                     "alerts": sorted(xs, key=lambda x: -x["move"])[:4]})  # fmt: skip
+    rows.sort(key=lambda r: -r["avg"])
+    return {
+        "rows": [r for r in rows if r["n"] >= min_n],
+        "thin": [r for r in rows if r["n"] < min_n],
+        "graded": sum(r["n"] for r in rows),
+    }
+
+
+# --------------------------------------------------------------------------- second chance
+
+RETEST_RAN = 1.0  # % its way the stock must have run first (or 40% of its kind's typical move, if more)
+RETEST_BAND = 0.3  # % from the alert price that counts as "back at it"
+
+
+def retest_record(engine: Engine, now: float | None = None, days: float = 120) -> dict[str, Any]:
+    """How past second-chance flags did by the close: back its way, from the alert price."""
+    now = now or time.time()
+    log = [
+        e
+        for e in json.loads(engine.storage.get_setting("retest_log") or "[]")
+        if e["ts"] >= now - days * 86400
+    ]
+    xs = [e["close"] for e in log if e.get("close") is not None]
+    return {"flags": len(log), "close": _stats(xs)}

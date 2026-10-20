@@ -128,6 +128,7 @@ def default_profile() -> dict[str, Any]:
             "sympathy": True,  # a peer of your stock jumps on news and yours hasn't moved: one push
             "account": 0.0,  # $: sizes the trade plans (0: the portfolio's value, if any)
             "risk_pct": 1.0,  # % of the account a plan risks on one idea
+            "retest": True,  # second chance: a strong kind of news back at its alert price
             "edge_min": None,  # only push news whose catalyst record clears this: hit50 | hit60 | move2
         },
         "price_alerts": [],
@@ -650,6 +651,7 @@ class Desk:
                 "tomorrow",
                 "followups",
                 "sympathy",
+                "retest",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1353,6 +1355,7 @@ class Desk:
                     "tomorrow",
                     "followups",
                     "sympathy",
+                    "retest",
                     "watch_push",
                     "min_sev",
                     "digest",

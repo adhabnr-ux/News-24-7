@@ -157,6 +157,7 @@ class WebServer:
         app.router.add_get("/api/coach", self.api_coach)
         app.router.add_get("/api/targets", self.api_target_board)
         app.router.add_get("/api/edges", self.api_edges)
+        app.router.add_get("/api/working", self.api_working)
         app.router.add_get("/api/targets/{sym}", self.api_targets)
         app.router.add_get("/api/list/{code}", self.api_list)
         app.router.add_get("/api/phone-health", self.api_phone_health)
@@ -960,6 +961,12 @@ class WebServer:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(targets_for(self.engine, sym))
 
+    async def api_working(self, request: web.Request) -> web.Response:
+        """What's working today: today's alerts graded live, by kind of news."""
+        from ..catalysts import working_today
+
+        return _json(working_today(self.engine))
+
     async def api_edges(self, request: web.Request) -> web.Response:
         """The edge finder: kinds of news x size x exit, ranked by how reliably they paid."""
         from ..catalysts import edge_finder
@@ -1188,6 +1195,9 @@ class WebServer:
         from ..catalysts import catalyst_table
 
         out["catalysts"] = catalyst_table(self.engine.catalyst_rates)
+        from ..catalysts import retest_record
+
+        out["retest"] = retest_record(self.engine)
         return _json(out)
 
     async def api_foretape(self, request: web.Request) -> web.Response:

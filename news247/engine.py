@@ -242,6 +242,9 @@ class Engine:
         self._kw_sent: dict[tuple[str, int], float] = {}  # (device, story id) -> when a keyword push went
         self._board_seen: dict[str, Any] = {"day": "", "keys": []}  # watchlist board pushes sent today
         self._sympathy_day: dict[str, Any] = {"day": "", "keys": [], "count": {}}  # sympathy pushes today
+        self._retest_best: dict[
+            str, float
+        ] = {}  # alert id -> its best move its way so far today (second chance)
         self._rule_refs: dict[
             tuple[str, str], float
         ] = {}  # (symbol, headline uid) -> price when the rule first saw it
@@ -2299,6 +2302,10 @@ class Engine:
                 with contextlib.suppress(Exception):
                     await self.run_autopilots(now)
                 with contextlib.suppress(Exception):
+                    await self.check_retests(now)
+                with contextlib.suppress(Exception):
+                    self.grade_retests(now)
+                with contextlib.suppress(Exception):
                     from .dossier import grade_sympathy
 
                     grade_sympathy(self, now)
@@ -2441,6 +2448,103 @@ class Engine:
                            "ts": now, "open": "/app/#a=desk"}  # fmt: skip
                 await self._to_device(dev, payload, urgency="normal")
         return closed
+
+    async def check_retests(self, now: float | None = None) -> int:
+        """Second chance: a stock that ran its alert's way (1%+, or 40% of its kind's typical move)
+        and has come back to within 0.3% of its alert price, when that kind of news went its way 60%+
+        of the time by the close. One push to each phone that watches, holds or opened it; every
+        flag logged and graded at the close."""
+        from .catalysts import RETEST_BAND, RETEST_RAN
+        from .dossier import _direction, _since
+
+        now = now or time.time()
+        if self.webpush is None or self.calendar.market_status(now).get("phase") != "open":
+            return 0
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        if len(self._retest_best) > 3000:  # yesterday's alerts: forget them
+            self._retest_best.clear()
+        sent_key = f"retest:{day}"
+        sent_keys = set(json.loads(self.storage.get_setting(sent_key) or "[]"))
+        log: list[dict[str, Any]] | None = None
+        sent = 0
+        for a in self.storage.recent_alerts(300, since=day0):
+            cb = (a.get("edge") or {}).get("cat_base") or {}
+            close = cb.get("close") or {}
+            d = _direction(a)
+            if not close or close.get("hit", 0) < 0.6 or close.get("median", 0) <= 0 or not d:
+                continue
+            sym = (((a.get("edge") or {}).get("play") or {}).get("direct") or a.get("tickers") or [""])[0]
+            since = _since(a, sym, self.price_of) if sym else None
+            if since is None:
+                continue
+            its_way = (1 if d == "up" else -1) * since
+            best = max(self._retest_best.get(a["id"], 0.0), its_way)
+            self._retest_best[a["id"]] = best
+            ran = max(RETEST_RAN, 0.4 * (cb.get("typical") or 0))
+            if best < ran or abs(its_way) > RETEST_BAND:
+                continue
+            ref = (a.get("edge") or {}).get("refs", {}).get(sym)
+            if log is None:
+                log = json.loads(self.storage.get_setting("retest_log") or "[]")
+            if not any(e["alert_id"] == a["id"] for e in log):
+                log.append({"ts": now, "day": day, "alert_id": a["id"], "symbol": sym, "sign": 1 if d == "up" else -1,
+                            "ref": ref, "ran": round(best, 2), "close": None})  # fmt: skip
+            devices = set(self.desk.watchers([sym])) | {
+                dv
+                for dv, p in self.desk.profiles.items()
+                if a["id"] in (p.get("opened") or []) or a["id"] in (p.get("saved") or [])
+            }
+            for dev in devices:
+                key = f"{dev}:{a['id']}"
+                if key in sent_keys or not (self.desk.get(dev).get("prefs") or {}).get("retest", True):
+                    continue
+                probe = {
+                    "kind": a.get("kind"),
+                    "severity": "HIGH",
+                    "tickers": [sym],
+                    "edge": {"catalyst": (a.get("edge") or {}).get("catalyst")},
+                }
+                if not self.desk.allows(dev, probe, now):
+                    continue
+                sent_keys.add(key)
+                q = self.price_of(sym)
+                line = f"{cb['label']}, {cb['band_label']}: {round(close['hit'] * 100)}% went their way by the close (median {close['median']:+.1f}%, {close['n']})"
+                payload = {"id": f"rt-{a['id']}", "title": f"↩ {sym} is back at its alert price (${q[1]:,.2f})" if q else f"↩ {sym} is back at its alert price",
+                           "body": f"It ran {best:+.1f}% its way after “{a.get('title', '')[:100]}” and came back.\n{line}\nA second look, not a signal.",
+                           "severity": "HIGH", "kind": "system", "tickers": [sym], "tag": f"rt-{sym}", "ts": now,
+                           "open": f"/app/#a={a['id']}"}  # fmt: skip
+                if await self._to_device(dev, payload):
+                    sent += 1
+        if log is not None:
+            self.storage.set_setting("retest_log", json.dumps(log[-500:]))
+        self.storage.set_setting(sent_key, json.dumps(sorted(sent_keys)))
+        return sent
+
+    def grade_retests(self, now: float | None = None) -> int:
+        """Second-chance flags graded at the close (16:00-16:30 ET that day): the move its way from
+        the alert price."""
+        now = now or time.time()
+        raw = self.storage.get_setting("retest_log")
+        if not raw:
+            return 0
+        log = json.loads(raw)
+        graded = 0
+        for e in log:
+            if e.get("close") is not None or not e.get("ref"):
+                continue
+            close = (
+                datetime.fromtimestamp(e["ts"], ET)
+                .replace(hour=16, minute=0, second=0, microsecond=0)
+                .timestamp()
+            )
+            q = self.price_of(e["symbol"], 900, now=now)
+            if q and close <= now <= close + 1800:
+                e["close"] = round(e["sign"] * (q[1] / e["ref"] - 1.0) * 100.0, 2)
+                graded += 1
+        if graded:
+            self.storage.set_setting("retest_log", json.dumps(log))
+        return graded
 
     async def check_sympathy(self, now: float | None = None) -> int:
         """A stock with a HIGH alert today is up (or down) 4%+ the way of its news, and a peer of it
