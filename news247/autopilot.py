@@ -1,0 +1,122 @@
+"""Paper autopilot: forward-test a rule on new alerts, hands-free.
+
+A rule is a filter from the strategy lab (a kind of news or any, a company size, a minimum
+severity) and an exit (an hour later, at the close, the next session's close). Every new alert
+that matches opens a paper call on that phone with its plan's stop and target (plans.py), and the
+call closes itself at the exit, or earlier when the stop or the target is reached. Each rule keeps
+its own record, so an edge found in the history is tested on alerts it has never seen. Paper only:
+the system never trades.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from .desk import SEV_RANK, session_edge
+
+ET = ZoneInfo("America/New_York")
+MAX_RULES = 5
+PER_RULE_PER_DAY = 3
+EXITS = {"h1": "an hour later", "close": "at the close", "d1": "at the next day's close"}
+
+
+def rule_label(rule: dict[str, Any]) -> str:
+    from .catalysts import BAND_LABEL, LABELS
+
+    kind = (
+        LABELS.get(rule["catalyst"], "Any kind of news") if rule["catalyst"] != "all" else "Any kind of news"
+    )
+    band = BAND_LABEL.get(rule["band"], "any size") if rule["band"] != "all" else "any size"
+    return f"{kind}, {band}, {rule['min_sev']}+, out {EXITS[rule['exit']]}"
+
+
+def clean_rule(body: dict[str, Any], now: float) -> dict[str, Any]:
+    """A rule from the app, checked: raises ValueError on anything it doesn't know."""
+    import secrets
+
+    from .catalysts import LABELS
+
+    catalyst = str(body.get("catalyst") or "all")
+    band = str(body.get("band") or "all")
+    min_sev = str(body.get("min_sev") or "HIGH").upper()
+    exit_ = str(body.get("exit") or "close")
+    if catalyst != "all" and catalyst not in LABELS:
+        raise ValueError("not a kind of news Foretape reads")
+    if band not in ("all", "small", "mid", "large"):
+        raise ValueError("size is all, small, mid or large")
+    if min_sev not in ("MEDIUM", "HIGH", "CRITICAL"):
+        raise ValueError("severity is MEDIUM, HIGH or CRITICAL")
+    if exit_ not in EXITS:
+        raise ValueError("exit is h1, close or d1")
+    rule = {"id": secrets.token_hex(4), "catalyst": catalyst, "band": band, "min_sev": min_sev, "exit": exit_,
+            "on": True, "created": now}  # fmt: skip
+    rule["label"] = rule_label(rule)
+    return rule
+
+
+def matches(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
+    from .dossier import _direction
+
+    if not rule.get("on") or alert.get("kind") == "system":
+        return False
+    if SEV_RANK.get(str(alert.get("severity")), 0) < SEV_RANK[rule["min_sev"]]:
+        return False
+    if not _direction(alert):
+        return False
+    c = (alert.get("edge") or {}).get("catalyst")
+    if not c:
+        return False  # only news Foretape could read for a kind: that's what the record is about
+    if rule["catalyst"] != "all" and c["key"] != rule["catalyst"]:
+        return False
+    return rule["band"] == "all" or c["band"] == rule["band"]
+
+
+def exit_time(exit_: str, ts: float, calendar: Any = None) -> float:
+    if exit_ == "h1":
+        return ts + 3600.0
+    first = session_edge("close", ts, calendar)
+    return first if exit_ == "close" else session_edge("close", first, calendar)
+
+
+def opened_today(p: dict[str, Any], rule_id: str, now: float) -> int:
+    day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    return sum(
+        1
+        for t in [*p.get("tracked", []), *p.get("closed", [])]
+        if t.get("auto") == rule_id and t.get("ts", 0) >= day0
+    )
+
+
+def rule_stats(p: dict[str, Any], rule_id: str) -> dict[str, Any]:
+    done = [c for c in p.get("closed") or [] if c.get("auto") == rule_id and c.get("pnl_pct") is not None]
+    rets = [c["pnl_pct"] for c in done]
+    return {
+        "open": sum(1 for t in p.get("tracked") or [] if t.get("auto") == rule_id),
+        "closed": len(done),
+        "win": round(sum(r > 0 for r in rets) / len(rets), 2) if rets else None,
+        "avg": round(sum(rets) / len(rets), 2) if rets else None,
+        "total": round(sum(rets), 2) if rets else None,
+        "last": [
+            {
+                "symbol": c["symbol"],
+                "direction": c["direction"],
+                "pnl_pct": c["pnl_pct"],
+                "closed": c.get("closed"),
+                "why": c.get("lesson", ""),
+            }
+            for c in done[:5]
+        ],  # fmt: skip
+    }
+
+
+def due_exit(t: dict[str, Any], price: float | None, now: float) -> str:
+    """Why an autopilot call closes now ("stop", "target", "time"), or "" to keep it open."""
+    if price is not None:
+        long = t["direction"] == "long"
+        if t.get("stop") is not None and (price <= t["stop"] if long else price >= t["stop"]):
+            return "stop"
+        if t.get("target") is not None and (price >= t["target"] if long else price <= t["target"]):
+            return "target"
+    return "time" if now >= (t.get("exit_at") or float("inf")) else ""

@@ -774,6 +774,8 @@ def strategy_lab(
     days: float = 60,
     stake: float = 1000.0,
     skip_fades: bool = False,
+    catalyst: str = "all",
+    band: str = "all",
     now: float | None = None,
 ) -> dict[str, Any]:
     """If you had followed every alert like this: a paper trade of ``stake`` dollars on each one,
@@ -789,6 +791,12 @@ def strategy_lab(
         raise ValueError("min_sev is MEDIUM, HIGH or CRITICAL")
     if scope not in ("all", "mine"):
         raise ValueError("scope is all or mine")
+    from .catalysts import LABELS, classify
+
+    if catalyst != "all" and catalyst not in LABELS:
+        raise ValueError("not a kind of news Foretape reads")
+    if band not in ("all", "small", "mid", "large"):
+        raise ValueError("band is all, small, mid or large")
     days = max(1.0, min(365.0, float(days)))
     mine: set[str] = set()
     if scope == "mine":
@@ -808,6 +816,10 @@ def strategy_lab(
         out = e.get("outcome") or {}
         if not out:
             continue
+        if catalyst != "all" or band != "all":
+            c = e.get("catalyst") or classify(a, engine.universe)
+            if not c or (catalyst != "all" and c["key"] != catalyst) or (band != "all" and c["band"] != band):
+                continue
         sym, row = next(iter(out.items()))
         sign, val = row.get("sign") or 0, row.get(horizon)
         if not sign or val is None:
@@ -820,6 +832,7 @@ def strategy_lab(
                        "pnl": round(stake * ret / 100.0, 2)})  # fmt: skip
     trades.sort(key=lambda t: t["ts"])
     base = {"kind": kind, "min_sev": min_sev, "horizon": horizon, "horizon_label": LAB_HORIZONS[horizon],
+            "catalyst": catalyst, "band": band,
             "scope": scope, "days": days, "stake": stake, "skip_fades": skip_fades}  # fmt: skip
     if not trades:
         return {**base, "n": 0, "curve": [], "by_kind": [], "best": None, "worst": None}

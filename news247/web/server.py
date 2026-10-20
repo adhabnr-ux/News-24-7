@@ -156,6 +156,7 @@ class WebServer:
         app.router.add_get("/api/plan/{id}", self.api_plan)
         app.router.add_get("/api/coach", self.api_coach)
         app.router.add_get("/api/targets", self.api_target_board)
+        app.router.add_get("/api/edges", self.api_edges)
         app.router.add_get("/api/targets/{sym}", self.api_targets)
         app.router.add_get("/api/list/{code}", self.api_list)
         app.router.add_get("/api/phone-health", self.api_phone_health)
@@ -959,6 +960,12 @@ class WebServer:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(targets_for(self.engine, sym))
 
+    async def api_edges(self, request: web.Request) -> web.Response:
+        """The edge finder: kinds of news x size x exit, ranked by how reliably they paid."""
+        from ..catalysts import edge_finder
+
+        return _json(edge_finder(self.engine))
+
     async def api_target_board(self, request: web.Request) -> web.Response:
         """The last few days' analyst target changes across every stock."""
         from ..targets import target_board
@@ -993,6 +1000,8 @@ class WebServer:
                 days=float(q.get("days", "60")),
                 stake=max(1.0, min(1e7, float(q.get("stake", "1000")))),
                 skip_fades=q.get("fades") == "skip",
+                catalyst=q.get("catalyst", "all"),
+                band=q.get("band", "all"),
             )
         except ValueError as exc:
             raise web.HTTPBadRequest(text=str(exc)) from None

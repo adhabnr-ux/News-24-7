@@ -1761,6 +1761,8 @@ class Engine:
             self.stats["pushed"] += 1
             self._spawn(self.dispatcher.dispatch(alert))
             self._spawn(self._push_watchers(alert))
+            if alert.edge.get("catalyst") and any(p.get("autopilots") for p in self.desk.profiles.values()):
+                self._spawn(self.autopilot_open(alert.to_dict()))
         else:
             log.info("startup backfill (dashboard only): %s", alert.title[:100])
 
@@ -2295,6 +2297,8 @@ class Engine:
                 with contextlib.suppress(Exception):
                     await self.check_sympathy(now)
                 with contextlib.suppress(Exception):
+                    await self.run_autopilots(now)
+                with contextlib.suppress(Exception):
                     from .dossier import grade_sympathy
 
                     grade_sympathy(self, now)
@@ -2376,6 +2380,67 @@ class Engine:
                        "tickers": [t["symbol"]], "tag": f"lv-{t['id']}", "ts": now, "open": f"/app/#t={t['symbol']}"}  # fmt: skip
             await self._to_device(device, payload)
         return [(d, a) for d, a, _ in fired]
+
+    async def autopilot_open(self, alert: dict[str, Any], now: float | None = None) -> int:
+        """A new alert matching a phone's autopilot opens a paper call there, with its plan's stop
+        and target and the rule's exit time (autopilot.py). At most three a rule a day."""
+        from .autopilot import PER_RULE_PER_DAY, exit_time, matches, opened_today
+        from .plans import trade_plan
+
+        now = now or time.time()
+        opened = 0
+        for dev, p in list(self.desk.profiles.items()):
+            for rule in p.get("autopilots") or []:
+                if not matches(rule, alert) or opened_today(p, rule["id"], now) >= PER_RULE_PER_DAY:
+                    continue
+                plan = trade_plan(self, dev, alert, now)
+                if not plan.get("ok"):
+                    continue
+                direction = "long" if plan["direction"] == "up" else "short"
+                try:
+                    self.desk.apply(dev, "track_add", {"symbol": plan["symbol"], "direction": direction, "alert_id": alert["id"],
+                                                       "stop": plan["stop"], "target": plan["target"], "entry": plan["entry"],
+                                                       "note": f"#autopilot {rule['label']}"[:200]}, self.price_of)  # fmt: skip
+                except ValueError:
+                    continue
+                t = p["tracked"][-1]
+                t["auto"], t["exit_at"] = rule["id"], exit_time(rule["exit"], now, self.calendar)
+                self.desk.save(dev)
+                opened += 1
+                payload = {"id": f"ap-{t['id']}", "title": f"🤖 Autopilot: {direction} {plan['symbol']} at ${plan['entry']:,.2f}",
+                           "body": f"{alert.get('title', '')[:120]}\nStop ${plan['stop']:,.2f} · target ${plan['target']:,.2f} · {rule['label']}",
+                           "severity": "HIGH", "kind": "system", "tickers": [plan["symbol"]], "tag": f"ap-{t['id']}",
+                           "ts": now, "open": f"/app/#t={plan['symbol']}"}  # fmt: skip
+                await self._to_device(dev, payload, urgency="normal")
+        return opened
+
+    async def run_autopilots(self, now: float | None = None) -> int:
+        """Close each autopilot call at its exit time, or at its stop or target, with a push."""
+        from .autopilot import EXITS, due_exit
+
+        now = now or time.time()
+        closed = 0
+        for dev, p in list(self.desk.profiles.items()):
+            for t in list(p.get("tracked") or []):
+                if not t.get("auto"):
+                    continue
+                q = self.price_of(t["symbol"], 1800, now=now)
+                why = due_exit(t, q[1] if q else None, now)
+                if not why or (why == "time" and not q):
+                    continue
+                rule = next((r for r in p.get("autopilots") or [] if r["id"] == t["auto"]), None)
+                lesson = {"stop": "autopilot: stopped out", "target": "autopilot: target reached",
+                          "time": f"autopilot: out {EXITS.get((rule or {}).get('exit', 'close'), 'on time')}"}[why]  # fmt: skip
+                self.desk.apply(dev, "track_close", {"id": t["id"], "lesson": lesson}, lambda s, _q=q: _q)
+                done = p["closed"][0]
+                closed += 1
+                pnl = done.get("pnl_pct")
+                payload = {"id": f"apx-{t['id']}", "title": f"🤖 Closed {t['direction']} {t['symbol']} {pnl:+.2f}%" if pnl is not None else f"🤖 Closed {t['symbol']}",
+                           "body": lesson.replace("autopilot: ", "").capitalize() + (f" · {rule['label']}" if rule else ""),
+                           "severity": "HIGH", "kind": "system", "tickers": [t["symbol"]], "tag": f"ap-{t['id']}",
+                           "ts": now, "open": "/app/#a=desk"}  # fmt: skip
+                await self._to_device(dev, payload, urgency="normal")
+        return closed
 
     async def check_sympathy(self, now: float | None = None) -> int:
         """A stock with a HIGH alert today is up (or down) 4%+ the way of its news, and a peer of it

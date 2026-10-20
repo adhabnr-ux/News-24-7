@@ -150,6 +150,7 @@ def default_profile() -> dict[str, Any]:
         "follow": {"themes": [], "sectors": []},
         "stock_push": {},  # symbol -> "high" | "all" | "off" (absent: the phone's own settings)
         "cat_off": [],  # catalyst keys (catalysts.py) whose news never pushes to this phone
+        "autopilots": [],  # paper forward-tests (autopilot.py): {"id", "catalyst", "band", "min_sev", "exit", "on"}
         "focus_until": 0.0,  # epoch: until then only CRITICAL alerts push
         "reminders": [],  # [{"id", "alert_id", "title", "tickers", "due", "created"}]
         "seen": {},  # symbol -> {"ts", "px"}: the last time its page was opened
@@ -1098,6 +1099,28 @@ class Desk:
             if body.get("on", True):
                 off.append(key)
             p["cat_off"] = off
+        elif action == "autopilot_add":
+            from .autopilot import MAX_RULES as MAX_AUTOPILOTS
+            from .autopilot import clean_rule
+
+            rules = p.setdefault("autopilots", [])
+            if len(rules) >= MAX_AUTOPILOTS:
+                raise ValueError(f"at most {MAX_AUTOPILOTS} autopilots")
+            rule = clean_rule(body, now)
+            same = ("catalyst", "band", "min_sev", "exit")
+            if any(all(r[k] == rule[k] for k in same) for r in rules):
+                raise ValueError("that autopilot is already running")
+            rules.append(rule)
+        elif action in ("autopilot_remove", "autopilot_toggle"):
+            rid = str(body.get("id") or "")
+            rules = p.get("autopilots") or []
+            r = next((x for x in rules if x["id"] == rid), None)
+            if r is None:
+                raise ValueError("no such autopilot")
+            if action == "autopilot_remove":
+                p["autopilots"] = [x for x in rules if x["id"] != rid]
+            else:
+                r["on"] = not r.get("on", True)
         elif action == "restore":
             p["restored"] = self._restore(device, p, body.get("desk") or body, bool(body.get("prefs")), now)
         else:
@@ -1426,6 +1449,7 @@ class Desk:
             "follow": p.get("follow") or {"themes": [], "sectors": []},
             "stock_push": p.get("stock_push") or {},
             "cat_off": p.get("cat_off") or [],
+            "autopilots": _autopilots_view(p),
             "focus": p["focus_until"] if (p.get("focus_until") or 0) > now else None,
             "reminders": sorted(p.get("reminders") or [], key=lambda r: r["due"]),
             "restored": p.pop("restored", None),
@@ -1638,6 +1662,12 @@ def _kw_pattern(k: str) -> re.Pattern[str]:
     any whitespace."""
     words = [re.escape(w) for w in k.split()]
     return re.compile(r"(?<![\w$])" + r"\s+".join(words) + r"(?!\w)", re.IGNORECASE)
+
+
+def _autopilots_view(p: dict[str, Any]) -> list[dict[str, Any]]:
+    from .autopilot import rule_stats
+
+    return [{**r, "stats": rule_stats(p, r["id"])} for r in p.get("autopilots") or []]
 
 
 def _journal(t: dict[str, Any], body: dict[str, Any]) -> None:

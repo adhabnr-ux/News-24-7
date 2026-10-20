@@ -679,3 +679,7 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .coachi.good i { color: var(--up); } .coachi.bad i { color: var(--down); } .coachi.info i { color: var(--gold); }
 /* run 17: kinds of news */
 .catrow { gap: 6px; } .catrow .btn { padding: 6px 10px; font-size: 12px; }
+/* run 18: edges, autopilots */
+.li.edgerow { cursor: pointer; }
+#labCat { max-width: 100%; padding: 7px 10px; border-radius: 10px; border: 0; color: var(--cream); background: rgba(255, 255, 255, .07); font: 500 12.5px var(--sans); }
+.ap { padding-bottom: 6px; border-bottom: 1px solid var(--hair); } .ap.off { opacity: .6; }

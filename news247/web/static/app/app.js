@@ -68,6 +68,7 @@ const GLOSSARY = {
   plan: "A plan for it: the stop sits where the news would be proven wrong (back through the price before it), the target at the typical close move for this kind of news at this company size, else what options price. The size risks your chosen share of the account between entry and stop. Paper only, not advice.",
   edge: "Edge bar: a push only for news whose kind (contract win, upgrade, offering...) has a record that clears your bar at the close: half or 60% of them went their way, or they typically move 2%+ either way. Kinds with no record yet, news Foretape can't read for a kind, CRITICAL alerts and stocks you set to push everything still come.",
   targets: "Analyst targets: read from headlines like \"Goldman raises Acme price target to $150 from $120\". The newest target from each firm in 90 days, their median and range, and the upside from the live price. Phones watching the stock get a push when a target moves 15%+ or sits 25%+ from the price.",
+  edges: "Edges: every kind of news x company size x exit in the graded history, ranked by its average move its way shrunk toward zero for small samples. t is the average divided by its standard error: under 1 is probably noise, 2+ is unlikely to be. Tap one to load it into the lab; from there it can run as a paper autopilot on new alerts.",
   dial: "The push dial: how loud this one stock is on your phone. Default follows your settings; HIGH only skips its MEDIUM alerts; Everything pushes even MEDIUM alerts and ignores your floor and the fades filter (your categories, mutes and quiet hours still apply); Off never pushes it.",
   implied: "Implied move: what the options market is paying for. The at-the-money call + put (the straddle) for an expiry, as a % of the stock: roughly the move priced in by that date, up or down.",
   callwall: "Call wall: the strike above the stock with the most call open interest. Dealers hedging those calls can make it act like a ceiling into expiry; a clean break through it can speed up.",
@@ -997,6 +998,7 @@ async function loadDesk() {
   deskChanged();
 }
 function deskChanged() {
+  if (tab === "desk") setTimeout(renderAutopilots, 0);
   setTimeout(prefetchWatch, 1500);
   // holdings drive the exposure line on cards: refresh their values, then the tape
   if (Object.keys(desk?.holdings || {}).length) loadPortf().then(() => { if (tab === "tape") renderTape(); });
@@ -1140,6 +1142,18 @@ function renderDesk() {
       <b class="qh"><input type="time" id="qStart" value="${esc(q.start || "22:00")}"><input type="time" id="qEnd" value="${esc(q.end || "07:00")}">
       <button class="btn ghost small" data-act="quiet">${pr.quiet ? "Update" : "Set"}</button>${pr.quiet ? `<button class="btn ghost small" data-act="quiet-off">Off</button>` : ""}</b></div>`;
 }
+// the autopilots: rules from the lab, forward-tested on new alerts as paper calls
+function renderAutopilots() {
+  const el = $("dAuto");
+  if (!el || !desk) return;
+  const rs = desk.autopilots || [];
+  $("dAutoWrap").hidden = !rs.length;
+  el.innerHTML = rs.map((r) => { const st = r.stats || {};
+    return `<div class="ap${r.on ? "" : " off"}"><div class="kv"><span><b>${esc(r.label)}</b><div class="sub">${r.on ? "running" : "paused"} · ${st.open} open · ${st.closed} closed${st.closed ? ` · ${Math.round(st.win * 100)}% won · avg ${pct(st.avg)} · total ${pct(st.total)}` : ""}</div></span>
+      <b class="dialb"><button class="btn ghost small${r.on ? " sel" : ""}" data-act="ap-toggle" data-s="${esc(r.id)}">${r.on ? "On" : "Off"}</button><button class="x" data-act="ap-rm" data-s="${esc(r.id)}" aria-label="Remove">✕</button></b></div>
+      ${(st.last || []).map((c) => `<div class="kv sub"><span>${c.direction === "long" ? "▲" : "▼"} ${esc(c.symbol)} · ${esc((c.why || "").replace("autopilot: ", ""))}</span><b class="num ${cls(c.pnl_pct)}">${pct(c.pnl_pct)}</b></div>`).join("")}</div>`; }).join("")
+    + `<div class="sub" style="padding:6px 0 12px">Each new alert matching a rule opens a paper call here with its plan's stop and target, and closes itself at the exit (or the stop or target). Up to 3 a rule a day. Paper only: the system never trades.</div>`;
+}
 // the coach: what your closed paper calls say about your habits
 async function loadCoach() {
   const el = $("dCoach");
@@ -1153,7 +1167,9 @@ async function loadCoach() {
     + `<div class="sub" style="padding:8px 0 12px">From your ${c.n} closed paper calls on this phone. Patterns, not verdicts: a handful of calls can mislead.</div>`;
 }
 // the strategy lab: following every alert like this, $stake each, on paper, from the graded history
-const lab = (() => { try { return { kind: "all", sev: "HIGH", horizon: "close", scope: "all", fades: "", ...JSON.parse(store.get("ft_lab") || "{}") }; } catch (_) { return { kind: "all", sev: "HIGH", horizon: "close", scope: "all", fades: "" }; } })();
+const LAB0 = { kind: "all", sev: "HIGH", horizon: "close", scope: "all", fades: "", catalyst: "all", band: "all" };
+const lab = (() => { try { return { ...LAB0, ...JSON.parse(store.get("ft_lab") || "{}") }; } catch (_) { return { ...LAB0 }; } })();
+let edgesCache = null;
 function labCurve(curve) {
   if (!curve || curve.length < 2) return "";
   const W = 560, H = 150, pad = 8, vs = curve.map((c) => c[1]), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), span = hi - lo || 1;
@@ -1165,19 +1181,33 @@ function labCurve(curve) {
     <path d="${d} L${X(curve.length - 1).toFixed(1)} ${Y(0).toFixed(1)} L${X(0).toFixed(1)} ${Y(0).toFixed(1)}Z" fill="${up ? "rgba(140,235,196,.12)" : "rgba(255,158,134,.12)"}"/>
     <path d="${d}" fill="none" stroke="${up ? "var(--up)" : "var(--down)"}" stroke-width="2.2"/></svg>`;
 }
+// the edge finder: the kinds of news, sizes and exits that paid most reliably in the graded history
+function edgesBlock() {
+  const e = edgesCache;
+  if (!e || !(e.best.length || e.worst.length)) return "";
+  const row = (x) => `<div class="li edgerow" data-act="edge-pick" data-s="${esc(x.catalyst)}" data-b="${esc(x.band)}" data-h="${esc(x.horizon)}" role="button"><div class="grow"><div style="font-weight:600">${esc(x.label)} <span class="sub">${esc(x.band_label)} · ${esc(x.horizon_label)}</span></div>
+    <div class="sub">${x.n} graded · ${Math.round(x.hit * 100)}% its way · ${Math.abs(x.t) >= 2 ? "unlikely to be noise" : Math.abs(x.t) >= 1 ? "could be noise" : "probably noise"} (t ${x.t.toFixed(1)})</div></div><span class="chg num ${cls(x.avg)}">${pct(x.avg)}<small class="rsess">avg</small></span></div>`;
+  return `<div class="kv head"><span>Edges in your history ${tip("edges")}</span><b>tap to test</b></div>${e.best.slice(0, 5).map(row).join("")}
+    ${e.worst.length ? `<div class="kv head"><span>What fades</span><b></b></div>${e.worst.slice(0, 3).map(row).join("")}` : ""}`;
+}
 async function loadLab() {
   const el = $("dLab");
   if (!el) return;
   const chip = (k, v, l) => `<button class="btn ghost small${lab[k] === v ? " sel" : ""}" data-act="lab" data-k="${k}" data-s="${v}">${l}</button>`;
   const controls = `<div class="row labrow">${chip("kind", "all", "Every kind")}${CATS.map(([k, l]) => chip("kind", k, l)).join("")}</div>
     <div class="row labrow">${chip("sev", "MEDIUM", "MEDIUM+")}${chip("sev", "HIGH", "HIGH+")}${chip("sev", "CRITICAL", "CRITICAL")}<span class="labsep"></span>${chip("horizon", "h1", "Out in 1h")}${chip("horizon", "close", "At the close")}${chip("horizon", "d1", "Next day")}${chip("horizon", "d5", "5 days")}</div>
-    <div class="row labrow">${chip("scope", "all", "Every stock")}${chip("scope", "mine", "My stocks")}${chip("fades", "", "Take them all")}${chip("fades", "skip", "Skip what fades")}</div>`;
+    <div class="row labrow">${chip("scope", "all", "Every stock")}${chip("scope", "mine", "My stocks")}${chip("fades", "", "Take them all")}${chip("fades", "skip", "Skip what fades")}</div>
+    <div class="row labrow"><select id="labCat" aria-label="Kind of news"><option value="all">Any kind of news</option>${(desk?.catalyst_kinds || []).map((k) => `<option value="${esc(k.key)}"${lab.catalyst === k.key ? " selected" : ""}>${esc(k.label)}</option>`).join("")}</select>
+      ${chip("band", "all", "Any size")}${chip("band", "small", "Under $2B")}${chip("band", "mid", "$2-10B")}${chip("band", "large", "$10B+")}</div>`;
+  const edges = edgesBlock();
   let r;
-  try { r = await api(`/api/lab?kind=${lab.kind}&sev=${lab.sev}&horizon=${lab.horizon}&scope=${lab.scope}&fades=${lab.fades}&days=60`); }
+  if (!edgesCache) api("/api/edges").then((e) => { edgesCache = e; if (e.best.length || e.worst.length) loadLab(); }).catch(() => {});
+  try { r = await api(`/api/lab?kind=${lab.kind}&sev=${lab.sev}&horizon=${lab.horizon}&scope=${lab.scope}&fades=${lab.fades}&catalyst=${lab.catalyst}&band=${lab.band}&days=${lab.catalyst === "all" ? 60 : 180}`); }
   catch (e) { el.innerHTML = controls + `<div class="li"><span class="muted">${esc(String(e.message || e).slice(0, 120))}</span></div>`; return; }
-  if (!r.n) { el.innerHTML = controls + `<div class="li"><span class="muted">No graded alerts match yet. Every alert is graded as it plays out (an hour, the close, the next day, five days), so this fills in on its own.</span></div>`; return; }
+  const auto = lab.horizon !== "d5" ? `<button class="btn ghost small" data-act="lab-auto">🤖 Run this as an autopilot</button>` : "";
+  if (!r.n) { el.innerHTML = edges + controls + `<div class="row" style="padding-top:10px">${auto}</div><div class="li"><span class="muted">No graded alerts match yet. Every alert is graded as it plays out (an hour, the close, the next day, five days), so this fills in on its own.</span></div>`; return; }
   const money$ = (v) => (v < 0 ? "−$" : "+$") + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
-  el.innerHTML = controls + `<div class="labhead"><div><div class="sub">$${r.stake.toLocaleString()} on each of ${r.n} alert${r.n === 1 ? "" : "s"}, out ${esc(r.horizon_label)}</div>
+  el.innerHTML = edges + controls + `<div class="row" style="padding-top:10px">${auto}</div><div class="labhead"><div><div class="sub">$${r.stake.toLocaleString()} on each of ${r.n} alert${r.n === 1 ? "" : "s"}, out ${esc(r.horizon_label)}</div>
       <b class="num labpnl ${cls(r.pnl)}">${money$(r.pnl)}</b></div>
       <div class="labstats"><span><b class="num">${Math.round(r.hit * 100)}%</b><small>won</small></span><span><b class="num ${cls(r.avg)}">${pct(r.avg)}</b><small>avg trade</small></span><span><b class="num ${cls(r.median)}">${pct(r.median)}</b><small>median</small></span><span><b class="num neg">${money$(r.max_drawdown)}</b><small>worst dip</small></span></div></div>
     ${labCurve(r.curve)}
@@ -1884,6 +1914,10 @@ async function onAct(el) {
   else if (a === "acct-save") { const v = parseFloat(String($("acctIn")?.value || "").replace(/[$,\s]/g, "")); if (!(v >= 0)) { toast("Enter your account size in dollars"); return; } if (await deskEdit("prefs", { account: v }) && sheetAlert) loadPlan(sheetAlert); }
   else if (a === "risk-pct") { if (await deskEdit("prefs", { risk_pct: +s })) { if (sheetAlert && $("planBox")) loadPlan(sheetAlert); toast(`Plans risk ${s}% of your account on one idea`); } }
   else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }
+  else if (a === "edge-pick") { Object.assign(lab, { catalyst: s, band: el.dataset.b, horizon: el.dataset.h, kind: "all", scope: "all", fades: "" }); store.set("ft_lab", JSON.stringify(lab)); await loadLab(); $("dLab")?.querySelector(".labhead")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
+  else if (a === "lab-auto") { if (await deskEdit("autopilot_add", { catalyst: lab.catalyst, band: lab.band, min_sev: lab.sev, exit: lab.horizon })) { toast("🤖 Autopilot on: each new alert like this opens a paper call here", null, 6000); renderAutopilots(); } }
+  else if (a === "ap-toggle") { if (await deskEdit("autopilot_toggle", { id: s })) renderAutopilots(); }
+  else if (a === "ap-rm") { if (confirm("Stop and remove this autopilot? Its closed calls stay in your record.") && await deskEdit("autopilot_remove", { id: s })) renderAutopilots(); }
   else if (a === "dial") { if (await deskEdit("stock_push", { symbol: s, level: el.dataset.lv })) { toast(el.dataset.lv === "default" ? `${s}: its normal push settings` : `📲 ${s}: ${DIAL_TEXT[el.dataset.lv]}`); refreshTickerSheet(); } }
   else if (a === "focus") {
     const r = await deskEdit("focus", el.dataset.u ? { until: el.dataset.u } : { minutes: +el.dataset.m });
@@ -2468,6 +2502,7 @@ const Palette = {
       ["End focus mode", "", () => deskEdit("focus", { minutes: 0 }).then((r) => r && toast("Focus mode ended"))],
       ["Would I get it? (test my push settings)", "", openHealth],
       ["Room left", "today's alerts short of their typical move", () => { closeSheet(); go("watch"); setTimeout(() => $("roomWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
+      ["Autopilots", "paper forward tests of your rules", () => { closeSheet(); go("desk"); setTimeout(() => $("dAutoWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Strategy lab", "following every alert, on paper", () => { closeSheet(); go("desk"); setTimeout(() => $("dLab")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Back up my desk (JSON)", "", () => exportDesk("json")], ["Restore from a backup", "add a saved desk to this one", () => $("restoreFile").click()],
       ["Export my alerts (CSV)", "", () => exportDesk("csv")], ["First-run setup", "pick what you care about", openOnboard],
@@ -2490,6 +2525,7 @@ const Palette = {
   },
   run(i) { const x = this.items[i]; if (!x) return; this.hide(); x.run(); },
 };
+document.addEventListener("change", (e) => { if (e.target.id === "labCat") { lab.catalyst = e.target.value; store.set("ft_lab", JSON.stringify(lab)); loadLab(); } });
 $("palIn").addEventListener("input", () => Palette.render());
 $("palIn").addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); Palette.sel = (Palette.sel + (e.key === "ArrowDown" ? 1 : -1) + Palette.items.length) % Math.max(1, Palette.items.length); Palette.paint(); }

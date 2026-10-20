@@ -376,3 +376,63 @@ def catalyst_taste(engine: Engine, device: str) -> list[dict[str, Any]]:
     for r in rows:
         r["suggest_off"] = r["down"] >= 3 and r["up"] == 0 and r["key"] not in off
     return rows
+
+
+HORIZON_LABEL = {
+    "h1": "out in an hour",
+    "close": "out at the close",
+    "d1": "out the next day",
+    "d5": "out after 5 days",
+}
+
+
+def edge_finder(
+    engine: Engine, days: float = 180, min_n: int = 8, now: float | None = None
+) -> dict[str, Any]:
+    """Every kind of news x company size (and any size) x exit horizon in the graded history,
+    ranked by how reliably it paid: the average move its way, shrunk toward zero for small samples
+    (avg x n / (n + 10)), with a t-like score (avg / standard error) to show how much is noise.
+    The best are edges; the worst, read the other way, are fades."""
+    now = now or time.time()
+    pools: dict[tuple[str, str, str], list[float]] = {}
+    for a in engine.storage.recent_alerts(5000, since=now - days * 86400):
+        if a.get("kind") == "system":
+            continue
+        out = (a.get("edge") or {}).get("outcome") or {}
+        if not out:
+            continue
+        c = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)
+        if not c:
+            continue
+        _sym, row = next(iter(out.items()))
+        sign = row.get("sign") or 0
+        if not sign:
+            continue
+        for h in HORIZON_LABEL:
+            if row.get(h) is None:
+                continue
+            for band in {c["band"], "*"}:
+                pools.setdefault((c["key"], band, h), []).append(sign * row[h])
+    rows = []
+    for (key, band, h), xs in pools.items():
+        n = len(xs)
+        if n < min_n:
+            continue
+        avg = sum(xs) / n
+        sd = st.stdev(xs) if n > 1 else 0.0
+        t = avg / (sd / n**0.5) if sd > 0 else 0.0
+        rows.append({"catalyst": key, "label": LABELS.get(key, key), "band": band if band != "*" else "all",
+                     "band_label": BAND_LABEL[band], "horizon": h, "horizon_label": HORIZON_LABEL[h], "n": n,
+                     "hit": round(sum(x > 0 for x in xs) / n, 2), "avg": round(avg, 2), "median": round(st.median(xs), 2),
+                     "t": round(t, 2), "score": round(avg * n / (n + 10), 3)})  # fmt: skip
+    # "any size" says nothing new when one band holds all of it: keep the more specific row
+    banded = {(r["catalyst"], r["horizon"], r["n"]) for r in rows if r["band"] != "all"}
+    rows = [r for r in rows if r["band"] != "all" or (r["catalyst"], r["horizon"], r["n"]) not in banded]
+    rows.sort(key=lambda r: -r["score"])
+    return {
+        "best": [r for r in rows if r["score"] > 0][:12],
+        "worst": [r for r in reversed(rows) if r["score"] < 0][:6],
+        "combos": len(rows),
+        "min_n": min_n,
+        "days": days,
+    }
