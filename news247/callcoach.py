@@ -8,8 +8,8 @@ alerts now get them too, as items in Needs you (the action center), each with a 
   close, the next day, five sessions on.
 - **Stalled:** 30 minutes in it's gone nowhere, and stalled alerts like it lost the rest of the day
   here (stall.py).
-- **Gave back its run:** before tonight's hold, it gave back the kind of run that lost overnight
-  here (giveback.py).
+- **Gave back its run, or an event tonight:** before an overnight hold, it gave back the kind of run
+  that lost overnight here (giveback.py), or its stock reports tonight (eventrisk.py).
 - **Denied:** a later headline denied or walked back its news (denials.py).
 
 The same verdicts come as one push each (Settings → *Coach my calls*), on the signal budget. They are
@@ -71,7 +71,11 @@ def verdicts(engine: Engine, device: str, now: float | None = None) -> list[dict
         close_ts = session_edge("close", created - 31, engine.calendar)
         pout = playbook_out(a)
         if pout in ("d1", "d5") and 0 < close_ts - now <= 900 and live is not None:
-            gv = gb_live(engine, a, live)
+            from .eventrisk import verdict as event_verdict
+
+            gv = event_verdict(engine, a, sym)  # its stock reports tonight
+            if not gv or not gv["exit"]:
+                gv = gb_live(engine, a, live)
             if gv and gv["exit"]:
                 out.append({"call": t, "kind": "giveback", "urgency": 74, "title": f"{sym}: out at the close instead of overnight?",
                             "detail": gv["line"]})  # fmt: skip

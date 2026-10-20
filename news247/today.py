@@ -212,6 +212,11 @@ def board(engine: Engine, now: float | None = None) -> dict[str, Any]:
             gb = gb_live(engine, a, live)
             if gb:  # tonight's hold, given how much of its run it kept today (giveback.py)
                 s["gb"] = gb
+            from .eventrisk import verdict as event_verdict
+
+            ev = event_verdict(engine, a, s["symbol"])
+            if ev:  # its stock reports tonight, or has a scheduled event (eventrisk.py)
+                s["event"] = ev
         if s["status"] == "in" and s["in"] == "alert" and 1800 <= now - float(a["created"]) <= 3600:
             from .stall import live as stall_live
 

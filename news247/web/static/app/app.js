@@ -797,7 +797,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadPromises(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadTrack(); loadPromises(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -1144,6 +1144,21 @@ async function loadExitsKind() {
     + `<div class="sub" style="padding:4px 0 12px">The same alerts, exited five ways from the alert price: an hour in, at the close, the next day, five sessions on, and the plan's bracket (its stop or target, whichever came first; the stop when both did the same day, else the close). The best is the one with the best average (${r.need}+ graded).</div>`;
 }
 let COMBO_NAMES = {};
+// the playbook's track record (Watch): every stamped alert, the playbook's way against the plain way
+async function loadTrack() {
+  let r;
+  try { r = await api("/api/playbook-curve"); } catch (_) { return; }
+  $("tcWrap").hidden = !r.n;
+  if (!r.n) return;
+  const pts = r.points, W = 560, H = 150, pad = 8, all = pts.flatMap((p) => [p[1], p[2]]), lo = Math.min(0, ...all), hi = Math.max(0, ...all), span = hi - lo || 1;
+  const X = (i) => pad + (pts.length > 1 ? i / (pts.length - 1) : 0.5) * (W - 2 * pad), Y = (v) => pad + (1 - (v - lo) / span) * (H - 2 * pad);
+  const path = (k) => pts.map((p, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(p[k]).toFixed(1)).join(" ");
+  $("tcBoard").innerHTML = `<div class="kv"><span>${esc(r.line)}</span></div>`
+    + `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="The playbook against the plain way, cumulative"><line x1="${pad}" x2="${W - pad}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--faint)" stroke-dasharray="3 4"/><path d="${path(2)}" fill="none" stroke="#A99CFF" stroke-width="1.6"/><path d="${path(1)}" fill="none" stroke="var(--gold)" stroke-width="2.4"/></svg>`
+    + `<div class="labstats"><span><b class="num ${cls(r.playbook.total)}">${pct(r.playbook.total)}</b><small>the playbook · ${Math.round(r.playbook.hit * 100)}%</small></span><span><b class="num ${cls(r.plain.total)}">${pct(r.plain.total)}</b><small>the plain way · ${Math.round(r.plain.hit * 100)}%</small></span><span><b class="num">${r.taken}/${r.n}</b><small>taken</small></span><span><b class="num neg">${r.drawdown.toFixed(1)}%</b><small>worst drawdown</small></span></div>`
+    + (r.nights && r.nights.event ? `<div class="sub">📅 Holds through the stock's own event nights: ${pct(r.nights.event.avg)} overnight on average (${r.nights.event.n}), ordinary nights ${r.nights.normal ? pct(r.nights.normal.avg) : "—"}.</div>` : "")
+    + `<div class="sub" style="padding:4px 0 12px"><span style="color:var(--gold)">━</span> the playbook: each alert taken its way (a pass, or an entry that never came, adds 0%) · <span style="color:#A99CFF">━</span> the plain way: the same alerts in at the alert, out at the close. One equal paper call per alert, added up in order, on alerts the pairs were never fitted on. Paper only.</div>`;
+}
 // show the work: the alerts behind one pair's number
 async function showWork(kind, pair) {
   let r;
@@ -1171,7 +1186,7 @@ async function loadToday() {
   if (!r.rows.length) return;
   const t = r.tally, icon = { waiting: "⏳", in: "🟢", out: "🏁", skipped: "⤼", pass: "🚫" };
   $("pbtBoard").innerHTML = (r.day && r.day.text ? `<div class="kv"><span>📓 ${esc(r.day.text)}</span></div>` : "") + `<div class="labstats"><span><b class="num">${t.waiting}</b><small>waiting</small></span><span><b class="num">${t.in}</b><small>in</small></span><span><b class="num">${t.out}</b><small>out</small></span><span><b class="num">${t.pass || 0}</b><small>passed</small></span><span><b class="num ${cls(t.avg)}">${t.avg != null ? pct(t.avg) : "—"}</b><small>a call</small></span><span><b class="num ${cls(t.vs_plain)}">${t.vs_plain != null ? pct(t.vs_plain) : "—"}</b><small>vs the plain way</small></span></div>`
-    + r.rows.map((x) => `<div class="kv" data-id="${esc(x.id)}"><span>${icon[x.status] || ""} <b>${esc(x.symbol)}</b> ${x.sign > 0 ? "▲" : "▼"} <span class="sub">${esc(x.kind || "")}</span><div class="sub">${esc(x.pair)}${x.held === false ? " (the plain way: its pick didn't hold)" : ""} · ${x.status}${x.why ? " " + esc(x.why) : ""}${x.entry ? ` · in at $${x.entry.toFixed(2)}` : ""}</div>${x.denied ? `<div class="sub neg">⚠ Denied: ${esc(x.denied)}</div>` : ""}${x.stall ? `<div class="sub ${x.stall.exit ? "neg" : ""}">${x.stall.exit ? "⏸✗" : "⏱"} ${esc(x.stall.line)}</div>` : ""}${x.gb ? `<div class="sub ${x.gb.exit ? "neg" : ""}">${x.gb.exit ? "🌙✗" : "🌙"} ${esc(x.gb.line)}</div>` : ""}<div class="sub">${esc(x.title)}</div></span><b class="num">${x.pnl != null ? `<span class="${cls(x.pnl)}">${pct(x.pnl)}</span>` : "—"}${x.plain != null ? `<br><span class="sub">plain ${pct(x.plain)}</span>` : ""}</b></div>`).join("")
+    + r.rows.map((x) => `<div class="kv" data-id="${esc(x.id)}"><span>${icon[x.status] || ""} <b>${esc(x.symbol)}</b> ${x.sign > 0 ? "▲" : "▼"} <span class="sub">${esc(x.kind || "")}</span><div class="sub">${esc(x.pair)}${x.held === false ? " (the plain way: its pick didn't hold)" : ""} · ${x.status}${x.why ? " " + esc(x.why) : ""}${x.entry ? ` · in at $${x.entry.toFixed(2)}` : ""}</div>${x.denied ? `<div class="sub neg">⚠ Denied: ${esc(x.denied)}</div>` : ""}${x.event ? `<div class="sub ${x.event.exit ? "neg" : ""}">${x.event.exit ? "📅✗" : "📅"} ${esc(x.event.line)}</div>` : ""}${x.stall ? `<div class="sub ${x.stall.exit ? "neg" : ""}">${x.stall.exit ? "⏸✗" : "⏱"} ${esc(x.stall.line)}</div>` : ""}${x.gb ? `<div class="sub ${x.gb.exit ? "neg" : ""}">${x.gb.exit ? "🌙✗" : "🌙"} ${esc(x.gb.line)}</div>` : ""}<div class="sub">${esc(x.title)}</div></span><b class="num">${x.pnl != null ? `<span class="${cls(x.pnl)}">${pct(x.pnl)}</span>` : "—"}${x.plain != null ? `<br><span class="sub">plain ${pct(x.plain)}</span>` : ""}</b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every directional alert since yesterday's close, and older ones the playbook still holds: its kind's pair (way in and way out, picked together and checked out of sample), where it stands from the desk's live record, and its result so far on paper. <i>Plain</i>: the same alert in at the alert, out at the close. Paper only: nothing is traded.</div>`;
 }
 // you vs the playbook (Desk): your paper calls against the playbook on the same alerts

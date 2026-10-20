@@ -197,6 +197,7 @@ class WebServer:
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
         app.router.add_get("/api/stops-kind", self.api_stops_kind)
         app.router.add_get("/api/combos", self.api_combos)
+        app.router.add_get("/api/playbook-curve", self.api_playbook_curve)
         app.router.add_get("/api/combos/work", self.api_combo_work)
         app.router.add_get("/api/promises", self.api_promises)
         app.router.add_get("/api/playbook-today", self.api_playbook_today)
@@ -1347,6 +1348,13 @@ class WebServer:
         if pair not in NAMES:
             return web.json_response({"error": "no such pair"}, status=400)
         return _json(work(self.engine, kind, pair))
+
+    async def api_playbook_curve(self, request: web.Request) -> web.Response:
+        """The playbook's track record on every stamped alert, against the plain way (pbcurve.py)."""
+        from ..pbcurve import curve, line
+
+        c = curve(self.engine)
+        return _json({**c, "line": line(c), "nights": self.engine.night_rates})
 
     async def api_combos(self, request: web.Request) -> web.Response:
         """Every way in paired with every way out per kind of news (combos.py)."""

@@ -509,6 +509,17 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - the playbook today board follows both halves (*"half out"*);
   - the promise is the split's own average.
 - **Show the work:** every pair on *The whole playbook, together* board is tappable. It opens the alerts behind its number, newest first (up to 60): the stock, the date, the headline, that pair's result and the plain way's. Tap one to open its sheet. `GET /api/combos/work?kind=…&pair=…`.
+- **Event risk on overnight holds:** the playbook's overnight averages were earned on ordinary nights. A night the stock reports earnings (after today's close, or before or on the next session) or has a scheduled binary event (an FDA date, a readout) is a coin toss of a different size, whatever the news was. Every alert now notes whether the night after its session is an **event night** for its stock (Nasdaq's earnings calendar and the desk's captured binary events). Those holds are graded separately. Until 8+ are graded and they paid on average, the playbook doesn't hold through one:
+  - the playbook autopilot exits such calls at 15:50 ET, with the reason;
+  - the playbook today board flags them before the bell (*"📅✗ ACME reports earnings after the close: the playbook doesn't hold through one until its record says it pays. Out at the close instead."*);
+  - *Coach my calls* says the same about yours.
+
+  That's a stated policy until the record has its say, not a finding. The track record panel shows event nights against ordinary ones as they accrue.
+- **The playbook's track record:** every alert goes out with what the playbook would do with it: its pair, or a pass. Once graded, the alert says what that did, on an alert the pair was never fitted on, and what the plain way did on the same alert. Added up in order, one equal-sized paper call per alert, they make two lines on the Watch tab's **The playbook's track record**:
+  - the playbook's way (a pass or an entry that never came adds 0%);
+  - the plain way (in at the alert, out at the close).
+
+  With them come the totals, the average per alert, how often each went its way, how many it took, and the playbook's worst drawdown: *"Since 2026-09-20, on 214 alerts: the playbook +38.1% in all (+0.18% an alert), the plain way +12.4% (+0.06%); its worst drawdown -6.2%."* It runs whether or not anyone follows the playbook. `GET /api/playbook-curve`.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

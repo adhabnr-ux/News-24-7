@@ -299,6 +299,8 @@ class Engine:
         self.denial_rates: dict[str, Any] | None = None
         # each kind's pair, promised against what it made on the alerts after it (promises.py)
         self.promise_rates: dict[str, Any] = {}
+        # overnight moves on event nights (the stock's earnings, a binary event) and ordinary ones (eventrisk.py)
+        self.night_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2029,7 +2031,12 @@ class Engine:
                     alert.edge["crowd"] = cw
                 from .denials import act as deny_act
                 from .denials import stamp as deny_stamp
+                from .eventrisk import tonight
 
+                with contextlib.suppress(
+                    Exception
+                ):  # is the night after its session an event night? (eventrisk.py)
+                    alert.edge["event_night"] = tonight(self, alert.tickers[0], alert.created) or False
                 dn = deny_stamp(self, alert.to_dict())
                 if dn:  # it denies or walks back an alert on this stock from the last 3 days (denials.py)
                     alert.edge["denies"] = dn
@@ -3062,7 +3069,8 @@ class Engine:
         return opened
 
     async def autopilot_giveback(self, now: float | None = None) -> int:
-        """15:50-16:00 ET: playbook calls about to be held overnight whose day gave back the kind of run
+        """15:50-16:00 ET: playbook calls about to be held overnight into the stock's own event (eventrisk.py),
+        or whose day gave back the kind of run
         that lost overnight here close now, at the live price, with the reason (giveback.py)."""
         from .desk import session_edge
         from .giveback import live
@@ -3087,7 +3095,11 @@ class Engine:
                 q = self.price_of(t["symbol"], 600, now=now)
                 if not ref or not q or not q[1]:
                     continue
-                v = live(self, a, (q[1] / ref - 1) * 100)
+                from .eventrisk import verdict as event_verdict
+
+                v = event_verdict(self, a, t["symbol"])  # its stock reports tonight: no hold through it
+                if not v or not v["exit"]:
+                    v = live(self, a, (q[1] / ref - 1) * 100)
                 if not v or not v["exit"]:
                     continue
                 lesson = f"autopilot: out at the close: {v['line'][:1].lower() + v['line'][1:]}"[:300]
@@ -4570,6 +4582,9 @@ class Engine:
         from .promises import live_record
 
         self.promise_rates = live_record(self, 120, now)
+        from .eventrisk import night_rates
+
+        self.night_rates = night_rates(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 
