@@ -289,6 +289,8 @@ class Engine:
         self.combo_rates: dict[str, Any] = {}
         # first headlines against repeats on the same stock within a week (repeat.py)
         self.repeat_rates: dict[str, Any] = {}
+        # each kind of day (kept its run, gave back half, gave back most) overnight (giveback.py)
+        self.giveback_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2059,6 +2061,8 @@ class Engine:
             cr = alert.edge.get("combo_rec")
             if cr:  # the pair's way in and way out, for the playbook autopilot (combos.py)
                 cr["in"], cr["out"] = cr["best"].split("|")
+                # no way in and out made money on its kind here: the playbook passes
+                cr["pass"] = cr["styles"][cr["best"]]["avg"] <= 0
             from .thecall import the_call
 
             call = the_call(
@@ -2628,6 +2632,10 @@ class Engine:
                 with contextlib.suppress(Exception):
                     await self.autopilot_limits(now)  # playbook calls waiting at their patient entry
                 with contextlib.suppress(Exception):
+                    await self.autopilot_giveback(
+                        now
+                    )  # overnight holds that gave back their run: out at the close
+                with contextlib.suppress(Exception):
                     from .tapeday import send_tape
 
                     await send_tape(
@@ -2982,6 +2990,46 @@ class Engine:
             p["ap_limits"] = keep
             self.desk.save(dev)
         return opened
+
+    async def autopilot_giveback(self, now: float | None = None) -> int:
+        """15:50-16:00 ET: playbook calls about to be held overnight whose day gave back the kind of run
+        that lost overnight here close now, at the live price, with the reason (giveback.py)."""
+        from .desk import session_edge
+        from .giveback import live
+
+        now = now or time.time()
+        close_ts = session_edge("close", now - 31, self.calendar)
+        if not 0 < close_ts - now <= 600:
+            return 0
+        closed = 0
+        for dev, p in list(self.desk.profiles.items()):
+            for t in list(p.get("tracked") or []):
+                if (
+                    not t.get("auto")
+                    or (t.get("pb") or {}).get("out") not in ("d1", "d5")
+                    or not t.get("alert_id")
+                ):
+                    continue
+                a = self.storage.get_alert(t["alert_id"])
+                if not a or session_edge("close", float(a["created"]) - 31, self.calendar) != close_ts:
+                    continue  # only on the alert's own session: the hold was decided there
+                ref = ((a.get("edge") or {}).get("refs") or {}).get(t["symbol"])
+                q = self.price_of(t["symbol"], 600, now=now)
+                if not ref or not q or not q[1]:
+                    continue
+                v = live(self, a, (q[1] / ref - 1) * 100)
+                if not v or not v["exit"]:
+                    continue
+                lesson = f"autopilot: out at the close: {v['line'][:1].lower() + v['line'][1:]}"[:300]
+                self.desk.apply(dev, "track_close", {"id": t["id"], "lesson": lesson}, lambda s, _q=q: _q)
+                done = p["closed"][0]
+                closed += 1
+                pnl = done.get("pnl_pct")
+                payload = {"id": f"apx-{t['id']}", "title": f"🤖 Closed {t['direction']} {t['symbol']} {pnl:+.2f}% at the close, not tomorrow" if pnl is not None else f"🤖 Closed {t['symbol']} at the close",
+                           "body": v["line"], "severity": "HIGH", "kind": "system", "tickers": [t["symbol"]], "tag": f"ap-{t['id']}",
+                           "ts": now, "open": "/app/#a=desk"}  # fmt: skip
+                await self._to_device(dev, payload, urgency="normal")
+        return closed
 
     async def autopilot_pending(self, now: float | None = None) -> int:
         """Enter each "wait for the open" call a rule scheduled, at the session's first 15 minutes;
@@ -4399,6 +4447,9 @@ class Engine:
         from .repeat import repeat_rates
 
         self.repeat_rates = repeat_rates(self, 180, now)
+        from .giveback import giveback_rates
+
+        self.giveback_rates = giveback_rates(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 

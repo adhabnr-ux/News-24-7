@@ -458,6 +458,19 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - **Follow the playbook on paper,** when it beat your own calls by 0.5% a call or more on the same alerts (10+) and no autopilot follows it yet.
   - **Pause an autopilot** whose choices cost against the plain way on the same alerts over 20+ graded calls.
 - **Fixed: boards sharing an id.** *The playbook today* (run 64) reused the price-target board's id, and *Options against the news* (run 45) the unusual-volume board's, so one board could write into the other's place or stay hidden. Both have their own ids now, and a test fails the build if two elements in the app share an id, or if the script looks one up that doesn't exist.
+- **The playbook passes:** the best pair for a kind of news is the best of what's there, even when everything lost. Now when no way in and out made money on a kind here, the playbook **passes**: the best pair's average is 0% or less, or its pick fell back to a plain way that loses. Then:
+  - the playbook autopilot sits it out;
+  - the playbook today shows it as *🚫 pass* with the best pair's average;
+  - you vs the playbook counts it as 0%, since the playbook stood aside.
+- **Holds that gave back their run:** the playbook holds some kinds of news overnight because on average they keep going. But a stock that ran hard and gave most of it back by the bell isn't the same trade as one that closed near its best. Each graded day is sorted by how much of its best run (its way, from the alert price) it kept at the close:
+  - **kept it:** two-thirds or more;
+  - **gave back half:** a third to two-thirds;
+  - **gave back most:** under a third, or closed against the call.
+
+  Days without a 0.5% run aren't sorted. The record says how each kind of day went overnight, per kind of news (close to the next close, its way). When the playbook's way out is the next day or five sessions on and today's kind of day lost overnight on average (8+ graded):
+  - the playbook today board says so before the bell (*"🌙✗ It gave back most of its run today; days like it went -1.5% overnight on average here (0% its way, 10): out at the close instead."*);
+  - the playbook autopilot closes such calls at 15:50 ET with that reason;
+  - the kind's playbook lists all three kinds of day.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

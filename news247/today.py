@@ -10,6 +10,7 @@ its playbook pair and where it stands, from the facts the desk records live:
 - **Skipped:** the entry never came (no second leg by the close, volume didn't confirm, the limit
   never filled).
 - **In:** entered at its way in's price; marked to the live price.
+- **Pass:** no way in and out made money on its kind of news here, so the playbook sits it out.
 - **Out:** exited its way out (an hour in, at the close, the next day, five sessions on, or the
   bracket), with the result.
 
@@ -43,6 +44,16 @@ def state(a: dict[str, Any], live: float | None, now: float, calendar: Any = Non
     e = a.get("edge") or {}
     pin, pout = playbook_in(a), playbook_out(a)
     d = _direction(a)
+    cr = e.get("combo_rec") or {}
+    if cr.get("pass") and d in ("up", "down"):  # the playbook passes on its kind of news here
+        best = ((cr.get("styles") or {}).get(cr.get("best") or "") or {}).get("avg")
+        sym = (
+            next(iter(e.get("outcome") or {}), None)
+            or next(iter(e.get("refs") or {}), None)
+            or ((a.get("tickers") or [""])[0])
+        )
+        return {"in": cr.get("in"), "out": cr.get("out"), "symbol": sym, "sign": 1 if d == "up" else -1, "status": "pass",
+                "why": "no way in and out made money on its kind here" + (f" (the best {best:+.1f}%)" if best is not None else "")}  # fmt: skip
     if not pin or not pout or d not in ("up", "down"):
         return None
     sign = 1 if d == "up" else -1
@@ -177,6 +188,16 @@ def board(engine: Engine, now: float | None = None) -> dict[str, Any]:
         fresh = float(a["created"]) >= last_close - 8 * 3600  # since yesterday's close (and its after-hours)
         if not fresh and not (s["status"] == "in" and s["out"] in ("d1", "d5")):
             continue  # older alerts only while the playbook still holds them
+        if (
+            s["status"] == "in"
+            and s["out"] in ("d1", "d5")
+            and now < session_edge("close", float(a["created"]) - 31, engine.calendar)
+        ):
+            from .giveback import live as gb_live
+
+            gb = gb_live(engine, a, live)
+            if gb:  # tonight's hold, given how much of its run it kept today (giveback.py)
+                s["gb"] = gb
         cr = e.get("combo_rec") or {}
         rows.append({**s, "id": a["id"], "title": (a.get("title") or "")[:140], "created": a["created"],
                      "kind": cr.get("label") or (e.get("entry_rec") or {}).get("label") or (e.get("exit_rec") or {}).get("label"),
@@ -184,7 +205,7 @@ def board(engine: Engine, now: float | None = None) -> dict[str, Any]:
     rows.sort(key=lambda r: -r["created"])
     done = [r for r in rows if r.get("pnl") is not None]
     both = [r for r in done if r.get("plain") is not None]
-    tally = {s: sum(1 for r in rows if r["status"] == s) for s in ("waiting", "in", "out", "skipped")}
+    tally = {s: sum(1 for r in rows if r["status"] == s) for s in ("waiting", "in", "out", "skipped", "pass")}
     if done:
         tally["avg"] = round(sum(r["pnl"] for r in done) / len(done), 2)
     if both:

@@ -133,3 +133,24 @@ class CaptureNotifier(Notifier):
 @pytest.fixture
 def now() -> Callable[[], float]:
     return time.time
+
+
+@pytest.fixture
+def session_clock(monkeypatch: pytest.MonkeyPatch) -> float:
+    """Run a test on a mid-session clock: the last weekday's 11:00 ET, still ticking in real time.
+
+    Tests that grade "at today's 16:00" or wait on a limit that expires at the bell otherwise depend
+    on when the suite runs: after the close (or near it) those times are already behind the clock.
+    Returns the frozen start."""
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    real = time.time
+    d = datetime.fromtimestamp(real(), et) - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    start = d.replace(hour=11, minute=0, second=0, microsecond=0).timestamp()
+    t0 = real()
+    monkeypatch.setattr(time, "time", lambda: start + (real() - t0))
+    return start

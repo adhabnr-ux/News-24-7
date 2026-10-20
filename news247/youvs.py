@@ -36,6 +36,8 @@ def playbook_result(a: dict[str, Any]) -> tuple[float, str] | None:
     got = combos(a)
     if DEFAULT not in got:
         return None
+    if ((a.get("edge") or {}).get("combo_rec") or {}).get("pass"):
+        return 0.0, "pass"  # the playbook sat it out
     pin, pout = playbook_in(a), playbook_out(a)
     if not pin or not pout:
         return got[DEFAULT], DEFAULT
@@ -68,9 +70,9 @@ def compare(engine: Engine, device: str) -> dict[str, Any]:
         # the alert's direction: a call against it is graded against the playbook taken its own way
         same = (1 if c.get("direction", "long") == "long" else -1) == row["sign"]
         cat = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)
-        calls.append({"symbol": c["symbol"], "you": round(float(c["pnl_pct"]), 2), "playbook": pb[0] if same else -pb[0],
+        calls.append({"symbol": c["symbol"], "you": round(float(c["pnl_pct"]), 2), "playbook": pb[0] if same else -pb[0] or 0.0,
                       "plain": row["sign"] * row["close"] if same else -row["sign"] * row["close"],
-                      "pair": NAMES.get(pb[1], pb[1]), "kind": cat["key"] if cat else None,
+                      "pair": "The playbook passes" if pb[1] == "pass" else NAMES.get(pb[1], pb[1]), "kind": cat["key"] if cat else None,
                       "label": cat["label"] if cat else "Other news", "closed": c.get("closed"), "title": (a.get("title") or "")[:120]})  # fmt: skip
     out: dict[str, Any] = {"n": len(calls), "need": MIN_N, "default": NAMES[DEFAULT]}
     if not calls:

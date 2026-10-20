@@ -60,7 +60,7 @@ def test_whats_working_today(tmp_path):
 # --------------------------------------------------------------------------- second chance
 
 
-async def test_second_chance_when_a_strong_kind_comes_back(tmp_path, server):
+async def test_second_chance_when_a_strong_kind_comes_back(tmp_path, server, session_clock):
     for p in ("/push/a", "/push/b"):
         server.on(p, (201, ""))
     eng = semis_engine(tmp_path)

@@ -29,7 +29,7 @@ ET = ZoneInfo("America/New_York")
 # --------------------------------------------------------------------------- divergence
 
 
-async def test_good_news_and_the_stock_falling(tmp_path, server):
+async def test_good_news_and_the_stock_falling(tmp_path, server, session_clock):
     for p in ("/push/a", "/push/b"):
         server.on(p, (201, ""))
     eng = semis_engine(tmp_path)

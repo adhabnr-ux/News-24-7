@@ -81,14 +81,16 @@ async def test_a_playbook_call_waits_for_its_patient_entry(tmp_path):
     contract_history(eng)
     eng.refresh_base_rates()
     eng.desk.apply(DEV, "autopilot_add", {"follow": "playbook", "min_sev": "MEDIUM"})
-    now = time.time()
+    from news247.desk import session_edge
+
+    now = session_edge("open", time.time(), eng.calendar) + 5400  # 11:00 ET: hours before the limit expires
     eng.live_quotes.update("ACME", 100.5, 99.0, now - 5, "tape")
     a = news("Acme wins $2B Pentagon contract")
     await eng.publish(a, push=False)
     edge = {**rec("patient"), "plan": {"dir": "up", "symbol": "ACME", "entry": 100.5, "stop": 98.0, "target": 104.0,
                                        "patient": {"limit": 99.8, "dip": 0.7}}}  # fmt: skip
     eng.storage.update_alert_edge(a.id, edge)
-    assert await eng.autopilot_open(eng.storage.get_alert(a.id)) == 0
+    assert await eng.autopilot_open(eng.storage.get_alert(a.id), now) == 0
     lims = eng.desk.get(DEV)["ap_limits"]
     assert len(lims) == 1 and lims[0]["limit"] == 99.8
     assert await eng.autopilot_limits(now + 60) == 0  # not there yet

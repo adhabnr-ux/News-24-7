@@ -172,6 +172,8 @@ def exit_time(exit_: str, ts: float, calendar: Any = None) -> float:
 def playbook_in(alert: dict[str, Any]) -> str | None:
     """The way in the playbook takes: the graded pair's (combos.py), else its kind's best entry."""
     e = alert.get("edge") or {}
+    if (e.get("combo_rec") or {}).get("pass"):
+        return None  # no way in and out made money on its kind here: the playbook passes
     return (e.get("combo_rec") or {}).get("in") or (e.get("entry_rec") or {}).get("best")
 
 

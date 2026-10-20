@@ -161,6 +161,19 @@ def playbook(engine: Engine, key: str, now: float | None = None) -> dict[str, An
             f"A second headline on the same stock within a week went its way {round(rp['repeat']['hit'] * 100)}% "
             f"({rp['repeat']['n']}); first headlines {round(rp['first']['hit'] * 100)}% ({rp['first']['n']})."
         )
+    gb = _get(engine, "giveback_rates").get(key)
+    if gb:
+        from .giveback import BUCKETS
+        from .giveback import MIN_N as GB_N
+
+        parts = [
+            f"{BUCKETS[b]} {gb[b]['avg']:+.1f}% ({gb[b]['n']})"
+            for b in ("kept", "half", "most")
+            if (gb.get(b) or {}).get("n", 0) >= GB_N
+        ]
+        if parts:
+            out["giveback"] = gb
+            rules.append("Overnight, by how much of its run it kept at the close: " + "; ".join(parts) + ".")
     so = _get(engine, "stop_rates").get(key)
     if so and so.get("best"):
         from .stops_kind import STYLES as STOP_STYLES
