@@ -1028,7 +1028,7 @@ async function loadDrift() {
     + `<div class="sub" style="padding:4px 0 12px">Every alert is graded 20 sessions on. Kinds the market takes weeks to price keep drifting; kinds it overshoots give it back. Medians, its way. Five sessions after news on your stock, a drift check says which its kind did here (Settings → Drift check).</div>`;
 }
 // what we caught, what we missed (Watch): every big move against the alerts on it
-const MISS_WHY = { "under the line": "a headline under the alert line", "no headline": "no headline in the feeds" };
+const MISS_WHY = { "under the line": "a headline under the alert line", "no headline": "no headline in the feeds", asleep: "the desk was asleep" };
 async function loadRecall() {
   let r;
   try { r = await api("/api/recall"); } catch (_) { return; }
@@ -1040,7 +1040,7 @@ async function loadRecall() {
     + (r.all ? `<div class="kv"><span>The last ${r.sessions} session${r.sessions === 1 ? "" : "s"}</span><b class="num">${rate(r.all)}</b></div>`
       + r.bands.map((b) => `<div class="kv"><span class="sub">${esc(b.band || "?")}</span><b class="num">${rate(b)}</b></div>`).join("") : "")
     + (r.lead ? `<div class="kv"><span>Lead time <span class="sub">first alert to the move's high (or low)</span></span><b class="num">${r.lead.median} min <span class="sub">before it on ${Math.round(r.lead.before * 100)}% · ${r.lead.n}</span></b></div>` : "")
-    + (r.all && r.all.n > r.all.caught ? `<div class="kv"><span>Why the misses missed</span><b class="num">${r.why["under the line"]} under the line${r.under_score != null ? ` <span class="sub">(median score ${r.under_score})</span>` : ""} · ${r.why["no headline"]} no headline</b></div>` : "")
+    + (r.all && r.all.n > r.all.caught ? `<div class="kv"><span>Why the misses missed</span><b class="num">${r.why["under the line"]} under the line${r.under_score != null ? ` <span class="sub">(median score ${r.under_score})</span>` : ""} · ${r.why["no headline"]} no headline${r.why.asleep ? ` · ${r.why.asleep} asleep` : ""}</b></div>` : "")
     + [...(r.today || []).filter((x) => !x.caught).map((x) => ({ ...x, day: "today" })), ...r.missed].slice(0, 10).map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span><b>${esc(x.symbol)}</b> <span class="${cls(x.chg)}">${pct(x.chg)}</span> <span class="sub">${esc(x.day)} · ${esc(MISS_WHY[x.why] || x.why)}${x.top_title ? `: “${esc(x.top_title.slice(0, 70))}” (${x.top_score})` : ""}</span></span><b class="num neg">missed</b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every company worth $300M+ that moved 5%+ in a session, checked against the alerts on it since the previous close. A miss with a headline under the line says the threshold was too high for it; one with no headline is a source gap or a move with no news. Kept for every session at 16:05 ET.</div>`;
 }
@@ -1095,6 +1095,21 @@ async function loadMacro() {
   $("macroBoard").innerHTML = (r.today.length ? `<div class="kv"><span class="gold">📅 Today: ${esc(r.today.join(" · "))}</span></div>` : r.next ? `<div class="kv"><span>Next macro day <span class="sub">${esc(r.next.titles.join(" · "))}</span></span><b class="num">${esc(prettyDate(r.next.date))}</b></div>` : "")
     + (r.rows.length ? `<div class="kv head"><span>Kind of news</span><b>its way: macro days · other days</b></div>` + r.rows.slice(0, 12).map((x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num">${cell(x.macro)}<br>${cell(x.other)}</b></div>`).join("") : "")
     + `<div class="sub" style="padding:4px 0 12px">Sessions with an FOMC decision, a jobs report or another scheduled release that moves the whole market (from the calendar), against every other session, by the close. On a macro day new alerts carry their kind's macro-day record (${r.need}+ graded) and a poor one counts against them in the call.</div>`;
+}
+// uptime and the record's coverage (Desk)
+const H_LABEL = { close: "That close", d1: "The next close", d5: "Five sessions on", d20: "A month on" };
+async function loadUptime() {
+  let r;
+  try { r = await api("/api/uptime"); } catch (_) { return; }
+  const L = r.ledger, C = r.coverage;
+  $("dUpWrap").hidden = L.awake == null && !C.horizons.some((h) => h.due);
+  if ($("dUpWrap").hidden) return;
+  $("dUp").innerHTML = (L.awake != null ? `<div class="kv"><span>Awake in market hours <span class="sub">the last ${L.sessions} sessions, ${L.market_h} h</span></span><b class="num"><span class="${L.awake >= 0.98 ? "pos" : L.awake < 0.9 ? "neg" : "gold"}">${(L.awake * 100).toFixed(1)}%</span>${L.asleep_h ? ` <span class="sub">${L.asleep_h} h asleep</span>` : ""}</b></div>` : "")
+    + L.outages.slice(0, 6).map((o) => `<div class="kv"><span class="sub">${new Date(o.from * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })} → ${new Date(o.to * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span><b class="num neg">${Math.round(o.market_s / 60)} min of the session</b></div>`).join("")
+    + `<div class="kv head"><span>The record, graded</span><b>alerts due · graded · from daily bars</b></div>`
+    + C.horizons.map((h) => `<div class="kv"><span>${H_LABEL[h.horizon]}</span><b class="num">${h.share != null ? `<span class="${h.share >= 0.9 ? "pos" : h.share < 0.7 ? "neg" : "gold"}">${Math.round(h.share * 100)}%</span>` : "—"} <span class="sub">${h.graded} of ${h.due}${h.filled ? ` · ${h.filled} filled` : ""}</span></b></div>`).join("")
+    + `<div class="row" style="padding:6px 0"><button class="btn ghost small" data-act="bars-fill">Fill the gaps from daily bars now</button></div>`
+    + `<div class="sub" style="padding:4px 0 12px">The desk notes a heartbeat every minute; a gap in it during the session is time nothing was read, and a push says so on waking. Grades a sleeping server missed at a session's close are filled from the exchange's daily bars a few times an hour (marked as filled); the hour and minute checkpoints can't be.</div>`;
 }
 let lineR = null;
 // the alert line, tested (Desk): headlines that scored just under it, graded as if they'd gone out
@@ -2560,6 +2575,7 @@ async function onAct(el) {
   else if (a === "tune-apply") { const o = tuneR?.[s]; if (o && await deskEdit("prefs", { edge_min: o.edge_min, budget: o.budget })) { toast(`Using ${o.label}`); loadTune(); loadCost(); } }
   else if (a === "budget") { if (await deskEdit("prefs", { budget: +s })) toast(+s ? `Only your ${s} best alerts a day push now (your stocks and CRITICAL still come)` : "Every alert that clears your settings may push"); }
   else if (a === "playbook") openPlaybook(s);
+  else if (a === "bars-fill") { toast("Reading daily bars…"); try { const r = await api("/api/bars/fill", { method: "POST", body: "{}" }); toast(r.filled ? `Filled ${r.filled} grade${r.filled === 1 ? "" : "s"} from daily bars` : "Nothing to fill"); loadUptime(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-set") { if (!confirm(`Lower the alert line from ${lineR?.line} to ${s} for every phone? Headlines scoring ${s}+ become alerts. You can put it back any time.`)) return; try { await api("/api/line", { method: "POST", body: JSON.stringify({ medium: +s, why: lineR?.line_text || "" }) }); toast(`The alert line is ${s} now`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-reset") { try { const r = await api("/api/line", { method: "POST", body: JSON.stringify({ reset: true }) }); toast(`The alert line is back to ${r.line}`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "call-follow") { if (await deskEdit("autopilot_add", { follow: "call", catalyst: "all", band: "all", min_sev: "HIGH", exit: "close" })) { toast("🤖 Following the call: act-now calls open a paper call at once, wait-for-the-open calls at the open", null, 6000); renderAutopilots(); } }
@@ -2992,7 +3008,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

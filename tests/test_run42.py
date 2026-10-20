@@ -72,7 +72,7 @@ def test_each_session_is_kept_and_read(tmp_path):
     r = recall_report(eng, now=close)
     assert r["sessions"] == 2 and r["all"] == {"n": 4, "caught": 2, "rate": 0.5}
     assert r["lead"] == {"n": 2, "median": 27.5, "before": 0.5}
-    assert r["why"] == {"under the line": 1, "no headline": 1} and r["under_score"] == 41.5
+    assert r["why"] == {"under the line": 1, "no headline": 1, "asleep": 0} and r["under_score"] == 41.5
     assert [m["symbol"] for m in r["missed"]] == ["BETA", "DLTA"] and r["missed"][0]["day"] == "2026-10-14"
     assert {b["band"] for b in r["bands"]} >= {"small"}
 

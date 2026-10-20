@@ -188,6 +188,8 @@ class WebServer:
         app.router.add_get("/api/macro", self.api_macro)
         app.router.add_get("/api/vol", self.api_vol)
         app.router.add_get("/api/playbooks", self.api_playbooks)
+        app.router.add_get("/api/uptime", self.api_uptime)
+        app.router.add_post("/api/bars/fill", self.api_bars_fill)
         app.router.add_get("/api/playbook/{key}", self.api_playbook)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
@@ -1195,6 +1197,20 @@ class WebServer:
         except (TypeError, ValueError) as exc:
             raise web.HTTPBadRequest(text=str(exc)) from None
         return _json(out)
+
+    async def api_uptime(self, request: web.Request) -> web.Response:
+        """When the desk was asleep in market hours, and how much of the record is graded (uptime.py, bars.py)."""
+        from ..bars import coverage
+        from ..uptime import ledger
+
+        return _json({"ledger": ledger(self.engine), "coverage": coverage(self.engine)})
+
+    async def api_bars_fill(self, request: web.Request) -> web.Response:
+        """Fill the missing close grades from daily bars now, instead of waiting for the next pass (bars.py)."""
+        from ..bars import coverage, fill
+
+        n = await fill(self.engine)
+        return _json({"filled": n, "coverage": coverage(self.engine)})
 
     async def api_playbooks(self, request: web.Request) -> web.Response:
         """Every kind of news with a graded record: the index of playbooks (playbook.py)."""

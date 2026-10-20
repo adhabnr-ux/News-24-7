@@ -75,6 +75,11 @@ def _check(engine: Engine, sym: str, chg: float, li: Any, since: float, now: flo
             row["lead_min"] = round((extreme_ts - first["created"]) / 60, 1)  # + = before the extreme
         row["why"] = "alerted"
         return row
+    from .uptime import asleep_at
+
+    if asleep_at(engine, extreme_ts or now):  # the desk was down when it moved: a sleep, not a blind spot
+        row["why"] = "asleep"
+        return row
     items = engine.storage.items_for_ticker(sym, since=since, limit=40)
     best = max(items, key=lambda it: it.get("score") or 0, default=None)
     if best is not None:
@@ -134,7 +139,7 @@ def recall_report(engine: Engine, days: int = 20, now: float | None = None) -> d
                            "bands": [{"band": b, **(_rate([r for r in rows if r["band"] == b]) or {})} for b in sorted({r["band"] for r in rows})],
                            "lead": {"n": len(leads), "median": round(st.median(leads), 1),
                                     "before": round(sum(x > 0 for x in leads) / len(leads), 2)} if leads else None,
-                           "why": {k: sum(r.get("why") == k for r in missed) for k in ("under the line", "no headline")},
+                           "why": {k: sum(r.get("why") == k for r in missed) for k in ("under the line", "no headline", "asleep")},
                            "under_score": round(st.median(under), 1) if under else None,
                            "missed": [{**r, "day": s["day"]} for s in sessions for r in s["rows"] if not r["caught"]][:15],
                            "today": movers(engine, now)}  # fmt: skip

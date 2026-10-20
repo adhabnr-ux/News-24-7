@@ -339,6 +339,15 @@ class Engine:
             await self.webpush.restore()  # type: ignore[attr-defined]  # fresh container: phones come back
         with contextlib.suppress(Exception):
             await self.desk.restore()
+        with contextlib.suppress(Exception):
+            from .uptime import on_start as uptime_start
+            from .uptime import restore as uptime_restore
+            from .uptime import wake_later
+
+            await uptime_restore(self)
+            outage = uptime_start(self)  # how long was it down, and how much of that was the session?
+            if outage:
+                self._spawn(wake_later(self, outage))
         snap = getattr(self._wa_channel, "snapshot", None)
         if self.whatsapp is not None:
             if snap is not None:
@@ -2436,7 +2445,7 @@ class Engine:
         (an hour later, at the close) are stamped, and the desk is saved to the state database."""
         from .dossier import record_outcomes
 
-        last_outcomes = last_rates = last_month = 0.0
+        last_outcomes = last_rates = last_month = last_bars = 0.0
         while not stop.is_set():
             await _sleep_or_stop(stop, 15)
             now = time.time()
@@ -2451,6 +2460,10 @@ class Engine:
             if now - last_outcomes >= 60:
                 last_outcomes = now
                 with contextlib.suppress(Exception):
+                    from .uptime import beat
+
+                    beat(self, now)  # the heartbeat: a gap in it is an outage (uptime.py)
+                with contextlib.suppress(Exception):
                     record_outcomes(self, now)
                 with contextlib.suppress(Exception):
                     from .shadow import grade as shadow_grade
@@ -2462,6 +2475,16 @@ class Engine:
                         from .dossier import record_month
 
                         record_month(self, now)  # a month on: 20 sessions after each alert
+                    with contextlib.suppress(Exception):
+                        from .uptime import persist as uptime_persist
+
+                        await uptime_persist(self)
+                    if now - last_bars >= 1800:
+                        last_bars = now
+                        with contextlib.suppress(Exception):
+                            from .bars import fill as bars_fill
+
+                            await bars_fill(self, now)  # the closes a sleeping server missed, from daily bars
                     with contextlib.suppress(Exception):
                         from .coverage import stamp_coverage
 
