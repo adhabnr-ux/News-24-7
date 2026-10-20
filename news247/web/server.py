@@ -174,6 +174,8 @@ class WebServer:
         app.router.add_get("/api/exits", self.api_exits)
         app.router.add_get("/api/clock", self.api_clock)
         app.router.add_get("/api/open", self.api_open)
+        app.router.add_get("/api/insiders", self.api_insiders)
+        app.router.add_get("/api/drift", self.api_drift)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1102,6 +1104,18 @@ class WebServer:
 
         return _json({**open_board(self.engine.open_rates),
                       "today": premarket(self.engine, device=request.headers.get("X-Device", ""))})  # fmt: skip
+
+    async def api_insiders(self, request: web.Request) -> web.Response:
+        """Insider buys graded by who, how much, how unusual, with others, after a drop, on a plan (insiders.py)."""
+        from ..insiders import insider_board
+
+        return _json(insider_board(self.engine.insider_rates))
+
+    async def api_drift(self, request: web.Request) -> web.Response:
+        """A month on: which kinds of news kept drifting after five sessions, and which gave it back (drift.py)."""
+        from ..drift import drift_board
+
+        return _json(drift_board(self.engine.drift_rates))
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""

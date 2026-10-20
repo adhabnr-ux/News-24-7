@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 MIN_N = 6  # graded closes on a stock before it has a profile
 MIN_LATER = 4  # graded day-5 (or hour) moves before a trait reads them
-HORIZONS = ("h1", "close", "d1", "d5")
+HORIZONS = ("h1", "close", "d1", "d5", "d20")
 TRAITS = {
     "quiet": ("Barely reacts", "its news moves are small next to a typical alert's"),
     "fights": ("Fights its news", "most of its alerts went the other way by the close"),
@@ -144,7 +144,13 @@ def stamp(rates: dict[str, Any], sym: str) -> dict[str, Any] | None:
             "hit": p["close"]["hit"], "path": path, "ratio": p.get("ratio")}  # fmt: skip
 
 
-WORDS = {"h1": "in an hour", "close": "by the close", "d1": "the next day", "d5": "five days on"}
+WORDS = {
+    "h1": "in an hour",
+    "close": "by the close",
+    "d1": "the next day",
+    "d5": "five days on",
+    "d20": "a month on",
+}
 
 
 def persona_line(p: dict[str, Any] | None) -> str:

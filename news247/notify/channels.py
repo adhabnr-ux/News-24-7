@@ -991,6 +991,11 @@ class WebPushNotifier(Notifier):
         pn = persona_line(ps) if ps and ps.get("trait") not in ("mixed", "runs") else ""
         if pn:
             base = f"{base}\n{pn}" if base else pn
+        from ..insiders import insider_line
+
+        il = insider_line(alert.edge.get("insider_base"))
+        if il:
+            base = f"{base}\n{il}" if base else il
         from ..newsclock import clock_line
         from ..opening import open_line
 

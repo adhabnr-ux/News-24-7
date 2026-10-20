@@ -354,6 +354,46 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
     return made
 
 
+def record_month(engine: Engine, now: float | None = None) -> int:
+    """A month on: the move 20 sessions after each alert (d20), per reference symbol, and the
+    market's over the same window, from a quote within 3 hours of that close. Alerts 3-7 weeks old
+    are read (every 10 minutes is enough). Returns alerts stamped."""
+    now = now or time.time()
+    holidays = engine.calendar.holidays
+    made = 0
+    for a in engine.storage.alerts_between(now - 49 * 86400, now - 26 * 86400):
+        e = a.get("edge") or {}
+        out = dict(e.get("outcome") or {})
+        refs = dict(e.get("refs") or {})
+        mv = a.get("move") or {}
+        if not refs and mv.get("symbol") and mv.get("price"):
+            refs = {mv["symbol"]: mv["price"]}
+        if not out or not refs or all("d20" in r for r in out.values()):
+            continue
+        ts = session_closes(float(a.get("created", 0)), 21, holidays)[20]
+        if now < ts:
+            continue
+        patch: dict[str, Any] = {}
+        for sym, ref in list(refs.items())[:3]:
+            row = out.get(sym)
+            q = engine.price_of(sym, now=now)
+            if row is None or not ref or "d20" in row or not q or not q[1] or abs(q[0] - ts) >= 3 * 3600:
+                continue
+            out[sym] = {**row, "d20": round((q[1] / float(ref) - 1.0) * 100.0, 2)}
+            patch["outcome"] = out
+        if e.get("mkt_ref") and "d20" not in (e.get("mkt_outcome") or {}):
+            q = engine.price_of("SPY", now=now)
+            if q and q[1] and abs(q[0] - ts) < 3 * 3600:
+                patch["mkt_outcome"] = {
+                    **(e.get("mkt_outcome") or {}),
+                    "d20": round((q[1] / float(e["mkt_ref"]) - 1.0) * 100.0, 2),
+                }
+        if patch:
+            engine.storage.update_alert_edge(a["id"], patch)
+            made += 1
+    return made
+
+
 def excess(a: dict[str, Any], horizon: str = "close") -> float | None:
     """How far an alert's stock went its way beyond the market (SPY) over the same window, or None
     when either side isn't graded yet: + = it beat the market in the alert's direction."""

@@ -203,6 +203,14 @@ class Storage:
         args.append(limit)
         return [json.loads(r[0]) for r in self.db.execute(q, args)]
 
+    def alerts_between(self, since: float, until: float, limit: int = 3000) -> list[dict[str, Any]]:
+        """Alerts created in [since, until), newest first."""
+        rows = self.db.execute(
+            "SELECT payload FROM alerts WHERE created >= ? AND created < ? ORDER BY created DESC LIMIT ?",
+            (since, until, limit),
+        )
+        return [json.loads(r[0]) for r in rows]
+
     def get_alert(self, alert_id: str) -> dict[str, Any] | None:
         row = self.db.execute("SELECT payload FROM alerts WHERE id = ?", (alert_id,)).fetchone()
         return json.loads(row[0]) if row else None

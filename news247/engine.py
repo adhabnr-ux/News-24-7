@@ -245,6 +245,8 @@ class Engine:
         self.persona_rates: dict[str, Any] = {}  # each stock's own news record and its trait (persona.py)
         self.clock_rates: dict[str, Any] = {}  # how fast each kind of news plays out (newsclock.py)
         self.open_rates: dict[str, Any] = {}  # outside-session news: the gap, and after the open (opening.py)
+        self.insider_rates: dict[str, Any] = {}  # insider buys by who, how much, how unusual (insiders.py)
+        self.drift_rates: dict[str, Any] = {}  # each kind of news a month on: drift or give back (drift.py)
         self.ev_hist: tuple[list[float], int] = (
             [],
             1,
@@ -1816,6 +1818,20 @@ class Engine:
             ck = clock_stamp(clock_for(self.clock_rates, alert.to_dict(), self.universe))
             if ck:
                 alert.edge["clock"] = ck  # how fast its kind of news plays out: chase or no rush
+            from .insiders import insider_base, read_buy
+
+            buy = read_buy(alert.to_dict())
+            if buy:
+                alert.edge["insider"] = buy  # who bought, how much, how unusual: graded per shape
+                ib = insider_base(self.insider_rates, buy)
+                if ib:
+                    alert.edge["insider_base"] = ib
+            from .drift import drift_for
+
+            dr = drift_for(self.drift_rates, alert.to_dict(), self.universe)
+            if dr:  # its kind of news a month on: kept drifting, gave it back, or held
+                alert.edge["drift"] = {"key": dr["key"], "label": dr["label"], "verdict": dr["verdict"],
+                                       "d5": dr["d5"], "d20": dr["d20"]}  # fmt: skip
             from .opening import outside
 
             if outside(alert.created, self.calendar.holidays):
@@ -2349,7 +2365,7 @@ class Engine:
         (an hour later, at the close) are stamped, and the desk is saved to the state database."""
         from .dossier import record_outcomes
 
-        last_outcomes = last_rates = 0.0
+        last_outcomes = last_rates = last_month = 0.0
         while not stop.is_set():
             await _sleep_or_stop(stop, 15)
             now = time.time()
@@ -2365,6 +2381,12 @@ class Engine:
                 last_outcomes = now
                 with contextlib.suppress(Exception):
                     record_outcomes(self, now)
+                if now - last_month >= 600:
+                    last_month = now
+                    with contextlib.suppress(Exception):
+                        from .dossier import record_month
+
+                        record_month(self, now)  # a month on: 20 sessions after each alert
                 with contextlib.suppress(Exception):
                     await self.desk.persist()
                 if self.webpush is not None:
@@ -2409,6 +2431,10 @@ class Engine:
 
                     await send_event_day(self, now)
                     grade_events(self, now)
+                with contextlib.suppress(Exception):
+                    from .drift import send_drift_checks
+
+                    await send_drift_checks(self, now)
                 with contextlib.suppress(Exception):
                     self.grade_confirm(now)
                 with contextlib.suppress(Exception):
@@ -3763,6 +3789,12 @@ class Engine:
         from .opening import open_rates
 
         self.open_rates = open_rates(self, 365, now)
+        from .insiders import insider_rates
+
+        self.insider_rates = insider_rates(self, 730, now)
+        from .drift import drift_rates
+
+        self.drift_rates = drift_rates(self, 365, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

@@ -779,7 +779,7 @@ async function loadFlowBoard() {
 // stock personality: how each of this phone's stocks has taken its own news, and the clearest characters
 const TRAIT_CLS = { good: "pos", warn: "gold", bad: "neg", info: "" };
 function personaPath(x) {
-  return [["h1", "1h"], ["close", "close"], ["d1", "next day"], ["d5", "5 days"]].filter(([h]) => x[h]).map(([h, l]) => `${l} ${pct(x[h].median)}`).join(" · ");
+  return [["h1", "1h"], ["close", "close"], ["d1", "next day"], ["d5", "5 days"], ["d20", "a month"]].filter(([h]) => x[h]).map(([h, l]) => `${l} ${pct(x[h].median)}`).join(" · ");
 }
 async function loadPersonas() {
   let r;
@@ -794,7 +794,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadClockBoard(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -912,8 +912,16 @@ async function openSheet(id) {
       ${(e.odds.why || []).map((w) => `<div class="kv"><span>${esc(w.label)}</span><b class="num ${w.pts > 0 ? "pos" : "neg"}">${w.pts > 0 ? "+" : ""}${w.pts} pts</b></div>`).join("")}
       <div class="sub" style="padding:4px 0 12px">A model fitted on ${e.odds.n} graded alerts here, and used only because it beat the plain hit rate on alerts it never saw (${Math.round(e.odds.skill * 100)}% better). History, not a forecast.</div></div>` : "",
     e.persona && e.persona.trait !== "mixed" ? `<h4>How ${esc(e.persona.symbol)} takes news</h4><div class="panel glass">
-      <div class="kv"><span>${esc(e.persona.label)}</span><b class="num">${Object.entries(e.persona.path || {}).map(([h, v]) => `${{ h1: "1h", close: "close", d1: "next day", d5: "5 days" }[h]} <span class="${cls(v)}">${pct(v)}</span>`).join(" · ")}</b></div>
+      <div class="kv"><span>${esc(e.persona.label)}</span><b class="num">${Object.entries(e.persona.path || {}).map(([h, v]) => `${{ h1: "1h", close: "close", d1: "next day", d5: "5 days", d20: "a month" }[h]} <span class="${cls(v)}">${pct(v)}</span>`).join(" · ")}</b></div>
       <div class="sub" style="padding:4px 0 12px">Its last ${e.persona.n} graded alerts here, medians, its way. History, not a forecast.</div></div>` : "",
+    e.insider_base ? `<h4>Insider buys like this, here</h4><div class="panel glass">
+      ${e.insider ? `<div class="kv"><span>This buy</span><b>${esc(e.insider.label)}</b></div>` : ""}
+      ${[["Five sessions on", e.insider_base.d5], ["A month on", e.insider_base.d20]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> rose · median ${pct(x.median)} · ${x.n}</b></div>`).join("")}
+      ${e.insider_base.x_d20 ? `<div class="kv"><span>Against SPY, a month on</span><b class="num ${cls(e.insider_base.x_d20.median)}">${pct(e.insider_base.x_d20.median)} <span class="sub">${e.insider_base.x_d20.n}</span></b></div>` : ""}
+      <div class="sub" style="padding:4px 0 12px">${esc(e.insider_base.key === "*" ? "Every insider buy here" : e.insider_base.label)}: every graded Form 4 buy of this shape. History, not a forecast.</div></div>` : "",
+    e.drift && e.drift.verdict ? `<h4>A month on · ${esc(e.drift.key === "*" ? "every alert" : e.drift.label)}</h4><div class="panel glass">
+      <div class="kv"><span><span class="chipv ${DRIFT_TAG[e.drift.verdict][1]}">${DRIFT_TAG[e.drift.verdict][0]}</span></span><b class="num">5 sessions ${pct(e.drift.d5.median)} → a month ${pct(e.drift.d20.median)} <span class="sub">${e.drift.d20.n}</span></b></div>
+      <div class="sub" style="padding:4px 0 12px">Its kind of news here, medians its way, 5 and 20 sessions after the alert. History, not a forecast.</div></div>` : "",
     e.clock ? `<h4>The news clock · ${esc(e.clock.key === "*" ? "every alert" : e.clock.label)}</h4><div class="panel glass" id="clockBox">${clockHTML(e.clock)}<div id="clockLive"></div></div>` : "",
     e.open_base ? `<h4>Into the open</h4><div class="panel glass">
       <div class="kv"><span>After the bell <span class="sub">open to close, its way</span></span><b class="num"><span class="${e.open_base.after.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.open_base.after.hit * 100)}%</span> kept going · median ${pct(e.open_base.after.median)} · ${e.open_base.after.n}</b></div>
@@ -976,6 +984,31 @@ async function loadClockLive(a) {
   try { r = await api("/api/clock?alert=" + encodeURIComponent(a.id)); } catch (_) { return; }
   if (sheetAlert?.id !== a.id || !r.early || !$("clockLive")) return;
   $("clockLive").innerHTML = `<div class="kv"><span class="${r.early.hit >= 0.6 && r.early.median > 0 ? "pos" : r.early.hit < 0.45 || r.early.median < 0 ? "neg" : ""}">Now: ${esc(r.early.line)}</span></div>`;
+}
+// insider buys, graded (Watch): each dimension of a Form 4 buy, side by side, at five sessions and a month
+async function loadInsiders() {
+  let r;
+  try { r = await api("/api/insiders"); } catch (_) { return; }
+  $("insWrap").hidden = !r.all;
+  if (!r.all) return;
+  const cell = (x) => x ? `<span class="${x.median > 0 ? "pos" : "neg"}">${pct(x.median)}</span> <span class="sub">${Math.round(x.hit * 100)}% · ${x.n}</span>` : `<span class="sub">—</span>`;
+  const row = (x) => `<div class="kv"><span>${esc(x.label)}${x.x_d20 && x.x_d20.n >= r.need ? ` <span class="sub">${pct(x.x_d20.median)} vs SPY a month on (${x.x_d20.n})</span>` : ""}</span><b class="num">${cell(x.d5)}<br>${cell(x.d20)}</b></div>`;
+  $("insBoard").innerHTML = `<div class="kv head"><span>Every insider buy</span><b>5 sessions · a month</b></div>` + row(r.all)
+    + (r.best.length ? `<div class="kv head"><span>The best shapes here</span><b></b></div>` + r.best.map(row).join("") : "")
+    + (r.worst.length ? `<div class="kv head"><span>The worst</span><b></b></div>` + r.worst.map(row).join("") : "")
+    + r.dims.map((d) => `<div class="kv head"><span>${esc(d.title)}</span><b></b></div>` + d.rows.map(row).join("")).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every Form 4 open-market buy alerted here, graded from its price five sessions and 20 sessions (a month) on, medians and how many rose. The research says the signal is in who, how much and how unusual; this is how it has played out here. Shapes with fewer than ${r.need} graded aren't used on new alerts. History, not a forecast.</div>`;
+}
+// a month on (Watch): each kind of news at five sessions and twenty
+const DRIFT_TAG = { drifts: ["kept drifting", "pos"], gives_back: ["gave it back", "neg"], holds: ["held", ""] };
+async function loadDrift() {
+  let r;
+  try { r = await api("/api/drift"); } catch (_) { return; }
+  $("driftWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  $("driftBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>5 sessions → a month</b></div>`
+    + r.rows.map((x) => `<div class="kv"><span>${esc(x.key === "*" ? "Every alert" : x.label)} <span class="chipv ${DRIFT_TAG[x.verdict][1]}">${DRIFT_TAG[x.verdict][0]}</span>${x.x_d20 && x.x_d20.n >= r.need ? ` <span class="sub">${pct(x.x_d20.median)} vs SPY (${x.x_d20.n})</span>` : ""}</span><b class="num">${pct(x.d5.median)} → <span class="${cls(x.d20.median)}">${pct(x.d20.median)}</span> <span class="sub">${Math.round(x.d20.hit * 100)}% · ${x.d20.n}</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every alert is graded 20 sessions on. Kinds the market takes weeks to price keep drifting; kinds it overshoots give it back. Medians, its way. Five sessions after news on your stock, a drift check says which its kind did here (Settings → Drift check).</div>`;
 }
 // news clock board (Watch): every kind of news by how fast it plays out
 async function loadClockBoard() {
@@ -1282,6 +1315,7 @@ function renderDesk() {
     <div class="kv"><span>Today's setups, 9:25 ET<div class="sub">the best alerts since the last close, each with a plan (stop, target, size), in one push before the open</div></span><b><button class="btn ghost small${pr.setups ? " sel" : ""}" data-act="flag" data-s="setups">${pr.setups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Event day<div class="sub">the morning of an FDA decision or readout on your stock: both outcomes as they've traded here, what options price, what you hold</div></span><b><button class="btn ghost small${pr.event_day !== false ? " sel" : ""}" data-act="flag" data-s="event_day">${pr.event_day !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Drift check<div class="sub">five sessions after news on your stock: whether its kind of news kept drifting for a month here, or gave it back</div></span><b><button class="btn ghost small${pr.drift !== false ? " sel" : ""}" data-act="flag" data-s="drift">${pr.drift !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Confirmations<div class="sub">an alert on your stock holding up an hour in, when alerts like it finished their way 80%+ of the time</div></span><b><button class="btn ghost small${pr.confirm !== false ? " sel" : ""}" data-act="flag" data-s="confirm">${pr.confirm !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Divergence<div class="sub">a strong kind of news, and the stock going the other way 15-90 minutes later (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.diverge !== false ? " sel" : ""}" data-act="flag" data-s="diverge">${pr.diverge !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Second chance<div class="sub">a stock that ran its alert's way and came back to the alert price, when its kind of news went its way 60%+ of the time (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.retest !== false ? " sel" : ""}" data-act="flag" data-s="retest">${pr.retest !== false ? "On" : "Off"}</button></b></div>
@@ -1948,7 +1982,7 @@ function tickerHTML(d) {
   const ps = d.persona;
   const personaBlock = ps ? `<h4>How ${esc(d.symbol)} takes news</h4><div class="panel glass">
     <div class="kv"><span><b class="${TRAIT_CLS[ps.tone]}">${esc(ps.label)}</b> <span class="sub">${esc(ps.why)}</span></span><b class="num">${ps.n} graded</b></div>
-    ${[["An hour later", ps.h1], ["At the close", ps.close], ["The next day", ps.d1], ["Five days on", ps.d5]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> its way · median ${pct(x.median)} · ${x.n}</b></div>`).join("")}
+    ${[["An hour later", ps.h1], ["At the close", ps.close], ["The next day", ps.d1], ["Five days on", ps.d5], ["A month on", ps.d20]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> its way · median ${pct(x.median)} · ${x.n}</b></div>`).join("")}
     ${ps.ratio ? `<div class="kv"><span>Size of its news moves</span><b class="num">±${ps.size.toFixed(1)}% · ${ps.ratio}× a typical alert</b></div>` : ""}
     <div class="sub" style="padding:4px 0 12px">Every graded alert on ${esc(d.symbol)} here, each from its own price, its way. A small sample: history, not a forecast.</div></div>` : "";
   const why = `<h4>Why it's moving</h4><div class="panel glass" id="whyBox">${(d.why || []).length ? d.why.map((x) => `<div class="li"><div class="grow"><a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a><div class="sub">${esc(outlet(x.source))} · ${esc(x.age)} ago</div></div></div>`).join("")

@@ -139,6 +139,7 @@ def default_profile() -> dict[str, Any]:
             "confirm": True,  # an alert on your stock holding up an hour in, with 80%+ live odds
             "risk_cap": 0,  # % of the account: open risk across paper calls past this gets flagged (0 = off)
             "event_day": True,  # the morning of an FDA decision or readout on your stock: both branches
+            "drift": True,  # five sessions after news on your stock: whether its kind kept drifting for a month
         },
         "price_alerts": [],
         "tracked": [],
@@ -720,6 +721,7 @@ class Desk:
                 "manage",
                 "confirm",
                 "event_day",
+                "drift",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1471,6 +1473,7 @@ class Desk:
                     "confirm",
                     "risk_cap",
                     "event_day",
+                    "drift",
                     "watch_push",
                     "min_sev",
                     "digest",
