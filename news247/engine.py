@@ -2459,6 +2459,10 @@ class Engine:
             now,
         )
         brief["scorecard"] = self.last_session_scorecard(now)
+        with contextlib.suppress(Exception):  # the day's operating notes from the playbook (pbmorning.py)
+            from .pbmorning import morning
+
+            brief["playbook"] = morning(self, now)
         brief["trends"] = (
             [
                 {

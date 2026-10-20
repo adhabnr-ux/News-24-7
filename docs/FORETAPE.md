@@ -540,6 +540,19 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
 
   The same rule applies: 20+ alerts, losing in both halves of the record, while the playbook makes money overall. A blind spot here might read *"The market: risk-off"*: the playbook sits risk-off days out until they recover.
 - **The playbook in dollars:** the track record as an account. Your account size (Settings → account, else $10,000), a tenth of the balance in each paper call, compounded, for the playbook and the plain way: *"$10,000 → $13,812 on the playbook (the plain way $11,240); best month +$1,420, worst -$380; its deepest drawdown -$610."* The last six months are listed too. Paper only.
+- **The playbook in every push:** alert pushes already lead with the call and the plan. Right under the call they now carry the playbook's one line, its way to trade it or the reason it sits out:
+  - *"🧭 The playbook: on the second leg, out the next day (+1.4% on average, 20)"*;
+  - *"🚫 The playbook passes: a thin stock: thin names here lost even 5 minutes late (-1.9%, 16)"*.
+
+  The pass reasons cover every rule: the kind doesn't pay, the stock fights its news, a drifting kind, a blind spot, a thin stock.
+- **The playbook's morning, in the Brief:** the Brief tab, and the 08:15 ET push's last lines, gain the day's operating notes, from the playbook's own record:
+  - what it enters at the open, and what it's waiting on;
+  - what it passes on this morning;
+  - its blind spots that apply today (the market's regime, a Fed or jobs day, the weekday);
+  - kinds of news drifting from their promise;
+  - yesterday's result against the plain way, and the account in dollars.
+
+  The playbook's note rides along on the Brief push; it never wakes you up alone.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

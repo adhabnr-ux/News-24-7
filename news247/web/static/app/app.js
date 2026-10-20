@@ -485,6 +485,11 @@ async function loadBrief() {
   const b = await api("/api/brief");
   $("bDate").textContent = `${b.greeting} · ${b.date}`;
   $("bSub").textContent = b.count ? `${b.count} catalyst${b.count > 1 ? "s" : ""} since the last close.` : "A quiet night. Nothing crossed the alert line since the last close.";
+  const pbm = b.playbook || {};
+  $("bPbWrap").hidden = !(pbm.lines || []).length && !pbm.money_line;
+  $("bPb").innerHTML = (pbm.lines || []).map((l) => `<div class="kv"><span>🧭 ${esc(l)}</span></div>`).join("")
+    + (pbm.money_line ? `<div class="kv"><span>💵 ${esc(pbm.money_line)}</span></div>` : "")
+    + `<div class="sub" style="padding:4px 0 12px">The playbook's own record, read for today: what it enters at the open, what it waits on and passes, its blind spots that apply today, kinds drifting from their promise, and yesterday. <a href="#a=today">The playbook today →</a></div>`;
   $("bOvernight").innerHTML = b.overnight.length ? b.overnight.map((a) => `<div class="li" data-id="${esc(a.id)}" style="cursor:pointer">
       <span class="dot-sev" style="background:${SEV[a.severity]};color:${SEV[a.severity]}"></span>
       <div class="grow"><div style="font-weight:600;line-height:1.35">${esc(a.title)}</div>

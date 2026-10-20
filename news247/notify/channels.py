@@ -1024,6 +1024,11 @@ class WebPushNotifier(Notifier):
         ll = late_line(lt.get("min"), lt.get("source") or "", {"late:late": lt.get("rec")}) if lt else ""
         if ll:
             base = f"{ll}\n{base}" if base else ll
+        from ..pbmorning import playbook_line
+
+        pbl = playbook_line(alert.edge)
+        if pbl:  # the playbook's way to trade it, or why it passes: right under the call (pbmorning.py)
+            base = f"{pbl}\n{base}" if base else pbl
         call = alert.edge.get("call") or {}
         if call.get("line"):  # the call leads: what the rest adds up to
             base = f"{call['line']}\n{base}" if base else call["line"]

@@ -186,7 +186,10 @@ async def test_a_new_alert_leads_with_the_call_and_its_lateness(tmp_path):
     assert a.edge["call"]["verb"] == "skip" and "late to the story (25 min)" in a.edge["call"]["against"]
     lines = body.split("\n")
     assert lines[1] == "✋ The call: skip · headlines · HIGH went its way 25%, ACME fights its news"
-    assert lines[2].startswith("🕰 Late to the story")
+    assert lines[2].startswith(
+        "🚫 The playbook passes"
+    )  # the playbook's line sits right under the call (run 77)
+    assert lines[3].startswith("🕰 Late to the story")
 
 
 def test_the_call_is_graded_and_can_set_the_push_bar(tmp_path):
