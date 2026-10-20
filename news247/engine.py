@@ -2050,6 +2050,10 @@ class Engine:
                 if dn:  # it denies or walks back an alert on this stock from the last 3 days (denials.py)
                     alert.edge["denies"] = dn
                     self._spawn(deny_act(self, alert.to_dict(), dn))
+            with contextlib.suppress(Exception):  # the market's regime when it went out (blindspots.py)
+                rg = self.regime_label(alert.created)
+                if rg:
+                    alert.edge["regime"] = rg
             # the odds and the plan read every fact stamped above (float, dilution, volume, lateness...)
             from .odds import predict
 
@@ -2106,8 +2110,12 @@ class Engine:
                 cr["name"] = COMBO_NAMES.get(cr["best"], cr["best"])  # readable without the board loaded
                 from .blindspots import hit as blind_hit
                 from .blindspots import why as blind_why
+                from .tapeday import today as tape_today
 
-                bs = blind_hit(self.blind_rates, alert.to_dict())
+                tape_now = None
+                with contextlib.suppress(Exception):
+                    tape_now = tape_today(self, alert.created).get("state")
+                bs = blind_hit(self.blind_rates, alert.to_dict(), tape_now)
                 if bs:  # a slice of its record where the playbook loses (blindspots.py)
                     alert.edge["blind"] = {
                         "label": bs["label"],

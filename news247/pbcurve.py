@@ -11,7 +11,12 @@ one equal-sized paper call per alert, they make two lines:
 
 With the totals, the average per alert, how often each went its way, and the playbook's worst
 drawdown. This is the case for the whole learning system, or against it, in one chart, and it runs
-whether or not anyone follows the playbook. Paper only. History, not a forecast.
+whether or not anyone follows the playbook.
+
+**In dollars**, the same alerts become an account: your account size (Settings), or $10,000, with a
+tenth of the balance in each paper call, compounded, for the playbook and the plain way, month by
+month, with the best and worst month and the deepest drawdown in dollars. Paper only. History, not a
+forecast.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ if TYPE_CHECKING:
     from .engine import Engine
 
 ET = ZoneInfo("America/New_York")
+FRACTION = 0.10  # the share of the balance in each paper call, in the dollars view
 
 
 def taken(a: dict[str, Any], counterfactual: bool = False) -> tuple[float, float] | None:
@@ -56,7 +62,45 @@ def _stats(xs: list[float]) -> dict[str, Any]:
     }
 
 
-def curve(engine: Engine, days: float = 365, now: float | None = None) -> dict[str, Any]:
+def dollars(rows: list[tuple[float, float, float]], capital: float, frac: float = FRACTION) -> dict[str, Any]:
+    """The same alerts as an account: ``frac`` of the balance in each paper call, compounded, for the
+    playbook and the plain way. {"start", "playbook", "plain", "months", "best", "worst", "drawdown"}."""
+    eq = {"playbook": capital, "plain": capital}
+    peak, dd = capital, 0.0
+    months: dict[str, dict[str, float]] = {}
+    for t, pb, plain in rows:
+        m = datetime.fromtimestamp(t, ET).strftime("%Y-%m")
+        mo = months.setdefault(m, {"playbook": 0.0, "plain": 0.0})
+        for k, x in (("playbook", pb), ("plain", plain)):
+            gain = eq[k] * frac * x / 100
+            eq[k] += gain
+            mo[k] += gain
+        peak = max(peak, eq["playbook"])
+        dd = min(dd, eq["playbook"] - peak)
+    mrows = [
+        {"month": m, "playbook": round(v["playbook"], 2), "plain": round(v["plain"], 2)}
+        for m, v in months.items()
+    ]
+    best = max(mrows, key=lambda r: r["playbook"]) if mrows else None
+    worst = min(mrows, key=lambda r: r["playbook"]) if mrows else None
+    return {"start": capital, "frac": frac, "playbook": round(eq["playbook"], 2), "plain": round(eq["plain"], 2),
+            "months": mrows, "best": best, "worst": worst, "drawdown": round(dd, 2)}  # fmt: skip
+
+
+def money_line(d: dict[str, Any]) -> str:
+    head = f"${d['start']:,.0f} → ${d['playbook']:,.0f} on the playbook (the plain way ${d['plain']:,.0f})"
+    if d.get("worst") and len(d["months"]) > 1:
+        head += f"; best month {_usd(d['best']['playbook'])}, worst {_usd(d['worst']['playbook'])}"
+    return head + f"; its deepest drawdown {_usd(d['drawdown'])}."
+
+
+def _usd(v: float) -> str:
+    return f"{'+' if v >= 0 else '-'}${abs(v):,.0f}"
+
+
+def curve(
+    engine: Engine, days: float = 365, now: float | None = None, capital: float | None = None
+) -> dict[str, Any]:
     now = now or time.time()
     rows = []
     for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
@@ -75,7 +119,8 @@ def curve(engine: Engine, days: float = 365, now: float | None = None) -> dict[s
         dd = min(dd, pb_cum - peak)
         points[datetime.fromtimestamp(t, ET).date().isoformat()] = [round(pb_cum, 2), round(plain_cum, 2)]
     pbs, plains = [r[1] for r in rows], [r[2] for r in rows]
-    return {"n": len(rows), "since": datetime.fromtimestamp(rows[0][0], ET).date().isoformat(),
+    money = dollars(rows, capital) if capital else None
+    return {"money": money, "money_line": money_line(money) if money else "","n": len(rows), "since": datetime.fromtimestamp(rows[0][0], ET).date().isoformat(),
             "playbook": _stats(pbs), "plain": _stats(plains), "drawdown": round(dd, 2),
             "taken": sum(1 for x in pbs if x != 0.0), "points": [[d, *v] for d, v in points.items()]}  # fmt: skip
 

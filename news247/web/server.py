@@ -1356,7 +1356,15 @@ class WebServer:
         """The playbook's track record on every stamped alert, against the plain way (pbcurve.py)."""
         from ..pbcurve import curve, line
 
-        c = curve(self.engine)
+        dev = request.headers.get("X-Device") or ""
+        account = (
+            float((((self.engine.desk.profiles.get(dev) or {}).get("prefs") or {}).get("account")) or 0)
+            if dev
+            else 0.0
+        )
+        c = curve(
+            self.engine, capital=account if account > 0 else 10_000.0
+        )  # your account size, else $10,000
         return _json({**c, "line": line(c), "nights": self.engine.night_rates})
 
     async def api_liquidity(self, request: web.Request) -> web.Response:
