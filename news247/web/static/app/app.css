@@ -735,3 +735,11 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 /* the news clock's bars */
 .ckbar{display:inline-block;vertical-align:middle;width:72px;height:6px;margin-left:8px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
 .ckbar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),#FFE2B0);border-radius:3px}
+
+/* the call: one verdict per alert */
+.callchip{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:9px;font-size:11px;font-weight:700;letter-spacing:.02em;background:rgba(251,246,238,.08)}
+.callchip.v-act{color:var(--up);background:rgba(80,200,140,.12)}.callchip.v-skip{color:var(--down);background:rgba(240,100,100,.10)}
+.callchip.v-wait{color:var(--gold)}.callchip.v-watch{color:var(--faint)}
+.callbox{margin:14px 0 6px;padding:12px 14px;border-radius:14px;background:rgba(251,246,238,.05);border-left:3px solid var(--faint)}
+.callbox.v-act{border-left-color:var(--up)}.callbox.v-skip{border-left-color:var(--down)}.callbox.v-wait{border-left-color:var(--gold)}
+.callhead{font-size:16px;margin-bottom:4px}.callrow{font-size:13px;margin-top:4px}

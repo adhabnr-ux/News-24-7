@@ -1,0 +1,132 @@
+"""The call: what the records add up to for an alert, in one line, before you read the rest.
+
+A push now carries a dozen graded facts: the odds, its kind's record, the stock's personality, how
+fast that news plays out, what overnight news did after the bell, how late the alert was to its
+story, the regime, the firm, the flow, the insider's shape. Each is useful; together they ask the
+reader to do the adding. The call does it, by a short, visible rule, and says which facts decided:
+
+- **✋ Skip:** two or more facts against it (odds under 45%, a negative expected move, a kind that
+  went its way 40% or less, a stock that fights its news, a late alert when late alerts lose, a bad
+  regime record...), or one against and nothing for it.
+- **⏸ Wait for the open:** news from outside the session whose kind kept going after the bell 45%
+  of the time or less: the gap tends to fade first.
+- **⏸ Wait for a pullback:** a stock whose first-hour moves usually fade by the close.
+- **▶ Act now:** fast news (half its move within 15 minutes) with something for it and nothing
+  against, or two or more facts for it and nothing against.
+- **👀 Watch:** slow news (no rush), or a mixed record.
+
+Every call is stamped on its alert (edge.call) and graded like the alert, so the Desk shows the
+call's own record: if "act now" doesn't beat "skip" by the close, the rule is wrong and it shows.
+Never a trade: paper only, and history, not a forecast.
+"""
+
+from __future__ import annotations
+
+import statistics as st
+import time
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .engine import Engine
+
+VERBS = {"act": ("▶", "Act now"), "wait": ("⏸", "Wait"), "watch": ("👀", "Watch"), "skip": ("✋", "Skip")}
+MIN_N = 8
+
+
+def _rec(x: dict[str, Any] | None, key: str = "close") -> dict[str, Any] | None:
+    r = (x or {}).get(key)
+    return r if r and r.get("n", 0) >= MIN_N else None
+
+
+def the_call(e: dict[str, Any], outside: bool = False) -> dict[str, Any] | None:
+    """{"verb", "label", "line", "for", "against"} from an alert's edge, or None when nothing on it
+    is graded yet (no call is better than a made-up one)."""
+    pro: list[str] = []
+    con: list[str] = []
+    o = e.get("odds") or {}
+    if o.get("p") is not None:
+        if o["p"] >= 0.6:
+            pro.append(f"odds {round(o['p'] * 100)}%")
+        elif o["p"] < 0.45:
+            con.append(f"odds {round(o['p'] * 100)}%")
+        if o.get("ev") is not None and o["ev"] < 0:
+            con.append(f"expected {o['ev']:+.1f}%")
+    cb = e.get("cat_base") or e.get("base") or {}
+    c = _rec(cb)
+    if c:
+        what = cb.get("label") or "its kind"
+        what = what[:1].lower() + what[1:]
+        if c["hit"] >= 0.6:
+            pro.append(f"{what} went its way {round(c['hit'] * 100)}%")
+        elif c["hit"] <= 0.4:
+            con.append(f"{what} went its way {round(c['hit'] * 100)}%")
+    for key, horizon, what in (("firm_base", "close", "the firm's calls"), ("flow_base", "close", "flow like it"),
+                               ("insider_base", "d5", "insider buys like it")):  # fmt: skip
+        r = _rec(e.get(key), horizon)
+        if r and r["hit"] >= 0.6:
+            pro.append(f"{what} {round(r['hit'] * 100)}%")
+        elif r and r["hit"] <= 0.4:
+            con.append(f"{what} {round(r['hit'] * 100)}%")
+    rb = e.get("regime_base")
+    if rb and rb.get("n", 0) >= MIN_N and rb["hit"] <= 0.4:
+        con.append(f"on {rb['regime']} days {round(rb['hit'] * 100)}%")
+    ps = e.get("persona") or {}
+    if ps.get("trait") == "fights":
+        con.append(f"{ps['symbol']} fights its news")
+    elif ps.get("trait") in ("runs", "drifts"):
+        pro.append(f"{ps['symbol']} {ps['label'].lower()}")
+    lt = e.get("late") or {}
+    lrec = _rec(lt.get("rec"))
+    if lt.get("min", 0) >= 15 and lrec and lrec["hit"] < 0.5:
+        con.append(f"late to the story ({lt['min']:.0f} min)")
+    if not pro and not con and not e.get("clock") and not e.get("open_base"):
+        return None
+    ck = (e.get("clock") or {}).get("half")
+    ob = _rec(e.get("open_base") or {}, "after")
+    if len(con) >= 2 or (con and not pro):
+        verb, why = "skip", con[:2]
+    elif outside and ob and ob["hit"] <= 0.45:
+        verb, why = (
+            "wait",
+            [f"for the open: news like it kept going after the bell {round(ob['hit'] * 100)}%"],
+        )
+    elif ps.get("trait") == "fades_day" and pro:
+        verb, why = "wait", [f"for a pullback: {ps['symbol']}'s first-hour moves usually fade"]
+    elif ck in ("m5", "m15") and pro and not con:
+        verb, why = "act", ["fast news", *pro[:2]]
+    elif len(pro) >= 2 and not con:
+        verb, why = "act", pro[:3]
+    elif ck == "late":
+        verb, why = "watch", ["no rush: it builds through the day", *pro[:1]]
+    else:
+        verb, why = "watch", (pro[:1] + con[:1]) or ["a mixed record"]
+    icon, label = VERBS[verb]
+    return {"verb": verb, "label": label, "line": f"{icon} The call: {label.lower()} · {', '.join(why)}",
+            "for": pro, "against": con}  # fmt: skip
+
+
+def call_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
+    """The call's own record: by verb, how its alerts did an hour later, by the close and the next day."""
+    now = now or time.time()
+    pools: dict[str, dict[str, list[float]]] = {}
+    for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
+        e = a.get("edge") or {}
+        call, o = e.get("call") or {}, e.get("outcome") or {}
+        if not call.get("verb") or not o:
+            continue
+        row = next(iter(o.values()))
+        if not row.get("sign"):
+            continue
+        g = pools.setdefault(call["verb"], {"h1": [], "close": [], "d1": []})
+        for h in g:
+            if row.get(h) is not None:
+                g[h].append(row["sign"] * row[h])
+    out = {}
+    for verb in VERBS:
+        g = pools.get(verb)
+        if not g:
+            continue
+        out[verb] = {"verb": verb, "label": VERBS[verb][1], "icon": VERBS[verb][0],
+                     **{h: ({"n": len(xs), "hit": round(sum(x > 0 for x in xs) / len(xs), 2), "median": round(st.median(xs), 2)} if xs else None)
+                        for h, xs in g.items()}}  # fmt: skip
+    return out

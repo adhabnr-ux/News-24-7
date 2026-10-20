@@ -247,6 +247,8 @@ class Engine:
         self.open_rates: dict[str, Any] = {}  # outside-session news: the gap, and after the open (opening.py)
         self.insider_rates: dict[str, Any] = {}  # insider buys by who, how much, how unusual (insiders.py)
         self.drift_rates: dict[str, Any] = {}  # each kind of news a month on: drift or give back (drift.py)
+        self.coverage_rates: dict[str, Any] = {}  # how late to the story, how far it spread (coverage.py)
+        self.call_rates: dict[str, Any] = {}  # the call's own record by verb (thecall.py)
         self.ev_hist: tuple[list[float], int] = (
             [],
             1,
@@ -1861,6 +1863,22 @@ class Engine:
             if plan.get("ok"):  # the plan from the live price, for the push: stop, target, reward-to-risk
                 alert.edge["plan"] = {"dir": plan["direction"], "symbol": plan["symbol"], "entry": plan["entry"],
                                       "stop": plan["stop"], "target": plan["target"], "rr": plan["rr"]}  # fmt: skip
+            if alert.item is not None:
+                from .coverage import late_bin
+                from .coverage import read as read_coverage
+
+                cov = read_coverage(self, alert.to_dict())
+                if cov and cov["late"] >= 2:  # the story was already out: how late, and how late alerts did
+                    alert.edge["late"] = {"min": cov["late"], "source": cov["first_source"],
+                                          "rec": self.coverage_rates.get(f"late:{late_bin(cov['late'])}")}  # fmt: skip
+            from .thecall import the_call
+
+            call = the_call(alert.edge, outside(alert.created, self.calendar.holidays))
+            if call:  # what the records add up to, in one line; graded as the call's own record
+                rec = (self.call_rates.get(call["verb"]) or {}).get("close")
+                if rec and rec["n"] >= 8:
+                    call["rec"] = rec
+                alert.edge["call"] = call
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:
@@ -2387,6 +2405,10 @@ class Engine:
                         from .dossier import record_month
 
                         record_month(self, now)  # a month on: 20 sessions after each alert
+                    with contextlib.suppress(Exception):
+                        from .coverage import stamp_coverage
+
+                        stamp_coverage(self, now)  # how late each alert was to its story, how far it spread
                 with contextlib.suppress(Exception):
                     await self.desk.persist()
                 if self.webpush is not None:
@@ -3795,6 +3817,12 @@ class Engine:
         from .drift import drift_rates
 
         self.drift_rates = drift_rates(self, 365, now)
+        from .coverage import coverage_rates
+
+        self.coverage_rates = coverage_rates(self, 180, now)
+        from .thecall import call_rates
+
+        self.call_rates = call_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

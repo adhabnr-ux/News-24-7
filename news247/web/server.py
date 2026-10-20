@@ -176,6 +176,8 @@ class WebServer:
         app.router.add_get("/api/open", self.api_open)
         app.router.add_get("/api/insiders", self.api_insiders)
         app.router.add_get("/api/drift", self.api_drift)
+        app.router.add_get("/api/coverage", self.api_coverage)
+        app.router.add_get("/api/call", self.api_call)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1116,6 +1118,19 @@ class WebServer:
         from ..drift import drift_board
 
         return _json(drift_board(self.engine.drift_rates))
+
+    async def api_coverage(self, request: web.Request) -> web.Response:
+        """How late to its story each alert came, and how far the story spread: graded (coverage.py)."""
+        from ..coverage import coverage_board
+
+        return _json(coverage_board(self.engine.coverage_rates))
+
+    async def api_call(self, request: web.Request) -> web.Response:
+        """The call's own record: act now, wait, watch, skip, and how each did (thecall.py)."""
+        from ..thecall import VERBS
+
+        rates = self.engine.call_rates
+        return _json({"rows": [rates[v] for v in VERBS if v in rates]})
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""

@@ -225,6 +225,7 @@ EDGE_BARS = {  # an alert's catalyst record must clear this to push (when the ph
     "odds55": "has odds of 55% or more by the close (the odds model)",
     "odds60": "has odds of 60% or more by the close (the odds model)",
     "odds65": "has odds of 65% or more by the close (the odds model)",
+    "call": "the call says act now or wait, not watch or skip (thecall.py)",
 }
 
 
@@ -450,6 +451,10 @@ class Desk:
                            "cat_mute", {"key": kind["key"], "on": False})  # fmt: skip
             bar = prefs.get("edge_min")
             odds = edge.get("odds") or {}
+            call = edge.get("call") or {}
+            if bar == "call" and call.get("verb") in ("watch", "skip") and dial != "all":
+                return out("edge", f"the call is {call['label'].lower()} ({', '.join((call.get('against') or call.get('for') or [])[:1]) or 'a mixed record'})",
+                           "Push every record", "prefs", {"edge_min": None})  # fmt: skip
             if bar in EDGE_BARS and bar.startswith("odds") and odds.get("p") is not None and dial != "all":
                 if odds["p"] * 100 < int(bar[4:]):
                     return out("edge", f"its odds ({round(odds['p'] * 100)}%) are under your {bar[4:]}% bar",
@@ -768,7 +773,7 @@ class Desk:
             if "edge_min" in body:
                 bar = body.get("edge_min")
                 if bar not in (None, "", *EDGE_BARS):
-                    raise ValueError("edge bar is hit50, hit60, move2, odds55, odds60, odds65 or off")
+                    raise ValueError("edge bar is hit50, hit60, move2, odds55, odds60, odds65, call or off")
                 prefs["edge_min"] = bar or None
             if "burst" in body:
                 try:

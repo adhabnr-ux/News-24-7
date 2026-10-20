@@ -49,7 +49,7 @@ def test_every_setting_replayed_on_the_last_month(tmp_path):
     now = month(eng)
     eng.desk.apply(DEV, "watch_add", {"symbol": "GAMA"})  # a profile, settings untouched
     r = tune(eng, DEV, 30, now)
-    assert r["sessions"] == 3 and len(r["options"]) == 24
+    assert r["sessions"] == 3 and len(r["options"]) == 28  # 7 edge bars (the call is one) x 4 budgets
     cur = r["current"]
     assert (cur["n"], cur["per_day"], cur["label"]) == (24, 8.0, "any record, no budget") and cur[
         "avg"

@@ -211,6 +211,19 @@ class Storage:
         )
         return [json.loads(r[0]) for r in rows]
 
+    def alerts_without(
+        self, edge_key: str, before: float, since: float, limit: int = 300
+    ) -> list[dict[str, Any]]:
+        """News alerts (with a source item) created in [since, before) whose edge has no ``edge_key``
+        yet, newest first: what a backfilling pass still has to read."""
+        rows = self.db.execute(
+            "SELECT payload FROM alerts WHERE created >= ? AND created < ?"
+            " AND json_extract(payload, '$.item.uid') IS NOT NULL"
+            " AND json_extract(payload, ?) IS NULL ORDER BY created DESC LIMIT ?",
+            (since, before, f"$.edge.{edge_key}", limit),
+        )
+        return [json.loads(r[0]) for r in rows]
+
     def get_alert(self, alert_id: str) -> dict[str, Any] | None:
         row = self.db.execute("SELECT payload FROM alerts WHERE id = ?", (alert_id,)).fetchone()
         return json.loads(row[0]) if row else None

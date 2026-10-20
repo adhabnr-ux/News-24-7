@@ -339,6 +339,7 @@ function bestScore(a) {
   const taste = (desk?.taste || []).find((t) => t.key === (a.edge?.rk || a.edge?.base?.key));
   return rank * 2 + (hit != null ? (hit - 0.5) * 6 : 0) + (isMine(a) ? 2 : 0) + (exposure(a) ? 2 : 0) + (a.edge?.confluence ? 1.5 : 0) + (taste ? taste.score * 3 : 0) - age * 0.6;
 }
+const CALL_ICON = { act: "▶", wait: "⏸", watch: "👀", skip: "✋" };
 function alertHTML(a, opts = {}) {
   const an = a.analysis || {}, it = a.item || {};
   const src = a.edge?.radar ? "RADAR" : a.kind === "price" ? "PRICE ACTION" : a.kind === "system" ? "FORETAPE" : (it.source || a.kind).toUpperCase();
@@ -348,7 +349,7 @@ function alertHTML(a, opts = {}) {
   return `<article class="alert ${a.edge?.radar ? "radar " : ""}${opts.feature ? "feature " : ""}${known || a._new ? "" : "rv "}${state}" data-id="${esc(a.id)}">
     <div class="glass tilt" style="--sev:${SEV[a.severity] || SEV.LOW}"><i class="sevbar"></i>
       ${opts.feature ? `<div class="eyebrow" style="color:var(--gold);margin-bottom:12px">Top of the tape</div>` : ""}
-      <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${a.kind !== "system" && a.edge?.base ? `<span class="edge">edge ${edgeScore(a).score}</span>` : ""}${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
+      <div class="meta"><span class="sev">${esc(a.severity)}</span><span class="src">${esc(src)}</span>${a.kind !== "system" && a.edge?.base ? `<span class="edge">edge ${edgeScore(a).score}</span>` : ""}${a.edge?.call ? `<span class="callchip v-${esc(a.edge.call.verb)}">${CALL_ICON[a.edge.call.verb] || ""} ${esc(a.edge.call.label)}</span>` : ""}${isMine(a) ? `<span class="minec">★ yours</span>` : ""}<span class="ago" data-t="${a.created}">${ago(a.created)}</span></div>
       <h3>${esc(a.title)}</h3>
       ${why ? `<p class="why">${esc(why)}</p>` : ""}
       ${confRow(a)}${capRow(a)}${whyRow(a)}${playRow(a)}${a.edge?.radar ? "" : tickerChips(a)}${plainLine(a)}${expoRow(a)}${precLine(a)}${preRow(a)}${baseRow(a)}${workRow(a)}${gradeRow(a)}${footRow(a)}${relatedChip(a)}${collapsedChip(a)}
@@ -794,7 +795,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -882,6 +883,10 @@ async function openSheet(id) {
     `<div class="meta" style="--sev:${SEV[a.severity]}"><span class="sev">${esc(a.severity)}</span><span>${esc(e.radar ? "RADAR" : (it.source || a.kind).toUpperCase())}</span><span class="ago">${ago(a.created)} ago</span></div>`,
     `<h2>${esc(a.title)}</h2>`,
     an.summary ? `<p class="muted" style="font-size:15.5px">${esc(an.summary)}</p>` : a.body && !e.confluence ? `<p class="muted" style="white-space:pre-line">${esc(a.body)}</p>` : "",
+    e.call ? `<div class="callbox v-${esc(e.call.verb)}"><div class="callhead">${CALL_ICON[e.call.verb] || ""} The call: <b>${esc(e.call.label.toLowerCase())}</b></div>
+      <div class="sub">${esc(e.call.line.split(" · ").slice(1).join(" · "))}</div>
+      ${(e.call.for || []).length ? `<div class="callrow pos">For: ${e.call.for.map(esc).join(" · ")}</div>` : ""}${(e.call.against || []).length ? `<div class="callrow neg">Against: ${e.call.against.map(esc).join(" · ")}</div>` : ""}
+      ${e.call.rec ? `<div class="sub" style="margin-top:6px">"${esc(e.call.label)}" calls here went their way ${Math.round(e.call.rec.hit * 100)}% by the close (median ${pct(e.call.rec.median)}, ${e.call.rec.n})</div>` : ""}</div>` : "",
     capBlock,
     rel.length ? `<h4>The headline behind it</h4><div class="panel glass">${rel.map((x) => `<div class="li"><div class="grow">
         <a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a>
@@ -914,6 +919,9 @@ async function openSheet(id) {
     e.persona && e.persona.trait !== "mixed" ? `<h4>How ${esc(e.persona.symbol)} takes news</h4><div class="panel glass">
       <div class="kv"><span>${esc(e.persona.label)}</span><b class="num">${Object.entries(e.persona.path || {}).map(([h, v]) => `${{ h1: "1h", close: "close", d1: "next day", d5: "5 days", d20: "a month" }[h]} <span class="${cls(v)}">${pct(v)}</span>`).join(" · ")}</b></div>
       <div class="sub" style="padding:4px 0 12px">Its last ${e.persona.n} graded alerts here, medians, its way. History, not a forecast.</div></div>` : "",
+    e.late ? `<h4>Late to the story</h4><div class="panel glass">
+      <div class="kv"><span>It first broke ${Math.round(e.late.min)} minutes before this alert${e.late.source ? ` <span class="sub">${esc(outlet(e.late.source))}</span>` : ""}</span><b class="num">${e.late.rec?.close ? `<span class="${e.late.rec.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.late.rec.close.hit * 100)}%</span> <span class="sub">its way for alerts that late · ${e.late.rec.close.n}</span>` : ""}</b></div>
+      <div class="sub" style="padding:4px 0 12px">Minutes from the story's first headline, from any outlet, to the one this alert came from. By then part of the market had it. History, not a forecast.</div></div>` : "",
     e.insider_base ? `<h4>Insider buys like this, here</h4><div class="panel glass">
       ${e.insider ? `<div class="kv"><span>This buy</span><b>${esc(e.insider.label)}</b></div>` : ""}
       ${[["Five sessions on", e.insider_base.d5], ["A month on", e.insider_base.d20]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> rose · median ${pct(x.median)} · ${x.n}</b></div>`).join("")}
@@ -1009,6 +1017,18 @@ async function loadDrift() {
   $("driftBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>5 sessions → a month</b></div>`
     + r.rows.map((x) => `<div class="kv"><span>${esc(x.key === "*" ? "Every alert" : x.label)} <span class="chipv ${DRIFT_TAG[x.verdict][1]}">${DRIFT_TAG[x.verdict][0]}</span>${x.x_d20 && x.x_d20.n >= r.need ? ` <span class="sub">${pct(x.x_d20.median)} vs SPY (${x.x_d20.n})</span>` : ""}</span><b class="num">${pct(x.d5.median)} → <span class="${cls(x.d20.median)}">${pct(x.d20.median)}</span> <span class="sub">${Math.round(x.d20.hit * 100)}% · ${x.d20.n}</span></b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every alert is graded 20 sessions on. Kinds the market takes weeks to price keep drifting; kinds it overshoots give it back. Medians, its way. Five sessions after news on your stock, a drift check says which its kind did here (Settings → Drift check).</div>`;
+}
+// coverage (Watch): alerts by how late they came to their story and how far it spread in its first hour
+async function loadCoverage() {
+  let r;
+  try { r = await api("/api/coverage"); } catch (_) { return; }
+  $("covWrap").hidden = !r.late.length && !r.wide.length;
+  if ($("covWrap").hidden) return;
+  const cell = (x) => x ? `<span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span>` : `<span class="sub">—</span>`;
+  const row = (x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num">${cell(x.h1)}<br>${cell(x.close)}</b></div>`;
+  $("covBoard").innerHTML = (r.late.length ? `<div class="kv head"><span>How late to its story</span><b>its way: 1 hour · close</b></div>` + r.late.map(row).join("") : "")
+    + (r.wide.length ? `<div class="kv head"><span>How far it spread in an hour</span><b></b></div>` + r.wide.map(row).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Every headline is filed with the other outlets' versions of its story. "Late" is minutes from the story's first headline to the one the alert came from; "spread" is how many outlets carried it within an hour. Filled in from every story on file. History, not a forecast.</div>`;
 }
 // news clock board (Watch): every kind of news by how fast it plays out
 async function loadClockBoard() {
@@ -1343,7 +1363,7 @@ function renderDesk() {
     <div class="row catrow" style="padding:10px 0 4px">${(desk.catalyst_kinds || []).map((k) => { const off = (desk.cat_off || []).includes(k.key); return `<button class="btn ghost small${off ? "" : " sel"}" data-act="cat-mute" data-s="${esc(k.key)}" aria-pressed="${!off}">${esc(k.label)}${k.close ? ` <span class="faint">${Math.round(k.close.hit * 100)}%</span>` : ""}</button>`; }).join("")}</div>
     ${(desk.catalyst_taste || []).filter((t) => t.suggest_off).map((t) => `<div class="kv"><span class="gold">You've voted down ${t.down} ${esc(t.label.toLowerCase())} alerts and none up.</span><b><button class="btn ghost small" data-act="cat-mute" data-s="${esc(t.key)}">Stop pushing them</button></b></div>`).join("")}
     <div class="sub" style="padding-top:8px">Edge bar: only push news whose kind has a record of… ${tip("edge")}</div>
-    <div class="row" style="padding:10px 0 4px">${[["", "Any record"], ["hit50", "50%+ its way"], ["hit60", "60%+ its way"], ["move2", "moves 2%+"], ["odds60", "odds 60%+"], ["odds65", "odds 65%+"]].map(([k, l]) => `<button class="btn ghost small${(pr.edge_min || "") === k ? " sel" : ""}" data-act="edge-bar" data-s="${k}">${l}</button>`).join("")}</div>
+    <div class="row" style="padding:10px 0 4px">${[["", "Any record"], ["hit50", "50%+ its way"], ["hit60", "60%+ its way"], ["move2", "moves 2%+"], ["odds60", "odds 60%+"], ["odds65", "odds 65%+"], ["call", "the call: act or wait"]].map(([k, l]) => `<button class="btn ghost small${(pr.edge_min || "") === k ? " sel" : ""}" data-act="edge-bar" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="sub" style="padding-top:8px">Attention budget: only push my best alerts a day, ranked by expected move against the last 10 days (your stocks and CRITICAL still come) ${tip("odds")}</div>
     <div class="row" style="padding:10px 0 4px">${[[0, "Off"], [3, "3 a day"], [5, "5 a day"], [10, "10 a day"]].map(([k, l]) => `<button class="btn ghost small${(pr.budget || 0) === k ? " sel" : ""}" data-act="budget" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="sub" style="padding-top:8px">Burst protection: after this many pushes in 10 minutes, the rest fold into one summary (CRITICAL still comes)</div>
@@ -1651,6 +1671,17 @@ async function loadExits() {
     + (r.stops ? `<div class="kv"><span>Stops that cost <span class="sub">back at the entry by the next close</span></span><b class="num">${r.stops.back} of ${r.stops.n}${r.stops.distance != null ? ` <span class="sub">· sat ${r.stops.distance.toFixed(1)}% away${r.stops.dip80 ? `, winners dip ${r.stops.dip80.toFixed(1)}%` : ""}</span>` : ""}</b></div>` : "")
     + r.rows.filter((x) => x.verdict).slice(0, 10).map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span>${x.direction === "long" ? "▲" : "▼"} ${esc(x.symbol)} <span class="${cls(x.pnl)}">${pct(x.pnl)}</span> <span class="sub">${ago(x.closed)} ago · ${esc(x.kind)}</span></span><b class="num"><span class="${EXIT_VERDICT[x.verdict][1]}">${EXIT_VERDICT[x.verdict][0]} ${pct(x.its[x.at])}</span> <span class="sub">${x.at === "d5" ? "5 sessions" : x.at === "d1" ? "next close" : "that close"}</span></b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Each closed call graded after the fact from its exit price, in the call's direction: + = it kept going your way after you left, − = it turned and the exit saved that. Older calls opened from an alert are graded from the alert's own closes. Paper only; history, not a forecast.</div>`;
+}
+// the call's own record: does "act now" beat "skip"?
+async function loadCallRecord() {
+  let r;
+  try { r = await api("/api/call"); } catch (_) { return; }
+  $("dCallWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const cell = (x) => x ? `<span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span>` : `<span class="sub">—</span>`;
+  $("dCall").innerHTML = `<div class="kv head"><span>The call</span><b>its way: 1 hour · close · next day</b></div>`
+    + r.rows.map((x) => `<div class="kv"><span>${x.icon} ${esc(x.label)}</span><b class="num">${cell(x.h1)}<br>${cell(x.close)}<br>${cell(x.d1)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every alert gets one call from its records (odds, its kind, the stock, how fast that news plays out, the open, how late it was, the regime, the firm, the flow, the insider). Each is graded with its alert: if "act now" doesn't beat "skip", the rule is wrong, and this is where it shows. Set the push bar to "the call: act or wait" under Settings.</div>`;
 }
 // what your settings kept back: every alert this phone's settings held off its lock screen, graded
 let cost = null;
@@ -2365,7 +2396,7 @@ async function onAct(el) {
   else if (a === "link-split") splitDesk();
   else if (a === "dev-rm") { if (confirm("Stop pushes to that device? It can turn alerts on again any time.")) { try { await api("/api/devices/remove", { method: "POST", body: JSON.stringify({ id: s }) }); toast("Removed"); loadDevices(); } catch (e) { toast(e.message); } } }
   else if (a === "cat-mute") { const off = !(desk.cat_off || []).includes(s), label = (desk.catalyst_kinds || []).find((k) => k.key === s)?.label || s; if (await deskEdit("cat_mute", { key: s, on: off })) toast(off ? `${label} news won't push to this phone` : `${label} news pushes again`); }
-  else if (a === "edge-bar") { if (await deskEdit("prefs", { edge_min: s || null })) toast(s ? (s.startsWith("odds") ? `Only alerts the odds model rates ${s.slice(4)}%+ push now (no odds: not held back; CRITICAL always comes)` : "Only news whose kind clears the bar pushes now (CRITICAL always comes)") : "Every kind of news may push"); }
+  else if (a === "edge-bar") { if (await deskEdit("prefs", { edge_min: s || null })) toast(s ? (s.startsWith("odds") ? `Only alerts the odds model rates ${s.slice(4)}%+ push now (no odds: not held back; CRITICAL always comes)` : s === "call" ? "Only alerts the call says to act on or wait for push now (no call: not held back; CRITICAL always comes)" : "Only news whose kind clears the bar pushes now (CRITICAL always comes)") : "Every kind of news may push"); }
   else if (a === "plan-track") preCheck(s, el.dataset.dir, el.dataset.aid || "", async () => { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target, shares: el.dataset.shares || null })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); });
   else if (a === "acct-save") { const v = parseFloat(String($("acctIn")?.value || "").replace(/[$,\s]/g, "")); if (!(v >= 0)) { toast("Enter your account size in dollars"); return; } if (await deskEdit("prefs", { account: v }) && sheetAlert) loadPlan(sheetAlert); }
   else if (a === "risk-pct") { if (await deskEdit("prefs", { risk_pct: +s })) { if (sheetAlert && $("planBox")) loadPlan(sheetAlert); toast(`Plans risk ${s}% of your account on one idea`); } }
@@ -2804,7 +2835,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

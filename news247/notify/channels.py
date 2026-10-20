@@ -1003,6 +1003,15 @@ class WebPushNotifier(Notifier):
             if extra:
                 extra = extra if extra.startswith("⏱") else f"🔔 Into the open · {extra}"
                 base = f"{base}\n{extra}" if base else extra
+        from ..coverage import late_line
+
+        lt = alert.edge.get("late") or {}
+        ll = late_line(lt.get("min"), lt.get("source") or "", {"late:late": lt.get("rec")}) if lt else ""
+        if ll:
+            base = f"{ll}\n{base}" if base else ll
+        call = alert.edge.get("call") or {}
+        if call.get("line"):  # the call leads: what the rest adds up to
+            base = f"{call['line']}\n{base}" if base else call["line"]
         if base:
             body = f"{body}\n{base}" if body else base
         play = alert.edge.get("play") or {}

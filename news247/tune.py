@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from .engine import Engine
 
 ET = ZoneInfo("America/New_York")
-EDGES = (None, "hit50", "hit60", "odds55", "odds60", "odds65")
+EDGES = (None, "hit50", "hit60", "odds55", "odds60", "odds65", "call")
 BUDGETS = (0, 3, 5, 10)
 MIN_N = 10  # pushes in the month before a combination is worth recommending
 TMP = "dev_tune_sim_000"  # a scratch profile id, never saved
@@ -38,7 +38,7 @@ TMP = "dev_tune_sim_000"  # a scratch profile id, never saved
 
 def _label(edge: str | None, budget: int) -> str:
     e = {None: "any record", "hit50": "records 50%+", "hit60": "records 60%+", "odds55": "odds 55%+",
-         "odds60": "odds 60%+", "odds65": "odds 65%+"}[edge]  # fmt: skip
+         "odds60": "odds 60%+", "odds65": "odds 65%+", "call": "the call says act or wait"}[edge]  # fmt: skip
     return f"{e}, {f'{budget} a day' if budget else 'no budget'}"
 
 
