@@ -726,3 +726,8 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .preck label.rearm { display: flex; gap: 8px; align-items: center; }
 .mixbar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 6px 0 4px; background: rgba(251, 246, 238, .06); }
 .mixbar i { display: block; height: 100%; }
+
+/* equity curves */
+.eqsvg { width: 100%; height: auto; display: block; margin: 6px 0 8px; }
+.eqsvg .eq0 { stroke: var(--faint); stroke-dasharray: 3 4; stroke-width: 1; }
+.eqkey { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }

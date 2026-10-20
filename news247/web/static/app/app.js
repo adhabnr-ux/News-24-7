@@ -1440,6 +1440,41 @@ async function loadOdds() {
     + `<div class="kv head"><span>What moves the odds most</span><b>weight</b></div>` + (r.factors || []).slice(0, 8).map((f) => `<div class="kv"><span>${esc(f.label)}</span><b class="num ${f.weight > 0 ? "pos" : "neg"}">${f.weight > 0 ? "+" : ""}${f.weight.toFixed(2)}</b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">A logistic model on what was known when each alert went out (its kind, severity, kind of news and size, direction, how far it had already moved, time of day, the day's regime, other evidence), refitted every hour on ${r.n} graded alerts. History, not a forecast.</div>`;
 }
+// tune my pushes: every edge bar and budget, replayed on this phone's last month of graded alerts
+let tuneR = null;
+async function loadTune() {
+  try { tuneR = await api("/api/tune"); } catch (_) { return; }
+  const r = tuneR, c = r.current;
+  $("dTuneWrap").hidden = !c.n;
+  if (!c.n) return;
+  const row = (o, name, act) => `<div class="kv"><span>${name} <span class="sub">${esc(o.label)} · ${o.per_day}/day · ${o.hit != null ? Math.round(o.hit * 100) + "% its way" : "—"}</span>${act ? `<br><button class="btn ghost small" data-act="tune-apply" data-s="${act}" style="margin-top:6px">Use these</button>` : ""}</span><b class="num"><span class="${cls(o.avg)}">${o.avg != null ? pct(o.avg) : "—"}</span>${o.vs_avg != null ? ` <span class="sub">${o.vs_avg >= 0 ? "+" : ""}${o.vs_avg.toFixed(2)} vs now</span>` : ""}</b></div>`;
+  const top = r.options.filter((o) => o.n >= 10 && o.avg != null).sort((a, b) => b.avg - a.avg).slice(0, 5);
+  $("dTune").innerHTML = row(c, "Your settings now", "")
+    + (r.quality ? row(r.quality, "Quality", "quality") : "") + (r.balanced && (!r.quality || r.balanced.label !== r.quality.label) ? row(r.balanced, "Balanced", "balanced") : "")
+    + (!r.quality && !r.balanced ? `<div class="li"><span class="muted">Your settings already did as well as any combination over the last month.</span></div>` : "")
+    + (top.length ? `<div class="kv head"><span>The best combinations</span><b>avg by the close</b></div>` + top.map((o) => `<div class="kv sub"><span>${esc(o.label)} · ${o.per_day}/day · ${Math.round(o.hit * 100)}%</span><b class="num ${cls(o.avg)}">${pct(o.avg)}</b></div>`).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Every graded alert of ${r.sessions} market day${r.sessions === 1 ? "" : "s"} that would have reached this phone on severity alone, walked through each edge bar and budget with the rest of your settings as they are. A month is a small sample: history, not a promise.</div>`;
+}
+// equity curves: your calls, each autopilot and every alert at the close, against SPY
+function eqSVG(lines) {
+  const all = lines.flatMap((l) => l.c.points || []);
+  if (all.length < 2) return "";
+  const W = 320, H = 120, t0 = Math.min(...all.map((p) => p[0])), t1 = Math.max(...all.map((p) => p[0])), lo = Math.min(0, ...all.map((p) => p[1])), hi = Math.max(0, ...all.map((p) => p[1]));
+  const X = (t) => ((t - t0) / (t1 - t0 || 1) * (W - 8) + 4).toFixed(1), Y = (v) => (H - 6 - (v - lo) / (hi - lo || 1) * (H - 12)).toFixed(1);
+  const path = (pts) => pts.map((p, i) => (i ? "L" : "M") + X(p[0]) + " " + Y(p[1])).join(" ");
+  return `<svg class="eqsvg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Equity curves"><line x1="0" x2="${W}" y1="${Y(0)}" y2="${Y(0)}" class="eq0"/>${lines.filter((l) => (l.c.points || []).length > 1).map((l) => `<path d="${path(l.c.points)}" fill="none" stroke="${l.col}" stroke-width="${l.w || 1.8}"/>`).join("")}</svg>`;
+}
+async function loadEquity() {
+  let r;
+  try { r = await api("/api/equity"); } catch (_) { return; }
+  const lines = [{ name: "Your calls", c: r.yours, col: "var(--gold)", w: 2.4 }, ...r.autopilots.map((a) => ({ name: "🤖 " + a.label, c: a, col: "var(--ice)" })), { name: "Every alert at the close", c: r.every_alert, col: "#A99CFF", w: 1.4 }, { name: "SPY", c: r.spy, col: "var(--faint)", w: 1.4 }];
+  const any = r.yours.n || r.autopilots.length;
+  $("dEqWrap").hidden = !any && !r.every_alert.n;
+  if ($("dEqWrap").hidden) return;
+  const stat = (c) => c.n ? `<b class="num"><span class="${cls(c.total)}">${pct(c.total)}</span> <span class="sub">max dd ${pct(c.max_dd)}${c.win != null ? ` · ${Math.round(c.win * 100)}% won` : ""}${c.sharpe != null ? ` · Sharpe ${c.sharpe}` : ""} · ${c.n}</span></b>` : `<b class="sub">none yet</b>`;
+  $("dEq").innerHTML = eqSVG(lines) + lines.map((l) => `<div class="kv"><span><i class="eqkey" style="background:${l.col}"></i>${esc(l.name)}</span>${stat(l.c)}</div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Each call the same size, summed in the order they closed; max dd is the deepest fall from a high. SPY is its daily closes over the same days, from market memory. Paper only.</div>`;
+}
 // what your settings kept back: every alert this phone's settings held off its lock screen, graded
 let cost = null;
 const VERDICT = { costing: ["costing you", "neg"], saving: ["working", "pos"], even: ["about even", ""], thin: ["too few to judge", "faint"] };
@@ -2154,6 +2189,7 @@ async function onAct(el) {
   else if (a === "edge-pick") { Object.assign(lab, { catalyst: s, band: el.dataset.b, horizon: el.dataset.h, kind: "all", scope: "all", fades: "" }); store.set("ft_lab", JSON.stringify(lab)); await loadLab(); $("dLab")?.querySelector(".labhead")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
   else if (a === "lab-auto") { if (await deskEdit("autopilot_add", { catalyst: lab.catalyst, band: lab.band, min_sev: lab.sev, exit: lab.horizon })) { toast("🤖 Autopilot on: each new alert like this opens a paper call here", null, 6000); renderAutopilots(); } }
   else if (a === "ev-fix") { const f = weekEv?.costly?.fix; if (f && await deskEdit(f.action, f.body)) { toast("Done: " + f.label.toLowerCase()); loadWeek(); } }
+  else if (a === "tune-apply") { const o = tuneR?.[s]; if (o && await deskEdit("prefs", { edge_min: o.edge_min, budget: o.budget })) { toast(`Using ${o.label}`); loadTune(); loadCost(); } }
   else if (a === "budget") { if (await deskEdit("prefs", { budget: +s })) toast(+s ? `Only your ${s} best alerts a day push now (your stocks and CRITICAL still come)` : "Every alert that clears your settings may push"); }
   else if (a === "odds-follow") { if (await deskEdit("autopilot_add", { catalyst: "all", band: "all", min_sev: "HIGH", exit: "close", min_odds: 60 })) { toast("🤖 Following the model: each new HIGH alert it rates 60%+ opens a paper call here", null, 6000); renderAutopilots(); } }
   else if (a === "cost-fix") { const g = cost?.gates[+el.dataset.n]; if (g?.fix && await deskEdit(g.fix.action, g.fix.body)) { toast("Done: " + g.fix.label.toLowerCase()); loadCost(); loadActions(); } }
@@ -2583,7 +2619,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -2749,6 +2785,8 @@ const Palette = {
       ["What's working today", "today's alerts by kind of news", () => { closeSheet(); go("watch"); setTimeout(() => $("workWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Room left", "today's alerts short of their typical move", () => { closeSheet(); go("watch"); setTimeout(() => $("roomWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Analysts, graded", "which firms' calls followed through", () => { closeSheet(); go("watch"); setTimeout(() => $("firmWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
+      ["Tune my pushes", "every setting, replayed on the last month", () => { closeSheet(); go("desk"); setTimeout(() => $("dTuneWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
+      ["Equity curves", "your calls and autopilots vs SPY, with drawdowns", () => { closeSheet(); go("desk"); setTimeout(() => $("dEqWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Odds model", "how well its numbers held up", () => { closeSheet(); go("desk"); setTimeout(() => $("dOdds")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["What my settings kept back", "graded beside what reached me", () => { closeSheet(); go("desk"); setTimeout(() => $("dCostWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Needs you", "everything that wants a decision now", () => { closeSheet(); go("desk"); setTimeout(() => $("dActWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],

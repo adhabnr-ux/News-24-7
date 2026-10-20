@@ -165,6 +165,8 @@ class WebServer:
         app.router.add_get("/api/firms", self.api_firms)
         app.router.add_get("/api/precheck", self.api_precheck)
         app.router.add_get("/api/misses", self.api_misses)
+        app.router.add_get("/api/tune", self.api_tune)
+        app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
         app.router.add_post("/api/link", self.api_link)
         app.router.add_get("/api/devices", self.api_devices)
@@ -1022,6 +1024,18 @@ class WebServer:
         from ..misses import miss_report
 
         return _json(miss_report(self.engine))
+
+    async def api_tune(self, request: web.Request) -> web.Response:
+        """Every edge bar and budget, replayed on this phone's last 30 days of graded alerts (tune.py)."""
+        from ..tune import tune_cached
+
+        return _json(tune_cached(self.engine, self._need_device(request)))
+
+    async def api_equity(self, request: web.Request) -> web.Response:
+        """Equity curves: your calls, each autopilot, every alert at the close, and SPY (equity.py)."""
+        from ..equity import equity
+
+        return _json(equity(self.engine, self._need_device(request)))
 
     async def api_settings_cost(self, request: web.Request) -> web.Response:
         """What this phone's settings kept back over 14 days, graded beside what reached it (keptback.py)."""
