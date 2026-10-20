@@ -115,6 +115,11 @@ def pre_trade(
         if plan.get("ok"):
             add("plan", _tone(plan["rr"], 1.5, 1.0),
                 f"Plan from {plan['entry']:,.2f}: stop {plan['stop']:,.2f}, target {plan['target']:,.2f}, reward-to-risk {plan['rr']:.1f}")  # fmt: skip
+            es = plan.get("edge_size")
+            if es:
+                sh = f" ({es['shares']:,} sh)" if es.get("shares") else ""
+                add("size", "bad" if es["risk_pct"] <= 0 else "good" if not es["capped"] or es["risk_pct"] >= 0.5 else "warn",
+                    es["why"] if es["risk_pct"] <= 0 else f"Size by edge: risk {es['risk_pct']:g}% of the account{sh}, {es['why']}")  # fmt: skip
         elif plan.get("status") in ("done", "invalidated"):
             add("plan", "bad", plan.get("why") or "The plan is off.")
     book = getattr(getattr(engine, "trends", None), "earnings", None)

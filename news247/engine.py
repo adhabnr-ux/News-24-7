@@ -1752,6 +1752,12 @@ class Engine:
             spy = self.price_of(MARKET, 900)
             if spy and spy[1]:
                 alert.edge["mkt_ref"] = spy[1]  # the market then: each grade is also read against it
+        if alert.kind != "system" and alert.tickers and "sector_ref" not in alert.edge:
+            from .misses import sector_ref
+
+            sr = sector_ref(self, alert.tickers[0])
+            if sr:
+                alert.edge["sector_ref"] = sr  # its sector then: a miss can be told from a swamped call
         if alert.kind != "system" and "base" not in alert.edge:
             from .dossier import base_rate, record_key
 

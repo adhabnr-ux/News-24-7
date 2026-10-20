@@ -724,3 +724,5 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .prei i { flex: none; width: 20px; height: 20px; border-radius: 10px; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; background: rgba(251, 246, 238, .08); }
 .prei.good i { color: var(--up); } .prei.warn i { color: var(--gold); } .prei.bad i { color: var(--down); } .prei.info i { color: var(--faint); }
 .preck label.rearm { display: flex; gap: 8px; align-items: center; }
+.mixbar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 6px 0 4px; background: rgba(251, 246, 238, .06); }
+.mixbar i { display: block; height: 100%; }

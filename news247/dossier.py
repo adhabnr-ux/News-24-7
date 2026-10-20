@@ -306,6 +306,12 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
                         mkt[key] = mmove
                 if len(mkt) > before:
                     patch["mkt_outcome"] = mkt
+        if e.get("sector_ref") and "close" not in (e.get("sector_outcome") or {}):
+            from .misses import grade_sector
+
+            sc = grade_sector(engine, e, created, close_ts, now)
+            if sc is not None:
+                patch["sector_outcome"] = {"close": sc}
         if patch:
             engine.storage.update_alert_edge(a["id"], patch)
             made += 1

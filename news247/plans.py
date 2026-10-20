@@ -132,7 +132,40 @@ def trade_plan(
             position=round(shares * px, 2),
             position_pct=round(shares * px / account * 100, 1),
         )
+    es = edge_size((e.get("odds") or {}).get("p"), out["rr"], risk_pct)
+    if es:
+        if account > 0 and es["risk_pct"] > 0:
+            es["shares"] = int(account * es["risk_pct"] / 100 // risk)
+            es["risk_budget"] = round(account * es["risk_pct"] / 100, 2)
+        out["edge_size"] = es
     return out
+
+
+def edge_size(p: float | None, rr: float, cap_pct: float) -> dict[str, Any] | None:
+    """How much of the account to risk on a plan, from its odds and its reward-to-risk: half the
+    Kelly fraction (p - (1 - p) / rr), never more than the phone's own risk per idea. A plan whose
+    odds don't pay at its reward-to-risk gets nothing, with the odds it would need. The odds are
+    for the close, the plan's target and stop may come first: a guide, not a formula to trust."""
+    if p is None or rr <= 0:
+        return None
+    kelly = p - (1 - p) / rr
+    need = 1 / (1 + rr)
+    if kelly <= 0:
+        return {"p": p, "kelly_pct": round(kelly * 100, 2), "risk_pct": 0.0, "capped": False, "need": round(need, 3),
+                "why": f"No edge at {rr:.1f} : 1 with {round(p * 100)}% odds: it would need {round(need * 100)}%+"}  # fmt: skip
+    half = kelly / 2 * 100
+    use = round(min(half, cap_pct), 2)
+    why = f"half-Kelly at {round(p * 100)}% odds and {rr:.1f} : 1" + (
+        f", capped at your {cap_pct:g}%" if half > cap_pct else ""
+    )
+    return {
+        "p": p,
+        "kelly_pct": round(kelly * 100, 2),
+        "risk_pct": use,
+        "capped": half > cap_pct,
+        "need": round(need, 3),
+        "why": why,
+    }
 
 
 # --------------------------------------------------------------------------- the coach

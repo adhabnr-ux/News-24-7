@@ -164,6 +164,7 @@ class WebServer:
         app.router.add_get("/api/odds", self.api_odds)
         app.router.add_get("/api/firms", self.api_firms)
         app.router.add_get("/api/precheck", self.api_precheck)
+        app.router.add_get("/api/misses", self.api_misses)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
         app.router.add_post("/api/link", self.api_link)
         app.router.add_get("/api/devices", self.api_devices)
@@ -727,6 +728,9 @@ class WebServer:
         alert["story_items"] = self.engine.storage.story_items(story) if story is not None else []
         alert["series"] = self.engine.price_series(alert)
         alert["follow"] = self.engine.follow_for(alert)
+        from ..misses import post_mortem
+
+        alert["post_mortem"] = post_mortem(self.engine, alert)  # why it missed, when it did
         return _json(alert)
 
     # ------------------------------------------------------------------ dossier, desk, boards
@@ -1009,6 +1013,12 @@ class WebServer:
                 self.engine, self._need_device(request), sym, direction, request.query.get("alert", "")[:40]
             )
         )
+
+    async def api_misses(self, request: web.Request) -> web.Response:
+        """Every graded miss of 60 days, by cause: the sector, the market, new news, or the signal (misses.py)."""
+        from ..misses import miss_report
+
+        return _json(miss_report(self.engine))
 
     async def api_settings_cost(self, request: web.Request) -> web.Response:
         """What this phone's settings kept back over 14 days, graded beside what reached it (keptback.py)."""

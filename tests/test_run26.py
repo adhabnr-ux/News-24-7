@@ -93,7 +93,14 @@ def test_a_clean_setup_gets_a_go(tmp_path):
     a, now = setup(eng)
     r = pre_trade(eng, DEV, "ACME", "long", a["id"], now)
     assert r["verdict"] == "go" and r["bad"] == 0
-    assert tones(r) == {"odds": "good", "record": "good", "regime": "good", "moved": "good", "plan": "good"}
+    assert tones(r) == {
+        "odds": "good",
+        "record": "good",
+        "regime": "good",
+        "moved": "good",
+        "plan": "good",
+        "size": "good",
+    }
     text = {c["key"]: c["text"] for c in r["checks"]}
     assert text["odds"] == "Odds 71% by the close, expected +1.1% (the model, 300 graded)"
     assert text["moved"] == "+0.5% its way since the alert, of a typical +2.8%"
