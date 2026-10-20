@@ -149,6 +149,7 @@ def default_profile() -> dict[str, Any]:
             "callnow": True,  # the call on an alert changed with the day's live facts (callnow.py)
             "runup": True,  # ten sessions before an FDA decision or readout on your stock: the run-up record
             "signal_cap": 8,  # signal pushes an hour before the rest fold into a digest (0 = no limit, pushbudget.py)
+            "tapeday": True,  # a cold or hot tape today, read from the first alerts' hour (tapeday.py)
         },
         "price_alerts": [],
         "tracked": [],
@@ -744,6 +745,7 @@ class Desk:
                 "bookmacro",
                 "callnow",
                 "runup",
+                "tapeday",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1526,6 +1528,7 @@ class Desk:
                     "callnow",
                     "runup",
                     "signal_cap",
+                    "tapeday",
                     "watch_push",
                     "min_sev",
                     "digest",

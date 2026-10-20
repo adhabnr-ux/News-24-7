@@ -278,9 +278,10 @@ class Engine:
         # news by relative volume, at the alert and 15 minutes in (volconfirm.py)
         self.rvol_rates: dict[str, Any] = {}
         self.turn_rates: dict[str, Any] = {}  # calls that turned during the day, graded (callnow.py)
-        self.runup_rates: dict[
-            str, Any
-        ] = {}  # into FDA decisions and readouts: the run-up, graded (runup.py)
+        # into FDA decisions and readouts: the run-up, graded (runup.py)
+        self.runup_rates: dict[str, Any] = {}
+        self.entry_rates: dict[str, Any] = {}  # every entry style per kind of news, side by side (entries.py)
+        self.tape_rates: dict[str, Any] = {}  # cold, normal and hot tapes: the rest of the day (tapeday.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2025,6 +2026,11 @@ class Engine:
                     alert.edge["plan"]["patient"] = {
                         k: pt[k] for k in ("limit", "dip", "p_now", "p_filled") if k in pt
                     }
+            ek = (alert.edge.get("catalyst") or {}).get("key")
+            er = self.entry_rates.get(ek) if ek else None
+            if er and er.get("best"):  # how to enter its kind of news here (entries.py)
+                alert.edge["entry_rec"] = {"kind": ek, "label": er["label"], "best": er["best"], "n": er["n"],
+                                           "styles": {s: er["styles"][s] for s in (er["best"], "alert") if s in er["styles"]}}  # fmt: skip
             from .thecall import the_call
 
             call = the_call(
@@ -2591,6 +2597,12 @@ class Engine:
                     from .volconfirm import send_confirms
 
                     await send_confirms(self, now)  # 15 minutes in: is the market trading it?
+                with contextlib.suppress(Exception):
+                    from .tapeday import send_tape
+
+                    await send_tape(
+                        self, now
+                    )  # a cold or hot tape today, once the first alerts have their hour
                 with contextlib.suppress(Exception):
                     from .pushbudget import send_digest
 
@@ -4205,6 +4217,12 @@ class Engine:
         from .runup import runup_rates
 
         self.runup_rates = runup_rates(self)
+        from .entries import entry_rates
+
+        self.entry_rates = entry_rates(self, 180, now)
+        from .tapeday import tape_rates
+
+        self.tape_rates = tape_rates(self, 365, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

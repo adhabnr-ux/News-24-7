@@ -127,6 +127,12 @@ def playbook(engine: Engine, key: str, now: float | None = None) -> dict[str, An
         rules.append(
             f"Stops: 80% of its winners dipped less than {ht['dip80']:.1f}% first; a stop just past that keeps them ({ht['winners']})."
         )
+    en = _get(engine, "entry_rates").get(key)
+    if en and en.get("best"):
+        from .entries import STYLES, entry_line
+
+        out["entries"] = {**en, "names": STYLES}
+        rules.append(entry_line(en))
     cl = _get(engine, "climate_rates").get(key)
     if cl and cl.get("recent"):
         out["climate"] = cl
@@ -145,7 +151,7 @@ def playbook(engine: Engine, key: str, now: float | None = None) -> dict[str, An
     stocks = stocks_for(engine, key, now=now)
     out["stocks"] = {"best": stocks[:5], "worst": [s for s in reversed(stocks) if s["median"] < 0][:5]}
     out["sections"] = sum(
-        1 for k in ("clock", "open", "overnight", "drift", "heat", "climate", "macro") if k in out
+        1 for k in ("clock", "open", "overnight", "drift", "heat", "climate", "macro", "entries") if k in out
     )
     return out
 

@@ -193,6 +193,8 @@ class WebServer:
         app.router.add_get("/api/rvol", self.api_rvol)
         app.router.add_get("/api/runups", self.api_runups)
         app.router.add_get("/api/signals", self.api_signals)
+        app.router.add_get("/api/entries", self.api_entries)
+        app.router.add_get("/api/tape", self.api_tape)
         app.router.add_get("/api/book-theme/{alert_id}", self.api_book_theme)
         app.router.add_get("/api/themes", self.api_themes)
         app.router.add_get("/api/halts/record", self.api_halt_record)
@@ -1299,6 +1301,19 @@ class WebServer:
         from ..signals import scoreboard
 
         return _json(scoreboard(self.engine, self._need_device(request)))
+
+    async def api_entries(self, request: web.Request) -> web.Response:
+        """Every entry style per kind of news, graded side by side (entries.py)."""
+        from ..entries import board
+
+        return _json(board(self.engine.entry_rates))
+
+    async def api_tape(self, request: web.Request) -> web.Response:
+        """Today's tape (cold, normal or hot from the first alerts' hour) and the record behind it (tapeday.py)."""
+        from ..tapeday import tape_line, today
+
+        t = today(self.engine)
+        return _json({**t, "line": tape_line(t), "rates": self.engine.tape_rates})
 
     async def api_advice(self, request: web.Request) -> web.Response:
         """The setting changes the records back for this phone, ranked, each one tap from applied (advice.py)."""

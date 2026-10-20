@@ -797,7 +797,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadEntries(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -937,6 +937,7 @@ async function openSheet(id) {
       <div class="kv"><span>It first broke ${Math.round(e.late.min)} minutes before this alert${e.late.source ? ` <span class="sub">${esc(outlet(e.late.source))}</span>` : ""}</span><b class="num">${e.late.rec?.close ? `<span class="${e.late.rec.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.late.rec.close.hit * 100)}%</span> <span class="sub">its way for alerts that late · ${e.late.rec.close.n}</span>` : ""}</b></div>
       <div class="sub" style="padding:4px 0 12px">Minutes from the story's first headline, from any outlet, to the one this alert came from. By then part of the market had it. History, not a forecast.</div></div>` : "",
     e.float ? `<div class="kv clim"><span class="${e.float_base ? (e.float_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">🧮 Float ${fmtShares(e.float.float)}${e.float.short != null ? ` · ${Math.round(e.float.short * 100)}% short` : ""}${e.float_base ? `: ${esc(e.float_base.label[0].toLowerCase() + e.float_base.label.slice(1))} went its way ${Math.round(e.float_base.hit * 100)}% by the close (median ${pct(e.float_base.median)}${e.float_base.run != null ? `, winners ran ${pct(e.float_base.run)}` : ""}, ${e.float_base.n})` : ""}</span></div>` : "",
+    e.entry_rec ? `<div class="kv clim"><span class="pos">🎯 How to enter ${esc(e.entry_rec.label.toLowerCase())} news here: <b>${esc((ENTRY_NAMES[e.entry_rec.best] || e.entry_rec.best).toLowerCase())}</b> (${pct(e.entry_rec.styles[e.entry_rec.best].avg)} on average from the entry, ${Math.round(e.entry_rec.styles[e.entry_rec.best].hit * 100)}% its way, ${e.entry_rec.styles[e.entry_rec.best].n} of ${e.entry_rec.n})${e.entry_rec.best !== "alert" && e.entry_rec.styles.alert ? `; at the alert ${pct(e.entry_rec.styles.alert.avg)}` : ""}</span></div>` : "",
     e.rvol ? `<div class="kv clim"><span class="${e.rvol_base ? (e.rvol_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">📊 Volume ${e.rvol.r0 != null ? `${e.rvol.r0}x normal at the alert` : ""}${e.rvol.r15 != null ? `${e.rvol.r0 != null ? ", " : ""}${e.rvol.r15}x 15 minutes in` : ""}${e.rvol_base ? `: ${esc(e.rvol_base.label[0].toLowerCase() + e.rvol_base.label.slice(1))} went its way ${Math.round(e.rvol_base.hit * 100)}% (${e.rvol_base.n})` : ""}</span></div>` : "",
     e.theme_rec ? `<div class="kv clim" id="bookTheme" data-id="${esc(a.id)}"></div>` : "",
     e.leg2 ? `<div class="kv clim"><span class="pos">🚀 Second leg: a new day's extreme ${new Date(e.leg2.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} at ${fmtPx(e.leg2.px)} (${pct(e.leg2.its)} its way) after ${e.leg2.rest_min} minutes without one</span></div>` : "",
@@ -1081,6 +1082,7 @@ async function openPlaybook(key) {
     p.overnight ? sec("Hold it into tomorrow?", p.overnight.map((r) => kv(esc(r.label), `${Math.round(r.hit * 100)}% went on <span class="sub">${pct(r.median)} · ${r.n}</span>`)).join("")) : "",
     p.drift ? sec("A month on", kv("Five sessions → twenty", `${pct(p.drift.d5.median)} → ${pct(p.drift.d20.median)} <span class="sub">${p.drift.d20.n}</span>`)) : "",
     p.heat ? sec("Heat (where a stop belongs)", kv("80% of winners dipped less than", `${p.heat.dip80.toFixed(1)}% <span class="sub">${p.heat.winners}</span>`) + (p.heat.run_median != null ? kv("Losers first ran (median)", `${p.heat.run_median.toFixed(1)}% <span class="sub">${p.heat.losers}</span>`) : "")) : "",
+    p.entries ? sec("How to enter it", Object.entries(p.entries.styles).filter(([, s]) => s.n >= 8).map(([k, s]) => kv(`${esc(ENTRY_NAMES[k])}${k === p.entries.best ? " ✓" : ""}`, `${pct(s.avg)} avg <span class="sub">${Math.round(s.hit * 100)}% · ${s.n} of ${p.entries.n}</span>`)).join("")) : "",
     p.climate ? sec("Lately", kv("The last two weeks · before", `${st(p.climate.recent)} · ${st(p.climate.before)}`)) : "",
     p.macro ? sec("Fed and jobs days", kv("Macro days · other days", `${st(p.macro.macro)} · ${st(p.macro.other)}`)) : "",
     (p.stocks.best.length || p.stocks.worst.length) ? sec("Stocks that took it best and worst", [...p.stocks.best, ...p.stocks.worst.filter((w) => !p.stocks.best.some((b) => b.symbol === w.symbol))].map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span><b>${esc(x.symbol)}</b></span><b class="num">${st(x)}</b></div>`).join("")) : "",
@@ -1119,6 +1121,31 @@ async function loadAdvice() {
   $("dAdvice").innerHTML = r.items.map((x, i) => `<div class="kv"><span><b>${esc(x.title)}</b><div class="sub">${esc(x.why)}</div>
       <div class="row" style="padding:6px 0 2px"><button class="btn ghost small" data-act="advice-apply" data-n="${i}">${esc(x.label)}</button><button class="btn ghost small" data-act="advice-skip" data-n="${i}">Not now</button></div></span></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every panel's verdict on a setting, read together for this phone and ranked by how much evidence is behind it. Nothing changes until you tap; "Not now" hides one.</div>`;
+}
+const ENTRY_NAMES = { alert: "At the alert", open: "At the open", patient: "At the patient entry", leg2: "On the second leg", vol15: "On volume confirmation", turn: "When the call turns to act" };
+// how to enter each kind of news (Watch): every entry style, graded side by side
+async function loadEntries() {
+  let r;
+  try { r = await api("/api/entries"); } catch (_) { return; }
+  $("enWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  $("enBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>best entry · average from it · vs the alert</b></div>`
+    + r.rows.map((x) => { const b = x.best ? x.styles[x.best] : null, a = x.styles.alert;
+      return `<div class="kv"><span>${esc(x.label)} <span class="sub">${x.n}</span><div class="sub">${Object.entries(x.styles).filter(([, s]) => s.n >= r.need).map(([k, s]) => `${esc(ENTRY_NAMES[k])} ${pct(s.avg)} (${s.n})`).join(" · ")}</div></span><b class="num">${b ? `${esc(ENTRY_NAMES[x.best])}<br><span class="${cls(b.avg)}">${pct(b.avg)}</span> <span class="sub">${Math.round(b.hit * 100)}%</span>${a && x.best !== "alert" ? `<br><span class="sub">alert ${pct(a.avg)}</span>` : ""}` : "—"}</b></div>`; }).join("")
+    + `<div class="sub" style="padding:4px 0 12px">The same alerts, entered six ways, each graded from its own entry to the close: at the alert, at the open (news before the bell), at the patient entry (when the dip reached it), on the second leg, on volume confirmation (5x+ normal volume 15 minutes in), and when the call turned to act. The conditional ways only enter some alerts; the best is the one with the best average from its entry (${r.need}+ entries).</div>`;
+}
+// the tape today (Watch): cold, normal or hot, from the first alerts' hour
+async function loadTape() {
+  let r;
+  try { r = await api("/api/tape"); } catch (_) { return; }
+  const rates = Object.values(r.rates || {});
+  $("tpWrap").hidden = !rates.length && !r.graded;
+  if ($("tpWrap").hidden) return;
+  const T = { cold: ["🧊 cold", "neg"], hot: ["🔥 hot", "pos"], normal: ["normal", ""] };
+  $("tpBoard").innerHTML = `<div class="kv"><span>Today <span class="sub">${r.graded} of the first ${r.need} alerts graded an hour in, ${r.won} went their way</span></span><b>${r.state ? `<span class="chipv ${T[r.state][1]}">${T[r.state][0]}</span>` : `<span class="sub">reading…</span>`}</b></div>`
+    + (r.line ? `<div class="kv"><span class="${r.state === "cold" ? "neg" : r.state === "hot" ? "pos" : ""}">${esc(r.line)}</span></div>` : "")
+    + (rates.length ? `<div class="kv head"><span>On days like it</span><b>the rest of the day, by the close</b></div>` + ["hot", "normal", "cold"].filter((k) => r.rates[k]).map((k) => { const x = r.rates[k]; return `<div class="kv"><span>${T[k][0]} <span class="sub">${x.sessions} sessions</span></span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span></b></div>`; }).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Each session's first ${r.need} news alerts, an hour in: cold when 3 or fewer went their way, hot at 6 or more. The record is how the rest of those days' alerts did by the close. On a clearly cold or hot day, every phone gets one push (Settings → The tape today).</div>`;
 }
 // which signals work here (Desk): every live signal's forward record, with its switch
 const SIG_TAG = { strong: ["strong", "pos"], fair: ["fair", ""], weak: ["weak", "neg"], thin: ["too few", "faint"] };
@@ -1655,6 +1682,7 @@ function renderDesk() {
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Event day<div class="sub">the morning of an FDA decision or readout on your stock: both outcomes as they've traded here, what options price, what you hold</div></span><b><button class="btn ghost small${pr.event_day !== false ? " sel" : ""}" data-act="flag" data-s="event_day">${pr.event_day !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Into the close<div class="sub">15:40 ET: each open call, and whether alerts that stood the same at the close went on by the next one: hold or close, with report risk</div></span><b><button class="btn ghost small${pr.overnight !== false ? " sel" : ""}" data-act="flag" data-s="overnight">${pr.overnight !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>The tape today<div class="sub">once a day, when the first alerts' hour reads clearly cold or hot and days like it have a record: how the rest of those days went</div></span><b><button class="btn ghost small${pr.tapeday !== false ? " sel" : ""}" data-act="flag" data-s="tapeday">${pr.tapeday !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Signal pushes an hour<div class="sub">the wait is over, catch-ups, second legs, volume, the call turning, run-ups, your book: past this many an hour, the rest fold into a digest every half hour</div></span><b></b></div>
     <div class="row" style="padding:2px 0 8px">${[[4, "4"], [8, "8"], [12, "12"], [0, "No limit"]].map(([k, l]) => `<button class="btn ghost small${(pr.signal_cap ?? 8) === k ? " sel" : ""}" data-act="signal-cap" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="kv"><span>Into the event<div class="sub">ten sessions before an FDA decision, readout or panel on your stock: how stocks ran up into events like it here, and what holding through added</div></span><b><button class="btn ghost small${pr.runup !== false ? " sel" : ""}" data-act="flag" data-s="runup">${pr.runup !== false ? "On" : "Off"}</button></b></div>
