@@ -38,14 +38,21 @@ def _rec(x: dict[str, Any] | None, key: str = "close") -> dict[str, Any] | None:
     return r if r and r.get("n", 0) >= MIN_N else None
 
 
-def the_call(e: dict[str, Any], outside: bool = False) -> dict[str, Any] | None:
+def the_call(
+    e: dict[str, Any], outside: bool = False, muted: frozenset[str] = frozenset()
+) -> dict[str, Any] | None:
     """{"verb", "label", "line", "for", "against"} from an alert's edge, or None when nothing on it
     is graded yet (no call is better than a made-up one)."""
     pro: list[str] = []
     con: list[str] = []
     facts: list[list[str]] = []  # [key, "+" or "-"]: which facts spoke, for the replay's per-fact record
 
+    hushed: list[str] = []  # facts that spoke but are muted: they haven't sorted winners from losers
+
     def add(side: str, key: str, text: str) -> None:
+        if key in muted:
+            hushed.append(key)
+            return
         (pro if side == "+" else con).append(text)
         facts.append([key, side])
 
@@ -121,7 +128,22 @@ def the_call(e: dict[str, Any], outside: bool = False) -> dict[str, Any] | None:
            "for": pro, "against": con, "facts": facts}  # fmt: skip
     if verb == "wait":
         out["wait_for"] = "open" if why[0].startswith("for the open") else "pullback"
+    if hushed:
+        out["muted"] = sorted(set(hushed))
     return out
+
+
+MUTE_N = 20  # alerts on each side before a fact can be muted
+
+
+def muted_facts(rp: dict[str, Any] | None) -> list[str]:
+    """Facts whose "for" alerts did no better than their "against" alerts in the replay, with
+    MUTE_N+ on each side: they stop counting in the call until they sort again."""
+    out = []
+    for f in (rp or {}).get("facts") or []:
+        if f.get("sorts") is not None and f["sorts"] <= 0 and min(f["for"]["n"], f["against"]["n"]) >= MUTE_N:
+            out.append(f["key"])
+    return sorted(out)
 
 
 def call_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:

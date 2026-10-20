@@ -991,6 +991,11 @@ class WebPushNotifier(Notifier):
         pn = persona_line(ps) if ps and ps.get("trait") not in ("mixed", "runs") else ""
         if pn:
             base = f"{base}\n{pn}" if base else pn
+        from ..volnews import vol_line
+
+        vl = vol_line(alert.edge.get("vol"), alert.edge.get("vol_rec"))
+        if vl:
+            base = f"{base}\n{vl}" if base else vl
         from ..macrodays import macro_line
 
         ml = macro_line(alert.edge.get("macro"))

@@ -186,6 +186,7 @@ class WebServer:
         app.router.add_get("/api/line", self.api_line)
         app.router.add_post("/api/line", self.api_line_set)
         app.router.add_get("/api/macro", self.api_macro)
+        app.router.add_get("/api/vol", self.api_vol)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1138,9 +1139,8 @@ class WebServer:
         from ..thecall import VERBS
 
         rates = self.engine.call_rates
-        return _json(
-            {"rows": [rates[v] for v in VERBS if v in rates], "replay": self.engine.call_replay or None}
-        )
+        return _json({"rows": [rates[v] for v in VERBS if v in rates], "replay": self.engine.call_replay or None,
+                      "muted": self.engine.call_muted})  # fmt: skip
 
     async def api_climate(self, request: web.Request) -> web.Response:
         """News climate: each kind's last two weeks against its record before, hot or cold beyond chance (climate.py)."""
@@ -1193,6 +1193,12 @@ class WebServer:
         except (TypeError, ValueError) as exc:
             raise web.HTTPBadRequest(text=str(exc)) from None
         return _json(out)
+
+    async def api_vol(self, request: web.Request) -> web.Response:
+        """Options against the news: cheap, fair or rich reads, graded, and the last day's (volnews.py)."""
+        from ..volnews import board
+
+        return _json(board(self.engine, self.engine.vol_rates))
 
     async def api_macro(self, request: web.Request) -> web.Response:
         """Macro days: each kind of news on Fed and jobs-report days vs other days, and the next one (macrodays.py)."""

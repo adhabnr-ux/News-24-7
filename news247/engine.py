@@ -259,6 +259,8 @@ class Engine:
         self.climate_rates: dict[str, Any] = {}  # each kind's last two weeks against its record (climate.py)
         self.call_replay: dict[str, Any] = {}  # the call's rule run on every graded alert (thecall.py)
         self.macro_rates: dict[str, Any] = {}  # each kind on Fed and jobs days vs other days (macrodays.py)
+        self.vol_rates: dict[str, Any] = {}  # options cheap or rich against the news, graded (volnews.py)
+        self.call_muted: list[str] = []  # facts the replay shows sorting nothing (thecall.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -1895,6 +1897,21 @@ class Engine:
             cl = climate_for(self.climate_rates, (alert.edge.get("catalyst") or {}).get("key"))
             if cl:  # its kind is running hot or cold lately, beyond chance
                 alert.edge["climate"] = cl
+            cbv = alert.edge.get("cat_base") or {}
+            if alert.tickers and cbv.get("typical"):
+                from .personal import IMPLIED_TTL_S
+                from .volnews import read as vol_read
+                from .volnews import stamp_later as vol_later
+
+                hit = self.implied_cache.get(alert.tickers[0])
+                if hit and time.time() - hit[0] < IMPLIED_TTL_S:
+                    v = vol_read(hit[1], cbv)
+                    if v:  # what options price against what this news usually moves
+                        alert.edge["vol"] = v
+                        if (self.vol_rates.get(v["verdict"]) or {}).get("n", 0) >= 8:
+                            alert.edge["vol_rec"] = self.vol_rates[v["verdict"]]
+                elif self.options_feed is not None and alert.severity >= Severity.HIGH:
+                    self._spawn(vol_later(self, alert.id, alert.tickers[0], cbv))  # the sheet gets it
             from .macrodays import macro_for
             from .macrodays import today as macro_today
 
@@ -1907,7 +1924,9 @@ class Engine:
                 alert.edge["macro"] = mc
             from .thecall import the_call
 
-            call = the_call(alert.edge, outside(alert.created, self.calendar.holidays))
+            call = the_call(
+                alert.edge, outside(alert.created, self.calendar.holidays), frozenset(self.call_muted)
+            )
             if call:  # what the records add up to, in one line; graded as the call's own record
                 rec = (self.call_rates.get(call["verb"]) or {}).get("close")
                 if rec and rec["n"] >= 8:
@@ -3932,6 +3951,12 @@ class Engine:
         from .macrodays import macro_rates
 
         self.macro_rates = macro_rates(self, 365, now)
+        from .volnews import vol_rates
+
+        self.vol_rates = vol_rates(self, 180, now)
+        from .thecall import muted_facts
+
+        self.call_muted = muted_facts(self.call_replay)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

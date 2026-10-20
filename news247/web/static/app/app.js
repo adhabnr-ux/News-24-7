@@ -795,7 +795,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadRecall(); loadMacro(); loadClimate(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -919,6 +919,12 @@ async function openSheet(id) {
     e.persona && e.persona.trait !== "mixed" ? `<h4>How ${esc(e.persona.symbol)} takes news</h4><div class="panel glass">
       <div class="kv"><span>${esc(e.persona.label)}</span><b class="num">${Object.entries(e.persona.path || {}).map(([h, v]) => `${{ h1: "1h", close: "close", d1: "next day", d5: "5 days", d20: "a month" }[h]} <span class="${cls(v)}">${pct(v)}</span>`).join(" · ")}</b></div>
       <div class="sub" style="padding:4px 0 12px">Its last ${e.persona.n} graded alerts here, medians, its way. History, not a forecast.</div></div>` : "",
+    e.vol ? `<h4>Options against the news</h4><div class="panel glass">
+      <div class="kv"><span>Options price a typical day <span class="sub">${esc(e.vol.from)}</span></span><b class="num">±${e.vol.implied.toFixed(1)}%</b></div>
+      <div class="kv"><span>${esc(e.vol.label)} news here moves <span class="sub">by the close, either way (median)</span></span><b class="num">±${e.vol.typical.toFixed(1)}%</b></div>
+      <div class="kv"><span>So options look</span><b class="num"><span class="chipv ${e.vol.verdict === "cheap" ? "pos" : e.vol.verdict === "rich" ? "neg" : ""}">${esc(e.vol.verdict)}</span> ${e.vol.ratio}×</b></div>
+      ${e.vol_rec ? `<div class="kv"><span>On ${esc(e.vol.verdict)} reads here</span><b class="num">the move beat what options priced ${Math.round(e.vol_rec.beat * 100)}% <span class="sub">${e.vol_rec.n}</span></b></div>` : ""}
+      <div class="sub" style="padding:4px 0 12px">Both as a typical day's move either way (the median), read from the chain at the alert; cheap at 1.5× or more, rich at 0.8× or less. An approximation, graded on every read. History, not a forecast.</div></div>` : "",
     e.macro ? `<div class="kv clim"><span class="${e.macro.macro.hit >= 0.5 ? "pos" : "neg"}">📅 ${esc(e.macro.today[0])} today: ${esc(e.macro.label)} news on macro days went its way ${Math.round(e.macro.macro.hit * 100)}% (${e.macro.macro.n})${e.macro.other ? ` vs ${Math.round(e.macro.other.hit * 100)}% on other days (${e.macro.other.n})` : ""}</span></div>` : "",
     e.climate ? `<div class="kv clim"><span class="${e.climate.state === "hot" ? "pos" : "neg"}">${e.climate.state === "hot" ? "🔥 Hot" : "🧊 Cold"} lately: ${esc(e.climate.label)} news went its way ${Math.round(e.climate.recent.hit * 100)}% in the last two weeks (${e.climate.recent.n}) vs ${Math.round(e.climate.before.hit * 100)}% before (${e.climate.before.n})</span></div>` : "",
     e.late ? `<h4>Late to the story</h4><div class="panel glass">
@@ -1036,6 +1042,16 @@ async function loadRecall() {
     + (r.all && r.all.n > r.all.caught ? `<div class="kv"><span>Why the misses missed</span><b class="num">${r.why["under the line"]} under the line${r.under_score != null ? ` <span class="sub">(median score ${r.under_score})</span>` : ""} · ${r.why["no headline"]} no headline</b></div>` : "")
     + [...(r.today || []).filter((x) => !x.caught).map((x) => ({ ...x, day: "today" })), ...r.missed].slice(0, 10).map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span><b>${esc(x.symbol)}</b> <span class="${cls(x.chg)}">${pct(x.chg)}</span> <span class="sub">${esc(x.day)} · ${esc(MISS_WHY[x.why] || x.why)}${x.top_title ? `: “${esc(x.top_title.slice(0, 70))}” (${x.top_score})` : ""}</span></span><b class="num neg">missed</b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every company worth $300M+ that moved 5%+ in a session, checked against the alerts on it since the previous close. A miss with a headline under the line says the threshold was too high for it; one with no headline is a source gap or a move with no news. Kept for every session at 16:05 ET.</div>`;
+}
+// options against the news (Watch): cheap or rich reads at the alert, graded
+async function loadVol() {
+  let r;
+  try { r = await api("/api/vol"); } catch (_) { return; }
+  $("volWrap").hidden = !r.rates.length && !r.today.length;
+  if ($("volWrap").hidden) return;
+  $("volBoard").innerHTML = (r.rates.length ? `<div class="kv head"><span>Read at the alert</span><b>the move beat options' day</b></div>` + r.rates.map((x) => `<div class="kv"><span><span class="chipv ${x.verdict === "cheap" ? "pos" : x.verdict === "rich" ? "neg" : ""}">${esc(x.verdict)}</span></span><b class="num">${Math.round(x.beat * 100)}% <span class="sub">moved ${x.ratio}× the implied · ${x.n}</span></b></div>`).join("") : "")
+    + (r.today.length ? `<div class="kv head"><span>The last day's reads</span><b></b></div>` + r.today.map((x) => `<div class="kv" data-id="${esc(x.id)}" role="button"><span><b>${esc(x.symbol)}</b> <span class="sub">${esc(x.title.slice(0, 60))}</span></span><b class="num"><span class="chipv ${x.verdict === "cheap" ? "pos" : "neg"}">${esc(x.verdict)}</span> ±${x.implied.toFixed(1)}% vs ±${x.typical.toFixed(1)}%</b></div>`).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">At each alert with a fresh chain read: options' typical day (from IV30, or the nearest straddle) against how far that kind of news here moves by the close. Cheap reads say the news usually moves more than options price; each read is graded on whether it did.</div>`;
 }
 // macro days (Watch): each kind of news on Fed and jobs days against other days
 async function loadMacro() {
@@ -1780,9 +1796,9 @@ async function loadCallRecord() {
     + (rp && rp.verbs.length ? `<div class="kv head"><span>Replayed on ${rp.all.n} graded alerts</span><b>by the close</b></div>`
       + rp.verbs.map((x) => `<div class="kv"><span>${x.icon} ${esc(x.label)} <span class="sub">vs every alert ${Math.round(rp.all.hit * 100)}%</span></span><b class="num">${cell(x)}</b></div>`).join("")
       + (rp.facts.length ? `<div class="kv head"><span>Which facts sorted winners from losers</span><b>for · against</b></div>`
-        + rp.facts.map((f) => `<div class="kv"><span>${esc(f.label)}${f.sorts != null ? ` <span class="chipv ${f.sorts >= 0.1 ? "pos" : f.sorts <= 0 ? "neg" : ""}">${f.sorts >= 0 ? "+" : ""}${Math.round(f.sorts * 100)} pts</span>` : ""}</span><b class="num">${cell(f.for)}<br>${cell(f.against)}</b></div>`).join("") : "") : "")
+        + rp.facts.map((f) => `<div class="kv"><span>${esc(f.label)}${f.sorts != null ? ` <span class="chipv ${f.sorts >= 0.1 ? "pos" : f.sorts <= 0 ? "neg" : ""}">${f.sorts >= 0 ? "+" : ""}${Math.round(f.sorts * 100)} pts</span>` : ""}${(r.muted || []).includes(f.key) ? ` <span class="chipv faint">muted</span>` : ""}</span><b class="num">${cell(f.for)}<br>${cell(f.against)}</b></div>`).join("") : "") : "")
     + `<div class="row" style="padding:8px 0 4px"><button class="btn ghost small" data-act="call-follow">🤖 Follow the call on paper</button></div>`
-    + `<div class="sub" style="padding:4px 0 12px">Every alert gets one call from its records (odds, its kind, the stock, how fast that news plays out, the open, how late it was, the regime, the firm, the flow, the insider). Each is graded with its alert: if "act now" doesn't beat "skip", the rule is wrong, and this is where it shows. The replay runs the same rule on every graded alert from what it carried when it went out (older alerts had fewer facts); a fact that sorts well puts more of its "for" alerts than its "against" alerts on the right side. Set the push bar to "the call: act or wait" under Settings.</div>`;
+    + `<div class="sub" style="padding:4px 0 12px">Every alert gets one call from its records (odds, its kind, the stock, how fast that news plays out, the open, how late it was, the regime, the firm, the flow, the insider). Each is graded with its alert: if "act now" doesn't beat "skip", the rule is wrong, and this is where it shows. The replay runs the same rule on every graded alert from what it carried when it went out (older alerts had fewer facts); a fact that sorts well puts more of its "for" alerts than its "against" alerts on the right side. A fact that sorts nothing (20+ alerts each way) is muted: it stops counting in the call until it sorts again. Set the push bar to "the call: act or wait" under Settings.</div>`;
 }
 // what your settings kept back: every alert this phone's settings held off its lock screen, graded
 let cost = null;
