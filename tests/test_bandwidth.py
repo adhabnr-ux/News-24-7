@@ -57,7 +57,9 @@ async def test_text_is_gzipped_and_unchanged_content_costs_a_304(tmp_path):
                 js = await r.read()
                 # gzipped to under a third of the file (the shell is cached per version, and a repeat
                 # load is a ~200-byte 304), and well inside a free host's budget either way
-                raw_js = (Path(__file__).resolve().parent.parent / "news247/web/static/app/app.js").stat().st_size
+                raw_js = (
+                    (Path(__file__).resolve().parent.parent / "news247/web/static/app/app.js").stat().st_size
+                )
                 assert r.headers["Content-Encoding"] == "gzip" and len(js) < raw_js / 3 and len(js) < 150_000
                 etag = r.headers["ETag"]
             async with s.get(srv.make_url("/app/app.js"), headers={"If-None-Match": etag}) as r:
