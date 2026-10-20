@@ -19,11 +19,20 @@ from .desk import SEV_RANK, session_edge
 ET = ZoneInfo("America/New_York")
 MAX_RULES = 5
 PER_RULE_PER_DAY = 3
-EXITS = {"h1": "an hour later", "close": "at the close", "d1": "at the next day's close"}
+EXITS = {
+    "h1": "an hour later",
+    "close": "at the close",
+    "d1": "at the next day's close",
+    "d5": "five sessions on",
+}
 ODDS_CHOICES = (0, 55, 60, 65, 70)  # a rule can follow the odds model: only alerts it rates this high
 # a rule can follow a signal instead of a kind of news: the call when the alert goes out, a second
 # leg when it breaks out (secondleg.py), or the call turning to "act now" during the day (callnow.py)
-FOLLOWS = ("", "call", "leg2", "turn")
+FOLLOWS = ("", "call", "leg2", "turn", "playbook")
+# the playbook enters each alert its kind's best way (entries.py) and exits its kind's best way
+# (exits_kind.py): now, at the open, at the patient entry, on the second leg, on volume
+# confirmation, or when the call turns to act; out an hour in, at the close, the next day, five
+# sessions on, or at the plan's stop or target
 
 
 def rule_label(rule: dict[str, Any]) -> str:
@@ -35,6 +44,10 @@ def rule_label(rule: dict[str, Any]) -> str:
         return f"Following second legs ({rule['min_sev']}+): in at the breakout; out {EXITS[rule['exit']]}"
     if rule.get("follow") == "turn":
         return f"Following the call when it turns to act ({rule['min_sev']}+): in at the turn; out {EXITS[rule['exit']]}"
+    if rule.get("follow") == "playbook":
+        return (
+            f"Following the playbook ({rule['min_sev']}+): each kind of news in and out its own best way here"
+        )
 
     kind = (
         LABELS.get(rule["catalyst"], "Any kind of news") if rule["catalyst"] != "all" else "Any kind of news"
@@ -70,7 +83,7 @@ def clean_rule(body: dict[str, Any], now: float) -> dict[str, Any]:
         raise ValueError("odds are 0 (any), 55, 60, 65 or 70")
     follow = str(body.get("follow") or "")
     if follow not in FOLLOWS:
-        raise ValueError("follow is call, leg2, turn or nothing")
+        raise ValueError("follow is call, leg2, turn, playbook or nothing")
     if follow and (catalyst != "all" or band != "all" or min_odds):
         who = "the call" if follow == "call" else "the signal"
         raise ValueError(f"following {who} takes every kind and size: {who} decides")
@@ -93,6 +106,8 @@ def matches(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
         return False
     if rule.get("follow") in ("leg2", "turn"):
         return False  # these open on their signal, later in the day (signal_matches)
+    if rule.get("follow") == "playbook":  # in now only when its kind enters best at the alert
+        return ((alert.get("edge") or {}).get("entry_rec") or {}).get("best") == "alert"
     if rule.get("follow") == "call":  # the call decides: act now opens at once (waits are scheduled)
         return ((alert.get("edge") or {}).get("call") or {}).get("verb") == "act"
     if rule.get("min_odds"):
@@ -113,12 +128,12 @@ def signal_matches(rule: dict[str, Any], alert: dict[str, Any], signal: str) -> 
     """A rule following ``signal`` ("leg2" or "turn"), on an alert at its severity with a direction."""
     from .dossier import _direction
 
-    if (
-        rule.get("follow") != signal
-        or not rule.get("on")
-        or alert.get("kind") == "system"
-        or not _direction(alert)
-    ):
+    if not rule.get("on") or alert.get("kind") == "system" or not _direction(alert):
+        return False
+    if rule.get("follow") == "playbook":
+        if ((alert.get("edge") or {}).get("entry_rec") or {}).get("best") != signal:
+            return False
+    elif rule.get("follow") != signal:
         return False
     return SEV_RANK.get(str(alert.get("severity")), 0) >= SEV_RANK[rule["min_sev"]]
 
@@ -129,7 +144,7 @@ def waits_for_open(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
     from .dossier import _direction
 
     if (
-        rule.get("follow") != "call"
+        rule.get("follow") not in ("call", "playbook")
         or not rule.get("on")
         or alert.get("kind") == "system"
         or not _direction(alert)
@@ -137,6 +152,8 @@ def waits_for_open(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
         return False
     if SEV_RANK.get(str(alert.get("severity")), 0) < SEV_RANK[rule["min_sev"]]:
         return False
+    if rule.get("follow") == "playbook":  # its kind enters best at the session's first print
+        return ((alert.get("edge") or {}).get("entry_rec") or {}).get("best") == "open"
     call = (alert.get("edge") or {}).get("call") or {}
     return call.get("verb") == "wait" and call.get("wait_for") == "open"
 
@@ -145,7 +162,17 @@ def exit_time(exit_: str, ts: float, calendar: Any = None) -> float:
     if exit_ == "h1":
         return ts + 3600.0
     first = session_edge("close", ts, calendar)
-    return first if exit_ == "close" else session_edge("close", first, calendar)
+    if exit_ == "close":
+        return first
+    for _ in range(1 if exit_ == "d1" else 5 if exit_ == "d5" else 1):
+        first = session_edge("close", first, calendar)
+    return first
+
+
+def playbook_exit(alert: dict[str, Any]) -> tuple[str, bool]:
+    """(the exit time key, whether the plan's stop and target ride along) for its kind's best exit."""
+    best = ((alert.get("edge") or {}).get("exit_rec") or {}).get("best") or "close"
+    return ("close", True) if best == "bracket" else (best, False)
 
 
 def opened_today(p: dict[str, Any], rule_id: str, now: float) -> int:

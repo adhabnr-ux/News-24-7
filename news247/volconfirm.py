@@ -130,7 +130,12 @@ async def send_confirms(engine: Engine, now: float | None = None) -> int:
 
     now = now or time.time()
     stamped = check15(engine, now)
-    if not stamped or engine.webpush is None:
+    if not stamped:
+        return 0
+    for a in stamped:  # playbook autopilots whose kind enters best on volume confirmation: in now
+        if a["edge"]["rvol"]["r15"] >= 5 and hasattr(engine, "autopilot_signal"):
+            await engine.autopilot_signal(a, "vol15", " on volume confirmation", now)
+    if engine.webpush is None:
         return 0
     rates = getattr(engine, "rvol_rates", None) or {}
     key = f"volconf:{datetime.fromtimestamp(now, ET).date().isoformat()}"

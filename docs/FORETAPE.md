@@ -380,6 +380,16 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - Calls opened that way are marked, and the panel compares their cost to calls opened in the app.
 
   `GET /api/reaction` (per phone), `POST /api/track-alert` (`{"alert_id"}`, per phone).
+- **The playbook autopilot:** with each kind of news' best way in and best way out graded, a paper autopilot can now follow the playbook itself. Each alert is entered the way its kind enters best here:
+  - at the alert;
+  - at the session's first print;
+  - at its patient entry, if the dip comes that day;
+  - on its second leg;
+  - on volume confirmation (5x+ normal volume 15 minutes in);
+  - when the call turns to act.
+
+  It's exited the way its kind exits best: an hour in, at the close, the next day, five sessions on, or the plan's bracket (only the bracket carries the plan's stop and target, as its record was graded that way). It's a forward test of the whole learning system, with its own record and equity curve; *"🤖 Follow the playbook on paper"* on the entries board turns it on.
+- **The morning game plan:** the 9:20 push now gives each of your pre-market gappers its kind's best way in and out, with its float and dilution flags (*"ACME +6.0% on its news · … · in on the second leg, out the next day, tiny float, ⚠ selling shares"*), and says when yesterday's tape was cold or hot.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

@@ -1157,7 +1157,8 @@ async function loadEntries() {
   try { r = await api("/api/entries"); } catch (_) { return; }
   $("enWrap").hidden = !r.rows.length;
   if (!r.rows.length) return;
-  $("enBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>best entry · average from it · vs the alert</b></div>`
+  $("enBoard").innerHTML = `<div class="row" style="padding:6px 0 2px"><button class="btn ghost small" data-act="follow-signal" data-s="playbook">🤖 Follow the playbook on paper</button></div>`
+    + `<div class="kv head"><span>Kind of news</span><b>best entry · average from it · vs the alert</b></div>`
     + r.rows.map((x) => { const b = x.best ? x.styles[x.best] : null, a = x.styles.alert;
       return `<div class="kv"><span>${esc(x.label)} <span class="sub">${x.n}</span><div class="sub">${Object.entries(x.styles).filter(([, s]) => s.n >= r.need).map(([k, s]) => `${esc(ENTRY_NAMES[k])} ${pct(s.avg)} (${s.n})`).join(" · ")}</div></span><b class="num">${b ? `${esc(ENTRY_NAMES[x.best])}<br><span class="${cls(b.avg)}">${pct(b.avg)}</span> <span class="sub">${Math.round(b.hit * 100)}%</span>${a && x.best !== "alert" ? `<br><span class="sub">alert ${pct(a.avg)}</span>` : ""}` : "—"}</b></div>`; }).join("")
     + `<div class="sub" style="padding:4px 0 12px">The same alerts, entered six ways, each graded from its own entry to the close: at the alert, at the open (news before the bell), at the patient entry (when the dip reached it), on the second leg, on volume confirmation (5x+ normal volume 15 minutes in), and when the call turned to act. The conditional ways only enter some alerts; the best is the one with the best average from its entry (${r.need}+ entries).</div>`;
@@ -2841,7 +2842,7 @@ async function onAct(el) {
     } catch (err) { toast(String(err.message || err)); }
   }
   else if (a === "signal-cap") { if (await deskEdit("prefs", { signal_cap: +s })) toast(+s ? `At most ${s} signal pushes an hour; the rest in a digest` : "No limit on signal pushes"); }
-  else if (a === "follow-signal") { if (await deskEdit("autopilot_add", { follow: s, min_sev: "MEDIUM", exit: "close" })) toast(s === "leg2" ? "Autopilot on: second legs, in at the breakout, out at the close (paper)" : "Autopilot on: the call's turns to act, in at the turn, out at the close (paper)"); }
+  else if (a === "follow-signal") { if (await deskEdit("autopilot_add", { follow: s, min_sev: "MEDIUM", exit: "close" })) toast(s === "leg2" ? "Autopilot on: second legs, in at the breakout, out at the close (paper)" : s === "playbook" ? "Autopilot on: each kind of news in and out its own best way (paper)" : "Autopilot on: the call's turns to act, in at the turn, out at the close (paper)"); }
   else if (a === "change-undo") { const c = changesR?.[+el.dataset.n]; if (!c?.undo) return; try { if (c.undo.api) await api(c.undo.api, { method: "POST", body: JSON.stringify(c.undo.body) }); else if (!(await deskEdit(c.undo.action, c.undo.body))) return; toast(`Undone: ${c.what}`); loadChanges(); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "advice-skip") { const x = adviceR?.items?.[+el.dataset.n]; if (x && await deskEdit("advice_dismiss", { key: x.key })) loadAdvice(); }
   else if (a === "bars-fill") { toast("Reading the exchange's bars…"); try { const r = await api("/api/bars/fill", { method: "POST", body: "{}" }); toast(r.filled ? `Filled ${r.filled} stamp${r.filled === 1 ? "" : "s"}: ${r.daily || 0} from daily bars, ${r.minutes || 0} from minute bars` : "Nothing to fill"); loadUptime(); } catch (err) { toast(String(err.message || err)); } }

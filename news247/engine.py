@@ -2603,6 +2603,8 @@ class Engine:
 
                     await send_confirms(self, now)  # 15 minutes in: is the market trading it?
                 with contextlib.suppress(Exception):
+                    await self.autopilot_limits(now)  # playbook calls waiting at their patient entry
+                with contextlib.suppress(Exception):
                     from .tapeday import send_tape
 
                     await send_tape(
@@ -2824,6 +2826,13 @@ class Engine:
         and target and the rule's exit time (autopilot.py). At most three a rule a day. A rule
         following the call schedules a "wait for the open" alert for the session's first print."""
         from .autopilot import PER_RULE_PER_DAY, matches, opened_today, waits_for_open
+        from .desk import session_edge
+
+        def plays_patient(a: dict[str, Any]) -> bool:
+            e = a.get("edge") or {}
+            return (e.get("entry_rec") or {}).get("best") == "patient" and bool(
+                ((e.get("plan") or {}).get("patient") or {}).get("limit")
+            )
 
         now = now or time.time()
         opened = 0
@@ -2833,6 +2842,14 @@ class Engine:
                     continue
                 if matches(rule, alert):
                     opened += await self._auto_enter(dev, p, rule, alert, now)
+                elif rule.get("follow") == "playbook" and rule.get("on") and plays_patient(alert):
+                    pt = (alert.get("edge") or {}).get("plan") or {}
+                    lims = p.setdefault("ap_limits", [])  # in at the patient entry, if the dip comes today
+                    if not any(x["alert_id"] == alert["id"] and x["rule"] == rule["id"] for x in lims):
+                        lims.append({"rule": rule["id"], "alert_id": alert["id"], "limit": pt["patient"]["limit"],
+                                     "sign": 1 if pt.get("dir") == "up" else -1,
+                                     "until": session_edge("close", now, self.calendar)})  # fmt: skip
+                        self.desk.save(dev)
                 elif waits_for_open(rule, alert):
                     ms = self.calendar.market_status(now)
                     if ms.get("open") or ms.get("until_s") is None:
@@ -2874,14 +2891,19 @@ class Engine:
         if not plan.get("ok"):
             return 0
         direction = "long" if plan["direction"] == "up" else "short"
+        exit_key, levels = rule["exit"], True
+        if rule.get("follow") == "playbook":  # out its kind's best way: a time exit, or the plan's bracket
+            from .autopilot import playbook_exit
+
+            exit_key, levels = playbook_exit(alert)
         try:
             self.desk.apply(dev, "track_add", {"symbol": plan["symbol"], "direction": direction, "alert_id": alert["id"],
-                                               "stop": plan["stop"], "target": plan["target"], "entry": plan["entry"],
-                                               "note": f"#autopilot {rule['label']}"[:200]}, self.price_of)  # fmt: skip
+                                               "stop": plan["stop"] if levels else None, "target": plan["target"] if levels else None,
+                                               "entry": plan["entry"], "note": f"#autopilot {rule['label']}"[:200]}, self.price_of)  # fmt: skip
         except ValueError:
             return 0
         t = p["tracked"][-1]
-        t["auto"], t["exit_at"] = rule["id"], exit_time(rule["exit"], now, self.calendar)
+        t["auto"], t["exit_at"] = rule["id"], exit_time(exit_key, now, self.calendar)
         self.desk.save(dev)
         payload = {"id": f"ap-{t['id']}", "title": f"🤖 Autopilot: {direction} {plan['symbol']} at ${plan['entry']:,.2f}{how}",
                    "body": f"{alert.get('title', '')[:120]}\nStop ${plan['stop']:,.2f} · target ${plan['target']:,.2f} · {rule['label']}",
@@ -2889,6 +2911,36 @@ class Engine:
                    "ts": now, "open": f"/app/#t={plan['symbol']}"}  # fmt: skip
         await self._to_device(dev, payload, urgency="normal")
         return 1
+
+    async def autopilot_limits(self, now: float | None = None) -> int:
+        """Playbook calls waiting at their patient entry: in when the price reaches it, dropped at the close."""
+        from .autopilot import PER_RULE_PER_DAY, opened_today
+
+        now = now or time.time()
+        opened = 0
+        for dev, p in list(self.desk.profiles.items()):
+            lims = p.get("ap_limits") or []
+            if not lims:
+                continue
+            keep = []
+            for x in lims:
+                if now >= x["until"]:
+                    continue
+                q = self.price_of(
+                    (self.storage.get_alert(x["alert_id"]) or {}).get("tickers", [""])[0], 300, now=now
+                )
+                rule = next(
+                    (r for r in p.get("autopilots") or [] if r["id"] == x["rule"] and r.get("on")), None
+                )
+                if q and q[1] and x["sign"] * (q[1] - x["limit"]) <= 0 and rule:
+                    if opened_today(p, rule["id"], now) < PER_RULE_PER_DAY:
+                        opened += await self._auto_enter(dev, p, rule, self.storage.get_alert(x["alert_id"]) or {}, now,
+                                                         " at its patient entry")  # fmt: skip
+                    continue
+                keep.append(x)
+            p["ap_limits"] = keep
+            self.desk.save(dev)
+        return opened
 
     async def autopilot_pending(self, now: float | None = None) -> int:
         """Enter each "wait for the open" call a rule scheduled, at the session's first 15 minutes;
@@ -3994,6 +4046,38 @@ class Engine:
             for e in self.calendar.upcoming(days=1, now=now)
             if e.get("in_days") == 0 and e.get("time") and (e.get("impact") or 1) >= 2
         ]
+        from .entries import STYLES as IN_STYLES
+        from .exits_kind import STYLES as OUT_STYLES
+
+        def game_plan(alert_id: str) -> str:
+            """How its kind enters and exits best here, and its float and dilution flags."""
+            e = (self.storage.get_alert(alert_id) or {}).get("edge") or {}
+            bits = []
+            if (e.get("entry_rec") or {}).get("best"):
+                bits.append(f"in {IN_STYLES[e['entry_rec']['best']].lower()}")
+            if (e.get("exit_rec") or {}).get("best"):
+                bits.append(f"out {OUT_STYLES[e['exit_rec']['best']].lower()}")
+            if (e.get("float") or {}).get("fband") == "tiny":
+                bits.append("tiny float")
+            if (e.get("dilution") or {}).get("state") == "selling":
+                bits.append("⚠ selling shares")
+            return f" · {', '.join(bits)}" if bits else ""
+
+        yesterday = ""
+        with contextlib.suppress(Exception):
+            from datetime import timedelta
+
+            from .tapeday import state_of
+
+            prev = dt - timedelta(days=1)
+            while prev.weekday() >= 5 or prev.date().isoformat() in self.calendar.holidays:
+                prev -= timedelta(days=1)
+            p0 = prev.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            first = sorted((a for a in self.storage.alerts_between(p0 + 9.5 * 3600, p0 + 16 * 3600, 2000)
+                            if a.get("kind") == "news" and ((a.get("edge") or {}).get("outcome") or {})), key=lambda a: float(a["created"]))  # fmt: skip
+            st_ = state_of(first)
+            if st_ in ("cold", "hot"):
+                yesterday = f"Yesterday's tape was {st_}: {'go light early' if st_ == 'cold' else 'news was working'}."
         sent = 0
         for device in {s.device for s in self.webpush.subs.values() if s.device}:  # type: ignore[attr-defined]
             p = self.desk.profiles.get(device)
@@ -4018,8 +4102,11 @@ class Engine:
             gappers = [x for x in premarket(self, now, device)["rows"] if x["mine"] and x["record"]][:2]
             for k, r in enumerate(gappers):
                 lines.insert(
-                    k + (1 if mine else 0), f"{r['symbol']} {r['gap']:+.1f}% on its news · {r['line']}"
+                    k + (1 if mine else 0),
+                    f"{r['symbol']} {r['gap']:+.1f}% on its news · {r['line']}{game_plan(r['alert_id'])}",
                 )
+            if yesterday:
+                lines.append(yesterday)
             if not lines:
                 continue
             payload = {"id": f"op-{dt.date()}", "title": "🔔 The open in 10 minutes", "body": "\n".join(lines)[:600],
