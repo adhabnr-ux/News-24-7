@@ -113,6 +113,10 @@ def advise(engine: Engine, device: str, now: float | None = None) -> dict[str, A
                            f"(median {act['median']:+.1f}%, {act['n']}).", act["n"] * (act["hit"] - 0.5),
                            action="autopilot_add", body={"follow": "call", "catalyst": "all", "band": "all", "min_sev": "HIGH", "exit": "close"},
                            label="Follow it"))  # fmt: skip
+    if p:  # a signal that's weak here, still pushed; a strong one switched off (signals.py)
+        from .signals import advice_items
+
+        items += [{**x, "api": "", "weight": round(x["weight"], 1)} for x in advice_items(engine, device)]
     items.sort(key=lambda i: -i["weight"])
     dismissed = set((p.get("advice_done") or {}).keys())
     shown = [i for i in items if i["key"] not in dismissed]

@@ -2592,6 +2592,10 @@ class Engine:
 
                     await send_confirms(self, now)  # 15 minutes in: is the market trading it?
                 with contextlib.suppress(Exception):
+                    from .pushbudget import send_digest
+
+                    await send_digest(self, now)  # the signals a phone's budget folded, every half hour
+                with contextlib.suppress(Exception):
                     from .runup import send_runups
 
                     await send_runups(self, now)  # ten sessions to an event on your stock
@@ -2745,6 +2749,10 @@ class Engine:
         wp = self.webpush
         if wp is None:
             return False
+        from .pushbudget import admit
+
+        if not admit(self, device, payload):
+            return False  # a signal over this phone's hourly budget: folded into the next digest
         only = [s.endpoint for s in wp.subs.values() if s.device == device]  # type: ignore[attr-defined]
         self._spawn(self._forward(device, payload))
         if not only:

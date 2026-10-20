@@ -148,6 +148,7 @@ def default_profile() -> dict[str, Any]:
             "bookmacro": True,  # a market-wide headline: what headlines like it meant for your book (bookmacro.py)
             "callnow": True,  # the call on an alert changed with the day's live facts (callnow.py)
             "runup": True,  # ten sessions before an FDA decision or readout on your stock: the run-up record
+            "signal_cap": 8,  # signal pushes an hour before the rest fold into a digest (0 = no limit, pushbudget.py)
         },
         "price_alerts": [],
         "tracked": [],
@@ -746,6 +747,16 @@ class Desk:
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
+            if "signal_cap" in body:
+                from .pushbudget import CHOICES as SIGNAL_CAPS
+
+                try:
+                    v = int(body.get("signal_cap") or 0)
+                except (TypeError, ValueError):
+                    v = -1
+                if v not in SIGNAL_CAPS:
+                    raise ValueError("signal pushes an hour: 0 (no limit), 4, 8 or 12")
+                prefs["signal_cap"] = v
             if "risk_cap" in body:
                 try:
                     v = float(body.get("risk_cap") or 0)
@@ -1514,6 +1525,7 @@ class Desk:
                     "bookmacro",
                     "callnow",
                     "runup",
+                    "signal_cap",
                     "watch_push",
                     "min_sev",
                     "digest",
