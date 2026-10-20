@@ -303,6 +303,8 @@ class Engine:
         self.night_rates: dict[str, Any] = {}
         # the plain way, 5 minutes late and the playbook per liquidity band (liquidity.py)
         self.liq_rates: dict[str, Any] = {}
+        # slices of the playbook's track record where it loses (blindspots.py)
+        self.blind_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2102,6 +2104,17 @@ class Engine:
                 )
                 cr["in"], cr["out"] = cr["best"].split("|")
                 cr["name"] = COMBO_NAMES.get(cr["best"], cr["best"])  # readable without the board loaded
+                from .blindspots import hit as blind_hit
+                from .blindspots import why as blind_why
+
+                bs = blind_hit(self.blind_rates, alert.to_dict())
+                if bs:  # a slice of its record where the playbook loses (blindspots.py)
+                    alert.edge["blind"] = {
+                        "label": bs["label"],
+                        "avg": bs["avg"],
+                        "n": bs["n"],
+                        "why": blind_why(bs),
+                    }
                 pm = self.promise_rates.get(ck) or {}
                 if (
                     pm.get("verdict") == "drifting"
@@ -4595,6 +4608,9 @@ class Engine:
         from .liquidity import liq_rates
 
         self.liq_rates = liq_rates(self, 365, now)
+        from .blindspots import blind_spots
+
+        self.blind_rates = blind_spots(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 

@@ -27,10 +27,15 @@ if TYPE_CHECKING:
 ET = ZoneInfo("America/New_York")
 
 
-def taken(a: dict[str, Any]) -> tuple[float, float] | None:
-    """(what the playbook made on this graded alert, what the plain way made), or None if not graded."""
+def taken(a: dict[str, Any], counterfactual: bool = False) -> tuple[float, float] | None:
+    """(what the playbook made on this graded alert, what the plain way made), or None if not graded.
+    ``counterfactual``: as if it hadn't sat out a blind spot (blindspots.py judges slices that way, so
+    sitting one out doesn't make it look recovered)."""
     from .autopilot import playbook_in, playbook_out, playbook_pass
     from .combos import DEFAULT, combos
+
+    if counterfactual and "blind" in (a.get("edge") or {}):
+        a = {**a, "edge": {k: v for k, v in a["edge"].items() if k != "blind"}}
 
     if not ((a.get("edge") or {}).get("combo_rec") or {}).get("best"):
         return None

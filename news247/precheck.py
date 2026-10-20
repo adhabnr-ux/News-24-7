@@ -5,8 +5,8 @@ the desk already knows about that call in one place: the odds and expected move,
 news has done (on days like today too), how the firm's calls have done when an analyst made it,
 whether the stock has already made its typical move since the alert, whether the market is
 fading it, the plan's reward-to-risk, a report before the exit, how much of the desk is already on
-the same side of the same sector, and what the playbook would do with it (pass, wait for its way
-in, or take it its way). Each line is good, a warning or a red flag, with
+the same side of the same sector, what the playbook would do with it (pass, wait for its way
+in, or take it its way), and whether you're on a losing streak today (tilt.py). Each line is good, a warning or a red flag, with
 the number behind it, and the verdict sums them up. It never blocks the call: paper only, and
 the choice is yours.
 """
@@ -183,6 +183,11 @@ def pre_trade(
         with_news = a is not None and _direction(a) == ("up" if long else "down")
         tone = TONE[ps["trait"]] if with_news else "info"
         add("persona", "warn" if tone == "bad" else tone, f"{persona_line(ps)}: {TRAITS[ps['trait']][1]}")
+    from .tilt import check as tilt_check
+
+    tc = tilt_check(engine, device, now)
+    if tc:  # on a losing streak today, and what your calls after one did (tilt.py)
+        add("tilt", tc["tone"], tc["text"])
     if a is not None:  # what the playbook would do with this alert (autopilot.py, combos.py)
         _playbook(a, long, add)
     _concentration(engine, device, sym, long, add)

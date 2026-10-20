@@ -797,7 +797,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadTrack(); loadPromises(); loadLiquidity(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadTrack(); loadBlind(); loadPromises(); loadLiquidity(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -1145,6 +1145,27 @@ async function loadExitsKind() {
     + `<div class="sub" style="padding:4px 0 12px">The same alerts, exited five ways from the alert price: an hour in, at the close, the next day, five sessions on, and the plan's bracket (its stop or target, whichever came first; the stop when both did the same day, else the close). The best is the one with the best average (${r.need}+ graded).</div>`;
 }
 let COMBO_NAMES = {};
+// the playbook's blind spots (Watch): slices of its record where it loses
+async function loadBlind() {
+  let r;
+  try { r = await api("/api/blindspots"); } catch (_) { return; }
+  $("bsWrap").hidden = !(r.spots || []).length;
+  if (!(r.spots || []).length) return;
+  $("bsBoard").innerHTML = `<div class="kv head"><span>Slice</span><b>an alert · older half · newer half</b></div>`
+    + r.spots.map((s) => `<div class="kv"><span>🕳 ${esc(s.label)} <span class="sub">${s.n}</span></span><b class="num"><span class="neg">${pct(s.avg)}</span> · ${pct(s.older)} · ${pct(s.newer)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">The playbook's track record (${r.overall.n} alerts, ${pct(r.overall.avg)} an alert overall) sliced by time of day, day of the week, long or short, company size and severity. A slice that lost on ${r.need}+ alerts, in both the older and the newer half of them, is a blind spot: the playbook sits it out until it recovers (judged on what it would have done, so sitting out doesn't hide a recovery).</div>`;
+}
+// the tilt guard (Desk): your calls by the losing streak before them
+async function loadTilt() {
+  let r;
+  try { r = await api("/api/tilt"); } catch (_) { return; }
+  const rec = r.record || {}, rows = [["0", "After no loss"], ["1", "After one loss"], ["2+", "After two or more"]].filter(([k]) => rec[k]);
+  $("dTiWrap").hidden = !rows.length;
+  if (!rows.length) return;
+  $("dTi").innerHTML = (r.streak >= 2 ? `<div class="kv"><span class="neg">You've closed ${r.streak} losers in a row today.</span></div>` : "")
+    + rows.map(([k, l]) => `<div class="kv"><span>${l} that day <span class="sub">${rec[k].n}</span></span><b class="num ${cls(rec[k].avg)}">${pct(rec[k].avg)} <span class="sub">${Math.round(rec[k].hit * 100)}%</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Your own paper calls (not the autopilots'), sorted by how many losers in a row you'd closed that day before opening them.${rec.tilts ? " <b>After two or more you lose: the pre-trade check turns red when you're on one.</b>" : ""}</div>`;
+}
 // liquidity bands (Watch): where the paper edge is a tradeable edge
 async function loadLiquidity() {
   let r;
@@ -3422,7 +3443,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadChanges(), loadSignals(), loadReaction(), loadYouVs(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadChanges(), loadSignals(), loadReaction(), loadYouVs(), loadTilt(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

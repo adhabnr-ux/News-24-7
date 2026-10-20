@@ -197,6 +197,8 @@ class WebServer:
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
         app.router.add_get("/api/stops-kind", self.api_stops_kind)
         app.router.add_get("/api/combos", self.api_combos)
+        app.router.add_get("/api/blindspots", self.api_blindspots)
+        app.router.add_get("/api/tilt", self.api_tilt)
         app.router.add_get("/api/liquidity", self.api_liquidity)
         app.router.add_get("/api/playbook-curve", self.api_playbook_curve)
         app.router.add_get("/api/combos/work", self.api_combo_work)
@@ -1362,6 +1364,19 @@ class WebServer:
         from ..liquidity import board
 
         return _json(board(self.engine.liq_rates))
+
+    async def api_blindspots(self, request: web.Request) -> web.Response:
+        """Slices of the playbook's track record where it loses (blindspots.py)."""
+        from ..blindspots import MIN_N
+
+        return _json({**self.engine.blind_rates, "need": MIN_N})
+
+    async def api_tilt(self, request: web.Request) -> web.Response:
+        """This phone's calls by the losing streak before them, today's streak (tilt.py)."""
+        from ..tilt import now_streak, record
+
+        p = self.engine.desk.profiles.get(self._need_device(request)) or {}
+        return _json({"record": record(p), "streak": now_streak(p)})
 
     async def api_combos(self, request: web.Request) -> web.Response:
         """Every way in paired with every way out per kind of news (combos.py)."""

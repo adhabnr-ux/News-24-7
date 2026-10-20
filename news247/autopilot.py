@@ -184,6 +184,8 @@ def playbook_pass(alert: dict[str, Any]) -> str:
     if cr.get("drift"):
         d = cr["drift"]
         return f"its kind is drifting: the last {d['n']} live alerts made {d['live']:+.1f}% against {d['promised']:+.1f}% promised"
+    if e.get("blind"):
+        return e["blind"]["why"]  # a slice of its record where the playbook loses (blindspots.py)
     if (e.get("liq") or {}).get("pass"):
         return e["liq"]["why"]  # thin names here don't pay even 5 minutes late (liquidity.py)
     ps = e.get("persona") or {}
