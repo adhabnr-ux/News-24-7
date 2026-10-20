@@ -75,6 +75,13 @@ class Engine:
             cfg.general.user_agent, cfg.general.http_timeout_s, cfg.general.max_concurrency
         )
         self.storage = storage or Storage(cfg.data_path / "news247.db")
+        self.line_default = (
+            cfg.scoring.medium
+        )  # the alert line as configured; an override moves it (shadow.py)
+        with contextlib.suppress(Exception):
+            from .shadow import apply_line
+
+            apply_line(self)
         self.scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
         self.edge = EdgeDesk(self.scorer)
         self.calendar = Calendar()
@@ -2493,6 +2500,8 @@ class Engine:
 
                     await send_overnight(self, now)
                 with contextlib.suppress(Exception):
+                    await self.autopilot_pending(now)  # "wait for the open" calls, entered at the open
+                with contextlib.suppress(Exception):
                     from .recall import snapshot as recall_snapshot
 
                     recall_snapshot(self, now)  # the session's big movers, caught or missed
@@ -2589,35 +2598,84 @@ class Engine:
 
     async def autopilot_open(self, alert: dict[str, Any], now: float | None = None) -> int:
         """A new alert matching a phone's autopilot opens a paper call there, with its plan's stop
-        and target and the rule's exit time (autopilot.py). At most three a rule a day."""
-        from .autopilot import PER_RULE_PER_DAY, exit_time, matches, opened_today
-        from .plans import trade_plan
+        and target and the rule's exit time (autopilot.py). At most three a rule a day. A rule
+        following the call schedules a "wait for the open" alert for the session's first print."""
+        from .autopilot import PER_RULE_PER_DAY, matches, opened_today, waits_for_open
 
         now = now or time.time()
         opened = 0
         for dev, p in list(self.desk.profiles.items()):
             for rule in p.get("autopilots") or []:
-                if not matches(rule, alert) or opened_today(p, rule["id"], now) >= PER_RULE_PER_DAY:
+                if opened_today(p, rule["id"], now) >= PER_RULE_PER_DAY:
                     continue
-                plan = trade_plan(self, dev, alert, now)
-                if not plan.get("ok"):
+                if matches(rule, alert):
+                    opened += await self._auto_enter(dev, p, rule, alert, now)
+                elif waits_for_open(rule, alert):
+                    ms = self.calendar.market_status(now)
+                    if ms.get("open") or ms.get("until_s") is None:
+                        continue  # in the session already: nothing to wait for
+                    due = now + float(ms["until_s"])  # the next open
+                    pend = p.setdefault("ap_pending", [])
+                    if not any(x["alert_id"] == alert["id"] and x["rule"] == rule["id"] for x in pend):
+                        pend.append(
+                            {"rule": rule["id"], "alert_id": alert["id"], "due": float(due), "created": now}
+                        )
+                        self.desk.save(dev)
+        return opened
+
+    async def _auto_enter(self, dev: str, p: dict[str, Any], rule: dict[str, Any], alert: dict[str, Any], now: float,
+                          how: str = "") -> int:  # fmt: skip
+        """Open one autopilot paper call from an alert's plan, now (with a push)."""
+        from .autopilot import exit_time
+        from .plans import trade_plan
+
+        plan = trade_plan(self, dev, alert, now)
+        if not plan.get("ok"):
+            return 0
+        direction = "long" if plan["direction"] == "up" else "short"
+        try:
+            self.desk.apply(dev, "track_add", {"symbol": plan["symbol"], "direction": direction, "alert_id": alert["id"],
+                                               "stop": plan["stop"], "target": plan["target"], "entry": plan["entry"],
+                                               "note": f"#autopilot {rule['label']}"[:200]}, self.price_of)  # fmt: skip
+        except ValueError:
+            return 0
+        t = p["tracked"][-1]
+        t["auto"], t["exit_at"] = rule["id"], exit_time(rule["exit"], now, self.calendar)
+        self.desk.save(dev)
+        payload = {"id": f"ap-{t['id']}", "title": f"🤖 Autopilot: {direction} {plan['symbol']} at ${plan['entry']:,.2f}{how}",
+                   "body": f"{alert.get('title', '')[:120]}\nStop ${plan['stop']:,.2f} · target ${plan['target']:,.2f} · {rule['label']}",
+                   "severity": "HIGH", "kind": "system", "tickers": [plan["symbol"]], "tag": f"ap-{t['id']}",
+                   "ts": now, "open": f"/app/#t={plan['symbol']}"}  # fmt: skip
+        await self._to_device(dev, payload, urgency="normal")
+        return 1
+
+    async def autopilot_pending(self, now: float | None = None) -> int:
+        """Enter each "wait for the open" call a rule scheduled, at the session's first 15 minutes;
+        one not entered within half an hour of the open is dropped."""
+        now = now or time.time()
+        if self.calendar.market_status(now).get("phase") != "open":
+            for p in self.desk.profiles.values():  # long past due (a missed session): drop
+                if p.get("ap_pending"):
+                    p["ap_pending"] = [x for x in p["ap_pending"] if now - x["due"] < 1800]
+            return 0
+        opened = 0
+        for dev, p in list(self.desk.profiles.items()):
+            pend = p.get("ap_pending") or []
+            if not pend:
+                continue
+            keep = []
+            for x in pend:
+                if now < x["due"]:
+                    keep.append(x)
                     continue
-                direction = "long" if plan["direction"] == "up" else "short"
-                try:
-                    self.desk.apply(dev, "track_add", {"symbol": plan["symbol"], "direction": direction, "alert_id": alert["id"],
-                                                       "stop": plan["stop"], "target": plan["target"], "entry": plan["entry"],
-                                                       "note": f"#autopilot {rule['label']}"[:200]}, self.price_of)  # fmt: skip
-                except ValueError:
-                    continue
-                t = p["tracked"][-1]
-                t["auto"], t["exit_at"] = rule["id"], exit_time(rule["exit"], now, self.calendar)
-                self.desk.save(dev)
-                opened += 1
-                payload = {"id": f"ap-{t['id']}", "title": f"🤖 Autopilot: {direction} {plan['symbol']} at ${plan['entry']:,.2f}",
-                           "body": f"{alert.get('title', '')[:120]}\nStop ${plan['stop']:,.2f} · target ${plan['target']:,.2f} · {rule['label']}",
-                           "severity": "HIGH", "kind": "system", "tickers": [plan["symbol"]], "tag": f"ap-{t['id']}",
-                           "ts": now, "open": f"/app/#t={plan['symbol']}"}  # fmt: skip
-                await self._to_device(dev, payload, urgency="normal")
+                rule = next(
+                    (r for r in p.get("autopilots") or [] if r["id"] == x["rule"] and r.get("on")), None
+                )
+                a = self.storage.get_alert(x["alert_id"])
+                if rule and a and now - x["due"] <= 900:
+                    opened += await self._auto_enter(dev, p, rule, a, now, " (at the open, as the call said)")
+            p["ap_pending"] = keep
+            self.desk.save(dev)
         return opened
 
     async def run_autopilots(self, now: float | None = None) -> int:

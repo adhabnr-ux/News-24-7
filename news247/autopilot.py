@@ -26,6 +26,9 @@ ODDS_CHOICES = (0, 55, 60, 65, 70)  # a rule can follow the odds model: only ale
 def rule_label(rule: dict[str, Any]) -> str:
     from .catalysts import BAND_LABEL, LABELS
 
+    if rule.get("follow") == "call":
+        return f"Following the call ({rule['min_sev']}+): act now at once, wait for the open at the open; out {EXITS[rule['exit']]}"
+
     kind = (
         LABELS.get(rule["catalyst"], "Any kind of news") if rule["catalyst"] != "all" else "Any kind of news"
     )
@@ -58,8 +61,15 @@ def clean_rule(body: dict[str, Any], now: float) -> dict[str, Any]:
         min_odds = -1
     if min_odds not in ODDS_CHOICES:
         raise ValueError("odds are 0 (any), 55, 60, 65 or 70")
+    follow = str(body.get("follow") or "")
+    if follow not in ("", "call"):
+        raise ValueError("follow is call or nothing")
+    if follow and (catalyst != "all" or band != "all" or min_odds):
+        raise ValueError("following the call takes every kind and size: the call decides")
     rule = {"id": secrets.token_hex(4), "catalyst": catalyst, "band": band, "min_sev": min_sev, "exit": exit_,
             "min_odds": min_odds, "on": True, "created": now}  # fmt: skip
+    if follow:
+        rule["follow"] = follow
     rule["label"] = rule_label(rule)
     return rule
 
@@ -73,6 +83,8 @@ def matches(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
         return False
     if not _direction(alert):
         return False
+    if rule.get("follow") == "call":  # the call decides: act now opens at once (waits are scheduled)
+        return ((alert.get("edge") or {}).get("call") or {}).get("verb") == "act"
     if rule.get("min_odds"):
         o = (alert.get("edge") or {}).get("odds") or {}
         if o.get("p") is None or o["p"] * 100 < rule["min_odds"]:
@@ -85,6 +97,24 @@ def matches(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
     if rule["catalyst"] != "all" and c["key"] != rule["catalyst"]:
         return False
     return rule["band"] == "all" or c["band"] == rule["band"]
+
+
+def waits_for_open(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
+    """A rule following the call, on an alert the call says to wait for the open on: entered at the
+    session's first print, not now."""
+    from .dossier import _direction
+
+    if (
+        rule.get("follow") != "call"
+        or not rule.get("on")
+        or alert.get("kind") == "system"
+        or not _direction(alert)
+    ):
+        return False
+    if SEV_RANK.get(str(alert.get("severity")), 0) < SEV_RANK[rule["min_sev"]]:
+        return False
+    call = (alert.get("edge") or {}).get("call") or {}
+    return call.get("verb") == "wait" and call.get("wait_for") == "open"
 
 
 def exit_time(exit_: str, ts: float, calendar: Any = None) -> float:

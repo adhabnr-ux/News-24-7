@@ -1048,6 +1048,7 @@ async function loadMacro() {
     + (r.rows.length ? `<div class="kv head"><span>Kind of news</span><b>its way: macro days · other days</b></div>` + r.rows.slice(0, 12).map((x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num">${cell(x.macro)}<br>${cell(x.other)}</b></div>`).join("") : "")
     + `<div class="sub" style="padding:4px 0 12px">Sessions with an FOMC decision, a jobs report or another scheduled release that moves the whole market (from the calendar), against every other session, by the close. On a macro day new alerts carry their kind's macro-day record (${r.need}+ graded) and a poor one counts against them in the call.</div>`;
 }
+let lineR = null;
 // the alert line, tested (Desk): headlines that scored just under it, graded as if they'd gone out
 async function loadLine() {
   let r;
@@ -1055,7 +1056,10 @@ async function loadLine() {
   $("dLineWrap").hidden = !r.kept;
   if (!r.kept) return;
   const cell = (x) => x && x.n ? `<span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span>` : `<span class="sub">—</span>`;
+  lineR = r;
   $("dLine").innerHTML = (r.line_text ? `<div class="kv"><span class="${r.verdict === "lower" ? "gold" : "pos"}">${esc(r.line_text)}</span></div>` : `<div class="kv"><span class="sub">${r.graded} of ${r.kept} near misses graded so far; ${r.need}+ in the band just under the line before a verdict.</span></div>`)
+    + (r.verdict === "lower" || r.line !== r.default ? `<div class="row" style="padding:6px 0">${r.verdict === "lower" ? `<button class="btn ghost small" data-act="line-set" data-s="${r.bands[0].from}">Lower the line to ${r.bands[0].from}</button>` : ""}${r.line !== r.default ? `<button class="btn ghost small" data-act="line-reset">Back to ${r.default} (as configured)</button>` : ""}</div>` : "")
+    + (r.log.length ? `<div class="sub" style="padding:2px 0 8px">${r.log.slice(-3).reverse().map((x) => `${ago(x.at)} ago: ${x.from} → ${x.to}${x.why ? ` (${esc(x.why.slice(0, 80))})` : ""}`).join("<br>")}</div>` : "")
     + `<div class="kv head"><span>Score (the line is ${r.line})</span><b>its way by the close</b></div>`
     + `<div class="kv"><span>Alerts just over it <span class="sub">${r.line}-${r.line + 5}</span></span><b class="num">${cell(r.just_over)}</b></div>`
     + r.bands.map((b) => `<div class="kv"><span>${b.under} under <span class="sub">${b.from}-${b.to}, in the shadow</span></span><b class="num">${cell(b)}</b></div>`).join("")
@@ -1777,6 +1781,7 @@ async function loadCallRecord() {
       + rp.verbs.map((x) => `<div class="kv"><span>${x.icon} ${esc(x.label)} <span class="sub">vs every alert ${Math.round(rp.all.hit * 100)}%</span></span><b class="num">${cell(x)}</b></div>`).join("")
       + (rp.facts.length ? `<div class="kv head"><span>Which facts sorted winners from losers</span><b>for · against</b></div>`
         + rp.facts.map((f) => `<div class="kv"><span>${esc(f.label)}${f.sorts != null ? ` <span class="chipv ${f.sorts >= 0.1 ? "pos" : f.sorts <= 0 ? "neg" : ""}">${f.sorts >= 0 ? "+" : ""}${Math.round(f.sorts * 100)} pts</span>` : ""}</span><b class="num">${cell(f.for)}<br>${cell(f.against)}</b></div>`).join("") : "") : "")
+    + `<div class="row" style="padding:8px 0 4px"><button class="btn ghost small" data-act="call-follow">🤖 Follow the call on paper</button></div>`
     + `<div class="sub" style="padding:4px 0 12px">Every alert gets one call from its records (odds, its kind, the stock, how fast that news plays out, the open, how late it was, the regime, the firm, the flow, the insider). Each is graded with its alert: if "act now" doesn't beat "skip", the rule is wrong, and this is where it shows. The replay runs the same rule on every graded alert from what it carried when it went out (older alerts had fewer facts); a fact that sorts well puts more of its "for" alerts than its "against" alerts on the right side. Set the push bar to "the call: act or wait" under Settings.</div>`;
 }
 // what your settings kept back: every alert this phone's settings held off its lock screen, graded
@@ -2505,6 +2510,9 @@ async function onAct(el) {
   else if (a === "risk-cap") { if (await deskEdit("prefs", { risk_cap: +s })) { toast(+s ? `Open risk past ${s}% of the account gets flagged` : "No cap on open risk"); loadBook(); loadActions(); } }
   else if (a === "tune-apply") { const o = tuneR?.[s]; if (o && await deskEdit("prefs", { edge_min: o.edge_min, budget: o.budget })) { toast(`Using ${o.label}`); loadTune(); loadCost(); } }
   else if (a === "budget") { if (await deskEdit("prefs", { budget: +s })) toast(+s ? `Only your ${s} best alerts a day push now (your stocks and CRITICAL still come)` : "Every alert that clears your settings may push"); }
+  else if (a === "line-set") { if (!confirm(`Lower the alert line from ${lineR?.line} to ${s} for every phone? Headlines scoring ${s}+ become alerts. You can put it back any time.`)) return; try { await api("/api/line", { method: "POST", body: JSON.stringify({ medium: +s, why: lineR?.line_text || "" }) }); toast(`The alert line is ${s} now`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
+  else if (a === "line-reset") { try { const r = await api("/api/line", { method: "POST", body: JSON.stringify({ reset: true }) }); toast(`The alert line is back to ${r.line}`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
+  else if (a === "call-follow") { if (await deskEdit("autopilot_add", { follow: "call", catalyst: "all", band: "all", min_sev: "HIGH", exit: "close" })) { toast("🤖 Following the call: act-now calls open a paper call at once, wait-for-the-open calls at the open", null, 6000); renderAutopilots(); } }
   else if (a === "odds-follow") { if (await deskEdit("autopilot_add", { catalyst: "all", band: "all", min_sev: "HIGH", exit: "close", min_odds: 60 })) { toast("🤖 Following the model: each new HIGH alert it rates 60%+ opens a paper call here", null, 6000); renderAutopilots(); } }
   else if (a === "cost-fix") { const g = cost?.gates[+el.dataset.n]; if (g?.fix && await deskEdit(g.fix.action, g.fix.body)) { toast("Done: " + g.fix.label.toLowerCase()); loadCost(); loadActions(); } }
   else if (a === "act-do") { const i = acts?.items[+el.dataset.n]; if (i?.do && await deskEdit(i.do.action, i.do.body)) { toast("Done"); loadActions(); } }

@@ -95,7 +95,7 @@ def line_report(engine: Engine, days: float = 60, now: float | None = None) -> d
     sessions = max(1, len({datetime.fromtimestamp(s["created"], ET).date() for s in graded}))
     bands = []
     for lo, hi in BANDS:
-        xs = [s["sign"] * s["close"] for s in graded if lo <= s["line"] - s["score"] < hi]
+        xs = [s["sign"] * s["close"] for s in graded if lo <= line - s["score"] < hi]
         bands.append(
             {
                 "from": round(line - hi, 1),
@@ -120,7 +120,11 @@ def line_report(engine: Engine, days: float = 60, now: float | None = None) -> d
     sources = sorted(
         ({"source": k, **(_stats(v) or {})} for k, v in srcs.items() if len(v) >= 5), key=lambda r: -r["n"]
     )[:8]
-    out: dict[str, Any] = {"line": line, "days": days, "graded": len(graded), "bands": bands, "just_over": just_over,
+    import json
+
+    log = json.loads(engine.storage.get_setting("line_log") or "[]")
+    out: dict[str, Any] = {"line": line, "default": getattr(engine, "line_default", line), "log": log[-5:],
+                           "days": days, "graded": len(graded), "bands": bands, "just_over": just_over,
                            "sources": sources, "need": MIN_N, "kept": len(engine.storage.shadows(now - days * 86400))}  # fmt: skip
     top = bands[0]
     if top["n"] >= MIN_N and just_over and just_over["n"] >= MIN_N:
@@ -134,3 +138,45 @@ def line_report(engine: Engine, days: float = 60, now: float | None = None) -> d
             out["line_text"] = (f"The line holds: headlines just under it ({top['from']:g}-{top['to']:g}) went their way "
                                 f"{round(top['hit'] * 100)}% by the close vs {round(just_over['hit'] * 100)}% for alerts just over it.")  # fmt: skip
     return out
+
+
+def apply_line(engine: Engine) -> float:
+    """Apply the stored line (a move made on the evidence) over the configured one. Returns the line."""
+    import json
+
+    raw = engine.storage.get_setting("scoring_line")
+    v = json.loads(raw).get("medium") if raw else None
+    engine.cfg.scoring.medium = float(v) if v is not None else engine.line_default
+    return engine.cfg.scoring.medium
+
+
+def set_line(engine: Engine, medium: float | None, why: str = "", now: float | None = None) -> dict[str, Any]:
+    """Move the alert line (None: back to the configured one), logged. It must stay under HIGH and at
+    10 or more."""
+    import json
+
+    now = now or time.time()
+    old = engine.cfg.scoring.medium
+    if medium is not None:
+        medium = round(float(medium), 1)
+        if not (10 <= medium < engine.cfg.scoring.high):
+            raise ValueError(
+                f"the line must be from 10 up to under the HIGH line ({engine.cfg.scoring.high:g})"
+            )
+        engine.storage.set_setting(
+            "scoring_line", json.dumps({"medium": medium, "at": now, "why": why[:200]})
+        )
+    else:
+        engine.storage.db.execute("DELETE FROM settings WHERE key = 'scoring_line'")
+    new = apply_line(engine)
+    log = json.loads(engine.storage.get_setting("line_log") or "[]")
+    log.append(
+        {
+            "at": now,
+            "from": old,
+            "to": new,
+            "why": why[:200] or ("back to the configured line" if medium is None else ""),
+        }
+    )
+    engine.storage.set_setting("line_log", json.dumps(log[-50:]))
+    return {"line": new, "default": engine.line_default, "log": log[-10:]}

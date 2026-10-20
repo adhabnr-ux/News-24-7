@@ -184,6 +184,7 @@ class WebServer:
         app.router.add_get("/api/myedge", self.api_myedge)
         app.router.add_get("/api/recall", self.api_recall)
         app.router.add_get("/api/line", self.api_line)
+        app.router.add_post("/api/line", self.api_line_set)
         app.router.add_get("/api/macro", self.api_macro)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
@@ -1176,6 +1177,22 @@ class WebServer:
         from ..shadow import line_report
 
         return _json(line_report(self.engine))
+
+    async def api_line_set(self, request: web.Request) -> web.Response:
+        """Move the alert line on the evidence ({"medium": 30, "why": ...}) or put it back ({"reset": true})."""
+        from ..shadow import set_line
+
+        try:
+            body = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="need JSON") from None
+        try:
+            out = set_line(
+                self.engine, None if body.get("reset") else body.get("medium"), str(body.get("why") or "")
+            )
+        except (TypeError, ValueError) as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
+        return _json(out)
 
     async def api_macro(self, request: web.Request) -> web.Response:
         """Macro days: each kind of news on Fed and jobs-report days vs other days, and the next one (macrodays.py)."""

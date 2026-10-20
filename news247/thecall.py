@@ -117,8 +117,11 @@ def the_call(e: dict[str, Any], outside: bool = False) -> dict[str, Any] | None:
     else:
         verb, why = "watch", (pro[:1] + con[:1]) or ["a mixed record"]
     icon, label = VERBS[verb]
-    return {"verb": verb, "label": label, "line": f"{icon} The call: {label.lower()} · {', '.join(why)}",
-            "for": pro, "against": con, "facts": facts}  # fmt: skip
+    out = {"verb": verb, "label": label, "line": f"{icon} The call: {label.lower()} · {', '.join(why)}",
+           "for": pro, "against": con, "facts": facts}  # fmt: skip
+    if verb == "wait":
+        out["wait_for"] = "open" if why[0].startswith("for the open") else "pullback"
+    return out
 
 
 def call_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
