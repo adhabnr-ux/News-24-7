@@ -471,6 +471,19 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - the playbook today board says so before the bell (*"🌙✗ It gave back most of its run today; days like it went -1.5% overnight on average here (0% its way, 10): out at the close instead."*);
   - the playbook autopilot closes such calls at 15:50 ET with that reason;
   - the kind's playbook lists all three kinds of day.
+- **The stall rule:** a call that's gone nowhere half an hour after its news ties up money and attention. Every alert's position 30 minutes in is recorded, so each is sorted, its way:
+  - **working:** 0.3%+ its way;
+  - **stalled:** within 0.3% either side;
+  - **against:** 0.3%+ against it.
+
+  Per kind of news, the record says what each did the rest of the day (from the 30-minute price to the close). When stalled ones lost on average (8+ graded), the stall rule is a time stop:
+  - the playbook autopilot closes a call it entered at the alert that's still stalled 30 minutes in, once, with the reason;
+  - the playbook today board flags calls 30-60 minutes in (*"⏸✗ Stalled 30 minutes in; alerts like it went -0.6% the rest of the day here (0% its way, 10): the time stop says out."*);
+  - the kind's playbook lists all three.
+- **Crowded days:** when several stocks in one sector get news the same day pointing the same way, each alert looks like its own trade. They're one bet, and the later ones may already be priced in. Each alert now knows how many directional alerts on stocks in its sector, the same way, came before it that day: the first, the second, or the third or later. The record grades each spot by the close, overall and in its sector when that has the counts (8+). Then:
+  - the alert's sheet flags the 2nd and later: *"👥 The 3rd technology alert today, the same way (after ACME, BETA). The third or later went their way 44% here (31); the first 61% (120)."*;
+  - the odds model takes it as an input (*Crowded days*);
+  - the playbook autopilot won't open a 3rd paper call on the same sector, the same way, on the same phone, while two are open: one bet, not three.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

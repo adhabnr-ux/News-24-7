@@ -198,6 +198,12 @@ def board(engine: Engine, now: float | None = None) -> dict[str, Any]:
             gb = gb_live(engine, a, live)
             if gb:  # tonight's hold, given how much of its run it kept today (giveback.py)
                 s["gb"] = gb
+        if s["status"] == "in" and s["in"] == "alert" and 1800 <= now - float(a["created"]) <= 3600:
+            from .stall import live as stall_live
+
+            sv = stall_live(engine, a, live)
+            if sv:  # how its first half hour went, and what such alerts did the rest of the day (stall.py)
+                s["stall"] = sv
         cr = e.get("combo_rec") or {}
         rows.append({**s, "id": a["id"], "title": (a.get("title") or "")[:140], "created": a["created"],
                      "kind": cr.get("label") or (e.get("entry_rec") or {}).get("label") or (e.get("exit_rec") or {}).get("label"),

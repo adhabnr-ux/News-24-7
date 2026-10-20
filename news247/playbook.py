@@ -161,6 +161,19 @@ def playbook(engine: Engine, key: str, now: float | None = None) -> dict[str, An
             f"A second headline on the same stock within a week went its way {round(rp['repeat']['hit'] * 100)}% "
             f"({rp['repeat']['n']}); first headlines {round(rp['first']['hit'] * 100)}% ({rp['first']['n']})."
         )
+    sl = _get(engine, "stall_rates").get(key)
+    if sl:
+        from .stall import MIN_N as SL_N
+        from .stall import STATES
+
+        parts = [
+            f"{STATES[s]} {sl[s]['avg']:+.1f}% ({sl[s]['n']})"
+            for s in ("working", "stalled", "against")
+            if (sl.get(s) or {}).get("n", 0) >= SL_N
+        ]
+        if parts:
+            out["stall"] = sl
+            rules.append("The rest of the day, by how its first 30 minutes went: " + "; ".join(parts) + ".")
     gb = _get(engine, "giveback_rates").get(key)
     if gb:
         from .giveback import BUCKETS

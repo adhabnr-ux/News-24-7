@@ -291,6 +291,10 @@ class Engine:
         self.repeat_rates: dict[str, Any] = {}
         # each kind of day (kept its run, gave back half, gave back most) overnight (giveback.py)
         self.giveback_rates: dict[str, Any] = {}
+        # working, stalled or against 30 minutes in: the rest of the day (stall.py)
+        self.stall_rates: dict[str, Any] = {}
+        # the first, second and later alert in a sector the same day (crowd.py)
+        self.crowd_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2013,6 +2017,13 @@ class Engine:
                 rp = repeat_stamp(self, alert.to_dict())
                 if rp:  # a second headline on this stock within a week, and how repeats did (repeat.py)
                     alert.edge["repeat"] = rp
+                from .crowd import stamp as crowd_stamp
+
+                cw = crowd_stamp(self, alert.to_dict())
+                if (
+                    cw and cw["spot"] != "first"
+                ):  # the 2nd+ alert in its sector today, the same way (crowd.py)
+                    alert.edge["crowd"] = cw
             # the odds and the plan read every fact stamped above (float, dilution, volume, lateness...)
             from .odds import predict
 
@@ -2631,10 +2642,12 @@ class Engine:
                     await send_confirms(self, now)  # 15 minutes in: is the market trading it?
                 with contextlib.suppress(Exception):
                     await self.autopilot_limits(now)  # playbook calls waiting at their patient entry
-                with contextlib.suppress(Exception):
-                    await self.autopilot_giveback(
-                        now
-                    )  # overnight holds that gave back their run: out at the close
+                with contextlib.suppress(
+                    Exception
+                ):  # overnight holds that gave back their run: out at the close
+                    await self.autopilot_giveback(now)
+                with contextlib.suppress(Exception):  # calls still stalled 30 minutes in: the time stop
+                    await self.autopilot_stall(now)
                 with contextlib.suppress(Exception):
                     from .tapeday import send_tape
 
@@ -2928,6 +2941,11 @@ class Engine:
         if not plan.get("ok"):
             return 0
         direction = "long" if plan["direction"] == "up" else "short"
+        if rule.get("follow") == "playbook":
+            from .crowd import too_crowded
+
+            if too_crowded(self, p, alert, rule["id"]):
+                return 0  # already two open calls on its sector, the same way: one bet, not three
         exit_key, levels, pb_stop = rule["exit"], True, None
         if rule.get("follow") == "playbook":  # out its kind's best way: a time exit, or the plan's bracket
             from .autopilot import playbook_exit
@@ -3026,6 +3044,44 @@ class Engine:
                 closed += 1
                 pnl = done.get("pnl_pct")
                 payload = {"id": f"apx-{t['id']}", "title": f"🤖 Closed {t['direction']} {t['symbol']} {pnl:+.2f}% at the close, not tomorrow" if pnl is not None else f"🤖 Closed {t['symbol']} at the close",
+                           "body": v["line"], "severity": "HIGH", "kind": "system", "tickers": [t["symbol"]], "tag": f"ap-{t['id']}",
+                           "ts": now, "open": "/app/#a=desk"}  # fmt: skip
+                await self._to_device(dev, payload, urgency="normal")
+        return closed
+
+    async def autopilot_stall(self, now: float | None = None) -> int:
+        """Playbook calls entered at the alert, checked once 30-40 minutes in: still stalled, on a kind
+        whose stalled alerts lost the rest of the day here, they close now (stall.py)."""
+        from .stall import live
+
+        now = now or time.time()
+        closed = 0
+        for dev, p in list(self.desk.profiles.items()):
+            for t in list(p.get("tracked") or []):
+                if (
+                    not t.get("auto")
+                    or (t.get("pb") or {}).get("in") != "alert"
+                    or t.get("stall_seen")
+                    or not t.get("alert_id")
+                ):
+                    continue
+                a = self.storage.get_alert(t["alert_id"])
+                if not a or not 1800 <= now - float(a["created"]) <= 2400:
+                    continue
+                t["stall_seen"] = now  # checked once
+                self.desk.save(dev)
+                ref = ((a.get("edge") or {}).get("refs") or {}).get(t["symbol"])
+                q = self.price_of(t["symbol"], 300, now=now)
+                if not ref or not q or not q[1]:
+                    continue
+                v = live(self, a, (q[1] / ref - 1) * 100)
+                if not v or not v["exit"]:
+                    continue
+                lesson = f"autopilot: the time stop: {v['line'][:1].lower() + v['line'][1:]}"[:300]
+                self.desk.apply(dev, "track_close", {"id": t["id"], "lesson": lesson}, lambda s, _q=q: _q)
+                pnl = p["closed"][0].get("pnl_pct")
+                closed += 1
+                payload = {"id": f"apx-{t['id']}", "title": f"🤖 Closed {t['direction']} {t['symbol']} {pnl:+.2f}%: stalled 30 minutes in" if pnl is not None else f"🤖 Closed {t['symbol']}: stalled",
                            "body": v["line"], "severity": "HIGH", "kind": "system", "tickers": [t["symbol"]], "tag": f"ap-{t['id']}",
                            "ts": now, "open": "/app/#a=desk"}  # fmt: skip
                 await self._to_device(dev, payload, urgency="normal")
@@ -4450,6 +4506,12 @@ class Engine:
         from .giveback import giveback_rates
 
         self.giveback_rates = giveback_rates(self, 365, now)
+        from .stall import stall_rates
+
+        self.stall_rates = stall_rates(self, 365, now)
+        from .crowd import crowd_rates
+
+        self.crowd_rates = crowd_rates(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 
