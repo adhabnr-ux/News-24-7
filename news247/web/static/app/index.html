@@ -201,6 +201,7 @@
       <h1 class="display">The <em>desk</em></h1>
     </div></div>
     <div class="stage">
+      <div id="dActWrap" hidden><div class="sec-title"><h2>Needs you</h2><span id="dActSub">most urgent first</span></div><div class="panel glass tilt" id="dAct"></div></div>
       <div id="dWeekWrap" hidden><div class="sec-title"><h2>This week</h2><span>yours, so far</span></div><div class="panel glass tilt" id="dWeek"></div></div>
       <div id="dTodayWrap" hidden><div class="sec-title"><h2>Today</h2><span>your day so far</span></div><div class="panel glass tilt" id="dToday"></div></div>
       <div class="sec-title rv"><h2>Watchlist</h2><span>live</span></div>
@@ -287,7 +288,7 @@
     <button data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Calendar</span></button>
     <button data-tab="watch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg><span>Watch</span></button>
     <button data-tab="camillo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span>Camillo</span></button>
-    <button data-tab="desk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Desk</span></button>
+    <button data-tab="desk" id="deskTab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Desk</span><b class="badge" id="actBadge" hidden>0</b></button>
   </div>
 </nav>
 

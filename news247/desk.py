@@ -83,6 +83,8 @@ BURST_CHOICES = (0, 4, 6, 10)  # alert pushes per 10 minutes before the rest are
 BURST_WINDOW_S = 600.0
 BURST_WAIT_S = 300.0  # a folded alert waits this long for company before its summary goes out
 MAX_SEEN = 150
+ACT_DONE_S = 20 * 3600.0  # a dismissed "needs you" item stays away this long
+MAX_ACT_DONE = 200
 REMIND_WHEN = {"1h": 3600.0, "3h": 10800.0}
 TAG_RE = re.compile(r"#([a-z][a-z0-9-]{1,19})")
 MACRO_TICKERS = {
@@ -158,6 +160,7 @@ def default_profile() -> dict[str, Any]:
         "reminders": [],  # [{"id", "alert_id", "title", "tickers", "due", "created"}]
         "seen": {},  # symbol -> {"ts", "px"}: the last time its page was opened
         "digest_q": [],  # alerts held for the next digest
+        "act_done": {},  # action center item key -> when it was dismissed (actions.py; back after 20 hours)
         "digest_at": 0.0,  # when the last digest went
         "created": time.time(),
     }
@@ -1164,6 +1167,15 @@ class Desk:
                 p["autopilots"] = [x for x in rules if x["id"] != rid]
             else:
                 r["on"] = not r.get("on", True)
+        elif action == "act_done":
+            key = str(body.get("key") or "")[:80]
+            if not key:
+                raise ValueError("need an item key")
+            done = {k: t for k, t in (p.get("act_done") or {}).items() if now - t < ACT_DONE_S}
+            done[key] = now
+            p["act_done"] = dict(list(done.items())[-MAX_ACT_DONE:])
+        elif action == "act_reset":
+            p["act_done"] = {}
         elif action == "restore":
             p["restored"] = self._restore(device, p, body.get("desk") or body, bool(body.get("prefs")), now)
         else:

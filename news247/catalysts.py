@@ -293,8 +293,11 @@ def cat_line(cb: dict[str, Any] | None) -> str:
     )
 
 
-def catalyst_table(rates: dict[str, Any], limit: int = 20) -> list[dict[str, Any]]:
-    """The record per catalyst (any size), most-graded first, for the track record page."""
+def catalyst_table(
+    rates: dict[str, Any], limit: int = 20, regimes: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """The record per catalyst (any size), most-graded first, for the track record page: split by
+    company size and, with ``regimes`` (regime_rates), by the market regime of the alert's day."""
     rows = [r for k, r in rates.items() if k.endswith("|*") and r.get("close")]
     rows.sort(key=lambda r: -r["close"]["n"])
     for r in rows:
@@ -302,6 +305,11 @@ def catalyst_table(rates: dict[str, Any], limit: int = 20) -> list[dict[str, Any
             {"band": b, "band_label": BAND_LABEL[b], "close": rates[f"{r['key']}|{b}"]["close"]}
             for b, _, _ in BANDS
             if f"{r['key']}|{b}" in rates and rates[f"{r['key']}|{b}"].get("close")
+        ]
+        r["regimes"] = [
+            {"regime": g, **(regimes or {})[f"{r['key']}|{g}"]}
+            for g in REGIMES
+            if f"{r['key']}|{g}" in (regimes or {})
         ]
     return rows[:limit]
 
@@ -510,3 +518,40 @@ def divergence_record(engine: Engine, now: float | None = None, days: float = 12
     ]
     xs = [e["close"] for e in log if e.get("close") is not None]
     return {"flags": len(log), "close": _stats(xs)}
+
+
+# --------------------------------------------------------------------------- regimes
+
+REGIME_MIN_N = 4
+REGIMES = ("risk-on", "mixed", "risk-off")
+
+
+def regime_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
+    """Each kind of news graded separately by the market regime of its day (risk-on, risk-off,
+    mixed: market memory's read at that day's close). {"contract|risk-off": {"n", "hit", "median"}}."""
+    now = now or time.time()
+    days_regime: dict[str, str | None] = {}
+    pools: dict[str, list[float]] = {}
+    for a in engine.storage.recent_alerts(5000, since=now - days * 86400):
+        out = (a.get("edge") or {}).get("outcome") or {}
+        if not out:
+            continue
+        c = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)
+        if not c:
+            continue
+        _sym, row = next(iter(out.items()))
+        if not row.get("sign") or row.get("close") is None:
+            continue
+        d = datetime.fromtimestamp(a["created"], ET).date().isoformat()
+        if d not in days_regime:
+            raw = engine.storage.get_setting(f"memory:{d}")
+            days_regime[d] = json.loads(raw).get("regime") if raw else None
+        reg = days_regime[d]
+        if reg in ("risk-on", "risk-off", "mixed"):
+            pools.setdefault(f"{c['key']}|{reg}", []).append(row["sign"] * row["close"])
+    return {k: _stats(v) for k, v in pools.items()}
+
+
+def regime_base(rates: dict[str, Any], key: str | None, regime: str | None) -> dict[str, Any] | None:
+    r = rates.get(f"{key}|{regime}") if key and regime else None
+    return {**r, "regime": regime} if r and r["n"] >= REGIME_MIN_N else None

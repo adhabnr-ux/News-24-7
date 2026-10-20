@@ -692,3 +692,15 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .setup { border-bottom: 1px solid var(--hair); padding-bottom: 6px; } .setup .kv { padding-top: 0; }
 /* run 21: event risk */
 .risk { white-space: nowrap; text-align: right; } .risk small { display: block; color: var(--faint); font-size: 11.5px; font-weight: 500; }
+
+/* needs you: the action center */
+.badge.calm { background: #6F7890; box-shadow: none; }
+.li.act { gap: 10px; align-items: flex-start; cursor: pointer; border-left: 3px solid transparent; padding-left: 9px; }
+.li.act.u3 { border-left-color: var(--down); }
+.li.act.u2 { border-left-color: var(--ember); }
+.li.act.u1 { border-left-color: rgba(138, 147, 166, .45); }
+.li.act .aic { width: 22px; text-align: center; font-size: 15px; line-height: 1.35; flex: none; }
+.li.act .at { font-weight: 600; line-height: 1.35; }
+.li.act .btn { flex: none; align-self: center; }
+.li.act .x { align-self: center; }
+#dRecord .now { color: var(--text); font-weight: 600; text-decoration: underline dotted; }

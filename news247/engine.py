@@ -233,6 +233,8 @@ class Engine:
 
         self.desk = Desk(self.storage, self.state_store)
         self.catalyst_rates: dict[str, Any] = {}  # (catalyst, size band) -> graded record (catalysts.py)
+        self.regime_rates: dict[str, Any] = {}  # (catalyst, market regime) -> graded record
+        self._regime_now: tuple[float, str] = (0.0, "unknown")  # the live regime, read every 5 minutes
         self.base_rates: dict[
             str, Any
         ] = {}  # record_key -> graded stats (dossier.track_record), for each new alert
@@ -1758,6 +1760,11 @@ class Engine:
                 cb = catalyst_base(self.catalyst_rates, cat)
                 if cb:
                     alert.edge["cat_base"] = cb
+                from .catalysts import regime_base
+
+                rb = regime_base(self.regime_rates, cat["key"], self.regime_label())
+                if rb:
+                    alert.edge["regime_base"] = rb  # the same kind of news, on days like today
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:
@@ -2526,6 +2533,20 @@ class Engine:
             self.storage.set_setting("retest_log", json.dumps(log[-500:]))
         self.storage.set_setting(sent_key, json.dumps(sorted(sent_keys)))
         return sent
+
+    def regime_label(self, now: float | None = None) -> str:
+        """The live market regime (dossier.regime), re-read at most every 5 minutes."""
+        now = now or time.time()
+        ts, label = self._regime_now
+        if now - ts > 300:
+            from .dossier import regime
+
+            try:
+                label = regime(self, now)["label"]
+            except Exception:  # noqa: BLE001 - no quotes yet: unknown
+                label = "unknown"
+            self._regime_now = (now, label)
+        return label
 
     async def check_divergence(self, now: float | None = None) -> int:
         """The market isn't buying it: an alert 15-90 minutes old whose kind of news went its way
@@ -3526,6 +3547,9 @@ class Engine:
         from .catalysts import catalyst_rates
 
         self.catalyst_rates = catalyst_rates(self, 180, now)
+        from .catalysts import regime_rates
+
+        self.regime_rates = regime_rates(self, 180, now)
 
     def _eod_due(self, now: float) -> bool:
         dt = datetime.fromtimestamp(now, ET)

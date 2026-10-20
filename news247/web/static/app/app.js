@@ -240,7 +240,7 @@ async function loadWorking() {
 }
 function baseRow(a) {
   const cb = a.edge?.cat_base;
-  if (cb?.close) return `<div class="base"><b>${esc(cb.label)}</b> <span class="faint">${esc(cb.band_label)}</span> went their way <b class="${cb.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(cb.close.hit * 100)}%</b> by the close, median <b class="${cls(cb.close.median)}">${pct(cb.close.median)}</b> <span class="faint">· ${cb.close.n} graded ${tip("catalyst")}</span></div>`;
+  if (cb?.close) return `<div class="base"><b>${esc(cb.label)}</b> <span class="faint">${esc(cb.band_label)}</span> went their way <b class="${cb.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(cb.close.hit * 100)}%</b> by the close, median <b class="${cls(cb.close.median)}">${pct(cb.close.median)}</b> <span class="faint">· ${cb.close.n} graded ${tip("catalyst")}</span>${a.edge.regime_base ? ` <span class="faint">· on ${esc(a.edge.regime_base.regime)} days</span> <b class="${a.edge.regime_base.hit >= 0.5 ? "pos" : "neg"}">${Math.round(a.edge.regime_base.hit * 100)}%</b> <span class="faint">(${a.edge.regime_base.n})</span>` : ""}</div>`;
   const b = a.edge?.base;
   if (!b) return "";
   const bits = [b.h1 && `<b class="${b.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(b.h1.hit * 100)}%</b> in 1h`, b.close && `<b class="${b.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(b.close.hit * 100)}%</b> by the close`].filter(Boolean);
@@ -844,6 +844,7 @@ async function openSheet(id) {
     e.cat_base ? `<h4>${esc(e.cat_base.label)} news, ${esc(e.cat_base.band_label)} ${tip("catalyst")}</h4><div class="panel glass">
       ${[["An hour later", e.cat_base.h1], ["At the close", e.cat_base.close], ["The next day", e.cat_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went its way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
       ${e.cat_base.typical != null ? `<div class="kv"><span>Typical close move, either way</span><b class="num">±${e.cat_base.typical.toFixed(1)}%</b></div>` : ""}
+      ${e.regime_base ? `<div class="kv"><span>On ${esc(e.regime_base.regime)} days like this one ${tip("regime")}</span><b class="num"><span class="${e.regime_base.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.regime_base.hit * 100)}%</span> went its way · median ${pct(e.regime_base.median)} · ${e.regime_base.n} graded</b></div>` : ""}
       <div class="sub" style="padding:4px 0 12px">Every graded alert Foretape read as ${esc(e.cat_base.label.toLowerCase())} news on a ${esc(e.cat_base.band_label === "any size" ? "company of any size" : e.cat_base.band_label + " company")}, last 180 days, each from its own reference price. History, not a forecast.</div></div>` : (e.catalyst ? `<div class="sub" style="margin-top:14px">Read as <b>${esc(e.catalyst.label)}</b> news: too few graded so far for its own record.</div>` : ""),
     e.base ? `<h4>How alerts like this did ${tip("base")}</h4><div class="panel glass">
       ${e.base.h1 ? `<div class="kv"><span>An hour later</span><b class="num"><span class="${e.base.h1.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.base.h1.hit * 100)}%</span> went its way · median ${pct(e.base.h1.median)} · ${e.base.h1.n} graded</b></div>` : ""}
@@ -1310,7 +1311,7 @@ async function loadRecord() {
     recordCache = r;
     const bucketRows = (title, rows) => rows.length ? `<div class="kv head"><span>${title}</span><b>1 hour · close</b></div>` + rows.map((x) => `<div class="kv"><span>${esc(x.bucket)}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("") : "";
     $("dRecord").innerHTML += bucketRows("Already moved before the alert?", r.priced_in || []) + bucketRows("By time of day (ET)", r.by_time || []);
-    if ((r.catalysts || []).length) $("dRecord").innerHTML += `<div class="kv head"><span>By catalyst ${tip("catalyst")}</span><b>close · median · typical size</b></div>` + r.catalysts.map((c) => `<div class="kv"><span>${esc(c.label)} <span class="sub">${c.close.n}${c.bands.length > 1 ? " · " + c.bands.map((b) => `${esc(b.band_label)} ${Math.round(b.close.hit * 100)}%`).join(" · ") : ""}</span></span><b class="rec"><b class="num ${c.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(c.close.hit * 100)}%</b> <span class="sub">${pct(c.close.median)} · ±${(c.typical || 0).toFixed(1)}%</span></b></div>`).join("");
+    if ((r.catalysts || []).length) $("dRecord").innerHTML += `<div class="kv head"><span>By catalyst ${tip("catalyst")}</span><b>close · median · typical size</b></div>` + r.catalysts.map((c) => `<div class="kv"><span>${esc(c.label)} <span class="sub">${c.close.n}${c.bands.length > 1 ? " · " + c.bands.map((b) => `${esc(b.band_label)} ${Math.round(b.close.hit * 100)}%`).join(" · ") : ""}${(c.regimes || []).length ? `<br>${c.regimes.map((g) => `<span class="${g.regime === r.regime_now ? "now" : ""}">${esc(g.regime)} ${Math.round(g.hit * 100)}% <small>(${g.n})</small></span>`).join(" · ")}` : ""}</span></span><b class="rec"><b class="num ${c.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(c.close.hit * 100)}%</b> <span class="sub">${pct(c.close.median)} · ±${(c.typical || 0).toFixed(1)}%</span></b></div>`).join("");
     const dv = r.diverge;
     if (dv?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Divergences</span><b>close</b></div><div class="kv"><span>${dv.flags} flagged, 120 days <span class="sub">kept going against the news by the close?</span></span><b class="rec">${cell(dv.close)}</b></div>`;
     const rt = r.retest;
@@ -1341,6 +1342,19 @@ async function loadSaved() {
 }
 const icsUrl = (scheme) => `${scheme === "webcal" ? "webcal:" : location.protocol}//${location.host}/api/calendar.ics?token=${encodeURIComponent(TOKEN)}&device=${encodeURIComponent(DEVICE)}`;
 // the portfolio: holdings with shares (and cost), live
+// needs you: everything on this phone that wants a decision now, most urgent first, with a count on the Desk tab
+let acts = null;
+async function loadActions() {
+  try { acts = await api("/api/actions"); } catch (_) { return; }
+  const b = $("actBadge");
+  b.hidden = !acts.count; b.textContent = acts.count > 9 ? "9+" : acts.count; b.classList.toggle("calm", !acts.urgent);
+  $("deskTab").setAttribute("aria-label", acts.count ? `Desk, ${acts.count} need${acts.count === 1 ? "s" : ""} you` : "Desk");
+  $("dActWrap").hidden = !acts.items.length && !acts.hidden;
+  $("dActSub").textContent = !acts.count ? "all clear" : acts.urgent ? `${acts.urgent} urgent · ${acts.count} in all` : `${acts.count} thing${acts.count === 1 ? "" : "s"}, most urgent first`;
+  $("dAct").innerHTML = (acts.items.length ? acts.items.map((i, n) => `<div class="li act u${i.urgency >= 80 ? 3 : i.urgency >= 60 ? 2 : 1}"${i.open ? ` data-act="act-open" data-n="${n}" role="button"` : ""}><span class="aic" aria-hidden="true">${esc(i.icon)}</span><div class="grow"><div class="at">${esc(i.title)}</div>${i.detail ? `<div class="sub">${esc(i.detail)}</div>` : ""}</div>${i.do ? `<button class="btn ghost small" data-act="act-do" data-n="${n}">${esc(i.do.label)}</button>` : ""}<button class="x" data-act="act-done" data-n="${n}" aria-label="Dismiss" title="Dismiss for 20 hours">✕</button></div>`).join("")
+    : `<div class="li"><span class="muted">Nothing needs you right now.</span></div>`)
+    + (acts.hidden ? `<div class="sub" style="padding:6px 0 10px">${acts.hidden} dismissed · <a href="#" data-act="act-reset">bring them back</a></div>` : "");
+}
 // event risk: each holding's next report or event, in dollars on the position
 async function loadEventRisk() {
   let r;
@@ -2019,6 +2033,10 @@ async function onAct(el) {
   else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }
   else if (a === "edge-pick") { Object.assign(lab, { catalyst: s, band: el.dataset.b, horizon: el.dataset.h, kind: "all", scope: "all", fades: "" }); store.set("ft_lab", JSON.stringify(lab)); await loadLab(); $("dLab")?.querySelector(".labhead")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
   else if (a === "lab-auto") { if (await deskEdit("autopilot_add", { catalyst: lab.catalyst, band: lab.band, min_sev: lab.sev, exit: lab.horizon })) { toast("🤖 Autopilot on: each new alert like this opens a paper call here", null, 6000); renderAutopilots(); } }
+  else if (a === "act-do") { const i = acts?.items[+el.dataset.n]; if (i?.do && await deskEdit(i.do.action, i.do.body)) { toast("Done"); loadActions(); } }
+  else if (a === "act-done") { const i = acts?.items[+el.dataset.n]; if (i && await deskEdit("act_done", { key: i.key })) loadActions(); }
+  else if (a === "act-reset") { e.preventDefault(); if (await deskEdit("act_reset")) loadActions(); }
+  else if (a === "act-open") { const i = acts?.items[+el.dataset.n]; if (i?.open) { if (location.hash === i.open) route(); else location.hash = i.open; } }
   else if (a === "ap-toggle") { if (await deskEdit("autopilot_toggle", { id: s })) renderAutopilots(); }
   else if (a === "ap-rm") { if (confirm("Stop and remove this autopilot? Its closed calls stay in your record.") && await deskEdit("autopilot_remove", { id: s })) renderAutopilots(); }
   else if (a === "dial") { if (await deskEdit("stock_push", { symbol: s, level: el.dataset.lv })) { toast(el.dataset.lv === "default" ? `${s}: its normal push settings` : `📲 ${s}: ${DIAL_TEXT[el.dataset.lv]}`); refreshTickerSheet(); } }
@@ -2441,7 +2459,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -2606,6 +2624,7 @@ const Palette = {
       ["Would I get it? (test my push settings)", "", openHealth],
       ["What's working today", "today's alerts by kind of news", () => { closeSheet(); go("watch"); setTimeout(() => $("workWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Room left", "today's alerts short of their typical move", () => { closeSheet(); go("watch"); setTimeout(() => $("roomWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
+      ["Needs you", "everything that wants a decision now", () => { closeSheet(); go("desk"); setTimeout(() => $("dActWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Autopilots", "paper forward tests of your rules", () => { closeSheet(); go("desk"); setTimeout(() => $("dAutoWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Your devices", "link a phone or computer to this desk", () => { closeSheet(); go("desk"); setTimeout(() => $("dDevices")?.scrollIntoView({ block: "center", behavior: "smooth" }), 400); }],
       ["Today's setups", "the best alerts since the last close, as plans", () => { closeSheet(); go("brief"); }],
@@ -2676,7 +2695,7 @@ document.querySelectorAll(".dock button").forEach((b) => (b.onclick = () => go(b
 $("nextCat").onclick = () => go("calendar");
 $("ticker").onclick = () => go("watch");
 setInterval(() => document.querySelectorAll(".ago[data-t]").forEach((el) => (el.textContent = ago(+el.dataset.t))), 15000);
-setInterval(() => { if (!document.hidden && TOKEN && !$("main").hidden) { load().catch(() => {}); loadDesk(); if (tab === "watch") loadWatch().catch(() => {}); } }, 60000);
+setInterval(() => { if (!document.hidden && TOKEN && !$("main").hidden) { load().catch(() => {}); loadDesk(); loadActions(); if (tab === "watch") loadWatch().catch(() => {}); } }, 60000);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { markSeen(); return; }
   if (TOKEN) { navigator.clearAppBadge?.(); Promise.all([load(), loadDesk()]).then(renderAway).catch(() => {}); }
@@ -2723,7 +2742,7 @@ async function start() {
   $("lock").hidden = true; $("main").hidden = false; $("dock").hidden = false;
   Fx.split(); Fx.observe(document);
   connect();
-  loadDesk().then(() => { renderAway(); maybeOnboard(); });
+  loadDesk().then(() => { renderAway(); maybeOnboard(); loadActions(); });
   if ("serviceWorker" in navigator) await navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" });
   navigator.clearAppBadge?.();
   refreshPushUI();

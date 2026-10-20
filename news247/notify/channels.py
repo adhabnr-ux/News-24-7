@@ -962,6 +962,9 @@ class WebPushNotifier(Notifier):
         from ..dossier import base_line
 
         base = cat_line(alert.edge.get("cat_base")) or base_line(alert.edge.get("base"))
+        rb = alert.edge.get("regime_base")
+        if rb and alert.edge.get("cat_base"):
+            base += f" · on {rb['regime']} days: {round(rb['hit'] * 100)}% ({rb['n']})"
         if base:
             body = f"{body}\n{base}" if body else base
         play = alert.edge.get("play") or {}
