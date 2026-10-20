@@ -292,10 +292,35 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
                     changed = True
             row["sign"] = sign
             out[sym] = row
-        if changed:
-            engine.storage.update_alert_edge(a["id"], {"outcome": out})
+        patch: dict[str, Any] = {"outcome": out} if changed else {}
+        if e.get("mkt_ref"):  # the market over the same window, on the same clock
+            mkt = dict(e.get("mkt_outcome") or {})
+            q = engine.price_of("SPY", now=now)
+            if q and q[1] and q[0] >= created:
+                mmove = round((q[1] / float(e["mkt_ref"]) - 1.0) * 100.0, 2)
+                before = len(mkt)
+                if "h1" not in mkt and now - created >= 3600 and q[0] - created < 3 * 3600:
+                    mkt["h1"] = mmove
+                for key, ts in (("close", close_ts), ("d1", closes[1]), ("d5", closes[5])):
+                    if key not in mkt and now >= ts and abs(q[0] - ts) < 3 * 3600:
+                        mkt[key] = mmove
+                if len(mkt) > before:
+                    patch["mkt_outcome"] = mkt
+        if patch:
+            engine.storage.update_alert_edge(a["id"], patch)
             made += 1
     return made
+
+
+def excess(a: dict[str, Any], horizon: str = "close") -> float | None:
+    """How far an alert's stock went its way beyond the market (SPY) over the same window, or None
+    when either side isn't graded yet: + = it beat the market in the alert's direction."""
+    e = a.get("edge") or {}
+    out, mkt = e.get("outcome") or {}, e.get("mkt_outcome") or {}
+    row = next(iter(out.values()), None) if out else None
+    if not row or not row.get("sign") or row.get(horizon) is None or mkt.get(horizon) is None:
+        return None
+    return round(row["sign"] * (row[horizon] - mkt[horizon]), 2)
 
 
 def session_closes(ts: float, n: int, holidays: set[str] | None = None) -> list[float]:
@@ -386,10 +411,13 @@ def track_record(engine: Engine, days: float = 30, now: float | None = None) -> 
         sign = row.get("sign") or 0
         if not sign:
             continue
-        g = groups.setdefault(key, {"h1": [], "close": [], "d1": [], "d5": []})
+        g = groups.setdefault(key, {"h1": [], "close": [], "d1": [], "d5": [], "x_close": []})
         for k in ("h1", "close", "d1", "d5"):
             if row.get(k) is not None:
                 g[k].append(sign * row[k])
+        x = excess(a)
+        if x is not None:
+            g["x_close"].append(x)
     rows = []
     for key, g in groups.items():
 
@@ -409,6 +437,7 @@ def track_record(engine: Engine, days: float = 30, now: float | None = None) -> 
                 "close": stats(g["close"]),
                 "d1": stats(g["d1"]),
                 "d5": stats(g["d5"]),
+                "x_close": stats(g["x_close"]),  # its way beyond the market (SPY), by the close
             }
         )
     rows.sort(key=lambda r: -((r["close"] or r["h1"] or {}).get("n") or 0))

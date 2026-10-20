@@ -1,0 +1,163 @@
+"""Before you track it: one verdict line per thing that should give a trader pause.
+
+Tapping Track on an alert or a stock opens a paper call. Just before it does, this reads everything
+the desk already knows about that call in one place: the odds and expected move, how its kind of
+news has done (on days like today too), how the firm's calls have done when an analyst made it,
+whether the stock has already made its typical move since the alert, whether the market is
+fading it, the plan's reward-to-risk, a report before the exit, and how much of the desk is
+already on the same side of the same sector. Each line is good, a warning or a red flag, with
+the number behind it, and the verdict sums them up. It never blocks the call: paper only, and
+the choice is yours.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from .engine import Engine
+
+ET = ZoneInfo("America/New_York")
+SAME_SIDE_WARN = 2  # other positions on the same side of the same sector before it's a warning
+SAME_SIDE_BAD = 4
+
+
+def _tone(v: float, good: float, bad: float) -> str:
+    return "good" if v >= good else "bad" if v < bad else "warn"
+
+
+def pre_trade(
+    engine: Engine, device: str, symbol: str, direction: str, alert_id: str = "", now: float | None = None
+) -> dict[str, Any]:
+    """{"symbol", "direction", "verdict": "go" | "caution" | "think twice", "checks": [{key, tone, text}]}"""
+    from .dossier import _since
+    from .plans import trade_plan
+
+    now = now or time.time()
+    sym = symbol.upper()
+    long = direction != "short"
+    side = "long" if long else "short"
+    checks: list[dict[str, str]] = []
+
+    def add(key: str, tone: str, text: str) -> None:
+        checks.append({"key": key, "tone": tone, "text": text})
+
+    a = engine.storage.get_alert(alert_id) if alert_id else None
+    e = (a or {}).get("edge") or {}
+    if a is not None:
+        o = e.get("odds") or {}
+        if o.get("p") is not None:
+            ev = f", expected {o['ev']:+.1f}%" if o.get("ev") is not None else ""
+            tone = _tone(o["p"], 0.6, 0.5)
+            if o.get("ev") is not None and o["ev"] < 0:
+                tone = "bad"
+            add("odds", tone, f"Odds {round(o['p'] * 100)}% by the close{ev} (the model, {o['n']} graded)")
+        from .catalysts import catalyst_base, classify
+
+        rates = getattr(engine, "catalyst_rates", None) or {}
+        cb = (
+            e.get("cat_base") or catalyst_base(rates, e.get("catalyst") or classify(a, engine.universe)) or {}
+        )
+        if cb.get("close"):
+            c = cb["close"]
+            add("record", _tone(c["hit"], 0.6, 0.5),
+                f"{cb['label']}, {cb['band_label']}: {round(c['hit'] * 100)}% went their way by the close (median {c['median']:+.1f}%, {c['n']})")  # fmt: skip
+            x = cb.get("x_close")
+            if x and x["n"] >= 6:
+                add("market", "good" if x["median"] > 0 else "warn",
+                    f"Against the market, that kind of news {'beat' if x['median'] > 0 else 'trailed'} SPY by {abs(x['median']):.1f}% (median, {x['n']})")  # fmt: skip
+        rb = e.get("regime_base")
+        if rb:
+            add(
+                "regime",
+                _tone(rb["hit"], 0.6, 0.5),
+                f"On {rb['regime']} days like today: {round(rb['hit'] * 100)}% went their way ({rb['n']})",
+            )
+        fb = e.get("firm_base")
+        if fb:
+            add("firm", _tone(fb["close"]["hit"], 0.6, 0.5),
+                f"{fb['label']} here: {round(fb['close']['hit'] * 100)}% went their way ({fb['close']['n']})")  # fmt: skip
+        since = _since(a, sym, engine.price_of)
+        typical = (cb.get("close") or {}).get("median") if cb.get("close") else None
+        if since is not None:
+            its_way = since if long else -since
+            if typical and typical > 0:
+                share = its_way / typical
+                tone = "bad" if share >= 1 else "warn" if share >= 0.6 or its_way <= -typical else "good"
+                add("moved", tone, f"{its_way:+.1f}% its way since the alert, of a typical {typical:+.1f}%"
+                    + (": the usual move is done" if share >= 1 else ""))  # fmt: skip
+            else:
+                add(
+                    "moved",
+                    "warn" if abs(its_way) >= 3 else "info",
+                    f"{its_way:+.1f}% its way since the alert",
+                )
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        try:
+            dv = [
+                x
+                for x in json.loads(engine.storage.get_setting("diverge_log") or "[]")
+                if x.get("alert_id") == alert_id and x.get("day") == day
+            ]
+        except ValueError:
+            dv = []
+        if dv:
+            add(
+                "diverge",
+                "bad",
+                f"The market isn't buying this news: {dv[0]['against']:.1f}% the other way when it was flagged",
+            )
+        plan = trade_plan(engine, device, a, now)
+        if plan.get("ok"):
+            add("plan", _tone(plan["rr"], 1.5, 1.0),
+                f"Plan from {plan['entry']:,.2f}: stop {plan['stop']:,.2f}, target {plan['target']:,.2f}, reward-to-risk {plan['rr']:.1f}")  # fmt: skip
+        elif plan.get("status") in ("done", "invalidated"):
+            add("plan", "bad", plan.get("why") or "The plan is off.")
+    book = getattr(getattr(engine, "trends", None), "earnings", None)
+    er = book.lookup(sym, datetime.fromtimestamp(now, ET).date()) if book is not None else None
+    if er and er.get("in_days") is not None and er["in_days"] <= 1:
+        when = (" " + er["when"]) if er.get("when") else ""
+        add("report", "bad" if er["in_days"] == 0 else "warn",
+            f"{sym} reports{when} {'today' if er['in_days'] == 0 else 'tomorrow'}: a gap can go straight through a stop")  # fmt: skip
+    _concentration(engine, device, sym, long, add)
+    bad = sum(c["tone"] == "bad" for c in checks)
+    warn = sum(c["tone"] == "warn" for c in checks)
+    verdict = "think twice" if bad else "caution" if warn >= 2 else "go"
+    return {"symbol": sym, "direction": side, "verdict": verdict, "checks": checks,
+            "good": sum(c["tone"] == "good" for c in checks), "warn": warn, "bad": bad}  # fmt: skip
+
+
+def _concentration(engine: Engine, device: str, sym: str, long: bool, add: Any) -> None:
+    """Already on the same side of the same sector: holdings count as long, open calls by side."""
+    p = engine.desk.profiles.get(device) or {}
+    li = engine.universe.get(sym)
+    sector = (li.sector if li else "") or ""
+    side = "long" if long else "short"
+    same_stock = [t for t in p.get("tracked") or [] if t["symbol"] == sym and (t.get("direction") == side)]
+    if same_stock:
+        add("dup", "warn", f"You already track {sym} {side} ({len(same_stock)} open)")
+    if not sector:
+        return
+    names = set()
+    for t in p.get("tracked") or []:
+        other = engine.universe.get(t["symbol"])
+        if t["symbol"] != sym and other is not None and other.sector == sector and t.get("direction") == side:
+            names.add(t["symbol"])
+    if long:
+        for s_, h in (p.get("holdings") or {}).items():
+            other = engine.universe.get(s_)
+            if s_ != sym and other is not None and other.sector == sector and (h.get("shares") or 0) > 0:
+                names.add(s_)
+    if len(names) >= SAME_SIDE_WARN:
+        tone = "bad" if len(names) >= SAME_SIDE_BAD else "warn"
+        add(
+            "sector",
+            tone,
+            f"You're already {side} {len(names)} other {sector} stocks ({', '.join(sorted(names)[:5])}): one sector move hits them all",
+        )
+    elif names:
+        add("sector", "info", f"You're also {side} {', '.join(sorted(names))} in {sector}")

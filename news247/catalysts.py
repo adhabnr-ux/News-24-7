@@ -235,6 +235,8 @@ def catalyst_rates(engine: Engine, days: float = 180, now: float | None = None) 
     """Graded alerts pooled per (catalyst, size band) and per catalyst: the hit rate and median
     move the alert's way an hour later, at the close and the next day, and the typical size of the
     close move either way."""
+    from .dossier import excess
+
     now = now or time.time()
     pools: dict[tuple[str, str], dict[str, list[float]]] = {}
     for a in engine.storage.recent_alerts(5000, since=now - days * 86400):
@@ -248,11 +250,14 @@ def catalyst_rates(engine: Engine, days: float = 180, now: float | None = None) 
         sign = row.get("sign") or 0
         if not sign:
             continue
+        x = excess(a)
         for key in ((c["key"], c["band"]), (c["key"], "*")):
-            g = pools.setdefault(key, {"h1": [], "close": [], "d1": [], "abs": []})
+            g = pools.setdefault(key, {"h1": [], "close": [], "d1": [], "abs": [], "x": []})
             for k in ("h1", "close", "d1"):
                 if row.get(k) is not None:
                     g[k].append(sign * row[k])
+            if x is not None:
+                g["x"].append(x)
             if row.get("close") is not None:
                 g["abs"].append(abs(row["close"]))
     rates = {}
@@ -266,6 +271,7 @@ def catalyst_rates(engine: Engine, days: float = 180, now: float | None = None) 
             "close": _stats(g["close"]),
             "d1": _stats(g["d1"]),
             "typical": round(st.median(g["abs"]), 2) if g["abs"] else None,
+            "x_close": _stats(g["x"]),  # its way beyond the market (SPY) by the close
         }
     return rates
 

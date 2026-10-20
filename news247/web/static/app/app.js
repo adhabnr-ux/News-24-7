@@ -867,6 +867,7 @@ async function openSheet(id) {
     e.cat_base ? `<h4>${esc(e.cat_base.label)} news, ${esc(e.cat_base.band_label)} ${tip("catalyst")}</h4><div class="panel glass">
       ${[["An hour later", e.cat_base.h1], ["At the close", e.cat_base.close], ["The next day", e.cat_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went its way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
       ${e.cat_base.typical != null ? `<div class="kv"><span>Typical close move, either way</span><b class="num">±${e.cat_base.typical.toFixed(1)}%</b></div>` : ""}
+      ${e.cat_base.x_close ? `<div class="kv"><span>Against the market (SPY) by the close</span><b class="num"><span class="${cls(e.cat_base.x_close.median)}">${pct(e.cat_base.x_close.median)}</span> median · beat it ${Math.round(e.cat_base.x_close.hit * 100)}% · ${e.cat_base.x_close.n} graded</b></div>` : ""}
       ${e.regime_base ? `<div class="kv"><span>On ${esc(e.regime_base.regime)} days like this one ${tip("regime")}</span><b class="num"><span class="${e.regime_base.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.regime_base.hit * 100)}%</span> went its way · median ${pct(e.regime_base.median)} · ${e.regime_base.n} graded</b></div>` : ""}
       <div class="sub" style="padding:4px 0 12px">Every graded alert Foretape read as ${esc(e.cat_base.label.toLowerCase())} news on a ${esc(e.cat_base.band_label === "any size" ? "company of any size" : e.cat_base.band_label + " company")}, last 180 days, each from its own reference price. History, not a forecast.</div></div>` : (e.catalyst ? `<div class="sub" style="margin-top:14px">Read as <b>${esc(e.catalyst.label)}</b> news: too few graded so far for its own record.</div>` : ""),
     e.base ? `<h4>How alerts like this did ${tip("base")}</h4><div class="panel glass">
@@ -1329,13 +1330,13 @@ async function loadRecord() {
     const label = (k) => { const [a, b] = k.split(":"); return (KIND_LABEL[a] || a) + (b ? ` · ${b}` : ""); };
     const cell = (x) => x ? `<b class="num ${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</b> <span class="sub">of ${x.n} · med ${pct(x.median)}</span>` : `<span class="sub">—</span>`;
     const cells = (x) => [["1h", x.h1], ["close", x.close], ["next day", x.d1], ["5 days", x.d5]].filter(([, v]) => v).map(([k, v]) => `<span class="faint">${k}</span> ${cell(v)}`).join("<br>");
-    $("dRecord").innerHTML = r.rows.length ? `<div class="kv head"><span>Alert kind</span><b>1 hour · close · next day · 5 days</b></div>` + r.rows.map((x) => `<div class="kv"><span>${esc(label(x.kind))}</span><b class="rec">${cells(x)}</b></div>`).join("")
+    $("dRecord").innerHTML = r.rows.length ? `<div class="kv head"><span>Alert kind</span><b>1 hour · close · next day · 5 days</b></div>` + r.rows.map((x) => `<div class="kv"><span>${esc(label(x.kind))}${x.x_close ? `<br><span class="sub">vs the market (SPY) by the close: <b class="${cls(x.x_close.median)}">${pct(x.x_close.median)}</b> median, beat it ${Math.round(x.x_close.hit * 100)}% (${x.x_close.n})</span>` : ""}</span><b class="rec">${cells(x)}</b></div>`).join("")
       + `<div class="sub" style="padding:10px 0 14px">${esc(r.note)} Hit = the stock went the alert's way.</div>`
       : `<div class="li"><span class="muted">Every alert is graded an hour later and at its session's close, against its own reference price. The first grades land after the next session; this fills in on its own.</span></div>`;
     recordCache = r;
     const bucketRows = (title, rows) => rows.length ? `<div class="kv head"><span>${title}</span><b>1 hour · close</b></div>` + rows.map((x) => `<div class="kv"><span>${esc(x.bucket)}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("") : "";
     $("dRecord").innerHTML += bucketRows("Already moved before the alert?", r.priced_in || []) + bucketRows("By time of day (ET)", r.by_time || []);
-    if ((r.catalysts || []).length) $("dRecord").innerHTML += `<div class="kv head"><span>By catalyst ${tip("catalyst")}</span><b>close · median · typical size</b></div>` + r.catalysts.map((c) => `<div class="kv"><span>${esc(c.label)} <span class="sub">${c.close.n}${c.bands.length > 1 ? " · " + c.bands.map((b) => `${esc(b.band_label)} ${Math.round(b.close.hit * 100)}%`).join(" · ") : ""}${(c.regimes || []).length ? `<br>${c.regimes.map((g) => `<span class="${g.regime === r.regime_now ? "now" : ""}">${esc(g.regime)} ${Math.round(g.hit * 100)}% <small>(${g.n})</small></span>`).join(" · ")}` : ""}</span></span><b class="rec"><b class="num ${c.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(c.close.hit * 100)}%</b> <span class="sub">${pct(c.close.median)} · ±${(c.typical || 0).toFixed(1)}%</span></b></div>`).join("");
+    if ((r.catalysts || []).length) $("dRecord").innerHTML += `<div class="kv head"><span>By catalyst ${tip("catalyst")}</span><b>close · median · typical size</b></div>` + r.catalysts.map((c) => `<div class="kv"><span>${esc(c.label)} <span class="sub">${c.close.n}${c.bands.length > 1 ? " · " + c.bands.map((b) => `${esc(b.band_label)} ${Math.round(b.close.hit * 100)}%`).join(" · ") : ""}${(c.regimes || []).length ? `<br>${c.regimes.map((g) => `<span class="${g.regime === r.regime_now ? "now" : ""}">${esc(g.regime)} ${Math.round(g.hit * 100)}% <small>(${g.n})</small></span>`).join(" · ")}` : ""}</span></span><b class="rec"><b class="num ${c.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(c.close.hit * 100)}%</b> <span class="sub">${pct(c.close.median)} · ±${(c.typical || 0).toFixed(1)}%</span>${c.x_close ? `<br><span class="sub">vs SPY <b class="${cls(c.x_close.median)}">${pct(c.x_close.median)}</b></span>` : ""}</b></div>`).join("");
     const dv = r.diverge;
     if (dv?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Divergences</span><b>close</b></div><div class="kv"><span>${dv.flags} flagged, 120 days <span class="sub">kept going against the news by the close?</span></span><b class="rec">${cell(dv.close)}</b></div>`;
     const rt = r.retest;
@@ -1366,6 +1367,26 @@ async function loadSaved() {
 }
 const icsUrl = (scheme) => `${scheme === "webcal" ? "webcal:" : location.protocol}//${location.host}/api/calendar.ics?token=${encodeURIComponent(TOKEN)}&device=${encodeURIComponent(DEVICE)}`;
 // the portfolio: holdings with shares (and cost), live
+// the pre-trade check: every reason for pause, the moment Track is tapped (it never blocks the call)
+let preGo = null;
+async function preCheck(sym, dir, aid, go) {
+  if (store.get("ft_noprecheck") === "1") return go();
+  let r;
+  try { r = await api(`/api/precheck?symbol=${encodeURIComponent(sym)}&direction=${dir === "short" ? "short" : "long"}${aid ? "&alert=" + encodeURIComponent(aid) : ""}`); } catch (_) { return go(); }
+  if (!r.checks.length) return go();  // nothing known to weigh: just track it
+  preGo = go;
+  const icon = { good: "✓", warn: "!", bad: "✕", info: "•" };
+  const head = { go: ["Looks clean", "pos"], caution: ["A few things to weigh", "gold"], "think twice": ["Think twice", "neg"] }[r.verdict];
+  $("preckBox").innerHTML = `<h2 id="preckH" class="${head[1]}">${head[0]}</h2><div class="sub">${r.direction === "long" ? "▲ Long" : "▼ Short"} ${esc(r.symbol)} · ${r.good} good · ${r.warn} to weigh · ${r.bad} red</div>
+    <div class="prelist">${r.checks.map((c) => `<div class="prei ${c.tone}"><i aria-hidden="true">${icon[c.tone]}</i><span>${esc(c.text)}</span></div>`).join("")}</div>
+    <div class="row" style="padding-top:12px"><button class="btn primary" data-act="pre-go">Track it</button><button class="btn ghost" data-act="pre-no">Not now</button></div>
+    <label class="rearm sub" style="margin-top:10px"><input type="checkbox" data-act="pre-skip"> Track straight away from now on</label>`;
+  $("preck").hidden = false;
+  $("preckBox").querySelector("[data-act=pre-go]").focus();
+}
+function closePre() { $("preck").hidden = true; preGo = null; }
+$("preck").addEventListener("click", (e) => { if (e.target.id === "preck") closePre(); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("preck").hidden) closePre(); });
 // needs you: everything on this phone that wants a decision now, most urgent first, with a count on the Desk tab
 let acts = null;
 async function loadActions() {
@@ -1948,9 +1969,14 @@ async function onAct(el) {
     if (old && !old.fired) toastUndo("Price alert removed", () => deskEdit("alert_add", { symbol: old.symbol, kind: old.kind, value: old.value, rearm: old.rearm }));
   }
   else if (a === "track") {
-    const r = await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid || "" });
-    if (r) { const t = r.tracked[r.tracked.length - 1]; toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s} from ${fmtPx(t?.entry)} · on your desk`); refreshTickerSheet(); }
+    preCheck(s, el.dataset.dir, el.dataset.aid || "", async () => {
+      const r = await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid || "" });
+      if (r) { const t = r.tracked[r.tracked.length - 1]; toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s} from ${fmtPx(t?.entry)} · on your desk`); refreshTickerSheet(); }
+    });
   }
+  else if (a === "pre-go") { const go = preGo; closePre(); if (go) go(); }
+  else if (a === "pre-no") closePre();
+  else if (a === "pre-skip") { store.set("ft_noprecheck", el.checked ? "1" : ""); }
   else if (a === "tr-close") {
     const lesson = prompt("Closing at the live price. A lesson for your journal? (optional)", "");
     if (lesson == null) return;
@@ -2081,7 +2107,7 @@ async function onAct(el) {
   else if (a === "dev-rm") { if (confirm("Stop pushes to that device? It can turn alerts on again any time.")) { try { await api("/api/devices/remove", { method: "POST", body: JSON.stringify({ id: s }) }); toast("Removed"); loadDevices(); } catch (e) { toast(e.message); } } }
   else if (a === "cat-mute") { const off = !(desk.cat_off || []).includes(s), label = (desk.catalyst_kinds || []).find((k) => k.key === s)?.label || s; if (await deskEdit("cat_mute", { key: s, on: off })) toast(off ? `${label} news won't push to this phone` : `${label} news pushes again`); }
   else if (a === "edge-bar") { if (await deskEdit("prefs", { edge_min: s || null })) toast(s ? (s.startsWith("odds") ? `Only alerts the odds model rates ${s.slice(4)}%+ push now (no odds: not held back; CRITICAL always comes)` : "Only news whose kind clears the bar pushes now (CRITICAL always comes)") : "Every kind of news may push"); }
-  else if (a === "plan-track") { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); }
+  else if (a === "plan-track") preCheck(s, el.dataset.dir, el.dataset.aid || "", async () => { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); });
   else if (a === "acct-save") { const v = parseFloat(String($("acctIn")?.value || "").replace(/[$,\s]/g, "")); if (!(v >= 0)) { toast("Enter your account size in dollars"); return; } if (await deskEdit("prefs", { account: v }) && sheetAlert) loadPlan(sheetAlert); }
   else if (a === "risk-pct") { if (await deskEdit("prefs", { risk_pct: +s })) { if (sheetAlert && $("planBox")) loadPlan(sheetAlert); toast(`Plans risk ${s}% of your account on one idea`); } }
   else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }

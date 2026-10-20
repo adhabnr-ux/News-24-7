@@ -47,6 +47,7 @@ log = logging.getLogger(__name__)
 BACKFILL_PUSH_MAX_AGE = 300.0  # at start-up, only push items published in the last 5 minutes
 CONFIRM_BONUS, CONFIRM_CAP = 6.0, 18.0
 KW_MIN_SCORE = 12.0  # a keyword push still needs a headline the scorer found some substance in
+MARKET = "SPY"  # what every grade is also read against (market-adjusted records)
 CATALYST_MIN_SCORE = 25.0
 OVERNIGHT_MIN_SCORE = 35.0  # MEDIUM and up: kept back to the previous session for the radar/options
 MULTI_MOVE_MIN = 3
@@ -1747,6 +1748,10 @@ class Engine:
             pre = self.pre_move(alert.tickers[:3], alert.created)
             if pre:
                 alert.edge["pre"] = pre  # how far it had moved in the 15 minutes before: priced in?
+        if alert.kind != "system" and "mkt_ref" not in alert.edge:
+            spy = self.price_of(MARKET, 900)
+            if spy and spy[1]:
+                alert.edge["mkt_ref"] = spy[1]  # the market then: each grade is also read against it
         if alert.kind != "system" and "base" not in alert.edge:
             from .dossier import base_rate, record_key
 

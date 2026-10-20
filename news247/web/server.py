@@ -163,6 +163,7 @@ class WebServer:
         app.router.add_get("/api/actions", self.api_actions)
         app.router.add_get("/api/odds", self.api_odds)
         app.router.add_get("/api/firms", self.api_firms)
+        app.router.add_get("/api/precheck", self.api_precheck)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
         app.router.add_post("/api/link", self.api_link)
         app.router.add_get("/api/devices", self.api_devices)
@@ -993,6 +994,21 @@ class WebServer:
         from ..firms import scorecard
 
         return _json(scorecard(self.engine.firm_rates))
+
+    async def api_precheck(self, request: web.Request) -> web.Response:
+        """Before a paper call opens: every reason for pause, good, warning or red (precheck.py)."""
+        from ..desk import clean_symbol
+        from ..precheck import pre_trade
+
+        sym = clean_symbol(request.query.get("symbol"))
+        direction = request.query.get("direction", "long")
+        if not sym or direction not in ("long", "short"):
+            raise web.HTTPBadRequest(text="need a symbol and direction long|short")
+        return _json(
+            pre_trade(
+                self.engine, self._need_device(request), sym, direction, request.query.get("alert", "")[:40]
+            )
+        )
 
     async def api_settings_cost(self, request: web.Request) -> web.Response:
         """What this phone's settings kept back over 14 days, graded beside what reached it (keptback.py)."""

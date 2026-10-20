@@ -715,3 +715,12 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .chipv.neg { color: var(--down); } .chipv.pos { color: var(--up); } .chipv.faint { color: var(--faint); }
 .kv.cost .ex { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; cursor: pointer; }
 .kv.cost > span { display: flex; flex-direction: column; align-items: flex-start; }
+
+/* the pre-trade check */
+.preck .palbox { max-width: 460px; padding: 18px 18px 16px; }
+.preck h2 { margin: 0 0 4px; font-size: 20px; }
+.prelist { margin-top: 12px; display: grid; gap: 8px; }
+.prei { display: flex; gap: 10px; align-items: flex-start; line-height: 1.4; font-size: 14px; }
+.prei i { flex: none; width: 20px; height: 20px; border-radius: 10px; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; background: rgba(251, 246, 238, .08); }
+.prei.good i { color: var(--up); } .prei.warn i { color: var(--gold); } .prei.bad i { color: var(--down); } .prei.info i { color: var(--faint); }
+.preck label.rearm { display: flex; gap: 8px; align-items: center; }
