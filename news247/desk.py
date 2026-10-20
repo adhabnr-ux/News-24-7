@@ -890,6 +890,8 @@ class Desk:
                 "stop": None,
                 "target": None,
             }
+            if body.get("via") == "lockscreen":
+                t["via"] = "lockscreen"  # opened from the notification's Track button (reaction.py)
             _set_levels(t, body)
             _journal(t, body)
             if body.get("shares") not in (None, ""):

@@ -797,7 +797,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadEntries(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadEntries(); loadExitsKind(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -937,6 +937,7 @@ async function openSheet(id) {
       <div class="kv"><span>It first broke ${Math.round(e.late.min)} minutes before this alert${e.late.source ? ` <span class="sub">${esc(outlet(e.late.source))}</span>` : ""}</span><b class="num">${e.late.rec?.close ? `<span class="${e.late.rec.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.late.rec.close.hit * 100)}%</span> <span class="sub">its way for alerts that late · ${e.late.rec.close.n}</span>` : ""}</b></div>
       <div class="sub" style="padding:4px 0 12px">Minutes from the story's first headline, from any outlet, to the one this alert came from. By then part of the market had it. History, not a forecast.</div></div>` : "",
     e.float ? `<div class="kv clim"><span class="${e.float_base ? (e.float_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">🧮 Float ${fmtShares(e.float.float)}${e.float.short != null ? ` · ${Math.round(e.float.short * 100)}% short` : ""}${e.float_base ? `: ${esc(e.float_base.label[0].toLowerCase() + e.float_base.label.slice(1))} went its way ${Math.round(e.float_base.hit * 100)}% by the close (median ${pct(e.float_base.median)}${e.float_base.run != null ? `, winners ran ${pct(e.float_base.run)}` : ""}, ${e.float_base.n})` : ""}</span></div>` : "",
+    e.exit_rec ? `<div class="kv clim"><span class="pos">🚪 Exit ${esc(e.exit_rec.label.toLowerCase())} news here: <b>${esc((EXIT_NAMES[e.exit_rec.best] || e.exit_rec.best).toLowerCase())}</b> (${pct(e.exit_rec.styles[e.exit_rec.best].avg)} on average, ${Math.round(e.exit_rec.styles[e.exit_rec.best].hit * 100)}% its way, ${e.exit_rec.styles[e.exit_rec.best].n})${e.exit_rec.best !== "close" && e.exit_rec.styles.close ? `; at the close ${pct(e.exit_rec.styles.close.avg)}` : ""}</span></div>` : "",
     e.entry_rec ? `<div class="kv clim"><span class="pos">🎯 How to enter ${esc(e.entry_rec.label.toLowerCase())} news here: <b>${esc((ENTRY_NAMES[e.entry_rec.best] || e.entry_rec.best).toLowerCase())}</b> (${pct(e.entry_rec.styles[e.entry_rec.best].avg)} on average from the entry, ${Math.round(e.entry_rec.styles[e.entry_rec.best].hit * 100)}% its way, ${e.entry_rec.styles[e.entry_rec.best].n} of ${e.entry_rec.n})${e.entry_rec.best !== "alert" && e.entry_rec.styles.alert ? `; at the alert ${pct(e.entry_rec.styles.alert.avg)}` : ""}</span></div>` : "",
     e.rvol ? `<div class="kv clim"><span class="${e.rvol_base ? (e.rvol_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">📊 Volume ${e.rvol.r0 != null ? `${e.rvol.r0}x normal at the alert` : ""}${e.rvol.r15 != null ? `${e.rvol.r0 != null ? ", " : ""}${e.rvol.r15}x 15 minutes in` : ""}${e.rvol_base ? `: ${esc(e.rvol_base.label[0].toLowerCase() + e.rvol_base.label.slice(1))} went its way ${Math.round(e.rvol_base.hit * 100)}% (${e.rvol_base.n})` : ""}</span></div>` : "",
     e.theme_rec ? `<div class="kv clim" id="bookTheme" data-id="${esc(a.id)}"></div>` : "",
@@ -1082,6 +1083,7 @@ async function openPlaybook(key) {
     p.overnight ? sec("Hold it into tomorrow?", p.overnight.map((r) => kv(esc(r.label), `${Math.round(r.hit * 100)}% went on <span class="sub">${pct(r.median)} · ${r.n}</span>`)).join("")) : "",
     p.drift ? sec("A month on", kv("Five sessions → twenty", `${pct(p.drift.d5.median)} → ${pct(p.drift.d20.median)} <span class="sub">${p.drift.d20.n}</span>`)) : "",
     p.heat ? sec("Heat (where a stop belongs)", kv("80% of winners dipped less than", `${p.heat.dip80.toFixed(1)}% <span class="sub">${p.heat.winners}</span>`) + (p.heat.run_median != null ? kv("Losers first ran (median)", `${p.heat.run_median.toFixed(1)}% <span class="sub">${p.heat.losers}</span>`) : "")) : "",
+    p.exits ? sec("How to exit it", Object.entries(p.exits.styles).filter(([, s]) => s.n >= 8).map(([k, s]) => kv(`${esc(EXIT_NAMES[k])}${k === p.exits.best ? " ✓" : ""}`, `${pct(s.avg)} avg <span class="sub">${Math.round(s.hit * 100)}% · ${s.n}</span>`)).join("")) : "",
     p.entries ? sec("How to enter it", Object.entries(p.entries.styles).filter(([, s]) => s.n >= 8).map(([k, s]) => kv(`${esc(ENTRY_NAMES[k])}${k === p.entries.best ? " ✓" : ""}`, `${pct(s.avg)} avg <span class="sub">${Math.round(s.hit * 100)}% · ${s.n} of ${p.entries.n}</span>`)).join("")) : "",
     p.climate ? sec("Lately", kv("The last two weeks · before", `${st(p.climate.recent)} · ${st(p.climate.before)}`)) : "",
     p.macro ? sec("Fed and jobs days", kv("Macro days · other days", `${st(p.macro.macro)} · ${st(p.macro.other)}`)) : "",
@@ -1123,6 +1125,32 @@ async function loadAdvice() {
     + `<div class="sub" style="padding:4px 0 12px">Every panel's verdict on a setting, read together for this phone and ranked by how much evidence is behind it. Nothing changes until you tap; "Not now" hides one.</div>`;
 }
 const ENTRY_NAMES = { alert: "At the alert", open: "At the open", patient: "At the patient entry", leg2: "On the second leg", vol15: "On volume confirmation", turn: "When the call turns to act" };
+const EXIT_NAMES = { h1: "An hour in", close: "At the close", d1: "The next day", d5: "Five sessions on", bracket: "The plan's bracket" };
+// how to exit each kind of news (Watch): every exit, graded side by side
+async function loadExitsKind() {
+  let r;
+  try { r = await api("/api/exits-kind"); } catch (_) { return; }
+  $("exWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  $("exBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>best exit · average · vs the close</b></div>`
+    + r.rows.map((x) => { const b = x.best ? x.styles[x.best] : null, c = x.styles.close;
+      return `<div class="kv"><span>${esc(x.label)} <span class="sub">${x.n}</span><div class="sub">${Object.entries(x.styles).filter(([, s]) => s.n >= r.need).map(([k, s]) => `${esc(EXIT_NAMES[k])} ${pct(s.avg)}`).join(" · ")}</div></span><b class="num">${b ? `${esc(EXIT_NAMES[x.best])}<br><span class="${cls(b.avg)}">${pct(b.avg)}</span> <span class="sub">${Math.round(b.hit * 100)}%</span>${c && x.best !== "close" ? `<br><span class="sub">close ${pct(c.avg)}</span>` : ""}` : "—"}</b></div>`; }).join("")
+    + `<div class="sub" style="padding:4px 0 12px">The same alerts, exited five ways from the alert price: an hour in, at the close, the next day, five sessions on, and the plan's bracket (its stop or target, whichever came first; the stop when both did the same day, else the close). The best is the one with the best average (${r.need}+ graded).</div>`;
+}
+// your reaction time (Desk): from the push to your paper call, and what the wait cost
+async function loadReaction() {
+  let r;
+  try { r = await api("/api/reaction"); } catch (_) { return; }
+  $("dReWrap").hidden = !r.n;
+  if (!r.n) return;
+  if (r.n < r.need) { $("dRe").innerHTML = `<div class="kv"><span class="sub">${r.n} of the ${r.need} paper calls from alerts it needs before it reads your speed.</span></div>`; return; }
+  const m = (s) => s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`;
+  $("dRe").innerHTML = `<div class="kv"><span>${esc(r.line)}</span></div>`
+    + `<div class="kv head"><span>How fast</span><b>entry vs the alert price</b></div>` + r.speeds.map((x) => `<div class="kv"><span>${esc(x.label)} <span class="sub">${x.n}</span></span><b class="num ${cls(x.cost)}">${pct(x.cost)}</b></div>`).join("")
+    + (r.kinds.length ? `<div class="kv head"><span>By kind of news</span><b>your delay · cost</b></div>` + r.kinds.map((k) => `<div class="kv"><span>${esc(k.label)} <span class="sub">${k.half_label ? `half its move within ${esc(k.half_label)}` : ""}</span></span><b class="num">${m(k.delay)} · <span class="${cls(k.cost)}">${pct(k.cost)}</span></b></div>`).join("") : "")
+    + (r.lockscreen ? `<div class="kv"><span>From the lock screen <span class="sub">${r.lockscreen.n} calls</span></span><b class="num">${pct(r.lockscreen.cost)} <span class="sub">vs ${pct(r.lockscreen.app_cost)} in the app</span></b></div>` : "")
+    + `<div class="sub" style="padding:4px 0 12px">Each paper call opened from an alert: how long after the alert, and its entry against the alert price, its way (negative: you paid up). Alert pushes carry a Track button where the phone shows them (Android, desktop): a paper call with the alert's plan, straight from the lock screen.</div>`;
+}
 // how to enter each kind of news (Watch): every entry style, graded side by side
 async function loadEntries() {
   let r;
@@ -3250,7 +3278,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadChanges(), loadSignals(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadChanges(), loadSignals(), loadReaction(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

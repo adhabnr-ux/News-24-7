@@ -282,6 +282,7 @@ class Engine:
         self.runup_rates: dict[str, Any] = {}
         self.entry_rates: dict[str, Any] = {}  # every entry style per kind of news, side by side (entries.py)
         self.tape_rates: dict[str, Any] = {}  # cold, normal and hot tapes: the rest of the day (tapeday.py)
+        self.exit_rates: dict[str, Any] = {}  # every exit per kind of news, side by side (exits_kind.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2027,6 +2028,10 @@ class Engine:
                         k: pt[k] for k in ("limit", "dip", "p_now", "p_filled") if k in pt
                     }
             ek = (alert.edge.get("catalyst") or {}).get("key")
+            xr = self.exit_rates.get(ek) if ek else None
+            if xr and xr.get("best"):  # how to exit its kind of news here (exits_kind.py)
+                alert.edge["exit_rec"] = {"kind": ek, "label": xr["label"], "best": xr["best"], "n": xr["n"],
+                                          "styles": {s: xr["styles"][s] for s in (xr["best"], "close") if s in xr["styles"]}}  # fmt: skip
             er = self.entry_rates.get(ek) if ek else None
             if er and er.get("best"):  # how to enter its kind of news here (entries.py)
                 alert.edge["entry_rec"] = {"kind": ek, "label": er["label"], "best": er["best"], "n": er["n"],
@@ -4223,6 +4228,9 @@ class Engine:
         from .tapeday import tape_rates
 
         self.tape_rates = tape_rates(self, 365, now)
+        from .exits_kind import exit_rates
+
+        self.exit_rates = exit_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

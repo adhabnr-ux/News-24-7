@@ -1047,6 +1047,8 @@ class WebPushNotifier(Notifier):
             "mute": alert.tickers[0]
             if alert.tickers and alert.kind != "system"
             else "",  # the notification's "Mute 4h" button
+            # the notification's "Track" button: a paper call from the lock screen, with the alert's plan
+            "track": alert.id if alert.edge.get("plan") and alert.kind != "system" else "",
         }
 
     async def push(

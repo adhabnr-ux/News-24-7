@@ -1,6 +1,6 @@
 /* Foretape service worker: shows pushed alerts, opens the app on tap, keeps the app shell
    available offline, and re-subscribes if the browser rotates the push subscription. */
-const SHELL = "foretape-shell-v73";
+const SHELL = "foretape-shell-v74";
 const CONF = "foretape-conf";
 const SHELL_FILES = [
   "/app/", "/app/app.css", "/app/app.js", "/app/cmd.js", "/app/scene.js", "/app/launch.webp", "/app/depth.png", "/app/logo.svg", "/app/icon-192.png", "/app/badge-96.png",
@@ -66,9 +66,9 @@ self.addEventListener("push", (e) => {
     badge: "/app/badge-96.png",
     timestamp: d.ts ? d.ts * 1000 : Date.now(),
     vibrate: critical ? [120, 60, 120, 60, 240] : [80, 40, 80],
-    data: { url: d.open || "/app/" + (d.id ? "#a=" + d.id : ""), source: d.url || "", mute: d.mute || "" },
+    data: { url: d.open || "/app/" + (d.id ? "#a=" + d.id : ""), source: d.url || "", mute: d.mute || "", track: d.track || "" },
     // buttons where the platform shows them (Android, desktop; iOS doesn't): the source, and muting the stock here
-    actions: [...(d.url ? [{ action: "source", title: "Open source" }] : []), ...(d.mute ? [{ action: "mute", title: `Mute ${d.mute} 4h` }] : [])],
+    actions: [...(d.track ? [{ action: "track", title: "Track (paper)" }] : []), ...(d.url ? [{ action: "source", title: "Open source" }] : []), ...(d.mute ? [{ action: "mute", title: `Mute ${d.mute} 4h` }] : [])].slice(0, 2),
   };
   e.waitUntil(Promise.all([
     // one notification per stock (a Desk setting): a newer alert on the same stock replaces the older one
@@ -97,11 +97,25 @@ async function deskAction(body) {
   await fetch("/api/desk", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, "X-Device": device }, body: JSON.stringify(body) });
 }
 
+async function trackAlert(id) {
+  const c = await caches.open(CONF);
+  const token = await (await c.match("/token"))?.text();
+  const device = (await (await c.match("/device"))?.text()) || "";
+  if (!token || !device) return;
+  const r = await fetch("/api/track-alert", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, "X-Device": device }, body: JSON.stringify({ alert_id: id }) });
+  const out = r.ok ? await r.json() : null;
+  await self.registration.showNotification(out ? `📌 Tracking ${out.symbol} at $${(+out.entry).toFixed(2)}` : "Couldn't track it", { body: out ? "A paper call with the alert's plan: stop and target set." : await r.text(), tag: "track-" + id, icon: "/app/icon-192.png", badge: "/app/badge-96.png" });
+}
+
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const { url, source, mute } = e.notification.data || {};
+  const { url, source, mute, track } = e.notification.data || {};
   if (e.action === "mute" && mute) {  // handled in the background: no app window
     e.waitUntil(deskAction({ action: "mute", symbol: mute, hours: 4 }).catch(() => {}));
+    return;
+  }
+  if (e.action === "track" && track) {  // a paper call with the alert's plan, from the lock screen
+    e.waitUntil(trackAlert(track).catch(() => {}));
     return;
   }
   const target = e.action === "source" && source ? source : url || "/app/";
