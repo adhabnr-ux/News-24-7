@@ -273,6 +273,8 @@ class Engine:
         self.dilution_rates: dict[str, Any] = {}
         self.catchup_rates: dict[str, Any] = {}  # what's left after the mainstream catches up (catchup.py)
         self.halt_rates: dict[str, Any] = {}  # what stocks did after a halt resumed (haltrec.py)
+        self.leg_rates: dict[str, Any] = {}  # new highs well after the news, graded (secondleg.py)
+        self.theme_rates: dict[str, Any] = {}  # ETFs after market-wide headlines, per theme (macrotape.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -1955,6 +1957,21 @@ class Engine:
             peer_refs = peer_stamp(self, alert)
             if peer_refs:
                 alert.edge["peer_refs"] = peer_refs
+            from .macrotape import movers, theme_of
+            from .macrotape import stamp as etf_stamp
+
+            etf_refs = etf_stamp(self, alert)
+            if etf_refs:  # a market-wide headline: the ETF basket now, graded after (macrotape.py)
+                alert.edge["etf_refs"] = etf_refs
+            th = theme_of(alert)
+            if th and th in self.theme_rates:
+                tr = self.theme_rates[th]
+                alert.edge["theme_rec"] = {
+                    "theme": th,
+                    "label": tr["label"],
+                    "n": tr["n"],
+                    "movers": movers(tr),
+                }
             if alert.tickers and alert.kind == "news":
                 from .floatshort import cached as float_cached
                 from .floatshort import float_for, stamp_later, stamp_of
@@ -2549,6 +2566,14 @@ class Engine:
                     from .peerlearn import grade as peers_grade
 
                     peers_grade(self, now)
+                with contextlib.suppress(Exception):
+                    from .macrotape import grade as etfs_grade
+
+                    etfs_grade(self, now)  # the ETF basket after market-wide headlines
+                with contextlib.suppress(Exception):
+                    from .secondleg import send_legs
+
+                    await send_legs(self, now)  # new highs well after the news
                 with contextlib.suppress(Exception):
                     from .haltrec import grade as halts_grade
 
@@ -4100,6 +4125,12 @@ class Engine:
         from .haltrec import halt_rates
 
         self.halt_rates = halt_rates(self, 180, now)
+        from .secondleg import leg_rates
+
+        self.leg_rates = leg_rates(self, 180, now)
+        from .macrotape import theme_rates
+
+        self.theme_rates = theme_rates(self, 365, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

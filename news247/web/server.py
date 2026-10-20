@@ -189,6 +189,8 @@ class WebServer:
         app.router.add_get("/api/float", self.api_float)
         app.router.add_get("/api/dilution", self.api_dilution)
         app.router.add_get("/api/catchup", self.api_catchup)
+        app.router.add_get("/api/legs", self.api_legs)
+        app.router.add_get("/api/themes", self.api_themes)
         app.router.add_get("/api/halts/record", self.api_halt_record)
         app.router.add_get("/api/changes", self.api_changes)
         app.router.add_get("/api/macro", self.api_macro)
@@ -1252,6 +1254,18 @@ class WebServer:
         from ..haltrec import board
 
         return _json(board(self.engine.halt_rates))
+
+    async def api_legs(self, request: web.Request) -> web.Response:
+        """Second legs (new highs well after the news), graded from the breakout to the close (secondleg.py)."""
+        from ..secondleg import board
+
+        return _json(board(self.engine.leg_rates))
+
+    async def api_themes(self, request: web.Request) -> web.Response:
+        """Market-wide headlines by theme, and which ETFs moved after them (macrotape.py)."""
+        from ..macrotape import board
+
+        return _json(board(self.engine.theme_rates))
 
     async def api_advice(self, request: web.Request) -> web.Response:
         """The setting changes the records back for this phone, ranked, each one tap from applied (advice.py)."""
