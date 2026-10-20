@@ -166,6 +166,7 @@ class WebServer:
         app.router.add_get("/api/precheck", self.api_precheck)
         app.router.add_get("/api/misses", self.api_misses)
         app.router.add_get("/api/tune", self.api_tune)
+        app.router.add_get("/api/stakes", self.api_stakes)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
         app.router.add_post("/api/link", self.api_link)
@@ -1030,6 +1031,12 @@ class WebServer:
         from ..tune import tune_cached
 
         return _json(tune_cached(self.engine, self._need_device(request)))
+
+    async def api_stakes(self, request: web.Request) -> web.Response:
+        """Upcoming binary events and your reports, with how both branches have traded (stakes.py)."""
+        from ..stakes import event_stakes
+
+        return _json(event_stakes(self.engine, self._device(request) or ""))
 
     async def api_equity(self, request: web.Request) -> web.Response:
         """Equity curves: your calls, each autopilot, every alert at the close, and SPY (equity.py)."""

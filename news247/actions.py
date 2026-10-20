@@ -77,6 +77,7 @@ def action_center(engine: Engine, device: str, now: float | None = None, limit: 
     items += _unread(engine, p, mine, now)
     items += _holdings(p, quote, now)
     items += _settings(engine, device, now)
+    items += _model(engine, p, now)
     done = {k: t for k, t in (p.get("act_done") or {}).items() if now - t < ACT_DONE_S}
     shown = [i for i in items if i["key"] not in done]
     shown.sort(key=lambda i: (-i["urgency"], -(i["ts"] or 0)))
@@ -360,6 +361,24 @@ def _settings(engine: Engine, device: str, now: float) -> list[dict[str, Any]]:
         for g in r["gates"]
         if g["verdict"] == "costing"
     ]
+
+
+def _model(engine: Engine, p: dict[str, Any], now: float) -> list[dict[str, Any]]:
+    """The odds model paused for drifting, on a phone whose settings lean on it."""
+    st = getattr(engine, "odds", None) or {}
+    if not st.get("paused"):
+        return []
+    prefs = p.get("prefs") or {}
+    uses = (
+        str(prefs.get("edge_min") or "").startswith("odds")
+        or (prefs.get("budget") or 0)
+        or any(r.get("min_odds") for r in p.get("autopilots") or [])
+    )
+    if not uses:
+        return []
+    why = (st.get("health") or {}).get("why") or "its recent record slipped"
+    return [_item(f"model:{int(st.get('fitted') or 0) // 86400}", "model", 55, "◎", "The odds model is paused",
+                  f"{why[0].upper()}{why[1:]}. Your odds-based settings aren't filtering until it recovers.", "", "#a=desk", ts=now)]  # fmt: skip
 
 
 # --------------------------------------------------------------------------- the portfolio

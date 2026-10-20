@@ -555,11 +555,22 @@ async function loadEarningsWeek() {
       + r.days.map((d) => `<div class="li"><div class="grow"><div style="font-weight:600">${esc(prettyDate(d.date))} <span class="sub">${inDays(d.in_days)}</span></div><div class="tks">${d.rows.slice(0, 18).map((x) => `<span class="tk${mine.has(x.symbol) ? " mine" : ""}" data-tk="${esc(x.symbol)}" role="button" title="${esc(x.name)}">${esc(x.symbol)} <small>${/before/i.test(x.when) ? "☀ pre" : /after/i.test(x.when) ? "☾ post" : ""}${x.implied != null ? ` · ±${x.implied.toFixed(1)}% priced` : ""}${x.usual != null ? ` · usually ±${x.usual.toFixed(1)}%` : ""}</small></span>`).join("")}${d.rows.length > 18 ? `<span class="tk rt">+${d.rows.length - 18}</span>` : ""}</div></div></div>`).join("") + "</div>";
   } catch (_) { return ""; }
 }
+// what's at stake: each upcoming binary event and your reports, with how both outcomes have traded
+async function stakesHTML() {
+  let r;
+  try { r = await api("/api/stakes"); } catch (_) { return ""; }
+  if (!r.rows.length) return "";
+  const usd = (v) => "$" + Math.round(v).toLocaleString();
+  const br = (b) => b.n ? `<div class="kv sub"><span>If ${esc(b.label)} <span class="faint">${b.n} graded${b.size ? ", " + esc(b.size) : ""}</span></span><b class="num ${cls(b.close)}">${pct(b.close)}${b.d1 != null ? ` <span class="sub">next day ${pct(b.d1)}</span>` : ""}</b></div>` : `<div class="kv sub"><span>If ${esc(b.label)}</span><b class="faint">no record yet</b></div>`;
+  return `<div class="sec-title rv"><h2>What's at stake</h2><span>both outcomes, as they've traded here</span></div>
+    <div class="panel glass tilt rv">${r.rows.map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span>${x.mine ? "★ " : ""}<b>${esc(x.title)}</b> <span class="sub">${esc(prettyDate(x.date))}${x.when ? ", " + esc(x.when) : ""} · ${inDays(x.in_days)}${x.value ? ` · you hold ${usd(x.value)}` : ""}${x.tracked ? ` · ${x.tracked} open call${x.tracked > 1 ? "s" : ""}` : ""}</span></span><b class="num">${x.implied_pct != null ? `±${x.implied_pct.toFixed(1)}%<small class="sub"> priced${x.value ? ` · ±${usd(x.value * x.implied_pct / 100)}` : ""}</small>` : ""}</b></div>${x.branches.map(br).join("")}`).join("")}
+    <div class="sub" style="padding:4px 0 12px">Each branch is this server's graded alerts of that kind of news at the stock's size (any size when too few), median move by the close, as the stock moved. History, not a forecast of the outcome or its size.</div></div>`;
+}
 async function loadCalendar() {
-  const [c, ew] = await Promise.all([api("/api/calendar?days=60"), loadEarningsWeek()]);
+  const [c, ew, st] = await Promise.all([api("/api/calendar?days=60"), loadEarningsWeek(), stakesHTML()]);
   const byDay = {};
   c.events.forEach((e) => (byDay[e.date] = byDay[e.date] || []).push(e));
-  $("cal").innerHTML = ew + (Object.keys(byDay).length ? Object.entries(byDay).map(([d, evs]) => `<div class="day-head rv"><b>${esc(prettyDate(d))}</b><span>${inDays(evs[0].in_days)}</span></div>
+  $("cal").innerHTML = st + ew + (Object.keys(byDay).length ? Object.entries(byDay).map(([d, evs]) => `<div class="day-head rv"><b>${esc(prettyDate(d))}</b><span>${inDays(evs[0].in_days)}</span></div>
       <div class="panel glass tilt rv">${evs.map((e) => calRow(e, true)).join("")}</div>`).join("") : emptyHTML("Nothing scheduled in the next 60 days."));
   Fx.observe($("cal"));
 }
@@ -1430,7 +1441,11 @@ async function loadOdds() {
   try { r = await api("/api/odds"); } catch (_) { return; }
   if (!r.ready) { $("dOdds").innerHTML = `<div class="li"><span class="muted">Learning: ${r.n} of the ${r.need} graded alerts it needs before it fits a model. Until then, alerts carry their kind of news' own record.</span></div>`; return; }
   const t = r.test, p100 = (v) => Math.round(v * 100) + "%";
-  $("dOdds").innerHTML = `<div class="kv"><span>${r.trusted ? "In use" : "Not in use"} <span class="sub">${r.trusted ? "it beat the plain hit rate on alerts it never saw" : "it didn't beat the plain hit rate on alerts it never saw, so alerts don't carry its odds"}</span></span><b class="num ${r.trusted ? "pos" : "neg"}">${t.skill > 0 ? "+" : ""}${Math.round(t.skill * 100)}%</b></div>
+  const hl = r.health || {};
+  $("dOdds").innerHTML = (r.paused ? `<div class="kv"><span><b class="neg">Paused</b> <span class="sub">${esc(hl.why || "")}. It keeps scoring itself in the background and resumes on its own once its recent record recovers; until then alerts don't carry odds and odds-based settings don't filter.</span></span><b class="num neg">${hl.skill > 0 ? "+" : ""}${Math.round((hl.skill || 0) * 100)}%</b></div>`
+      : hl.n >= (hl.need || 40) || hl.skill != null ? `<div class="kv"><span>Healthy <span class="sub">its last ${hl.n} live alerts beat the plain hit rate, odds within ${Math.abs(Math.round((hl.gap || 0) * 100))} points of what happened</span></span><b class="num pos">${hl.skill > 0 ? "+" : ""}${Math.round((hl.skill || 0) * 100)}%</b></div>`
+      : `<div class="kv sub"><span>The health check starts after ${hl.need || 40} live alerts (${hl.n || 0} so far): from then it pauses itself if its live record slips</span></div>`)
+    + `<div class="kv"><span>${r.trusted ? "In use" : r.paused ? "Passed its test" : "Not in use"} <span class="sub">${r.trusted || r.paused ? "it beat the plain hit rate on alerts it never saw" : "it didn't beat the plain hit rate on alerts it never saw, so alerts don't carry its odds"}</span></span><b class="num ${r.trusted ? "pos" : "neg"}">${t.skill > 0 ? "+" : ""}${Math.round(t.skill * 100)}%</b></div>
     <div class="kv"><span>The test <span class="sub">fitted on the older ${t.train}, scored on the newest ${t.n}: squared miss ${t.brier.toFixed(3)} vs ${t.brier_guess.toFixed(3)} guessing ${p100(t.guess)} every time${t.auc != null ? ` · ranks a winner over a loser ${p100(t.auc)} of the time` : ""}</span></span><b class="num">${t.n}</b></div>
     <div class="kv head"><span>When it said</span><b>it went its way</b></div>`
     + t.reliability.map((b) => `<div class="kv"><span>${p100(b.lo)}–${p100(b.hi)} <span class="sub">${b.n} alert${b.n === 1 ? "" : "s"}, ${p100(b.predicted)} on average</span></span><b class="num calib"><span class="bar" aria-hidden="true"><i style="width:${Math.round(b.actual * 100)}%"></i><i class="mark" style="left:${Math.round(b.predicted * 100)}%"></i></span><span class="${Math.abs(b.actual - b.predicted) <= 0.1 ? "pos" : "neg"}">${p100(b.actual)}</span></b></div>`).join("")

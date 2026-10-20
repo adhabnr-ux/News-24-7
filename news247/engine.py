@@ -1797,6 +1797,10 @@ class Engine:
             from .odds import predict
 
             odds = predict(self.odds, alert.to_dict(), self.regime_label())
+            if not odds and self.odds.get("paused"):
+                sh = predict(self.odds, alert.to_dict(), self.regime_label(), shadow=True)
+                if sh:
+                    alert.edge["odds_shadow"] = {"p": sh["p"]}  # not shown or used: how it recovers
             if odds:
                 alert.edge["odds"] = odds  # one calibrated number, with what moved it
                 if odds.get("ev") is not None and self.ev_hist[0]:

@@ -136,7 +136,7 @@ def _rows(
     engine: Engine,
     days: float,
     now: float,
-    live: list[tuple[float, int]] | None = None,
+    live: list[tuple[float, float, int]] | None = None,
     moves: dict[str, list[float]] | None = None,
     later: dict[str, dict[str, Any]] | None = None,
 ) -> list[tuple[float, dict[str, float], int]]:
@@ -162,9 +162,10 @@ def _rows(
             r = float(row["sign"] * row["close"])
             for k in ("*", *(k[4:] for k in x if k.startswith("cat="))):
                 moves.setdefault(k, []).append(r)
-        p = ((a.get("edge") or {}).get("odds") or {}).get("p")
+        ed = a.get("edge") or {}
+        p = (ed.get("odds") or ed.get("odds_shadow") or {}).get("p")  # shadow: odds kept while paused
         if live is not None and p is not None:
-            live.append((float(p), y))
+            live.append((float(a["created"]), float(p), y))
         for h, acc in (later or {}).items():  # the same alert, graded the next day and five sessions on
             if row.get(h) is not None:
                 rh = float(row["sign"] * row[h])
@@ -279,15 +280,40 @@ def payoffs(moves: dict[str, list[float]]) -> dict[str, dict[str, Any]]:
     return out
 
 
+DRIFT_N = 40  # the most recent live alerts the model's health is read on
+DRIFT_GAP = 0.12  # its average odds this far from what happened, and it's off
+
+
+def health(pairs: list[tuple[float, int]], base: float) -> dict[str, Any]:
+    """The model's last 40 live alerts (odds given when they went out, then graded): paused when
+    they did worse than guessing the plain hit rate, or when its odds ran 12+ points away from what
+    happened. Read every hour; it resumes on its own once its recent record recovers."""
+    recent = pairs[-DRIFT_N:]
+    if len(recent) < DRIFT_N:
+        return {"n": len(recent), "need": DRIFT_N, "paused": False}
+    ps, ys = [p for p, _ in recent], [y for _, y in recent]
+    brier = sum((p - y) ** 2 for p, y in recent) / len(recent)
+    brier0 = sum((base - y) ** 2 for y in ys) / len(ys)
+    skill = 1 - brier / brier0 if brier0 else 0.0
+    gap = sum(ps) / len(ps) - sum(ys) / len(ys)
+    why = ""
+    if skill < 0:
+        why = f"its last {len(recent)} live alerts did worse than guessing the plain hit rate"
+    elif abs(gap) > DRIFT_GAP:
+        why = f"its odds ran {abs(gap) * 100:.0f} points {'above' if gap > 0 else 'below'} what happened over its last {len(recent)} live alerts"
+    return {"n": len(recent), "skill": round(skill, 3), "gap": round(gap, 3), "paused": bool(why), "why": why}
+
+
 def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
     """Fit, test on the newest quarter, refit on everything. {"ready", "trusted", "model", "test", ...}."""
     now = now or time.time()
-    live: list[tuple[float, int]] = []
+    live: list[tuple[float, float, int]] = []
     moves: dict[str, list[float]] = {}
     later: dict[str, dict[str, Any]] = {h: {"rows": [], "moves": {}} for h in HORIZONS}
     rows = _rows(engine, days, now, live, moves, later)
+    live.sort()
     out: dict[str, Any] = {"n": len(rows), "need": MIN_TRAIN, "ready": False, "trusted": False, "fitted": now,
-                           "live": live_record(live)}  # fmt: skip
+                           "live": live_record([(p, y) for _, p, y in live])}  # fmt: skip
     if len(rows) < MIN_TRAIN:
         return out
     test, full, trusted = _test_and_fit(rows)
@@ -295,7 +321,10 @@ def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dic
     out["model"] = full
     out["payoff"] = payoffs(moves)
     out["ready"] = True
-    out["trusted"] = trusted
+    out["test_trusted"] = trusted  # it passed its test: shadow odds keep being kept while it's paused
+    out["health"] = health([(p, y) for _, p, y in live], full["base"])
+    out["paused"] = trusted and out["health"]["paused"]
+    out["trusted"] = trusted and not out["paused"]
     out["horizons"] = {}
     for h, acc in later.items():  # the same test, for holding to the next day and five sessions on
         hr = sorted(acc["rows"], key=lambda r: r[0])
@@ -317,10 +346,14 @@ def fit_odds(engine: Engine, days: float = 180, now: float | None = None) -> dic
     return out
 
 
-def predict(state: dict[str, Any] | None, a: dict[str, Any], regime: str | None) -> dict[str, Any] | None:
+def predict(
+    state: dict[str, Any] | None, a: dict[str, Any], regime: str | None, shadow: bool = False
+) -> dict[str, Any] | None:
     """A new alert's odds of going its way by the close, with the factors that moved them most (in
-    points). None until a model has beaten the plain hit rate on alerts it never saw."""
-    if not state or not state.get("trusted") or not _direction(a):
+    points). None until a model has beaten the plain hit rate on alerts it never saw, and while it's
+    paused for drifting (``shadow`` reads it anyway, to keep its live record going)."""
+    ok = (state or {}).get("test_trusted") if shadow else (state or {}).get("trusted")
+    if not state or not ok or not _direction(a):
         return None
     m = state["model"]
     x = features(a, regime)
