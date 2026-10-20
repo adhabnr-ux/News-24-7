@@ -797,7 +797,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadPromises(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -1144,6 +1144,16 @@ async function loadExitsKind() {
     + `<div class="sub" style="padding:4px 0 12px">The same alerts, exited five ways from the alert price: an hour in, at the close, the next day, five sessions on, and the plan's bracket (its stop or target, whichever came first; the stop when both did the same day, else the close). The best is the one with the best average (${r.need}+ graded).</div>`;
 }
 let COMBO_NAMES = {};
+// the promise monitor (Watch): each kind's pair, promised against what it made on the alerts after it
+async function loadPromises() {
+  let r;
+  try { r = await api("/api/promises"); } catch (_) { return; }
+  $("pmWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  $("pmBoard").innerHTML = `<div class="kv head"><span>Kind</span><b>promised · live</b></div>`
+    + r.rows.map((x) => `<div class="kv"><span>${x.verdict === "drifting" ? "✗" : x.verdict === "keeping" ? "✓" : "…"} ${esc(x.label)} <span class="sub">${x.n}</span><div class="sub ${x.verdict === "drifting" ? "neg" : ""}">${esc(x.line)}</div></span><b class="num">${pct(x.promised)} · <span class="${cls(x.live)}">${pct(x.live)}</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every alert goes out with its kind's pair and what that pair had made. Once graded, the desk knows what it made on an alert it was never fitted on. The newest ${r.need} per kind are the live record: below the promised range and losing, the kind is drifting and the playbook sits it out until it recovers.</div>`;
+}
 // the playbook today (Watch): what the playbook is doing on every live alert, on paper
 async function loadToday() {
   let r;
@@ -1795,6 +1805,7 @@ function renderDesk() {
     <div class="kv"><span>The playbook's moves<div class="sub">on a stock an alert reached you on, or you watch, hold or track: when the playbook's way in comes (a second leg, its limit, volume, the open) and when it's out, with its paper result against the plain way</div></span><b><button class="btn ghost small${pr.pb_push !== false ? " sel" : ""}" data-act="flag" data-s="pb_push">${pr.pb_push !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Denials<div class="sub">when a headline denies or walks back an alert's news on a stock it reached you on, or you watch, hold or track ("denies", "not in talks", "calls off"…), with what stocks did after denials here</div></span><b><button class="btn ghost small${pr.denials !== false ? " sel" : ""}" data-act="flag" data-s="denials">${pr.denials !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The playbook's day, 16:10 ET<div class="sub">one paragraph: what the playbook took, passed on and cut early today, and how it did against the plain way on the same alerts</div></span><b><button class="btn ghost small${pr.pb_day !== false ? " sel" : ""}" data-act="flag" data-s="pb_day">${pr.pb_day !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Coach my calls<div class="sub">the playbook's verdicts on the paper calls you open from alerts: its way out came, it stalled 30 minutes in, it gave back its run before an overnight hold, or its news was denied</div></span><b><button class="btn ghost small${pr.coach_calls !== false ? " sel" : ""}" data-act="flag" data-s="coach_calls">${pr.coach_calls !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The call, live<div class="sub">the call on an alert you got or a stock you're tracking changed with what the day graded live: volume 15 minutes in, the mainstream catch-up, a second leg</div></span><b><button class="btn ghost small${pr.callnow !== false ? " sel" : ""}" data-act="flag" data-s="callnow">${pr.callnow !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Volume confirmation<div class="sub">15 minutes after news on your stock: confirmed by volume, or no volume behind it, when news on that much volume has a clear record here</div></span><b><button class="btn ghost small${pr.volconf !== false ? " sel" : ""}" data-act="flag" data-s="volconf">${pr.volconf !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Your book on market-wide news<div class="sub">a tariff, Fed, oil or war headline: what headlines like it meant for your holdings, by their sectors' records, when it's 0.3%+ of the book</div></span><b><button class="btn ghost small${pr.bookmacro !== false ? " sel" : ""}" data-act="flag" data-s="bookmacro">${pr.bookmacro !== false ? "On" : "Off"}</button></b></div>

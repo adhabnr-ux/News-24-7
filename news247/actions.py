@@ -80,6 +80,9 @@ def action_center(engine: Engine, device: str, now: float | None = None, limit: 
     items += _model(engine, p, now)
     items += _risk(engine, device, p, now)
     items += _exits(engine, device, p, now)
+    from .callcoach import items as coach_items
+
+    items += coach_items(engine, device, now)  # the playbook's verdicts on your own open calls
     done = {k: t for k, t in (p.get("act_done") or {}).items() if now - t < ACT_DONE_S}
     shown = [i for i in items if i["key"] not in done]
     shown.sort(key=lambda i: (-i["urgency"], -(i["ts"] or 0)))

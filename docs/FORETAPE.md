@@ -496,6 +496,14 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
 - **The playbook reads the stock:** each stock's own record (its personality, from 6+ graded alerts) now changes what the playbook does with it:
   - a stock that **fights its news** (most of its alerts went the other way by the close) is sat out: the autopilot passes, the board says why (*"this stock fights its news here (22% of its 9 alerts went their way)"*), and you vs the playbook counts it as 0%;
   - on a stock whose moves **fade by the close**, the playbook takes the first hour when it entered at the alert or on volume, and otherwise doesn't hold past the close.
+- **The playbook coaches your open calls:** the exit rules the playbook learned ran for the paper autopilot only. Your own paper calls from alerts now get them too, as items in **Needs you**, each with a one-tap close:
+  - **its way out came:** the playbook's way out for its kind is due (an hour in, at the close, the next day, five sessions on);
+  - **stalled:** 30 minutes in it's gone nowhere, and stalled alerts like it lost the rest of the day here;
+  - **gave back its run:** in the last 15 minutes before an overnight hold, it gave back the kind of run that lost overnight here;
+  - **denied:** a later headline denied or walked back its news.
+
+  Each comes as one push too (Settings → *Coach my calls*). They're the playbook's record, not an order: closing is always your tap.
+- **The promise monitor:** every alert goes out stamped with its kind's pair and what that pair had made on average. Once the alert is graded, the desk knows what the pair actually made on an alert it was never fitted on. An alert whose way in never came counts as 0%. Pooled per kind, the newest 15 are the playbook's live record. Below the promised range's bottom (or a point under the promise, without a range) and losing, the kind is **drifting**: the market may have changed under the record. The playbook then sits it out (the autopilot passes, the board says why) until its live alerts recover. The Watch tab's **The playbook's promises, kept?** board shows promised against live per kind. It runs on every stamped alert, whether or not anyone follows the playbook. `GET /api/promises`.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

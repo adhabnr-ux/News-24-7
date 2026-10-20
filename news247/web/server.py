@@ -197,6 +197,7 @@ class WebServer:
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
         app.router.add_get("/api/stops-kind", self.api_stops_kind)
         app.router.add_get("/api/combos", self.api_combos)
+        app.router.add_get("/api/promises", self.api_promises)
         app.router.add_get("/api/playbook-today", self.api_playbook_today)
         app.router.add_get("/api/you-vs-playbook", self.api_you_vs_playbook)
         app.router.add_get("/api/repeats", self.api_repeats)
@@ -1330,6 +1331,12 @@ class WebServer:
         from ..forward import forward
 
         return _json(forward(self.engine, self._need_device(request)))
+
+    async def api_promises(self, request: web.Request) -> web.Response:
+        """Each kind's pair, promised against live (promises.py)."""
+        from ..promises import board
+
+        return _json(board(self.engine.promise_rates))
 
     async def api_combos(self, request: web.Request) -> web.Response:
         """Every way in paired with every way out per kind of news (combos.py)."""

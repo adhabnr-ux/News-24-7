@@ -297,6 +297,8 @@ class Engine:
         self.crowd_rates: dict[str, Any] = {}
         # what stocks did after a denial of their news (denials.py)
         self.denial_rates: dict[str, Any] | None = None
+        # each kind's pair, promised against what it made on the alerts after it (promises.py)
+        self.promise_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2086,6 +2088,18 @@ class Engine:
                 )
                 cr["in"], cr["out"] = cr["best"].split("|")
                 cr["name"] = COMBO_NAMES.get(cr["best"], cr["best"])  # readable without the board loaded
+                pm = self.promise_rates.get(ck) or {}
+                if (
+                    pm.get("verdict") == "drifting"
+                ):  # its live alerts stopped keeping the promise (promises.py)
+                    from .promises import line as promise_line
+
+                    cr["drift"] = {
+                        "live": pm["live"],
+                        "promised": pm["promised"],
+                        "n": pm["n"],
+                        "line": promise_line(pm),
+                    }
                 kr = self.combo_rates.get(ck) or {}
                 if (
                     kr.get("late") and kr.get("best") == cr["best"]
@@ -2681,6 +2695,12 @@ class Engine:
                     from .runup import send_runups
 
                     await send_runups(self, now)  # ten sessions to an event on your stock
+                with contextlib.suppress(Exception):
+                    from .callcoach import send as coach_send
+
+                    await coach_send(
+                        self, now
+                    )  # the playbook's verdicts on your own open calls (callcoach.py)
                 with contextlib.suppress(Exception):
                     from .journal import send_day
 
@@ -4538,6 +4558,9 @@ class Engine:
         from .denials import denial_rates
 
         self.denial_rates = denial_rates(self, 365, now)
+        from .promises import live_record
+
+        self.promise_rates = live_record(self, 120, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 

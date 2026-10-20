@@ -179,6 +179,9 @@ def playbook_pass(alert: dict[str, Any]) -> str:
         return "no way in and out made money on its kind here" + (
             f" (the best {best:+.1f}%)" if best is not None else ""
         )
+    if cr.get("drift"):
+        d = cr["drift"]
+        return f"its kind is drifting: the last {d['n']} live alerts made {d['live']:+.1f}% against {d['promised']:+.1f}% promised"
     ps = e.get("persona") or {}
     if ps.get("trait") == "fights":
         return f"this stock fights its news here ({round((ps.get('hit') or 0) * 100)}% of its {ps.get('n')} alerts went their way)"

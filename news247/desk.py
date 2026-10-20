@@ -149,6 +149,7 @@ def default_profile() -> dict[str, Any]:
             "bookmacro": True,  # a market-wide headline: what headlines like it meant for your book (bookmacro.py)
             "callnow": True,  # the call on an alert changed with the day's live facts (callnow.py)
             "runup": True,  # ten sessions before an FDA decision or readout on your stock: the run-up record
+            "coach_calls": True,  # the playbook's verdicts on your own open calls (callcoach.py)
             "pb_day": True,  # 16:10 ET: the playbook's day, written up (journal.py)
             "denials": True,  # a denial or walk-back of an alert's news on a stock you follow (denials.py)
             "pb_push": True,  # the playbook's way in came, or it's out, on a stock you follow (pbpush.py)
@@ -753,6 +754,7 @@ class Desk:
                 "pb_push",
                 "denials",
                 "pb_day",
+                "coach_calls",
                 "tapeday",
             ):
                 if flag in body:
@@ -1541,6 +1543,7 @@ class Desk:
                     "pb_push",
                     "denials",
                     "pb_day",
+                    "coach_calls",
                     "signal_cap",
                     "tapeday",
                     "watch_push",
