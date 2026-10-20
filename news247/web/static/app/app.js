@@ -143,6 +143,7 @@ function dur(s) {
 }
 const pct = (v) => (v == null ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2) + "%");
 const cls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
+const fmtShares = (n) => (n >= 1e9 ? (n / 1e9).toFixed(1) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : Math.round(n / 1e3) + "K");
 const outlet = (src) => (OUTLETS.find(([p]) => (src || "").startsWith(p)) || [0, src])[1];
 const dirLabel = { up: "▲ Bullish", down: "▼ Bearish", mixed: "◆ Two-way" };
 function marketText(m) {
@@ -795,7 +796,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -933,6 +934,7 @@ async function openSheet(id) {
     e.late ? `<h4>Late to the story</h4><div class="panel glass">
       <div class="kv"><span>It first broke ${Math.round(e.late.min)} minutes before this alert${e.late.source ? ` <span class="sub">${esc(outlet(e.late.source))}</span>` : ""}</span><b class="num">${e.late.rec?.close ? `<span class="${e.late.rec.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.late.rec.close.hit * 100)}%</span> <span class="sub">its way for alerts that late · ${e.late.rec.close.n}</span>` : ""}</b></div>
       <div class="sub" style="padding:4px 0 12px">Minutes from the story's first headline, from any outlet, to the one this alert came from. By then part of the market had it. History, not a forecast.</div></div>` : "",
+    e.float ? `<div class="kv clim"><span class="${e.float_base ? (e.float_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">🧮 Float ${fmtShares(e.float.float)}${e.float.short != null ? ` · ${Math.round(e.float.short * 100)}% short` : ""}${e.float_base ? `: ${esc(e.float_base.label[0].toLowerCase() + e.float_base.label.slice(1))} went its way ${Math.round(e.float_base.hit * 100)}% by the close (median ${pct(e.float_base.median)}${e.float_base.run != null ? `, winners ran ${pct(e.float_base.run)}` : ""}, ${e.float_base.n})` : ""}</span></div>` : "",
     e.insider_base ? `<h4>Insider buys like this, here</h4><div class="panel glass">
       ${e.insider ? `<div class="kv"><span>This buy</span><b>${esc(e.insider.label)}</b></div>` : ""}
       ${[["Five sessions on", e.insider_base.d5], ["A month on", e.insider_base.d20]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> rose · median ${pct(x.median)} · ${x.n}</b></div>`).join("")}
@@ -1141,7 +1143,30 @@ async function loadLine() {
     + `<div class="kv"><span>Alerts just over it <span class="sub">${r.line}-${r.line + 5}</span></span><b class="num">${cell(r.just_over)}</b></div>`
     + r.bands.map((b) => `<div class="kv"><span>${b.under} under <span class="sub">${b.from}-${b.to}, in the shadow</span></span><b class="num">${cell(b)}</b></div>`).join("")
     + (r.sources.length ? `<div class="kv head"><span>Near misses by source</span><b></b></div>` + r.sources.map((x) => `<div class="kv"><span>${esc(outlet(x.source))}</span><b class="num">${cell(x)}</b></div>`).join("") : "")
+    + kindLines(r, cell)
     + `<div class="sub" style="padding:4px 0 12px">Every headline naming a stock that scored within 15 points under the alert line is kept in the shadow (nothing is pushed or shown) with its stock's price, and graded an hour on and at the close like an alert. If the band just under the line does as well as the alerts just over it, the line is too high.</div>`;
+}
+// each kind of news' own line (linekinds.py): near misses and just-over alerts by kind, one tap to move it
+const KL_TAG = { lower: ["lower it", "gold"], raise: ["raise it", "neg"], keep: ["holds", "pos"], thin: ["too few", "faint"] };
+function kindLines(r, cell) {
+  const ks = (r.kinds || []).filter((k) => k.verdict !== "thin" || k.offset);
+  if (!ks.length) return "";
+  return `<div class="kv head"><span>By kind of news</span><b>just under · just over</b></div>`
+    + ks.slice(0, 10).map((k) => `<div class="kv"><span>${esc(k.label)} <span class="sub">line ${k.line}${k.offset ? ` (${k.offset > 0 ? "+" : ""}${k.offset})` : ""}</span> <span class="chipv ${KL_TAG[k.verdict][1]}">${KL_TAG[k.verdict][0]}</span>${k.text ? `<div class="sub">${esc(k.text)}</div>` : ""}
+      ${k.verdict === "lower" || k.verdict === "raise" || k.offset ? `<div class="row" style="padding:6px 0 2px">${k.verdict === "lower" || k.verdict === "raise" ? `<button class="btn ghost small" data-act="kline-set" data-s="${esc(k.kind)}" data-n="${k.to - r.line}">${k.verdict === "lower" ? "Lower" : "Raise"} to ${k.to}</button>` : ""}${k.offset ? `<button class="btn ghost small" data-act="kline-set" data-s="${esc(k.kind)}" data-n="0">Back to ${r.line}</button>` : ""}</div>` : ""}</span><b class="num">${cell(k.under)}<br>${cell(k.over)}</b></div>`).join("")
+    + `<div class="sub" style="padding:2px 0 8px">A kind's line moves 5 points at a time, at most 10 from the main line: lower where its headlines just under the line ran like its alerts just over it, higher where its alerts just over it lost (40% or less, negative median). Headlines are read against their kind's line when they arrive.</div>`;
+}
+// float and short interest (Watch): news by how many shares trade and how many are sold short
+async function loadFloat() {
+  let r;
+  try { r = await api("/api/float"); } catch (_) { return; }
+  $("floatWrap").hidden = !r.float.length && !r.short.length;
+  if ($("floatWrap").hidden) return;
+  const row = (x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)}${x.run != null ? ` · runs ${pct(x.run)}` : ""} · ${x.n}</span></b></div>`;
+  $("floatBoard").innerHTML = (r.float.length ? `<div class="kv head"><span>By float</span><b>its way by the close</b></div>` + r.float.map(row).join("") : "")
+    + (r.short.length ? `<div class="kv head"><span>By short interest</span><b></b></div>` + r.short.map(row).join("") : "")
+    + (r.kinds.length ? `<div class="kv head"><span>By kind of news</span><b></b></div>` + r.kinds.map(row).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Each news alert's stock carries its float (shares free to trade) and short interest (the share of them sold short), read from Yahoo's key statistics and kept a week. Graded by the close, its way; "runs" is the winners' median best run before the close. A band's record with ${r.need}+ graded rides on its alerts, and a strong or weak one counts in the call.</div>`;
 }
 // news climate (Watch): each kind of news, the last two weeks against its record before them
 const CLIM = { hot: ["🔥 hot", "pos"], cold: ["🧊 cold", "neg"], normal: ["", ""] };
@@ -2619,6 +2644,7 @@ async function onAct(el) {
   else if (a === "advice-skip") { const x = adviceR?.items?.[+el.dataset.n]; if (x && await deskEdit("advice_dismiss", { key: x.key })) loadAdvice(); }
   else if (a === "bars-fill") { toast("Reading the exchange's bars…"); try { const r = await api("/api/bars/fill", { method: "POST", body: "{}" }); toast(r.filled ? `Filled ${r.filled} stamp${r.filled === 1 ? "" : "s"}: ${r.daily || 0} from daily bars, ${r.minutes || 0} from minute bars` : "Nothing to fill"); loadUptime(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-set") { if (!confirm(`Lower the alert line from ${lineR?.line} to ${s} for every phone? Headlines scoring ${s}+ become alerts. You can put it back any time.`)) return; try { await api("/api/line", { method: "POST", body: JSON.stringify({ medium: +s, why: lineR?.line_text || "" }) }); toast(`The alert line is ${s} now`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
+  else if (a === "kline-set") { const k = (lineR?.kinds || []).find((x) => x.kind === s), off = +el.dataset.n; if (!k) return; if (off && !confirm(`${off < 0 ? "Lower" : "Raise"} the line for ${k.label.toLowerCase()} news to ${lineR.line + off} for every phone? You can put it back any time.`)) return; try { const r = await api("/api/line/kind", { method: "POST", body: JSON.stringify({ kind: s, offset: off || null, why: off ? k.text : "" }) }); toast(`${k.label}: the line is ${r.line}`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-reset") { try { const r = await api("/api/line", { method: "POST", body: JSON.stringify({ reset: true }) }); toast(`The alert line is back to ${r.line}`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "call-follow") { if (await deskEdit("autopilot_add", { follow: "call", catalyst: "all", band: "all", min_sev: "HIGH", exit: "close" })) { toast("🤖 Following the call: act-now calls open a paper call at once, wait-for-the-open calls at the open", null, 6000); renderAutopilots(); } }
   else if (a === "odds-follow") { if (await deskEdit("autopilot_add", { catalyst: "all", band: "all", min_sev: "HIGH", exit: "close", min_odds: 60 })) { toast("🤖 Following the model: each new HIGH alert it rates 60%+ opens a paper call here", null, 6000); renderAutopilots(); } }

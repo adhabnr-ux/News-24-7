@@ -185,6 +185,8 @@ class WebServer:
         app.router.add_get("/api/recall", self.api_recall)
         app.router.add_get("/api/line", self.api_line)
         app.router.add_post("/api/line", self.api_line_set)
+        app.router.add_post("/api/line/kind", self.api_line_kind)
+        app.router.add_get("/api/float", self.api_float)
         app.router.add_get("/api/macro", self.api_macro)
         app.router.add_get("/api/vol", self.api_vol)
         app.router.add_get("/api/playbooks", self.api_playbooks)
@@ -1180,9 +1182,10 @@ class WebServer:
 
     async def api_line(self, request: web.Request) -> web.Response:
         """The alert line, tested: headlines just under it graded in the shadow, beside alerts just over it (shadow.py)."""
+        from ..linekinds import kind_report
         from ..shadow import line_report
 
-        return _json(line_report(self.engine))
+        return _json({**line_report(self.engine), "kinds": kind_report(self.engine)})
 
     async def api_line_set(self, request: web.Request) -> web.Response:
         """Move the alert line on the evidence ({"medium": 30, "why": ...}) or put it back ({"reset": true})."""
@@ -1199,6 +1202,28 @@ class WebServer:
         except (TypeError, ValueError) as exc:
             raise web.HTTPBadRequest(text=str(exc)) from None
         return _json(out)
+
+    async def api_line_kind(self, request: web.Request) -> web.Response:
+        """Move one kind of news' line on the evidence ({"kind", "offset": -5, "why"}; offset null: back to the main line)."""
+        from ..linekinds import set_kind_line
+
+        try:
+            body = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(text="need JSON") from None
+        try:
+            out = set_kind_line(
+                self.engine, str(body.get("kind") or ""), body.get("offset"), str(body.get("why") or "")
+            )
+        except (TypeError, ValueError) as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
+        return _json(out)
+
+    async def api_float(self, request: web.Request) -> web.Response:
+        """News by float and by short interest, graded by the close (floatshort.py)."""
+        from ..floatshort import board
+
+        return _json(board(self.engine.float_rates))
 
     async def api_advice(self, request: web.Request) -> web.Response:
         """The setting changes the records back for this phone, ranked, each one tap from applied (advice.py)."""

@@ -82,6 +82,11 @@ class Engine:
             from .shadow import apply_line
 
             apply_line(self)
+        self.line_offsets: dict[str, float] = {}  # each kind of news' line, from the main one (linekinds.py)
+        with contextlib.suppress(Exception):
+            from .linekinds import offsets as line_offsets
+
+            self.line_offsets = line_offsets(self)
         self.scorer = Scorer(cfg.scoring, cfg.knowledge, cfg.market.symbols)
         self.edge = EdgeDesk(self.scorer)
         self.calendar = Calendar()
@@ -263,6 +268,7 @@ class Engine:
         self.call_muted: list[str] = []  # facts the replay shows sorting nothing (thecall.py)
         self.pair_rates: dict[str, Any] = {}  # who follows whose news, per pair (peerlearn.py)
         self.wait_rates: dict[str, Any] = {}  # did waiting for the open or a pullback pay (waits.py)
+        self.float_rates: dict[str, Any] = {}  # news by float and short interest, graded (floatshort.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -523,13 +529,19 @@ class Engine:
     async def _finalize(self, item: NewsItem, analysis: Analysis, story: Story, late: bool = False) -> None:
         story.max_score = max(story.max_score, analysis.score)
         severity = self.cfg.scoring.severity_for(story.max_score)
+        kline, kind = None, None
+        if self.line_offsets and severity <= Severity.MEDIUM:  # its kind of news may have its own line
+            with contextlib.suppress(Exception):
+                from .linekinds import severity_line
+
+                clears, kline, kind = severity_line(self, item.title, analysis.tickers, story.max_score)
+                severity = Severity.MEDIUM if clears else min(severity, Severity.LOW)
         if severity < Severity.MEDIUM:
             with contextlib.suppress(Exception):
                 from .shadow import record as shadow_record
 
-                shadow_record(
-                    self, item, analysis, story.max_score
-                )  # just under the line: graded in the shadow
+                # just under the line: graded in the shadow
+                shadow_record(self, item, analysis, story.max_score, line=kline, kind=kind)
             return
         if story.alerted is not None and severity <= story.alerted:
             return
@@ -1934,6 +1946,19 @@ class Engine:
             peer_refs = peer_stamp(self, alert)
             if peer_refs:
                 alert.edge["peer_refs"] = peer_refs
+            if alert.tickers and alert.kind == "news":
+                from .floatshort import cached as float_cached
+                from .floatshort import float_for, stamp_later, stamp_of
+
+                kind_ = (alert.edge.get("catalyst") or {}).get("key")
+                fl = stamp_of(float_cached(self, alert.tickers[0]))
+                if fl:  # its float and short interest, and how news on stocks like it did (floatshort.py)
+                    alert.edge["float"] = fl
+                    fb = float_for(self.float_rates, kind_, fl)
+                    if fb:
+                        alert.edge["float_base"] = fb
+                elif self.smallcap_feed is not None:
+                    self._spawn(stamp_later(self, alert.id, alert.tickers[0], kind_))
             from .macrodays import macro_for
             from .macrodays import today as macro_today
 
@@ -4014,6 +4039,9 @@ class Engine:
         from .waits import wait_rates
 
         self.wait_rates = wait_rates(self, 180, now)
+        from .floatshort import float_rates
+
+        self.float_rates = float_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

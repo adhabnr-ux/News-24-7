@@ -11,7 +11,8 @@ the numbers behind it and the one tap that makes it:
   on 20+).
 - **Use the tuned push setting** (tune.py's best pick, when it beats the current one).
 - **Fix a setting that costs you** (keptback.py: one holding back alerts that went their way).
-- **Lower the alert line** (shadow.py, when the headlines just under it did as well).
+- **Lower the alert line** (shadow.py, when the headlines just under it did as well), or **move one
+  kind of news' line** (linekinds.py: lower it where near misses ran, raise it where alerts lost).
 - **Follow the call on paper** (when "act now" went its way 60%+ on 30+ replayed alerts and no
   autopilot follows it yet).
 
@@ -82,6 +83,15 @@ def advise(engine: Engine, device: str, now: float | None = None) -> dict[str, A
         top = lr["bands"][0]
         items.append(_item("line", f"Lower the alert line to {top['from']:g}", lr["line_text"], top["n"] * 0.5,
                            api="/api/line", body={"medium": top["from"], "why": lr["line_text"]}, label="Lower it"))  # fmt: skip
+    from .linekinds import kind_report
+
+    for r in kind_report(engine, 60, now):
+        if r["verdict"] in ("lower", "raise"):
+            side = r["under"] if r["verdict"] == "lower" else r["over"]
+            items.append(_item(f"kline:{r['kind']}:{r['to']:g}", f"{'Lower' if r['verdict'] == 'lower' else 'Raise'} the line for {r['label'].lower()} news to {r['to']:g}",
+                               r["text"], side["n"] * 0.4, api="/api/line/kind",
+                               body={"kind": r["kind"], "offset": r["to"] - engine.cfg.scoring.medium, "why": r["text"]},
+                               label="Lower it" if r["verdict"] == "lower" else "Raise it"))  # fmt: skip
     rp = getattr(engine, "call_replay", None) or {}
     act = next((v for v in rp.get("verbs") or [] if v["verb"] == "act"), None)
     follows = any(r.get("follow") == "call" for r in p.get("autopilots") or [])

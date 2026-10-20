@@ -35,11 +35,18 @@ MIN_N = 15
 
 
 def record(
-    engine: Engine, item: NewsItem, analysis: Analysis, score: float, now: float | None = None
+    engine: Engine,
+    item: NewsItem,
+    analysis: Analysis,
+    score: float,
+    now: float | None = None,
+    line: float | None = None,
+    kind: str | None = None,
 ) -> bool:
-    """Keep a headline that scored within NEAR points under the line, if it names a stock, has a
-    direction and the stock has a live price. Once per headline."""
-    line = engine.cfg.scoring.medium
+    """Keep a headline that scored within NEAR points under the line (its kind's line when it has its
+    own, linekinds.py), if it names a stock, has a direction and the stock has a live price. Once per
+    headline."""
+    line = engine.cfg.scoring.medium if line is None else line
     if not (line - NEAR <= score < line) or not analysis.tickers or analysis.direction not in ("up", "down"):
         return False
     now = now or time.time()
@@ -49,6 +56,8 @@ def record(
         return False
     data = {"symbol": sym, "sign": 1 if analysis.direction == "up" else -1, "ref": q[1], "score": round(score, 1),
             "line": line, "source": item.source, "title": item.title[:200]}  # fmt: skip
+    if kind:
+        data["kind"] = kind
     return engine.storage.add_shadow(item.uid, now, data)
 
 

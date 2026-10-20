@@ -80,6 +80,10 @@ def the_call(
             add("+", key.replace("_base", ""), f"{what} {round(r['hit'] * 100)}%")
         elif r and r["hit"] <= 0.4:
             add("-", key.replace("_base", ""), f"{what} {round(r['hit'] * 100)}%")
+    fb = e.get("float_base") or {}
+    if fb.get("n", 0) >= MIN_N and (fb["hit"] >= 0.6 or fb["hit"] <= 0.4):
+        what = fb["label"][:1].lower() + fb["label"][1:]
+        add("+" if fb["hit"] >= 0.6 else "-", "float", f"{what} {round(fb['hit'] * 100)}%")
     cl = e.get("climate") or {}
     if cl.get("state") in ("hot", "cold"):
         add(
@@ -175,7 +179,8 @@ def call_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
 
 FACT_LABEL = {"odds": "The odds", "ev": "A negative expected move", "record": "Its kind's record", "firm": "The firm's record",
               "flow": "The flow's record", "insider": "The insider's shape", "climate": "The climate", "regime": "Days like today",
-              "persona": "The stock's personality", "late": "Late to the story", "macro": "Macro days"}  # fmt: skip
+              "persona": "The stock's personality", "late": "Late to the story", "macro": "Macro days",
+              "float": "Float and short interest"}  # fmt: skip
 
 
 def replay(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
