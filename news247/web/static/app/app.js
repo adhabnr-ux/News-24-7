@@ -66,6 +66,8 @@ const GLOSSARY = {
   sympathy: "Sympathy: when one company jumps on news, its peers sometimes follow (same customers, same regulator, same read-through). Foretape flags the peer you watch that hasn't moved yet, then grades every flag an hour later and at the close, so you can see whether these catch up.",
   catalyst: "Catalyst record: Foretape reads each headline for its kind of news (contract win, FDA approval, earnings beat, downgrade, offering...) and the company's size (under $2B, $2-10B, $10B+), then grades every such alert an hour later, at the close and the next day. The record is how that kind of news has traded here, at that size (any size when there are fewer than 6).",
   plan: "A plan for it: the stop sits where the news would be proven wrong (back through the price before it), the target at the typical close move for this kind of news at this company size, else what options price. The size risks your chosen share of the account between entry and stop. Paper only, not advice.",
+  edge: "Edge bar: a push only for news whose kind (contract win, upgrade, offering...) has a record that clears your bar at the close: half or 60% of them went their way, or they typically move 2%+ either way. Kinds with no record yet, news Foretape can't read for a kind, CRITICAL alerts and stocks you set to push everything still come.",
+  targets: "Analyst targets: read from headlines like \"Goldman raises Acme price target to $150 from $120\". The newest target from each firm in 90 days, their median and range, and the upside from the live price. Phones watching the stock get a push when a target moves 15%+ or sits 25%+ from the price.",
   dial: "The push dial: how loud this one stock is on your phone. Default follows your settings; HIGH only skips its MEDIUM alerts; Everything pushes even MEDIUM alerts and ignores your floor and the fades filter (your categories, mutes and quiet hours still apply); Off never pushes it.",
   implied: "Implied move: what the options market is paying for. The at-the-money call + put (the straddle) for an expiry, as a % of the stock: roughly the move priced in by that date, up or down.",
   callwall: "Call wall: the strike above the stock with the most call open interest. Dealers hedging those calls can make it act like a ceiling into expiry; a clean break through it can speed up.",
@@ -687,8 +689,17 @@ async function loadRoom() {
       <span class="chg num pos" style="width:auto;min-width:64px">${pct(x.room)}<small class="rsess">room</small></span></div>`; }).join("")
     + `<div class="sub" style="padding:4px 0 12px">The typical move is the median for that catalyst at that company size, from Foretape's own graded alerts. History, not a forecast: many never make it.</div>`;
 }
+async function loadPTBoard() {
+  let r;
+  try { r = await api("/api/targets"); } catch (_) { return; }
+  $("ptWrap").hidden = !r.rows.length;
+  const verb = { raise: "raises", cut: "cuts", initiate: "starts", maintain: "keeps", set: "sets" };
+  $("ptBoard").innerHTML = r.rows.slice(0, 15).map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:58px">${esc(x.symbol)}</span><div class="grow"><div style="font-weight:600">${esc(x.firm || "An analyst")} ${verb[x.action]} to ${fmtPx(x.to)}</div>
+    <div class="sub">${x.from ? `from ${fmtPx(x.from)} · ` : ""}${x.rating ? esc(x.rating) + " · " : ""}${x.upside != null ? `${pct(x.upside)} from the price · ` : ""}${ago(x.ts)} ago</div></div>
+    ${x.change_pct != null ? `<span class="chg num ${cls(x.change_pct)}">${pct(x.change_pct)}</span>` : ""}</div>`).join("");
+}
 async function loadWatch() {
-  loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadPTBoard(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -1117,6 +1128,11 @@ function renderDesk() {
     <div class="kv"><span>End-of-day report card<div class="sub">16:05 ET: your watchlist's day, your calls, what fired, how the alerts did</div></span><b><button class="btn ghost small${pr.eod !== false ? " sel" : ""}" data-act="eod">${pr.eod !== false ? "On" : "Off"}</button></b></div>
     <div class="sub" style="padding-top:8px">Focus: only CRITICAL comes through${desk.focus ? ` · <span class="gold">on until ${new Date(desk.focus * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>` : ""}</div>
     <div class="row" style="padding:10px 0 4px"><button class="btn ghost small" data-act="focus" data-m="60">1 hour</button><button class="btn ghost small" data-act="focus" data-m="180">3 hours</button><button class="btn ghost small" data-act="focus" data-u="open">Until the open</button>${desk.focus ? `<button class="btn ghost small sel" data-act="focus" data-m="0">End focus</button>` : ""}</div>
+    <div class="sub" style="padding-top:8px">Kinds of news that may push ${tip("catalyst")} <span class="faint">(tap to turn one off; % = went its way by the close)</span></div>
+    <div class="row catrow" style="padding:10px 0 4px">${(desk.catalyst_kinds || []).map((k) => { const off = (desk.cat_off || []).includes(k.key); return `<button class="btn ghost small${off ? "" : " sel"}" data-act="cat-mute" data-s="${esc(k.key)}" aria-pressed="${!off}">${esc(k.label)}${k.close ? ` <span class="faint">${Math.round(k.close.hit * 100)}%</span>` : ""}</button>`; }).join("")}</div>
+    ${(desk.catalyst_taste || []).filter((t) => t.suggest_off).map((t) => `<div class="kv"><span class="gold">You've voted down ${t.down} ${esc(t.label.toLowerCase())} alerts and none up.</span><b><button class="btn ghost small" data-act="cat-mute" data-s="${esc(t.key)}">Stop pushing them</button></b></div>`).join("")}
+    <div class="sub" style="padding-top:8px">Edge bar: only push news whose kind has a record of… ${tip("edge")}</div>
+    <div class="row" style="padding:10px 0 4px">${[["", "Any record"], ["hit50", "50%+ its way"], ["hit60", "60%+ its way"], ["move2", "moves 2%+"]].map(([k, l]) => `<button class="btn ghost small${(pr.edge_min || "") === k ? " sel" : ""}" data-act="edge-bar" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="sub" style="padding-top:8px">Burst protection: after this many pushes in 10 minutes, the rest fold into one summary (CRITICAL still comes)</div>
     <div class="row" style="padding:10px 0 4px">${[[0, "Off"], [4, "4"], [6, "6"], [10, "10"]].map(([k, l]) => `<button class="btn ghost small${(pr.burst || 0) === k ? " sel" : ""}" data-act="burst" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="kv"><span>Watchlist pushes<div class="sub">a MEDIUM alert on a stock you watch still reaches your lock screen</div></span><b><button class="btn ghost small${pr.watch_push ? " sel" : ""}" data-act="wpush">${pr.watch_push ? "On" : "Off"}</button></b></div>
@@ -1519,7 +1535,7 @@ function tickerHTML(d) {
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
   const implied = `<h4>What options price in ${tip("implied")}</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
-  return [head + relLine + sessLine + earnLine, sinceBlock(lookCache[d.symbol]), acts, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
+  return [head + relLine + sessLine + earnLine, sinceBlock(lookCache[d.symbol]), acts,`<div id="ptBox">${ptCache[d.symbol] ? targetsHTML(ptCache[d.symbol]) : ""}</div>`, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0, tickerNow = null;
 const impliedNow = {};
@@ -1572,7 +1588,8 @@ async function openTicker(sym) {
   if (hit && Date.now() - hit.at < 180e3) {  // prefetched: show it now, then bring it up to date in place
     lookCache[hit.d.symbol] = hit.d.since_look || null;
     tickerNow = hit.d; showSheet(tickerHTML(hit.d)); $("sheet").dataset.sym = hit.d.symbol; noteRecent(hit.d);
-    visit(hit.d).then(() => tickerCache.delete(sym));  // its "since" is spent: the next visit fetches a fresh one
+    visit(hit.d).then(() => tickerCache.delete(sym));
+    loadTargets(hit.d.symbol);  // its "since" is spent: the next visit fetches a fresh one
     loadImplied(hit.d.symbol).finally(() => loadEarnings(hit.d.symbol));
     api("/api/ticker/" + encodeURIComponent(sym)).then((d) => {
       if (n !== tickerReq || $("sheet").dataset.sym !== d.symbol) return;
@@ -1595,6 +1612,23 @@ async function openTicker(sym) {
   noteRecent(d);
   visit(d);
   loadImplied(d.symbol).finally(() => loadEarnings(d.symbol));
+  loadTargets(d.symbol);
+}
+// analyst price targets on a stock, read from the headlines
+const ptCache = {};
+async function loadTargets(sym) {
+  let t = ptCache[sym];
+  if (!t) { try { t = ptCache[sym] = await api("/api/targets/" + encodeURIComponent(sym)); } catch (_) { return; } setTimeout(() => delete ptCache[sym], 300e3); }
+  const el = $("ptBox");
+  if (el && $("sheet").dataset.sym === sym) el.innerHTML = targetsHTML(t);
+}
+function targetsHTML(t) {
+  if (!t?.n) return "";
+  const verb = { raise: "raised", cut: "cut", initiate: "started", maintain: "kept", set: "set" };
+  return `<h4>Analyst targets ${tip("targets")}</h4><div class="panel glass">
+    <div class="kv"><span>Median of ${t.n} firm${t.n === 1 ? "" : "s"} <span class="sub">${fmtPx(t.low)} – ${fmtPx(t.high)}${t.raises || t.cuts ? ` · 30 days: ${t.raises} raised, ${t.cuts} cut` : ""}</span></span><b class="num">${fmtPx(t.median)}${t.upside != null ? ` <span class="${cls(t.upside)}">${pct(t.upside)}</span>` : ""}</b></div>
+    ${t.rows.map((r) => `<div class="kv"><span>${esc(r.firm || "An analyst")} <span class="sub">${verb[r.action]}${r.from ? ` from ${fmtPx(r.from)}` : ""}${r.rating ? " · " + esc(r.rating) : ""} · ${ago(r.ts)} ago</span></span><b class="num">${fmtPx(r.to)}${r.upside != null ? ` <span class="sub ${cls(r.upside)}">${pct(r.upside)}</span>` : ""}</b></div>`).join("")}
+    <div class="sub" style="padding:4px 0 12px">Read from the headlines Foretape collects (the newest from each firm, 90 days); a firm whose change never made a headline isn't here.</div></div>`;
 }
 // stock pages open instantly for the stocks you watch: fetched quietly in the background, kept 3 minutes
 const tickerCache = new Map();
@@ -1844,6 +1878,8 @@ async function onAct(el) {
   else if (a === "share-t") share(el.dataset.title || s, location.origin + "/app/#t=" + s);
   else if (a === "search-clear") { $("q").value = ""; $("searchRes").innerHTML = ""; renderRecent(); }
   else if (a === "close") closeSheet();
+  else if (a === "cat-mute") { const off = !(desk.cat_off || []).includes(s), label = (desk.catalyst_kinds || []).find((k) => k.key === s)?.label || s; if (await deskEdit("cat_mute", { key: s, on: off })) toast(off ? `${label} news won't push to this phone` : `${label} news pushes again`); }
+  else if (a === "edge-bar") { if (await deskEdit("prefs", { edge_min: s || null })) toast(s ? "Only news whose kind clears the bar pushes now (CRITICAL always comes)" : "Every kind of news may push"); }
   else if (a === "plan-track") { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); }
   else if (a === "acct-save") { const v = parseFloat(String($("acctIn")?.value || "").replace(/[$,\s]/g, "")); if (!(v >= 0)) { toast("Enter your account size in dollars"); return; } if (await deskEdit("prefs", { account: v }) && sheetAlert) loadPlan(sheetAlert); }
   else if (a === "risk-pct") { if (await deskEdit("prefs", { risk_pct: +s })) { if (sheetAlert && $("planBox")) loadPlan(sheetAlert); toast(`Plans risk ${s}% of your account on one idea`); } }
@@ -2335,13 +2371,14 @@ async function openHealth() {
       ${c.fix ? `<button class="btn ghost small" style="margin-top:8px" data-act="push-fix" data-fix="${esc(JSON.stringify(c.fix))}">${esc(c.fix.label)}</button>` : ""}</div></div>`).join("")}</div>
     <h4>Would I get it?</h4><div class="panel glass padded"><div class="sub" style="margin-bottom:10px">Pick a kind of alert and see whether it would reach this phone, with your settings as they are now.</div>
       <div class="addrow"><select id="wiCat">${CATS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select><select id="wiSev"><option>HIGH</option><option>MEDIUM</option><option>CRITICAL</option></select></div>
+      <div class="addrow"><select id="wiKind"><option value="">any kind of news</option>${(desk?.catalyst_kinds || []).map((k) => `<option value="${esc(k.key)}">${esc(k.label)}</option>`).join("")}</select></div>
       <div class="addrow"><input id="wiSym" class="key" placeholder="on this stock (optional)" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn ghost small sel" data-act="whatif">Check</button></div><div id="wiOut"></div></div>
     <div class="row" style="margin-top:14px"><button class="btn ghost small" data-act="push-log">Push log</button><button class="btn ghost small" id="hTest">Send a test alert</button></div>`);
   $("hTest").onclick = () => $("testBtn").click();
 }
 async function whatIf() {
   let r;
-  try { r = await api("/api/would-push", { method: "POST", body: JSON.stringify({ category: $("wiCat").value, severity: $("wiSev").value, symbol: $("wiSym").value.trim() }) }); }
+  try { r = await api("/api/would-push", { method: "POST", body: JSON.stringify({ category: $("wiCat").value, severity: $("wiSev").value, symbol: $("wiSym").value.trim(), catalyst: $("wiKind")?.value || "" }) }); }
   catch (e) { $("wiOut").innerHTML = `<div class="sub neg" style="padding-top:10px">${esc(String(e.message || e).slice(0, 160))}</div>`; return; }
   $("wiOut").innerHTML = `<div class="whyp ${r.got ? "got" : "not"}" style="padding-top:12px"><div class="wverdict">${r.got ? "Yes" : "No"}</div><p>${esc(r.verdict)}</p>${gatesHTML(r.steps)}
     ${r.fix ? `<button class="btn primary small" data-act="push-fix" data-fix="${esc(JSON.stringify(r.fix))}" data-aid="">${esc(r.fix.label)}</button>` : ""}</div>`;

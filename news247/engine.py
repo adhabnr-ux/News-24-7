@@ -395,6 +395,12 @@ class Engine:
         if not item.extra.get("backfill"):
             if self.desk.profiles and any(p.get("keywords") for p in self.desk.profiles.values()):
                 self._spawn(self._keyword_push(item, analysis, story.id))
+            if (
+                item.tickers
+                and ("target" in item.title.lower() or " PT" in item.title)
+                and self.desk.profiles
+            ):
+                self._spawn(self._target_push(item))
             if (item.extra.get("halt_code") or item.extra.get("halt_resume")) and item.tickers:
                 self._spawn(self._halt_watch(item, analysis))
 
@@ -2477,6 +2483,43 @@ class Engine:
                        "body": " · ".join(bits) or "You asked to be reminded about this alert.",
                        "severity": "HIGH", "kind": "system", "tickers": (r.get("tickers") or [])[:2],
                        "tag": f"rm-{r['alert_id'][:20]}", "ts": now, "open": f"/app/#a={r['alert_id']}"}  # fmt: skip
+            if await self._to_device(device, payload):
+                sent += 1
+        return sent
+
+    async def _target_push(self, item: NewsItem) -> int:
+        """An analyst moves a target on a stock a phone watches or holds by 15%+, or puts it 25%+
+        from the price: that phone gets it (targets.py). Once per headline per phone."""
+        from .targets import is_big, parse_target
+
+        pt = parse_target(item.title)
+        if pt is None:
+            return 0
+        sym = item.tickers[0]
+        q = self.price_of(sym, 86400)
+        px = q[1] if q else None
+        if not is_big(pt, px):
+            return 0
+        verb = {"raise": "raises", "cut": "cuts", "initiate": "starts", "maintain": "keeps", "set": "sets"}[
+            pt["action"]
+        ]
+        who = pt["firm"] or "An analyst"
+        title = f"🎯 {who} {verb} {sym} target to ${pt['to']:,.2f}".replace(".00", "")
+        bits = []
+        if pt["change_pct"] is not None:
+            bits.append(f"{pt['change_pct']:+.0f}% from ${pt['from']:,.2f}".replace(".00", ""))
+        if px:
+            bits.append(f"{(pt['to'] / px - 1) * 100:+.0f}% from the price (${px:,.2f})")
+        if pt["rating"]:
+            bits.append(pt["rating"])
+        probe = {"kind": "news", "severity": "HIGH", "tickers": [sym], "edge": {}}
+        sent = 0
+        for device in self.desk.watchers([sym]):
+            if not self.desk.allows(device, probe):
+                continue
+            payload = {"id": f"pt-{item.uid[-20:]}", "title": title[:160], "body": " · ".join(bits) + f"\n{item.title[:200]}",
+                       "severity": "HIGH", "kind": "system", "tickers": [sym], "url": item.url,
+                       "tag": f"pt-{sym}", "ts": time.time(), "open": f"/app/#t={sym}"}  # fmt: skip
             if await self._to_device(device, payload):
                 sent += 1
         return sent

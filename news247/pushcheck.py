@@ -370,7 +370,13 @@ WHAT_IF = {
 
 
 def would_push(
-    engine: Engine, device: str, category: str, severity: str, symbol: str = "", now: float | None = None
+    engine: Engine,
+    device: str,
+    category: str,
+    severity: str,
+    symbol: str = "",
+    now: float | None = None,
+    catalyst: str = "",
 ) -> dict[str, Any]:
     """ "Would I get it?": walk a made-up alert (this kind, this severity, this stock) through the
     same gates a real one meets, with this phone's settings as they are now."""
@@ -398,6 +404,18 @@ def would_push(
         "item": {"source": "", "extra": extra} if extra else None,
         "analysis": {},
     }
+    if catalyst:
+        from .catalysts import LABELS, catalyst_base, size_band
+
+        if catalyst not in LABELS:
+            raise ValueError("not a kind of news Foretape reads")
+        li = engine.universe.get(sym) if sym else None
+        cat = {"key": catalyst, "label": LABELS[catalyst], "band": size_band(li.market_cap if li else None)}
+        a["edge"] = {**a["edge"], "catalyst": cat}
+        cb = catalyst_base(getattr(engine, "catalyst_rates", {}) or {}, cat)
+        if cb:
+            a["edge"]["cat_base"] = cb
+        a["title"] = f"A {sev} {LABELS[catalyst].lower()} alert" + (f" on {sym}" if sym else "")
     steps, blocked, fix = _walk(engine, device, a, now)
     return {
         "title": a["title"],

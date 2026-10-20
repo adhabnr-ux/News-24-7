@@ -362,6 +362,21 @@ class Storage:
         )
         return [{**dict(r), "tickers": json.loads(r["tickers"] or "[]")} for r in rows]
 
+    def items_matching(
+        self, patterns: tuple[str, ...], since: float | None = None, limit: int = 200
+    ) -> list[dict[str, Any]]:
+        """Items whose title matches any of these LIKE patterns (case-insensitive), newest first."""
+        if not patterns:
+            return []
+        q = "SELECT * FROM items WHERE (" + " OR ".join("title LIKE ?" for _ in patterns) + ")"
+        args: list[Any] = list(patterns)
+        if since:
+            q += " AND detected >= ?"
+            args.append(since)
+        q += " ORDER BY detected DESC LIMIT ?"
+        args.append(limit)
+        return [self._item_row(r) for r in self.db.execute(q, args)]
+
     def items_from(self, source: str, since: float | None = None, limit: int = 50) -> list[dict[str, Any]]:
         q, args = "SELECT * FROM items WHERE source = ?", [source]
         if since:

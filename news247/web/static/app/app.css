@@ -677,3 +677,5 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .coachi { align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.45; }
 .coachi i { flex: none; width: 18px; font-style: normal; font-weight: 700; text-align: center; }
 .coachi.good i { color: var(--up); } .coachi.bad i { color: var(--down); } .coachi.info i { color: var(--gold); }
+/* run 17: kinds of news */
+.catrow { gap: 6px; } .catrow .btn { padding: 6px 10px; font-size: 12px; }

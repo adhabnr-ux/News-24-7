@@ -128,6 +128,7 @@ def default_profile() -> dict[str, Any]:
             "sympathy": True,  # a peer of your stock jumps on news and yours hasn't moved: one push
             "account": 0.0,  # $: sizes the trade plans (0: the portfolio's value, if any)
             "risk_pct": 1.0,  # % of the account a plan risks on one idea
+            "edge_min": None,  # only push news whose catalyst record clears this: hit50 | hit60 | move2
         },
         "price_alerts": [],
         "tracked": [],
@@ -148,6 +149,7 @@ def default_profile() -> dict[str, Any]:
         "opened": [],  # alert ids recently opened (counted once)
         "follow": {"themes": [], "sectors": []},
         "stock_push": {},  # symbol -> "high" | "all" | "off" (absent: the phone's own settings)
+        "cat_off": [],  # catalyst keys (catalysts.py) whose news never pushes to this phone
         "focus_until": 0.0,  # epoch: until then only CRITICAL alerts push
         "reminders": [],  # [{"id", "alert_id", "title", "tickers", "due", "created"}]
         "seen": {},  # symbol -> {"ts", "px"}: the last time its page was opened
@@ -201,6 +203,28 @@ def in_quiet(quiet: dict[str, Any] | None, now: float | None = None) -> bool:
     t = datetime.fromtimestamp(now or time.time(), ET)
     cur, a, b = t.hour * 60 + t.minute, h0 * 60 + m0, h1 * 60 + m1
     return (a <= cur < b) if a <= b else (cur >= a or cur < b)
+
+
+EDGE_BARS = {  # an alert's catalyst record must clear this to push (when the phone sets one)
+    "hit50": "went its way half the time or more by the close",
+    "hit60": "went its way 60% of the time or more by the close",
+    "move2": "typically moves 2% or more by the close, either way",
+}
+
+
+def edge_miss(cb: dict[str, Any] | None, bar: str) -> str:
+    """Why a catalyst record falls short of a bar, in a few words; "" when it clears it (or has no
+    record yet: a kind of news too new to judge isn't held back)."""
+    close = (cb or {}).get("close")
+    if not close:
+        return ""
+    if bar == "hit50" and close["hit"] < 0.5:
+        return f"{round(close['hit'] * 100)}% its way, under 50%"
+    if bar == "hit60" and close["hit"] < 0.6:
+        return f"{round(close['hit'] * 100)}% its way, under 60%"
+    if bar == "move2" and (cb.get("typical") or 0) < 2:
+        return f"typical move ±{cb.get('typical') or 0:.1f}%, under 2%"
+    return ""
 
 
 def session_edge(kind: str, now: float, calendar: Any = None) -> float:
@@ -400,6 +424,17 @@ class Desk:
                 src = _source_of(alert)
                 return out("source", f"you muted its source ({src})", f"Unmute {src}", "prefs",
                            {"mute_source": src, "on": False})  # fmt: skip
+            edge = (alert.get("edge") if isinstance(alert, dict) else getattr(alert, "edge", None)) or {}
+            kind = edge.get("catalyst") or {}
+            if kind.get("key") and kind["key"] in (p.get("cat_off") or []) and dial != "all":
+                return out("catalyst_off", f"you turned off {kind['label'].lower()} news", f"Push {kind['label'].lower()} news again",
+                           "cat_mute", {"key": kind["key"], "on": False})  # fmt: skip
+            bar = prefs.get("edge_min")
+            if bar in EDGE_BARS and kind.get("key") and dial != "all":
+                miss = edge_miss(edge.get("cat_base"), bar)
+                if miss:
+                    return out("edge", f"{kind['label'].lower()} news has a record under your bar ({miss})",
+                               "Push every record", "prefs", {"edge_min": None})  # fmt: skip
             word = self.neg_match(device, alert)
             if word:
                 return out("word", f"it has your never-push word “{word}”", f"Remove “{word}”",
@@ -641,6 +676,11 @@ class Desk:
                 if v not in (0.25, 0.5, 1.0, 2.0):
                     raise ValueError("risk per idea is 0.25, 0.5, 1 or 2% of the account")
                 prefs["risk_pct"] = v
+            if "edge_min" in body:
+                bar = body.get("edge_min")
+                if bar not in (None, "", *EDGE_BARS):
+                    raise ValueError("edge bar is hit50, hit60, move2 or off")
+                prefs["edge_min"] = bar or None
             if "burst" in body:
                 try:
                     n = int(body.get("burst") or 0)
@@ -1048,6 +1088,16 @@ class Desk:
             seen[sym] = {"ts": now, "px": q[1] if q else None}
             for old in list(seen)[:-MAX_SEEN]:
                 seen.pop(old, None)
+        elif action == "cat_mute":
+            from .catalysts import LABELS
+
+            key = str(body.get("key") or "")
+            if key not in LABELS:
+                raise ValueError("not a kind of news Foretape reads")
+            off = [k for k in p.get("cat_off") or [] if k != key]
+            if body.get("on", True):
+                off.append(key)
+            p["cat_off"] = off
         elif action == "restore":
             p["restored"] = self._restore(device, p, body.get("desk") or body, bool(body.get("prefs")), now)
         else:
@@ -1197,6 +1247,9 @@ class Desk:
                     "follow", {"kind": kind, "name": name}
                 ):
                     n["follows"] += 1
+        for key in lst("cat_off", 40):
+            if isinstance(key, str) and key not in (p.get("cat_off") or []):
+                go("cat_mute", {"key": key})
         for sym, lv in dct("stock_push", MAX_STOCK_PUSH).items():
             if sym not in p.get("stock_push", {}) and go("stock_push", {"symbol": sym, "level": lv}):
                 n["dials"] += 1
@@ -1285,6 +1338,7 @@ class Desk:
                     "burst",
                     "account",
                     "risk_pct",
+                    "edge_min",
                     "quiet",
                 )
                 if k in src
@@ -1371,6 +1425,7 @@ class Desk:
             "imported": p.pop("imported", None),
             "follow": p.get("follow") or {"themes": [], "sectors": []},
             "stock_push": p.get("stock_push") or {},
+            "cat_off": p.get("cat_off") or [],
             "focus": p["focus_until"] if (p.get("focus_until") or 0) > now else None,
             "reminders": sorted(p.get("reminders") or [], key=lambda r: r["due"]),
             "restored": p.pop("restored", None),

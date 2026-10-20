@@ -345,3 +345,34 @@ def room_left(engine: Engine, now: float | None = None, limit: int = 12) -> dict
                      "room": room, "pre": pre})  # fmt: skip
     rows.sort(key=lambda r: -(r["room"] * r["hit"]))
     return {"rows": rows[:limit], "rated": sum(1 for k in rates if k.endswith("|*"))}
+
+
+def catalyst_kinds(rates: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every kind of news Foretape reads, with its record at any size when it has one: the chips
+    a phone turns off, and what an edge bar would let through."""
+    out = []
+    for key, label in LABELS.items():
+        r = rates.get(f"{key}|*") or {}
+        out.append({"key": key, "label": label, "close": r.get("close"), "typical": r.get("typical")})
+    return out
+
+
+def catalyst_taste(engine: Engine, device: str) -> list[dict[str, Any]]:
+    """This phone's votes by kind of news: a kind voted down three times or more and never up is
+    suggested for turning off."""
+    p = engine.desk.profiles.get(device) or {}
+    counts: dict[str, dict[str, Any]] = {}
+    for aid, v in list((p.get("votes") or {}).items())[-300:]:
+        a = engine.storage.get_alert(aid)
+        if not a:
+            continue
+        c = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)
+        if not c:
+            continue
+        row = counts.setdefault(c["key"], {"key": c["key"], "label": c["label"], "up": 0, "down": 0})
+        row["up" if v > 0 else "down"] += 1
+    off = set(p.get("cat_off") or [])
+    rows = sorted(counts.values(), key=lambda r: -(r["up"] + r["down"]))
+    for r in rows:
+        r["suggest_off"] = r["down"] >= 3 and r["up"] == 0 and r["key"] not in off
+    return rows

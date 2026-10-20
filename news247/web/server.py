@@ -155,6 +155,8 @@ class WebServer:
         app.router.add_get("/api/room", self.api_room)
         app.router.add_get("/api/plan/{id}", self.api_plan)
         app.router.add_get("/api/coach", self.api_coach)
+        app.router.add_get("/api/targets", self.api_target_board)
+        app.router.add_get("/api/targets/{sym}", self.api_targets)
         app.router.add_get("/api/list/{code}", self.api_list)
         app.router.add_get("/api/phone-health", self.api_phone_health)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
@@ -773,6 +775,10 @@ class WebServer:
             pts = path.hist if path is not None else []
             step = max(1, len(pts) // 24)
             w["spark"] = [round(p, 4) for _, p in pts[::step]][-24:]
+        from ..catalysts import catalyst_kinds, catalyst_taste
+
+        v["catalyst_kinds"] = catalyst_kinds(self.engine.catalyst_rates)
+        v["catalyst_taste"] = catalyst_taste(self.engine, dev)
         return v
 
     async def api_desk_edit(self, request: web.Request) -> web.Response:
@@ -943,6 +949,22 @@ class WebServer:
             raise web.HTTPNotFound(text="no such alert")
         return _json(trade_plan(self.engine, self._device(request), a))
 
+    async def api_targets(self, request: web.Request) -> web.Response:
+        """A stock's analyst price targets, read from the headlines (targets.py)."""
+        from ..desk import clean_symbol
+        from ..targets import targets_for
+
+        sym = clean_symbol(request.match_info["sym"])
+        if not sym:
+            raise web.HTTPBadRequest(text="not a symbol")
+        return _json(targets_for(self.engine, sym))
+
+    async def api_target_board(self, request: web.Request) -> web.Response:
+        """The last few days' analyst target changes across every stock."""
+        from ..targets import target_board
+
+        return _json(target_board(self.engine))
+
     async def api_coach(self, request: web.Request) -> web.Response:
         """What this phone's closed paper calls say about its habits (plans.py)."""
         from ..plans import coach
@@ -992,6 +1014,7 @@ class WebServer:
                 str(body.get("category") or "news"),
                 str(body.get("severity") or "HIGH"),
                 str(body.get("symbol") or ""),
+                catalyst=str(body.get("catalyst") or ""),
             )
         except ValueError as exc:
             raise web.HTTPBadRequest(text=str(exc)) from None
