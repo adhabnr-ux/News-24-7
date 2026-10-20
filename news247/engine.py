@@ -2030,18 +2030,19 @@ class Engine:
                         k: pt[k] for k in ("limit", "dip", "p_now", "p_filled") if k in pt
                     }
             ek = (alert.edge.get("catalyst") or {}).get("key")
-            xr = self.exit_rates.get(ek) if ek else None
-            if xr and xr.get("best"):  # how to exit its kind of news here (exits_kind.py)
-                alert.edge["exit_rec"] = {"kind": ek, "label": xr["label"], "best": xr["best"], "n": xr["n"],
-                                          "styles": {s: xr["styles"][s] for s in (xr["best"], "close") if s in xr["styles"]}}  # fmt: skip
-            sr = self.stop_rates.get(ek) if ek else None
-            if sr and sr.get("best"):  # where its kind of news puts the stop here (stops_kind.py)
-                alert.edge["stop_rec"] = {"kind": ek, "label": sr["label"], "best": sr["best"], "width": sr.get("width"), "n": sr["n"],
-                                           "styles": {s: sr["styles"][s] for s in (sr["best"], "none", "w1") if s in sr["styles"]}}  # fmt: skip
-            er = self.entry_rates.get(ek) if ek else None
-            if er and er.get("best"):  # how to enter its kind of news here (entries.py)
-                alert.edge["entry_rec"] = {"kind": ek, "label": er["label"], "best": er["best"], "n": er["n"],
-                                           "styles": {s: er["styles"][s] for s in (er["best"], "alert") if s in er["styles"]}}  # fmt: skip
+            from .entries import STYLES as IN_NAMES
+            from .exits_kind import STYLES as OUT_NAMES
+            from .holdout import stamp
+            from .stops_kind import STYLES as STOP_NAMES
+
+            # how to exit, where to stop and how to enter its kind of news here, each checked out of
+            # sample (exits_kind.py, stops_kind.py, entries.py, holdout.py)
+            for field, rates, default, names, extra in (("exit_rec", self.exit_rates, "close", OUT_NAMES, ()),
+                                                        ("stop_rec", self.stop_rates, "none", STOP_NAMES, ("w1",)),
+                                                        ("entry_rec", self.entry_rates, "alert", IN_NAMES, ())):  # fmt: skip
+                kr = rates.get(ek) if ek else None
+                if kr and kr.get("best"):
+                    alert.edge[field] = stamp(kr, ek, default, names, extra)
             from .thecall import the_call
 
             call = the_call(
@@ -2917,6 +2918,12 @@ class Engine:
             return 0
         t = p["tracked"][-1]
         t["auto"], t["exit_at"] = rule["id"], exit_time(exit_key, now, self.calendar)
+        if rule.get("follow") == "playbook":  # what the record promised, to grade it against (forward.py)
+            from .forward import promise
+
+            pb = promise(alert.get("edge") or {})
+            if pb:
+                t["pb"] = pb
         self.desk.save(dev)
         payload = {"id": f"ap-{t['id']}", "title": f"🤖 Autopilot: {direction} {plan['symbol']} at ${plan['entry']:,.2f}{how}",
                    "body": f"{alert.get('title', '')[:120]}\n" + (f"Stop ${t['stop']:,.2f}" if t.get("stop") else "No stop")

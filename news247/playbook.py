@@ -32,6 +32,14 @@ def _get(engine: Engine, name: str) -> dict[str, Any]:
     return getattr(engine, name, None) or {}
 
 
+def _checked(line: str, r: dict[str, Any], names: dict[str, str], default: str) -> str:
+    """A pick's rule of thumb, with what the out-of-sample check said about it (holdout.py)."""
+    from .holdout import words
+
+    w = words(r.get("holdout"), names, default)
+    return f"{line[:-1]}; {w}." if w and line else line
+
+
 def stocks_for(engine: Engine, key: str, days: float = 180, now: float | None = None) -> list[dict[str, Any]]:
     """The stocks with 3+ graded alerts of this kind, best first: how this news did on each."""
     from .catalysts import classify
@@ -132,21 +140,21 @@ def playbook(engine: Engine, key: str, now: float | None = None) -> dict[str, An
         from .entries import STYLES, entry_line
 
         out["entries"] = {**en, "names": STYLES}
-        rules.append(entry_line(en))
+        rules.append(_checked(entry_line(en), en, STYLES, "alert"))
     ex = _get(engine, "exit_rates").get(key)
     if ex and ex.get("best"):
         from .exits_kind import STYLES as EXIT_STYLES
         from .exits_kind import exit_line
 
         out["exits"] = {**ex, "names": EXIT_STYLES}
-        rules.append(exit_line(ex))
+        rules.append(_checked(exit_line(ex), ex, EXIT_STYLES, "close"))
     so = _get(engine, "stop_rates").get(key)
     if so and so.get("best"):
         from .stops_kind import STYLES as STOP_STYLES
         from .stops_kind import stop_line
 
         out["stops"] = {**so, "names": STOP_STYLES}
-        rules.append(stop_line(so))
+        rules.append(_checked(stop_line(so), so, STOP_STYLES, "none"))
     cl = _get(engine, "climate_rates").get(key)
     if cl and cl.get("recent"):
         out["climate"] = cl

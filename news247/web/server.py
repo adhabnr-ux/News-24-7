@@ -196,6 +196,7 @@ class WebServer:
         app.router.add_get("/api/entries", self.api_entries)
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
         app.router.add_get("/api/stops-kind", self.api_stops_kind)
+        app.router.add_get("/api/autopilots/forward", self.api_autopilots_forward)
         app.router.add_get("/api/learned", self.api_learned)
         app.router.add_get("/api/reaction", self.api_reaction)
         app.router.add_post("/api/track-alert", self.api_track_alert)
@@ -1319,6 +1320,12 @@ class WebServer:
 
         t = today(self.engine)
         return _json({**t, "line": tape_line(t), "rates": self.engine.tape_rates})
+
+    async def api_autopilots_forward(self, request: web.Request) -> web.Response:
+        """Each autopilot against the plain way on the same alerts, and the playbook against its promise (forward.py)."""
+        from ..forward import forward
+
+        return _json(forward(self.engine, self._need_device(request)))
 
     async def api_exits_kind(self, request: web.Request) -> web.Response:
         """Every exit per kind of news, graded side by side (exits_kind.py)."""

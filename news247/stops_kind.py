@@ -78,10 +78,12 @@ def stop_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
     """{kind: {"kind", "label", "n", "styles": {style: {"n", "avg", "median", "hit", "stopped", "shaken"}},
     "best", "width"}}: every stop per kind of news, side by side."""
     from .catalysts import LABELS, classify
+    from .holdout import check
 
     now = now or time.time()
     heats = getattr(engine, "heat_rates", None) or {}
     pools: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    dated: dict[str, dict[str, list[tuple[float, float]]]] = {}  # for the out-of-sample check
     counts: dict[str, int] = {}
     for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
         if a.get("kind") == "system":
@@ -95,6 +97,7 @@ def stop_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
             counts[kind] = counts.get(kind, 0) + 1
             for style, x in got.items():
                 pools.setdefault(kind, {}).setdefault(style, []).append(x)
+                dated.setdefault(kind, {}).setdefault(style, []).append((a["created"], x["r"]))
     out = {}
     for kind, styles in pools.items():
         if counts[kind] < MIN_N:
@@ -113,7 +116,7 @@ def stop_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
             round(h["dip80"] + BUFFER, 2) if best == "heat" and h.get("dip80") is not None else None
         )
         out[kind] = {"kind": kind, "label": "Any news" if kind == "*" else LABELS.get(kind, kind), "n": counts[kind],
-                     "styles": rows, "best": best, "width": width}  # fmt: skip
+                     "styles": rows, "best": best, "width": width, "holdout": check(dated[kind], "none", best)}  # fmt: skip
     return out
 
 
@@ -144,5 +147,8 @@ def stop_price(entry: float, direction: str, width: float) -> float:
 
 
 def board(rates: dict[str, Any]) -> dict[str, Any]:
+    from .holdout import words
+
     rows = sorted(rates.values(), key=lambda r: (r["kind"] != "*", -r["n"]))[:14]
+    rows = [{**r, "check": words(r.get("holdout"), STYLES, "none")} for r in rows]
     return {"rows": rows, "styles": STYLES, "need": MIN_N}

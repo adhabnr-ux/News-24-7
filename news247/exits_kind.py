@@ -64,9 +64,11 @@ def exits(a: dict[str, Any]) -> dict[str, float]:
 def exit_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
     """{kind: {"kind", "label", "n", "styles": {style: {"n", "hit", "median", "avg"}}, "best"}}."""
     from .catalysts import LABELS, classify
+    from .holdout import check
 
     now = now or time.time()
     pools: dict[str, dict[str, list[float]]] = {}
+    dated: dict[str, dict[str, list[tuple[float, float]]]] = {}  # for the out-of-sample check
     counts: dict[str, int] = {}
     for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
         if a.get("kind") == "system":
@@ -79,6 +81,7 @@ def exit_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
             counts[kind] = counts.get(kind, 0) + 1
             for style, x in got.items():
                 pools.setdefault(kind, {}).setdefault(style, []).append(x)
+                dated.setdefault(kind, {}).setdefault(style, []).append((a["created"], x))
     out = {}
     for kind, styles in pools.items():
         if counts[kind] < MIN_N:
@@ -88,7 +91,7 @@ def exit_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
         ok = {s: r for s, r in rows.items() if r["n"] >= MIN_N}
         best = max(ok, key=lambda s: ok[s]["avg"]) if ok else None
         out[kind] = {"kind": kind, "label": "Any news" if kind == "*" else LABELS.get(kind, kind), "n": counts[kind],
-                     "styles": rows, "best": best}  # fmt: skip
+                     "styles": rows, "best": best, "holdout": check(dated[kind], "close", best)}  # fmt: skip
     return out
 
 
@@ -103,5 +106,8 @@ def exit_line(r: dict[str, Any] | None) -> str:
 
 
 def board(rates: dict[str, Any]) -> dict[str, Any]:
+    from .holdout import words
+
     rows = sorted(rates.values(), key=lambda r: (r["kind"] != "*", -r["n"]))[:14]
+    rows = [{**r, "check": words(r.get("holdout"), STYLES, "close")} for r in rows]
     return {"rows": rows, "styles": STYLES, "need": MIN_N}

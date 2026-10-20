@@ -37,14 +37,20 @@ RANK = {"new": 0, "entry": 1, "exit": 2, "stop": 3, "odds": 4, "signal": 5}
 def snapshot(engine: Engine) -> dict[str, Any]:
     """The verdicts as they stand: per kind of news and per signal."""
     kinds: dict[str, Any] = {}
+    from .holdout import use
+
+    defaults = {"exit": "close", "entry": "alert", "stop": "none"}
     for name, field in (("exit_rates", "exit"), ("entry_rates", "entry"), ("stop_rates", "stop")):
         for k, r in (getattr(engine, name, None) or {}).items():
             if k == "*" or not r.get("best"):
                 continue
             row = kinds.setdefault(k, {"label": r["label"]})
-            row[field] = r["best"]
-            row[f"{field}_avg"] = r["styles"][r["best"]]["avg"]
-            if field == "stop" and r.get("width"):
+            pick = use(r, defaults[field]) or r["best"]  # the default when the pick didn't hold (holdout.py)
+            if pick not in r["styles"]:
+                continue
+            row[field] = pick
+            row[f"{field}_avg"] = r["styles"][pick]["avg"]
+            if field == "stop" and r.get("width") and pick == r["best"]:
                 row["width"] = r["width"]
             if field == "exit" and "close" in r["styles"]:
                 row["hit"], row["n"] = r["styles"]["close"]["hit"], r["styles"]["close"]["n"]

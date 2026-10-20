@@ -410,6 +410,19 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - signals that changed grade.
 
   Every Friday a push says it in four lines. Settings → *What the record learned, Friday* turns it off. `GET /api/learned`.
+- **Picks checked out of sample:** each best way in, way out and stop is the best of several averages on as few as eight alerts, and the best of several noisy averages is high partly by luck. So every pick is now checked the way a trading system should be: choose on the past, grade on what came after. Per kind of news, the alerts are split by time:
+  - the older two-thirds pick a style (the best average there, 5+);
+  - the newest third grades it against the default (at the alert, at the close, no stop; 4+ each).
+
+  A pick has three verdicts:
+  - **Held:** the older alerts picked the same style, and it did at least as well as the default on the newest third.
+  - **Didn't hold:** the older alerts picked something else (not stable), or it trailed the default on the newest third. The desk then acts on the default for that kind: the sheet, the 9:20 game plan, the playbook autopilot and the weekly *what the record learned*. It says why: *"🚪 Exit contract win news here: at the close … · ✗ on the newest third it made -0.5% vs +0.6% at the close (4): didn't hold, so at the close"*.
+  - **Unverified:** too few new alerts to tell yet; the pick stands, marked "…".
+
+  Each row of the entry, exit and stop boards and each playbook rule says which.
+- **The playbook's promises against its results:** the paper autopilots are the forward test of everything the desk learns, since they act on alerts nobody had seen when the records were fit. Each autopilot's closed calls are now graded against **the plain way on the same alerts**: in at the alert price, out at that session's close, in the call's direction. The difference is what the rule's choices (when to get in and out, where to stop) added or cost, alert for alert, so a good or bad week for the market cancels out. With 10+ graded calls a rule gets a verdict: its choices **add** (+0.25% a call or more), **cost** (-0.25% or worse), or come out **about even**.
+
+  The playbook autopilot also records what the record **promised** when it opened each call: its kind's chosen exit average, or its entry's average when it didn't enter at the alert. So *"the record promised +1.00%, live +0.75%"* says whether the picks keep their word out of sample, kind by kind. On each autopilot's card on the Desk; `GET /api/autopilots/forward` (per phone).
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.
