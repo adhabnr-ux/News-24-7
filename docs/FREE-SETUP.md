@@ -7,6 +7,10 @@
 
 You need: a GitHub account (you have one), a Facebook account (for Meta's developer site), and WhatsApp on your phone.
 
+## Bandwidth: staying inside Render's free 5 GB
+
+Render's free workspace meters outbound traffic (5 GB a month) and suspends services when it runs out. Foretape keeps that low on its own: text responses are gzipped, the app shell and images revalidate with an ETag (a repeat load costs a ~200-byte 304 instead of ~320 KB), and the big photo and fonts are cached for a month. The main cost is each open tab refreshing the alert list once a minute; a closed app costs nothing. If a workspace is suspended anyway: add a card (about $0.15 per extra GB), wait for the month to reset, or move to Fly.io (`fly.toml`, a few dollars a month with no bandwidth cap at this size).
+
 ## How the free WhatsApp number behaves
 
 **Minimum that works:** Meta app + test number + the four values in Render. Publishing the app, the webhook and replying "hi" are optional. Without them, every alert still arrives as News247's approved template, with the headline, tickers, summary and link on one line. If Meta rejects the template wording, News247 submits another wording automatically (`news247_alert`, then `_v2`, then `_v3`); the Setup page shows which one is live.

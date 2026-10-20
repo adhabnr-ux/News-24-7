@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -49,6 +50,19 @@ spellcheck="false" placeholder="access key" required autofocus>
     return web.Response(status=401, text=page, content_type="text/html")
 
 
+SLIM_TYPES = {  # what is worth gzipping and revalidating (not images, fonts, archives or streams)
+    "application/json",
+    "application/javascript",
+    "text/css",
+    "text/html",
+    "text/plain",
+    "text/csv",
+    "text/calendar",
+    "image/svg+xml",
+    "application/manifest+json",
+}
+
+
 def _json(data: Any) -> web.Response:
     return web.json_response(data, dumps=lambda d: json.dumps(d, default=str))
 
@@ -61,7 +75,7 @@ class WebServer:
         self._runner: web.AppRunner | None = None
 
     def build_app(self) -> web.Application:
-        app = web.Application(middlewares=[self._auth])
+        app = web.Application(middlewares=[self._slim, self._auth])
         app.router.add_get("/", self.index)
         app.router.add_get("/health", self.health)
         app.router.add_get("/api/status", self.api_status)
@@ -149,6 +163,38 @@ class WebServer:
         app.router.add_get("/webhooks/whatsapp", self.whatsapp_webhook_verify)
         app.router.add_post("/webhooks/whatsapp", self.whatsapp_webhook)
         return app
+
+    @web.middleware
+    async def _slim(self, request: web.Request, handler: Any) -> web.StreamResponse:
+        """Spend little bandwidth (free hosts meter it): gzip text responses when the client takes
+        it, and answer a repeat GET of unchanged content with a bodiless 304 (ETag). The event
+        stream, websockets and downloads are not touched."""
+        resp = await handler(request)
+        if (
+            request.method != "GET"
+            or not isinstance(resp, web.Response)
+            or resp.status != 200
+            or not isinstance(resp.body, bytes | bytearray)
+            or resp.content_type not in SLIM_TYPES | {"image/png", "image/webp"}
+        ):
+            return resp
+        body = bytes(resp.body)
+        etag = 'W/"' + hashlib.sha1(body).hexdigest()[:20] + '"'
+        resp.headers["ETag"] = etag
+        resp.headers.setdefault("Cache-Control", "no-cache")  # revalidate each time: a 304 costs ~200 bytes
+        resp.headers["Vary"] = "Accept-Encoding"
+        if request.headers.get("If-None-Match", "").strip() == etag:
+            return web.Response(
+                status=304,
+                headers={k: v for k, v in resp.headers.items() if k in ("ETag", "Cache-Control", "Vary")},
+            )
+        if (
+            resp.content_type in SLIM_TYPES
+            and len(body) > 600
+            and "gzip" in request.headers.get("Accept-Encoding", "")
+        ):
+            resp.enable_compression(web.ContentCoding.gzip)
+        return resp
 
     @web.middleware
     async def _auth(self, request: web.Request, handler: Any) -> web.StreamResponse:
