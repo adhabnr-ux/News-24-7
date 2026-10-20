@@ -1031,6 +1031,29 @@ async function loadClimate() {
     + r.rows.slice(0, 14).map((x) => `<div class="kv"><span>${esc(x.label)}${x.state !== "normal" ? ` <span class="chipv ${CLIM[x.state][1]}">${CLIM[x.state][0]}</span>` : ""}</span><b class="num"><span class="${x.state === "hot" ? "pos" : x.state === "cold" ? "neg" : ""}">${cell(x.recent)}</span> · ${cell(x.before)}</b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">By the close, its way. A kind is flagged hot or cold only when its last ${r.days} days differ from its record before by 15 points or more and beyond chance (z ≥ 1.64; ${r.min_recent}+ lately and ${r.min_before}+ before). Flagged kinds are named on their alerts and count in the call. History, not a forecast.</div>`;
 }
+// into the close (Desk): each open call's standing and how alerts that stood the same did by the next close
+const READ_CLS = { hold: "pos", close: "neg", either: "", "no record": "faint" };
+async function loadNight() {
+  let r;
+  try { r = await api("/api/overnight"); } catch (_) { return; }
+  $("dNightWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  $("dNight").innerHTML = r.rows.map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span>${x.direction === "long" ? "▲" : "▼"} ${esc(x.symbol)} <span class="${cls(x.pnl)}">${pct(x.pnl)}</span>
+      <span class="sub">${x.record ? `${esc(x.record.label)}: went on its way by the next close ${Math.round(x.record.hit * 100)}%, median ${pct(x.record.median)} (${x.record.n})` : `no record for its standing yet (${r.need} needed)`}${x.report ? ` · <span class="neg">reports ${esc(x.report)}</span>` : ""}</span></span>
+      <b class="num"><span class="chipv ${READ_CLS[x.read]}">${esc(x.read)}</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">From the close to the next close, its way, for graded alerts of the same kind that stood the same at the close. Hold when 55%+ went on with a positive median; close when 45% or fewer did or the median is negative. A push comes at 15:40 ET (Settings → Into the close). Paper only.</div>`;
+}
+// your edge by kind of news (Desk)
+async function loadMyEdge() {
+  let r;
+  try { r = await api("/api/myedge"); } catch (_) { return; }
+  $("dEdgeWrap").hidden = !r.all;
+  if (!r.all) return;
+  const row = (x, name) => `<div class="kv"><span>${name} <span class="sub">${x.n} calls · beat the alert on ${Math.round(x.beat * 100)}% · entry ${pct(x.entry)} · the rest ${pct(x.rest)}</span></span><b class="num">you ${pct(x.you)} · alerts ${pct(x.alert)}<br><span class="${cls(x.gap)}">${pct(x.gap)}</span>${x.verdict === "yours" ? ` <span class="chipv pos">yours</span>` : x.verdict === "alerts" ? ` <span class="chipv neg">follow the alerts</span>` : ""}</b></div>`;
+  $("dEdge").innerHTML = r.lines.map((l) => `<div class="kv"><span class="gold">${esc(l)}</span></div>`).join("")
+    + row(r.all, "Every call from an alert") + r.kinds.map((k) => row(k, esc(k.label))).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Each call against its alert, graded from the alert's price to its close, the call's way. "Entry" is your price against the alert's (+ = better); "the rest" is when you held and where you got out. A kind needs ${r.need} calls for a verdict. Paper only.</div>`;
+}
 // your exits against the plan's (Desk)
 async function loadPlanVs() {
   let r;
@@ -1359,6 +1382,7 @@ function renderDesk() {
     <div class="kv"><span>Today's setups, 9:25 ET<div class="sub">the best alerts since the last close, each with a plan (stop, target, size), in one push before the open</div></span><b><button class="btn ghost small${pr.setups ? " sel" : ""}" data-act="flag" data-s="setups">${pr.setups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Event day<div class="sub">the morning of an FDA decision or readout on your stock: both outcomes as they've traded here, what options price, what you hold</div></span><b><button class="btn ghost small${pr.event_day !== false ? " sel" : ""}" data-act="flag" data-s="event_day">${pr.event_day !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Into the close<div class="sub">15:40 ET: each open call, and whether alerts that stood the same at the close went on by the next one: hold or close, with report risk</div></span><b><button class="btn ghost small${pr.overnight !== false ? " sel" : ""}" data-act="flag" data-s="overnight">${pr.overnight !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Drift check<div class="sub">five sessions after news on your stock: whether its kind of news kept drifting for a month here, or gave it back</div></span><b><button class="btn ghost small${pr.drift !== false ? " sel" : ""}" data-act="flag" data-s="drift">${pr.drift !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Confirmations<div class="sub">an alert on your stock holding up an hour in, when alerts like it finished their way 80%+ of the time</div></span><b><button class="btn ghost small${pr.confirm !== false ? " sel" : ""}" data-act="flag" data-s="confirm">${pr.confirm !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Divergence<div class="sub">a strong kind of news, and the stock going the other way 15-90 minutes later (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.diverge !== false ? " sel" : ""}" data-act="flag" data-s="diverge">${pr.diverge !== false ? "On" : "Off"}</button></b></div>
@@ -1847,6 +1871,7 @@ function evidenceHTML(ev) {
   if (ev.costly) rows.push(`<div class="kv"><span>Costliest setting <span class="sub">${esc(ev.costly.setting)}: kept back ${ev.costly.n} that went their way ${Math.round(ev.costly.hit * 100)}%</span></span><b>${ev.costly.fix?.action ? `<button class="btn ghost small" data-act="ev-fix">${esc(ev.costly.fix.label)}</button>` : ""}</b></div>`);
   if (ev.misses) rows.push(`<div class="kv"><span>Why the misses missed <span class="sub">${ev.misses.n} misses</span></span><b class="num">${ev.misses.causes.sector + ev.misses.causes.market} the tape · ${ev.misses.causes.news} news · <span class="neg">${ev.misses.causes.faded} the signal</span></b></div>`);
   if (ev.exits) rows.push(`<div class="kv"><span>Your exits <span class="sub">${ev.exits.graded} graded after the fact, 4 weeks</span></span><b>${ev.exits.insights.map((i) => `<span class="${i.tone === "good" ? "pos" : i.tone === "warn" ? "gold" : ""}">${esc(i.text)}</span>`).join("<br>")}${ev.exits.edge ? `${ev.exits.insights.length ? "<br>" : ""}<span class="sub">exit edge ${pct(ev.exits.edge.median)} a call vs one more session</span>` : ""}</b></div>`);
+  if (ev.myedge) rows.push(`<div class="kv"><span>Your edge by kind <span class="sub">90 days</span></span><b>${ev.myedge.map((l) => esc(l)).join("<br>")}</b></div>`);
   if (ev.planvs) rows.push(`<div class="kv"><span>Your exits vs the plan's <span class="sub">${ev.planvs.n} replayed, 4 weeks</span></span><b><span class="${ev.planvs.verdict === "plan" ? "gold" : ev.planvs.verdict === "yours" ? "pos" : ""}">${esc(ev.planvs.line)}</span></b></div>`);
   if ((ev.best || []).length || (ev.worst || []).length) rows.push(`<div class="kv"><span>Kinds of news this week</span><b>${[...(ev.best || []), ...(ev.worst || [])].map((k) => `${esc(k.label)} <span class="${cls(k.avg)}">${pct(k.avg)}</span> <span class="sub">(${k.n})</span>`).join("<br>")}</b></div>`);
   weekEv = ev;
@@ -2860,7 +2885,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadPlanVs(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

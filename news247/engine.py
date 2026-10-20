@@ -250,6 +250,9 @@ class Engine:
         self.coverage_rates: dict[str, Any] = {}  # how late to the story, how far it spread (coverage.py)
         self.call_rates: dict[str, Any] = {}  # the call's own record by verb (thecall.py)
         self.climate_rates: dict[str, Any] = {}  # each kind's last two weeks against its record (climate.py)
+        self.overnight_rates: dict[
+            str, Any
+        ] = {}  # close to the next close, by kind and standing (overnight.py)
         self.ev_hist: tuple[list[float], int] = (
             [],
             1,
@@ -2464,6 +2467,10 @@ class Engine:
 
                     await send_drift_checks(self, now)
                 with contextlib.suppress(Exception):
+                    from .overnight import send_overnight
+
+                    await send_overnight(self, now)
+                with contextlib.suppress(Exception):
                     self.grade_confirm(now)
                 with contextlib.suppress(Exception):
                     from .exits import grade_exits
@@ -3832,6 +3839,9 @@ class Engine:
         from .climate import climate_rates
 
         self.climate_rates = climate_rates(self, 180, now)
+        from .overnight import overnight_rates
+
+        self.overnight_rates = overnight_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

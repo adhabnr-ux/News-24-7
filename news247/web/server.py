@@ -180,6 +180,8 @@ class WebServer:
         app.router.add_get("/api/call", self.api_call)
         app.router.add_get("/api/climate", self.api_climate)
         app.router.add_get("/api/planvs", self.api_planvs)
+        app.router.add_get("/api/overnight", self.api_overnight)
+        app.router.add_get("/api/myedge", self.api_myedge)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1145,6 +1147,18 @@ class WebServer:
         from ..planvs import plan_vs
 
         return _json(plan_vs(self.engine, self._need_device(request)))
+
+    async def api_overnight(self, request: web.Request) -> web.Response:
+        """Each open call's standing and how alerts that stood the same at the close did by the next (overnight.py)."""
+        from ..overnight import calls_tonight
+
+        return _json(calls_tonight(self.engine, self._need_device(request)))
+
+    async def api_myedge(self, request: web.Request) -> web.Response:
+        """Your calls against the alerts they came from, by kind of news: entry and the rest (myedge.py)."""
+        from ..myedge import my_edge
+
+        return _json(my_edge(self.engine, self._need_device(request)))
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""
