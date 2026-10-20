@@ -364,3 +364,59 @@ def setups_push(s: dict[str, Any]) -> dict[str, Any] | None:
         "title": f"🎯 {len(rows)} setup{'s' if len(rows) > 1 else ''} for today",
         "body": "\n".join(lines)[:600],
     }
+
+
+# --------------------------------------------------------------------------- event risk
+
+
+def event_risk(engine: Engine, device: str, now: float | None = None, days: int = 10) -> dict[str, Any]:
+    """Each holding's next report or binary event in the next ``days``, in dollars on the position:
+    what options price for it (the expiry spanning the report) and what its last reports moved,
+    times the position's value. Plus the total at stake. Only what is known: a holding with no
+    price, or a report with no option or history read yet, says so."""
+    now = now or time.time()
+    p = engine.desk.profiles.get(device) or {}
+    holdings = {s: h for s, h in (p.get("holdings") or {}).items() if (h.get("shares") or 0) > 0}
+    today = datetime.fromtimestamp(now, ET).date()
+    book = getattr(getattr(engine, "trends", None), "earnings", None)
+    events: list[dict[str, Any]] = []
+    for sym, h in holdings.items():
+        q = engine.price_of(sym, 86400, now=now)
+        value = round(h["shares"] * q[1], 2) if q else None
+        base = {"symbol": sym, "shares": h["shares"], "price": q[1] if q else None, "value": value}
+        e = book.lookup(sym, today) if book is not None else None
+        if e and 0 <= (e.get("in_days") if e.get("in_days") is not None else 99) <= days:
+            cached = (getattr(engine, "implied_cache", {}) or {}).get(sym)
+            rows = (cached[1] if cached else {}).get("rows") or []
+            im = next((r for r in rows if r.get("earnings")), None) or (rows[0] if rows else None)
+            hist = (getattr(engine, "earnings_cache", {}) or {}).get(sym)
+            usual = (hist[1] if hist else {}).get("avg_abs_move")
+            ev = {**base, "kind": "earnings", "title": f"{sym} reports", "date": e["date"], "when": e.get("when") or "",
+                  "in_days": e["in_days"], "implied_pct": im["move_pct"] if im else None, "usual_pct": usual}  # fmt: skip
+            events.append(ev)
+        for c in engine.storage.catalysts(today.isoformat()):
+            if c.get("symbol") != sym:
+                continue
+            in_days = (datetime.fromisoformat(c["date"]).date() - today).days
+            if 0 <= in_days <= days:
+                events.append({**base, "kind": c.get("event") or "binary", "title": c.get("title") or f"{sym} event",
+                               "date": c["date"], "when": c.get("time") or "", "in_days": in_days,
+                               "implied_pct": None, "usual_pct": None})  # fmt: skip
+    for ev in events:
+        v = ev["value"]
+        ev["implied_usd"] = round(v * ev["implied_pct"] / 100, 2) if v and ev["implied_pct"] else None
+        ev["usual_usd"] = round(v * ev["usual_pct"] / 100, 2) if v and ev["usual_pct"] else None
+    events.sort(key=lambda e: (e["date"], e["symbol"]))
+    total_value = sum(
+        (engine.price_of(s, 86400, now=now) or (0, 0))[1] * h["shares"] for s, h in holdings.items()
+    )
+    exposed = sum(e["value"] or 0 for e in {e["symbol"]: e for e in events}.values())
+    return {
+        "events": events,
+        "days": days,
+        "implied_usd": round(sum(e["implied_usd"] or 0 for e in events), 2),
+        "usual_usd": round(sum(e["usual_usd"] or 0 for e in events), 2),
+        "exposed_value": round(exposed, 2),
+        "exposed_pct": round(exposed / total_value * 100, 1) if total_value else None,
+        "holdings": len(holdings),
+    }

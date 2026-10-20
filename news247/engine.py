@@ -2306,6 +2306,10 @@ class Engine:
                 with contextlib.suppress(Exception):
                     self.grade_retests(now)
                 with contextlib.suppress(Exception):
+                    await self.check_divergence(now)
+                with contextlib.suppress(Exception):
+                    self.grade_divergence(now)
+                with contextlib.suppress(Exception):
                     from .dossier import grade_sympathy
 
                     grade_sympathy(self, now)
@@ -2522,6 +2526,100 @@ class Engine:
             self.storage.set_setting("retest_log", json.dumps(log[-500:]))
         self.storage.set_setting(sent_key, json.dumps(sorted(sent_keys)))
         return sent
+
+    async def check_divergence(self, now: float | None = None) -> int:
+        """The market isn't buying it: an alert 15-90 minutes old whose kind of news went its way
+        60%+ of the time by the close, and the stock is going the other way by 1.5%+ (or half that
+        kind's typical move). One push to phones that watch, hold, opened or saved it; each flag
+        logged and graded at the close (did it keep going against the news?)."""
+        from .dossier import _direction, _since
+
+        now = now or time.time()
+        if self.webpush is None or self.calendar.market_status(now).get("phase") != "open":
+            return 0
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        sent_key = f"diverge:{day}"
+        sent_keys = set(json.loads(self.storage.get_setting(sent_key) or "[]"))
+        log: list[dict[str, Any]] | None = None
+        sent = 0
+        for a in self.storage.recent_alerts(300, since=now - 90 * 60):
+            if now - a.get("created", now) < 15 * 60:
+                continue
+            cb = (a.get("edge") or {}).get("cat_base") or {}
+            close = cb.get("close") or {}
+            d = _direction(a)
+            if not close or close.get("hit", 0) < 0.6 or close.get("median", 0) <= 0 or not d:
+                continue
+            sym = (((a.get("edge") or {}).get("play") or {}).get("direct") or a.get("tickers") or [""])[0]
+            since = _since(a, sym, self.price_of) if sym else None
+            if since is None:
+                continue
+            sign = 1 if d == "up" else -1
+            its_way = sign * since
+            if its_way > -max(1.5, 0.5 * (cb.get("typical") or 0)):
+                continue
+            ref = (a.get("edge") or {}).get("refs", {}).get(sym)
+            if log is None:
+                log = json.loads(self.storage.get_setting("diverge_log") or "[]")
+            if not any(e["alert_id"] == a["id"] for e in log):
+                log.append({"ts": now, "day": day, "alert_id": a["id"], "symbol": sym, "sign": sign, "ref": ref,
+                            "against": round(-its_way, 2), "close": None})  # fmt: skip
+            devices = set(self.desk.watchers([sym])) | {
+                dv
+                for dv, p in self.desk.profiles.items()
+                if a["id"] in (p.get("opened") or []) or a["id"] in (p.get("saved") or [])
+            }
+            good = "good" if sign > 0 else "bad"
+            for dev in devices:
+                key = f"{dev}:{a['id']}"
+                if key in sent_keys or not (self.desk.get(dev).get("prefs") or {}).get("diverge", True):
+                    continue
+                probe = {
+                    "kind": a.get("kind"),
+                    "severity": "HIGH",
+                    "tickers": [sym],
+                    "edge": {"catalyst": (a.get("edge") or {}).get("catalyst")},
+                }
+                if not self.desk.allows(dev, probe, now):
+                    continue
+                sent_keys.add(key)
+                line = f"{cb['label']}, {cb['band_label']}: {round(close['hit'] * 100)}% went their way by the close (median {close['median']:+.1f}%, {close['n']})"
+                payload = {"id": f"dv-{a['id']}", "title": f"⚠ {sym} {since:+.1f}% on {good} news",
+                           "body": f"“{a.get('title', '')[:110]}”\n{line}\nThe market isn't buying it so far.",
+                           "severity": "HIGH", "kind": "system", "tickers": [sym], "tag": f"dv-{sym}", "ts": now,
+                           "open": f"/app/#a={a['id']}"}  # fmt: skip
+                if await self._to_device(dev, payload):
+                    sent += 1
+        if log is not None:
+            self.storage.set_setting("diverge_log", json.dumps(log[-500:]))
+        self.storage.set_setting(sent_key, json.dumps(sorted(sent_keys)))
+        return sent
+
+    def grade_divergence(self, now: float | None = None) -> int:
+        """Divergence flags graded at the close: how far it went against the news, from the alert price."""
+        now = now or time.time()
+        raw = self.storage.get_setting("diverge_log")
+        if not raw:
+            return 0
+        log = json.loads(raw)
+        graded = 0
+        for e in log:
+            if e.get("close") is not None or not e.get("ref"):
+                continue
+            close = (
+                datetime.fromtimestamp(e["ts"], ET)
+                .replace(hour=16, minute=0, second=0, microsecond=0)
+                .timestamp()
+            )
+            q = self.price_of(e["symbol"], 900, now=now)
+            if q and close <= now <= close + 1800:
+                e["close"] = round(
+                    -e["sign"] * (q[1] / e["ref"] - 1.0) * 100.0, 2
+                )  # against the news: positive
+                graded += 1
+        if graded:
+            self.storage.set_setting("diverge_log", json.dumps(log))
+        return graded
 
     def grade_retests(self, now: float | None = None) -> int:
         """Second-chance flags graded at the close (16:00-16:30 ET that day): the move its way from
@@ -3200,7 +3298,8 @@ class Engine:
             p = self.desk.profiles.get(device)
             if not p or not (p.get("prefs") or {}).get("earn_remind", True):
                 continue
-            for sym in p.get("watchlist") or []:
+            held = p.get("holdings") or {}
+            for sym in dict.fromkeys([*(p.get("watchlist") or []), *held]):
                 e = book.lookup(sym, dt.date())
                 if not e or e["in_days"] != 0:
                     continue
@@ -3215,6 +3314,7 @@ class Engine:
                 if not (window[0] <= hm < window[1]) or not self._once(f"remind:{dt.date()}:{device}:{sym}"):
                     continue
                 bits = []
+                nxt = None
                 with contextlib.suppress(Exception):
                     im = await implied_move(self, sym, now)
                     nxt = next((r for r in im.get("rows") or [] if r.get("earnings")), None)
@@ -3226,6 +3326,12 @@ class Engine:
                         bits.append(
                             f"it moved ±{er['avg_abs_move']:.1f}% on its last {len(er['rows'])} reports"
                         )
+                shares = (held.get(sym) or {}).get("shares") or 0
+                q = self.price_of(sym, 86400, now=now) if shares else None
+                if q and nxt:
+                    bits.append(
+                        f"about ±${shares * q[1] * nxt['move_pct'] / 100:,.0f} on your {shares:g} shares"
+                    )
                 title = f"📅 {sym} reports {'after the close' if 'after' in when else 'before the open' if 'before' in when else 'today'}"
                 payload = {"id": f"er-{sym}-{dt.date()}", "title": title, "body": (" · ".join(bits) or "On your watchlist")[:300],
                            "severity": "MEDIUM", "kind": "system", "tickers": [sym], "tag": f"er-{sym}", "ts": now,

@@ -498,3 +498,15 @@ def retest_record(engine: Engine, now: float | None = None, days: float = 120) -
     ]
     xs = [e["close"] for e in log if e.get("close") is not None]
     return {"flags": len(log), "close": _stats(xs)}
+
+
+def divergence_record(engine: Engine, now: float | None = None, days: float = 120) -> dict[str, Any]:
+    """How past divergence flags did by the close: did the stock keep going against the news?"""
+    now = now or time.time()
+    log = [
+        e
+        for e in json.loads(engine.storage.get_setting("diverge_log") or "[]")
+        if e["ts"] >= now - days * 86400
+    ]
+    xs = [e["close"] for e in log if e.get("close") is not None]
+    return {"flags": len(log), "close": _stats(xs)}

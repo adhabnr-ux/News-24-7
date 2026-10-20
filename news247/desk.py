@@ -130,6 +130,7 @@ def default_profile() -> dict[str, Any]:
             "risk_pct": 1.0,  # % of the account a plan risks on one idea
             "retest": True,  # second chance: a strong kind of news back at its alert price
             "setups": False,  # 09:25 ET: today's best setups (plans.todays_setups) in one push
+            "diverge": True,  # a strong kind of news, and the stock going the other way
             "edge_min": None,  # only push news whose catalyst record clears this: hit50 | hit60 | move2
         },
         "price_alerts": [],
@@ -689,6 +690,7 @@ class Desk:
                 "sympathy",
                 "retest",
                 "setups",
+                "diverge",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1396,6 +1398,7 @@ class Desk:
                     "sympathy",
                     "retest",
                     "setups",
+                    "diverge",
                     "watch_push",
                     "min_sev",
                     "digest",

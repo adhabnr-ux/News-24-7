@@ -690,3 +690,5 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .base.work { margin-top: 4px; }
 /* run 20: setups */
 .setup { border-bottom: 1px solid var(--hair); padding-bottom: 6px; } .setup .kv { padding-top: 0; }
+/* run 21: event risk */
+.risk { white-space: nowrap; text-align: right; } .risk small { display: block; color: var(--faint); font-size: 11.5px; font-weight: 500; }

@@ -1148,6 +1148,7 @@ function renderDesk() {
     <div class="row" style="padding:6px 0 4px"><button class="btn ghost small${localTimes() ? " sel" : ""}" data-act="tz">${localTimes() ? "Times: your time zone" : "Times: ET"}</button><button class="btn ghost small" data-act="glossary">What the terms mean</button><button class="btn ghost small" data-act="links">Shortcuts &amp; links</button></div>
     <div class="kv"><span>Sympathy ${tip("sympathy")}<div class="sub">a peer of a stock you watch or hold jumps 4%+ on news and yours hasn't moved yet (at most 3 a day)</div></span><b><button class="btn ghost small${pr.sympathy !== false ? " sel" : ""}" data-act="flag" data-s="sympathy">${pr.sympathy !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Today's setups, 9:25 ET<div class="sub">the best alerts since the last close, each with a plan (stop, target, size), in one push before the open</div></span><b><button class="btn ghost small${pr.setups ? " sel" : ""}" data-act="flag" data-s="setups">${pr.setups ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Divergence<div class="sub">a strong kind of news, and the stock going the other way 15-90 minutes later (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.diverge !== false ? " sel" : ""}" data-act="flag" data-s="diverge">${pr.diverge !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Second chance<div class="sub">a stock that ran its alert's way and came back to the alert price, when its kind of news went its way 60%+ of the time (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.retest !== false ? " sel" : ""}" data-act="flag" data-s="retest">${pr.retest !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Follow-ups<div class="sub">an hour after an alert on a stock you watch or hold, if it moved 2%+: how it played out</div></span><b><button class="btn ghost small${pr.followups ? " sel" : ""}" data-act="flag" data-s="followups">${pr.followups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Tomorrow, 20:00 ET (Sun-Thu)<div class="sub">after-hours movers and why, the next session's reporters (yours first) and events</div></span><b><button class="btn ghost small${pr.tomorrow ? " sel" : ""}" data-act="flag" data-s="tomorrow">${pr.tomorrow ? "On" : "Off"}</button></b></div>
@@ -1310,6 +1311,8 @@ async function loadRecord() {
     const bucketRows = (title, rows) => rows.length ? `<div class="kv head"><span>${title}</span><b>1 hour · close</b></div>` + rows.map((x) => `<div class="kv"><span>${esc(x.bucket)}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("") : "";
     $("dRecord").innerHTML += bucketRows("Already moved before the alert?", r.priced_in || []) + bucketRows("By time of day (ET)", r.by_time || []);
     if ((r.catalysts || []).length) $("dRecord").innerHTML += `<div class="kv head"><span>By catalyst ${tip("catalyst")}</span><b>close · median · typical size</b></div>` + r.catalysts.map((c) => `<div class="kv"><span>${esc(c.label)} <span class="sub">${c.close.n}${c.bands.length > 1 ? " · " + c.bands.map((b) => `${esc(b.band_label)} ${Math.round(b.close.hit * 100)}%`).join(" · ") : ""}</span></span><b class="rec"><b class="num ${c.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(c.close.hit * 100)}%</b> <span class="sub">${pct(c.close.median)} · ±${(c.typical || 0).toFixed(1)}%</span></b></div>`).join("");
+    const dv = r.diverge;
+    if (dv?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Divergences</span><b>close</b></div><div class="kv"><span>${dv.flags} flagged, 120 days <span class="sub">kept going against the news by the close?</span></span><b class="rec">${cell(dv.close)}</b></div>`;
     const rt = r.retest;
     if (rt?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Second chances</span><b>close</b></div><div class="kv"><span>${rt.flags} flagged, 120 days <span class="sub">back its way by the close?</span></span><b class="rec">${cell(rt.close)}</b></div>`;
     const sy = r.sympathy;
@@ -1338,7 +1341,20 @@ async function loadSaved() {
 }
 const icsUrl = (scheme) => `${scheme === "webcal" ? "webcal:" : location.protocol}//${location.host}/api/calendar.ics?token=${encodeURIComponent(TOKEN)}&device=${encodeURIComponent(DEVICE)}`;
 // the portfolio: holdings with shares (and cost), live
+// event risk: each holding's next report or event, in dollars on the position
+async function loadEventRisk() {
+  let r;
+  try { r = await api("/api/event-risk"); } catch (_) { return; }
+  $("dRiskWrap").hidden = !r.events.length;
+  if (!r.events.length) return;
+  const usd = (v) => v == null ? "—" : "$" + Math.round(v).toLocaleString();
+  $("dRisk").innerHTML = `<div class="kv"><span>At stake in the next ${r.days} days <span class="sub">${usd(r.exposed_value)}${r.exposed_pct != null ? ` · ${r.exposed_pct}% of the portfolio` : ""} has an event</span></span><b class="num">±${usd(r.implied_usd)}<span class="sub"> priced</span></b></div>`
+    + r.events.map((e) => `<div class="kv" data-tk="${esc(e.symbol)}" role="button"><span>${e.kind === "earnings" ? "📅" : "⚖"} ${esc(e.title)} <span class="sub">${esc(prettyDate(e.date))}${e.when ? ", " + esc(e.when) : ""} · ${inDays(e.in_days)} · ${e.shares.toLocaleString()} sh ≈ ${usd(e.value)}${e.usual_usd != null ? ` · its reports usually moved ±${e.usual_pct.toFixed(1)}% (±${usd(e.usual_usd)})` : ""}</span></span>
+      <b class="num risk">${e.implied_usd != null ? `±${usd(e.implied_usd)}<small>options ±${e.implied_pct.toFixed(1)}%</small>` : e.usual_usd != null ? `±${usd(e.usual_usd)}<small>usual move</small>` : `<small>no read yet</small>`}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">What options price for the report (the expiry spanning it) and what its last reports moved, times your position. Either way, not a forecast.</div>`;
+}
 async function loadPortfolio() {
+  loadEventRisk();
   let r;
   try { r = await api("/api/portfolio"); } catch (_) { return; }
   const usd = (v) => v == null ? "—" : (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2 });

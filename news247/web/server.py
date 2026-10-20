@@ -159,6 +159,7 @@ class WebServer:
         app.router.add_get("/api/edges", self.api_edges)
         app.router.add_get("/api/working", self.api_working)
         app.router.add_get("/api/setups", self.api_setups)
+        app.router.add_get("/api/event-risk", self.api_event_risk)
         app.router.add_post("/api/link", self.api_link)
         app.router.add_get("/api/devices", self.api_devices)
         app.router.add_post("/api/devices/remove", self.api_devices_remove)
@@ -965,6 +966,12 @@ class WebServer:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(targets_for(self.engine, sym))
 
+    async def api_event_risk(self, request: web.Request) -> web.Response:
+        """Each holding's next report or event in 10 days, in dollars on the position (plans.py)."""
+        from ..plans import event_risk
+
+        return _json(event_risk(self.engine, self._need_device(request)))
+
     async def api_setups(self, request: web.Request) -> web.Response:
         """Today's setups: the best alerts since the last close, as plans (plans.py)."""
         from ..plans import todays_setups
@@ -1246,6 +1253,9 @@ class WebServer:
         from ..catalysts import retest_record
 
         out["retest"] = retest_record(self.engine)
+        from ..catalysts import divergence_record
+
+        out["diverge"] = divergence_record(self.engine)
         return _json(out)
 
     async def api_foretape(self, request: web.Request) -> web.Response:
