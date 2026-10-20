@@ -796,7 +796,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -935,6 +935,7 @@ async function openSheet(id) {
       <div class="kv"><span>It first broke ${Math.round(e.late.min)} minutes before this alert${e.late.source ? ` <span class="sub">${esc(outlet(e.late.source))}</span>` : ""}</span><b class="num">${e.late.rec?.close ? `<span class="${e.late.rec.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.late.rec.close.hit * 100)}%</span> <span class="sub">its way for alerts that late · ${e.late.rec.close.n}</span>` : ""}</b></div>
       <div class="sub" style="padding:4px 0 12px">Minutes from the story's first headline, from any outlet, to the one this alert came from. By then part of the market had it. History, not a forecast.</div></div>` : "",
     e.float ? `<div class="kv clim"><span class="${e.float_base ? (e.float_base.hit >= 0.5 ? "pos" : "neg") : "sub"}">🧮 Float ${fmtShares(e.float.float)}${e.float.short != null ? ` · ${Math.round(e.float.short * 100)}% short` : ""}${e.float_base ? `: ${esc(e.float_base.label[0].toLowerCase() + e.float_base.label.slice(1))} went its way ${Math.round(e.float_base.hit * 100)}% by the close (median ${pct(e.float_base.median)}${e.float_base.run != null ? `, winners ran ${pct(e.float_base.run)}` : ""}, ${e.float_base.n})` : ""}</span></div>` : "",
+    e.dilution ? `<div class="kv clim"><span class="${e.dilution_base?.close ? (e.dilution_base.close.hit >= 0.5 ? "pos" : "neg") : "sub"}">📄 ${e.dilution.state === "selling" ? `Selling shares: ${e.dilution.sales} prospectus${e.dilution.sales === 1 ? "" : "es"} (424B) in 6 months, the last ${esc(e.dilution.last_sale)}` : e.dilution.state === "shelf" ? `A shelf on file (S-3/F-3, ${esc(e.dilution.shelf)}): it can sell shares` : "No shelf on file"}${e.dilution_base?.close ? `. ${esc(e.dilution_base.label)}: ${Math.round(e.dilution_base.close.hit * 100)}% its way by the close (${e.dilution_base.close.n})${e.dilution_base.d5 ? `, ${Math.round(e.dilution_base.d5.hit * 100)}% five sessions on` : ""}` : ""}</span></div>` : "",
     e.insider_base ? `<h4>Insider buys like this, here</h4><div class="panel glass">
       ${e.insider ? `<div class="kv"><span>This buy</span><b>${esc(e.insider.label)}</b></div>` : ""}
       ${[["Five sessions on", e.insider_base.d5], ["A month on", e.insider_base.d20]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> rose · median ${pct(x.median)} · ${x.n}</b></div>`).join("")}
@@ -1112,6 +1113,22 @@ async function loadAdvice() {
       <div class="row" style="padding:6px 0 2px"><button class="btn ghost small" data-act="advice-apply" data-n="${i}">${esc(x.label)}</button><button class="btn ghost small" data-act="advice-skip" data-n="${i}">Not now</button></div></span></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every panel's verdict on a setting, read together for this phone and ranked by how much evidence is behind it. Nothing changes until you tap; "Not now" hides one.</div>`;
 }
+// your changes, graded (Desk): every change made on the evidence, and what came after it
+const CH_TAG = { holds: ["holds", "pos"], backfired: ["backfired", "neg"], even: ["about even", ""], thin: ["too soon", "faint"] };
+let changesR = null;
+async function loadChanges() {
+  let r;
+  try { r = await api("/api/changes"); } catch (_) { return; }
+  const rows = [...r.mine, ...r.lines];
+  $("dChangesWrap").hidden = !rows.length;
+  if (!rows.length) return;
+  changesR = rows;
+  $("dChanges").innerHTML = rows.map((c, i) => { const t = CH_TAG[c.verdict], s = c.since;
+    return `<div class="kv"><span>${esc(c.what)} <span class="sub">${ago(c.at)} ago${c.still === false ? " · since undone" : ""}</span> <span class="chipv ${t[1]}">${t[0]}</span>
+      <div class="sub">${s ? `${c.lowered === false ? "Kept in the shadow" : c.lowered ? "Added" : "Since"}: ${s.n} graded, ${Math.round(s.hit * 100)}% went their way (median ${pct(s.median)})${c.ref ? ` vs ${Math.round(c.ref.hit * 100)}% for alerts over the old line` : ""}` : "Nothing graded since yet"}</div>
+      ${c.undo ? `<div class="row" style="padding:6px 0 2px"><button class="btn ghost small" data-act="change-undo" data-n="${i}">${esc(c.undo.label)}</button></div>` : ""}</span><b class="num">${s ? `<span class="${s.hit >= 0.5 ? "pos" : "neg"}">${Math.round(s.hit * 100)}%</span> <span class="sub">${s.n}</span>` : "—"}</b></div>`; }).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Each change made on the evidence is graded on what came after it, by the close: a kind switched off holds while its alerts keep losing (45% or less); a lowered line holds while the alerts it added do as well as those over the old line; a raised line holds while the headlines it kept back don't win (under 55%). ${r.need}+ graded before a verdict.</div>`;
+}
 // uptime and the record's coverage (Desk)
 const H_LABEL = { h1: "An hour in", m15: "15 minutes in (the news clock)", open: "The first print (news before the bell)", heat: "Heat (best run, worst dip)", close: "That close", d1: "The next close", d5: "Five sessions on", d20: "A month on" };
 async function loadUptime() {
@@ -1155,6 +1172,18 @@ function kindLines(r, cell) {
     + ks.slice(0, 10).map((k) => `<div class="kv"><span>${esc(k.label)} <span class="sub">line ${k.line}${k.offset ? ` (${k.offset > 0 ? "+" : ""}${k.offset})` : ""}</span> <span class="chipv ${KL_TAG[k.verdict][1]}">${KL_TAG[k.verdict][0]}</span>${k.text ? `<div class="sub">${esc(k.text)}</div>` : ""}
       ${k.verdict === "lower" || k.verdict === "raise" || k.offset ? `<div class="row" style="padding:6px 0 2px">${k.verdict === "lower" || k.verdict === "raise" ? `<button class="btn ghost small" data-act="kline-set" data-s="${esc(k.kind)}" data-n="${k.to - r.line}">${k.verdict === "lower" ? "Lower" : "Raise"} to ${k.to}</button>` : ""}${k.offset ? `<button class="btn ghost small" data-act="kline-set" data-s="${esc(k.kind)}" data-n="0">Back to ${r.line}</button>` : ""}</div>` : ""}</span><b class="num">${cell(k.under)}<br>${cell(k.over)}</b></div>`).join("")
     + `<div class="sub" style="padding:2px 0 8px">A kind's line moves 5 points at a time, at most 10 from the main line: lower where its headlines just under the line ran like its alerts just over it, higher where its alerts just over it lost (40% or less, negative median). Headlines are read against their kind's line when they arrive.</div>`;
+}
+// dilution risk (Watch): news on stocks selling shares off a shelf, with one on file, or neither
+async function loadDilution() {
+  let r;
+  try { r = await api("/api/dilution"); } catch (_) { return; }
+  $("dilWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const cell = (x) => x ? `<span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span>` : `<span class="sub">—</span>`;
+  const row = (x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num">${cell(x.close)}<br>${cell(x.d5)}</b></div>`;
+  $("dilBoard").innerHTML = `<div class="kv head"><span>Its way</span><b>the close · five sessions on</b></div>` + r.rows.map(row).join("")
+    + (r.kinds.length ? `<div class="kv head"><span>By kind of news</span><b></b></div>` + r.kinds.map(row).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">From each company's SEC filings, read a day at a time: selling shares now is a 424B prospectus in the last 180 days; a shelf on file is an S-3 or F-3 in the last three years with no recent sale. Small companies often sell into a run. A state's record with ${r.need}+ graded rides on its alerts and counts in the call.</div>`;
 }
 // float and short interest (Watch): news by how many shares trade and how many are sold short
 async function loadFloat() {
@@ -2637,10 +2666,11 @@ async function onAct(el) {
     try {
       if (x.api) await api(x.api, { method: "POST", body: JSON.stringify(x.body) });
       else if (!(await deskEdit(x.action, x.body))) return;
-      await deskEdit("advice_dismiss", { key: x.key });
-      toast(`Done: ${x.title}`); loadAdvice();
+      await deskEdit("advice_dismiss", { key: x.key, applied: true });
+      toast(`Done: ${x.title}`); loadAdvice(); loadChanges();
     } catch (err) { toast(String(err.message || err)); }
   }
+  else if (a === "change-undo") { const c = changesR?.[+el.dataset.n]; if (!c?.undo) return; try { if (c.undo.api) await api(c.undo.api, { method: "POST", body: JSON.stringify(c.undo.body) }); else if (!(await deskEdit(c.undo.action, c.undo.body))) return; toast(`Undone: ${c.what}`); loadChanges(); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "advice-skip") { const x = adviceR?.items?.[+el.dataset.n]; if (x && await deskEdit("advice_dismiss", { key: x.key })) loadAdvice(); }
   else if (a === "bars-fill") { toast("Reading the exchange's bars…"); try { const r = await api("/api/bars/fill", { method: "POST", body: "{}" }); toast(r.filled ? `Filled ${r.filled} stamp${r.filled === 1 ? "" : "s"}: ${r.daily || 0} from daily bars, ${r.minutes || 0} from minute bars` : "Nothing to fill"); loadUptime(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-set") { if (!confirm(`Lower the alert line from ${lineR?.line} to ${s} for every phone? Headlines scoring ${s}+ become alerts. You can put it back any time.`)) return; try { await api("/api/line", { method: "POST", body: JSON.stringify({ medium: +s, why: lineR?.line_text || "" }) }); toast(`The alert line is ${s} now`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
@@ -3076,7 +3106,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadChanges(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

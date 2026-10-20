@@ -1208,6 +1208,10 @@ class Desk:
             done = dict(p.get("advice_done") or {})
             done[key] = now
             p["advice_done"] = dict(sorted(done.items(), key=lambda kv: -kv[1])[:100])
+            if body.get("applied"):  # made, not just dismissed: graded from here on (changes.py)
+                applied = dict(p.get("advice_applied") or {})
+                applied[key] = now
+                p["advice_applied"] = dict(sorted(applied.items(), key=lambda kv: -kv[1])[:100])
         elif action == "cat_mute":
             from .catalysts import LABELS
 

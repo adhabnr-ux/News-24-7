@@ -269,6 +269,9 @@ class Engine:
         self.pair_rates: dict[str, Any] = {}  # who follows whose news, per pair (peerlearn.py)
         self.wait_rates: dict[str, Any] = {}  # did waiting for the open or a pullback pay (waits.py)
         self.float_rates: dict[str, Any] = {}  # news by float and short interest, graded (floatshort.py)
+        self.dilution_rates: dict[
+            str, Any
+        ] = {}  # news on stocks selling shares or with a shelf (dilution.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -1959,6 +1962,19 @@ class Engine:
                         alert.edge["float_base"] = fb
                 elif self.smallcap_feed is not None:
                     self._spawn(stamp_later(self, alert.id, alert.tickers[0], kind_))
+                from .dilution import cached as dil_cached
+                from .dilution import dilution_for
+                from .dilution import stamp_later as dil_later
+                from .dilution import stamp_of as dil_stamp_of
+
+                dl = dil_stamp_of(dil_cached(self, alert.tickers[0]))
+                if dl:  # selling shares now, a shelf on file, or neither, from its filings (dilution.py)
+                    alert.edge["dilution"] = dl
+                    db = dilution_for(self.dilution_rates, kind_, dl)
+                    if db:
+                        alert.edge["dilution_base"] = db
+                elif any(getattr(s, "type_name", "") == "sec_edgar" and s.enabled for s in self.sources):
+                    self._spawn(dil_later(self, alert.id, alert.tickers[0], kind_))
             from .macrodays import macro_for
             from .macrodays import today as macro_today
 
@@ -4042,6 +4058,9 @@ class Engine:
         from .floatshort import float_rates
 
         self.float_rates = float_rates(self, 180, now)
+        from .dilution import dilution_rates
+
+        self.dilution_rates = dilution_rates(self, 365, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

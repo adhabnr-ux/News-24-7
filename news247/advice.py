@@ -16,6 +16,9 @@ the numbers behind it and the one tap that makes it:
 - **Follow the call on paper** (when "act now" went its way 60%+ on 30+ replayed alerts and no
   autopilot follows it yet).
 
+- **Undo a change that backfired** (changes.py: a kind switched off whose alerts kept winning, a
+  line move whose added alerts lost or whose kept-back headlines won).
+
 Advice is evidence, not an order: every item shows its counts, and nothing changes until tapped.
 """
 
@@ -92,6 +95,15 @@ def advise(engine: Engine, device: str, now: float | None = None) -> dict[str, A
                                r["text"], side["n"] * 0.4, api="/api/line/kind",
                                body={"kind": r["kind"], "offset": r["to"] - engine.cfg.scoring.medium, "why": r["text"]},
                                label="Lower it" if r["verdict"] == "lower" else "Raise it"))  # fmt: skip
+    from .changes import kind_offs, line_moves
+
+    for c in (kind_offs(engine, device, now) if p else []) + line_moves(engine, now):
+        u, s = c.get("undo"), c.get("since") or {}
+        if u:
+            why = (f"Since then, {s['n']} graded went their way {round(s['hit'] * 100)}% by the close (median {s['median']:+.1f}%): the change backfired.")  # fmt: skip
+            items.append(_item(f"undo:{c['what']}:{c['at']:.0f}", f"Undo: {c['what'][:1].lower() + c['what'][1:]}", why,
+                               s["n"] * 0.6, action=u.get("action", ""), body=u.get("body"), api=u.get("api", ""),
+                               label=u["label"]))  # fmt: skip
     rp = getattr(engine, "call_replay", None) or {}
     act = next((v for v in rp.get("verbs") or [] if v["verb"] == "act"), None)
     follows = any(r.get("follow") == "call" for r in p.get("autopilots") or [])

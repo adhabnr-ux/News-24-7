@@ -187,6 +187,8 @@ class WebServer:
         app.router.add_post("/api/line", self.api_line_set)
         app.router.add_post("/api/line/kind", self.api_line_kind)
         app.router.add_get("/api/float", self.api_float)
+        app.router.add_get("/api/dilution", self.api_dilution)
+        app.router.add_get("/api/changes", self.api_changes)
         app.router.add_get("/api/macro", self.api_macro)
         app.router.add_get("/api/vol", self.api_vol)
         app.router.add_get("/api/playbooks", self.api_playbooks)
@@ -1224,6 +1226,18 @@ class WebServer:
         from ..floatshort import board
 
         return _json(board(self.engine.float_rates))
+
+    async def api_dilution(self, request: web.Request) -> web.Response:
+        """News on stocks selling shares now, with a shelf on file, or neither, graded (dilution.py)."""
+        from ..dilution import board
+
+        return _json(board(self.engine.dilution_rates))
+
+    async def api_changes(self, request: web.Request) -> web.Response:
+        """Each change made on the evidence, graded since it was made (changes.py)."""
+        from ..changes import changes
+
+        return _json(changes(self.engine, self._need_device(request)))
 
     async def api_advice(self, request: web.Request) -> web.Response:
         """The setting changes the records back for this phone, ranked, each one tap from applied (advice.py)."""
