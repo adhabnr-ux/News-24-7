@@ -1098,8 +1098,8 @@ async function openPlaybook(key) {
 async function loadVol() {
   let r;
   try { r = await api("/api/vol"); } catch (_) { return; }
-  $("volWrap").hidden = !r.rates.length && !r.today.length;
-  if ($("volWrap").hidden) return;
+  $("ovWrap").hidden = !r.rates.length && !r.today.length;
+  if ($("ovWrap").hidden) return;
   $("volBoard").innerHTML = (r.rates.length ? `<div class="kv head"><span>Read at the alert</span><b>the move beat options' day</b></div>` + r.rates.map((x) => `<div class="kv"><span><span class="chipv ${x.verdict === "cheap" ? "pos" : x.verdict === "rich" ? "neg" : ""}">${esc(x.verdict)}</span></span><b class="num">${Math.round(x.beat * 100)}% <span class="sub">moved ${x.ratio}× the implied · ${x.n}</span></b></div>`).join("") : "")
     + (r.today.length ? `<div class="kv head"><span>The last day's reads</span><b></b></div>` + r.today.map((x) => `<div class="kv" data-id="${esc(x.id)}" role="button"><span><b>${esc(x.symbol)}</b> <span class="sub">${esc(x.title.slice(0, 60))}</span></span><b class="num"><span class="chipv ${x.verdict === "cheap" ? "pos" : "neg"}">${esc(x.verdict)}</span> ±${x.implied.toFixed(1)}% vs ±${x.typical.toFixed(1)}%</b></div>`).join("") : "")
     + `<div class="sub" style="padding:4px 0 12px">At each alert with a fresh chain read: options' typical day (from IV30, or the nearest straddle) against how far that kind of news here moves by the close. Cheap reads say the news usually moves more than options price; each read is graded on whether it did.</div>`;
@@ -1145,10 +1145,10 @@ let COMBO_NAMES = {};
 async function loadToday() {
   let r;
   try { r = await api("/api/playbook-today"); } catch (_) { return; }
-  $("ptWrap").hidden = !r.rows.length;
+  $("pbtWrap").hidden = !r.rows.length;
   if (!r.rows.length) return;
   const t = r.tally, icon = { waiting: "⏳", in: "🟢", out: "🏁", skipped: "⤼" };
-  $("ptBoard").innerHTML = `<div class="labstats"><span><b class="num">${t.waiting}</b><small>waiting</small></span><span><b class="num">${t.in}</b><small>in</small></span><span><b class="num">${t.out}</b><small>out</small></span><span><b class="num ${cls(t.avg)}">${t.avg != null ? pct(t.avg) : "—"}</b><small>a call</small></span><span><b class="num ${cls(t.vs_plain)}">${t.vs_plain != null ? pct(t.vs_plain) : "—"}</b><small>vs the plain way</small></span></div>`
+  $("pbtBoard").innerHTML = `<div class="labstats"><span><b class="num">${t.waiting}</b><small>waiting</small></span><span><b class="num">${t.in}</b><small>in</small></span><span><b class="num">${t.out}</b><small>out</small></span><span><b class="num ${cls(t.avg)}">${t.avg != null ? pct(t.avg) : "—"}</b><small>a call</small></span><span><b class="num ${cls(t.vs_plain)}">${t.vs_plain != null ? pct(t.vs_plain) : "—"}</b><small>vs the plain way</small></span></div>`
     + r.rows.map((x) => `<div class="kv" data-id="${esc(x.id)}"><span>${icon[x.status] || ""} <b>${esc(x.symbol)}</b> ${x.sign > 0 ? "▲" : "▼"} <span class="sub">${esc(x.kind || "")}</span><div class="sub">${esc(x.pair)}${x.held === false ? " (the plain way: its pick didn't hold)" : ""} · ${x.status}${x.why ? " " + esc(x.why) : ""}${x.entry ? ` · in at $${x.entry.toFixed(2)}` : ""}</div><div class="sub">${esc(x.title)}</div></span><b class="num">${x.pnl != null ? `<span class="${cls(x.pnl)}">${pct(x.pnl)}</span>` : "—"}${x.plain != null ? `<br><span class="sub">plain ${pct(x.plain)}</span>` : ""}</b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every directional alert since yesterday's close, and older ones the playbook still holds: its kind's pair (way in and way out, picked together and checked out of sample), where it stands from the desk's live record, and its result so far on paper. <i>Plain</i>: the same alert in at the alert, out at the close. Paper only: nothing is traded.</div>`;
 }
@@ -1789,6 +1789,7 @@ function renderDesk() {
     <div class="kv"><span>Signal pushes an hour<div class="sub">the wait is over, catch-ups, second legs, volume, the call turning, run-ups, your book: past this many an hour, the rest fold into a digest every half hour</div></span><b></b></div>
     <div class="row" style="padding:2px 0 8px">${[[4, "4"], [8, "8"], [12, "12"], [0, "No limit"]].map(([k, l]) => `<button class="btn ghost small${(pr.signal_cap ?? 8) === k ? " sel" : ""}" data-act="signal-cap" data-s="${k}">${l}</button>`).join("")}</div>
     <div class="kv"><span>Into the event<div class="sub">ten sessions before an FDA decision, readout or panel on your stock: how stocks ran up into events like it here, and what holding through added</div></span><b><button class="btn ghost small${pr.runup !== false ? " sel" : ""}" data-act="flag" data-s="runup">${pr.runup !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>The playbook's moves<div class="sub">on a stock an alert reached you on, or you watch, hold or track: when the playbook's way in comes (a second leg, its limit, volume, the open) and when it's out, with its paper result against the plain way</div></span><b><button class="btn ghost small${pr.pb_push !== false ? " sel" : ""}" data-act="flag" data-s="pb_push">${pr.pb_push !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The call, live<div class="sub">the call on an alert you got or a stock you're tracking changed with what the day graded live: volume 15 minutes in, the mainstream catch-up, a second leg</div></span><b><button class="btn ghost small${pr.callnow !== false ? " sel" : ""}" data-act="flag" data-s="callnow">${pr.callnow !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Volume confirmation<div class="sub">15 minutes after news on your stock: confirmed by volume, or no volume behind it, when news on that much volume has a clear record here</div></span><b><button class="btn ghost small${pr.volconf !== false ? " sel" : ""}" data-act="flag" data-s="volconf">${pr.volconf !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Your book on market-wide news<div class="sub">a tariff, Fed, oil or war headline: what headlines like it meant for your holdings, by their sectors' records, when it's 0.3%+ of the book</div></span><b><button class="btn ghost small${pr.bookmacro !== false ? " sel" : ""}" data-act="flag" data-s="bookmacro">${pr.bookmacro !== false ? "On" : "Off"}</button></b></div>

@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .engine import Engine
 
-PREFIXES = ("wt-", "cu-", "l2-", "vc-", "cn-", "ru-", "bm-")  # the signal pushes, by their id
+PREFIXES = ("wt-", "cu-", "l2-", "vc-", "cn-", "ru-", "bm-", "pb-")  # the signal pushes, by their id
 CHOICES = (0, 4, 8, 12)  # 0: no limit
 DEFAULT = 8
 WINDOW = 3600

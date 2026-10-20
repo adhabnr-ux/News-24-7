@@ -2642,6 +2642,10 @@ class Engine:
 
                     await send_runups(self, now)  # ten sessions to an event on your stock
                 with contextlib.suppress(Exception):
+                    from .pbpush import send_moves
+
+                    await send_moves(self, now)  # the playbook's way in came, or it's out (pbpush.py)
+                with contextlib.suppress(Exception):
                     from .callnow import send_turns
 
                     await send_turns(self, now)  # the call re-read with the day's live facts

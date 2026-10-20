@@ -449,6 +449,15 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - the plain way.
 
   With 10+ calls the Desk panel gives a verdict: *"Following the playbook on your 10 calls would have made +2.50% a call more (+3.00% against your +0.50%)"*, or that you beat it, or that it's even. It also breaks the gap down per kind of news and lists the calls with the widest gaps, where the habit behind it shows. `GET /api/you-vs-playbook` (per phone).
+- **The playbook on the lock screen:** the playbook's two moments now reach the phones that care about the stock (the alert reached it, or it watches, holds or has a call on the stock), once each:
+  - **its way in**, when it comes, for any way in but the alert itself (that one is the alert's own push): *"🧭 ACME: the playbook's way in, on the second leg at $102.00"*, with its way out and what its pair made on average here;
+  - **its way out**, with the paper result beside the plain way: *"🏁 ACME: out the next day, +2.0% on the playbook (the plain way +2.0%)"*. There's none for a plain pair (in at the alert, out at the close), whose exit is just the bell.
+
+  Each counts against the phone's hourly budget for signal pushes (over it, they fold into the half-hourly digest). Settings → *The playbook's moves* switches them off. Tapping one opens the alert.
+- **The desk acts on the playbook's record:** the desk's advice reads the two playbook verdicts and turns each into one tap:
+  - **Follow the playbook on paper,** when it beat your own calls by 0.5% a call or more on the same alerts (10+) and no autopilot follows it yet.
+  - **Pause an autopilot** whose choices cost against the plain way on the same alerts over 20+ graded calls.
+- **Fixed: boards sharing an id.** *The playbook today* (run 64) reused the price-target board's id, and *Options against the news* (run 45) the unusual-volume board's, so one board could write into the other's place or stay hidden. Both have their own ids now, and a test fails the build if two elements in the app share an id, or if the script looks one up that doesn't exist.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

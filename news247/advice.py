@@ -15,6 +15,9 @@ the numbers behind it and the one tap that makes it:
   kind of news' line** (linekinds.py: lower it where near misses ran, raise it where alerts lost).
 - **Follow the call on paper** (when "act now" went its way 60%+ on 30+ replayed alerts and no
   autopilot follows it yet).
+- **Follow the playbook on paper** (youvs.py: when the playbook beat your own calls by 0.5% a call
+  or more on the same alerts, 10+, and no autopilot follows it yet).
+- **Pause an autopilot** whose choices cost against the plain way on the same alerts (forward.py, 20+).
 
 - **Undo a change that backfired** (changes.py: a kind switched off whose alerts kept winning, a
   line move whose added alerts lost or whose kept-back headlines won).
@@ -32,6 +35,8 @@ if TYPE_CHECKING:
 
 OFF_N, OFF_HIT = 30, 0.40
 BACK_N, BACK_HIT = 20, 0.55
+PB_GAP = 0.5  # % a call the playbook beats your own calls by, on 10+, before it's advice
+PAUSE_N = 20  # graded calls before an autopilot that costs against the plain way is advice
 
 
 def _item(key: str, title: str, why: str, weight: float, *, action: str = "", body: dict[str, Any] | None = None,
@@ -113,6 +118,24 @@ def advise(engine: Engine, device: str, now: float | None = None) -> dict[str, A
                            f"(median {act['median']:+.1f}%, {act['n']}).", act["n"] * (act["hit"] - 0.5),
                            action="autopilot_add", body={"follow": "call", "catalyst": "all", "band": "all", "min_sev": "HIGH", "exit": "close"},
                            label="Follow it"))  # fmt: skip
+    if p:  # the playbook's own record, acted on (youvs.py, forward.py)
+        from .forward import forward
+        from .youvs import compare
+
+        yv = compare(engine, device)
+        has_pb = any(r.get("follow") == "playbook" for r in p.get("autopilots") or [])
+        if yv.get("verdict") == "playbook" and yv["gap"] >= PB_GAP and not has_pb:
+            items.append(_item("pb_follow", "Follow the playbook on paper",
+                               f"On your {yv['n']} calls from alerts, the playbook made {yv['playbook']:+.2f}% a call on the same "
+                               f"alerts against your {yv['you']:+.2f}%.", yv["n"] * min(yv["gap"], 3.0) / 2,
+                               action="autopilot_add", body={"follow": "playbook", "min_sev": "MEDIUM"}, label="Follow it"))  # fmt: skip
+        fw = forward(engine, device)["rules"]
+        for r in p.get("autopilots") or []:
+            s = fw.get(r["id"]) or {}
+            if r.get("on", True) and s.get("verdict") == "costs" and s["n"] >= PAUSE_N:
+                items.append(_item(f"ap_pause:{r['id']}", f"Pause the autopilot “{r['label']}”", s["line"],
+                                   s["n"] * min(-s["edge"], 3.0) / 2, action="autopilot_toggle", body={"id": r["id"]},
+                                   label="Pause it"))  # fmt: skip
     if p:  # a signal that's weak here, still pushed; a strong one switched off (signals.py)
         from .signals import advice_items
 
