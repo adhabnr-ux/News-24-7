@@ -168,6 +168,7 @@ class WebServer:
         app.router.add_get("/api/tune", self.api_tune)
         app.router.add_get("/api/stakes", self.api_stakes)
         app.router.add_get("/api/risk", self.api_risk)
+        app.router.add_get("/api/flow", self.api_flow)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1036,15 +1037,23 @@ class WebServer:
 
     async def api_stakes(self, request: web.Request) -> web.Response:
         """Upcoming binary events and your reports, with how both branches have traded (stakes.py)."""
-        from ..stakes import event_stakes
+        from ..stakes import event_record, event_stakes
 
-        return _json(event_stakes(self.engine, self._device(request) or ""))
+        return _json(
+            {**event_stakes(self.engine, self._device(request) or ""), "record": event_record(self.engine)}
+        )
 
     async def api_risk(self, request: web.Request) -> web.Response:
         """Your risk in one place: open risk, unbounded calls, clusters, sector shocks, events (risk.py)."""
         from ..risk import desk_risk
 
         return _json(desk_risk(self.engine, self._need_device(request)))
+
+    async def api_flow(self, request: web.Request) -> web.Response:
+        """Options flow by shape, graded: which kinds of unusual activity led the stock (flowrec.py)."""
+        from ..flowrec import flow_board
+
+        return _json(flow_board(self.engine.flow_rates))
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""
@@ -1359,6 +1368,9 @@ class WebServer:
         from ..catalysts import confirm_record
 
         out["confirm"] = confirm_record(self.engine)
+        from ..stakes import event_record
+
+        out["events"] = event_record(self.engine)
         return _json(out)
 
     async def api_foretape(self, request: web.Request) -> web.Response:

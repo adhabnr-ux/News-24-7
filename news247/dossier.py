@@ -43,6 +43,8 @@ def _direction(a: dict[str, Any]) -> str:
         d = (e.get("ignition") or {}).get("direction") or (e.get("smallcap") or {}).get("direction") or ""
     if not d:
         d = (e.get("confluence") or {}).get("side") or ""
+    if not d:
+        d = (e.get("flow") or {}).get("dir") or ""  # options flow, read from its premium (flowrec.py)
     if not d and (a.get("move") or {}).get("pct") is not None:
         d = "up" if a["move"]["pct"] > 0 else "down"
     return d if d in ("up", "down") else ""

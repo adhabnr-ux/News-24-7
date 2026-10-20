@@ -974,6 +974,11 @@ class WebPushNotifier(Notifier):
         ol = odds_line(alert.edge.get("odds"))
         if ol:
             base = f"{ol}\n{base}" if base else ol
+        from ..flowrec import flow_line
+
+        fw = flow_line(alert.edge.get("flow_base"))
+        if fw:
+            base = f"{base}\n{fw}" if base else fw
         from ..firms import firm_line
 
         fl = firm_line(alert.edge.get("firm_base"))

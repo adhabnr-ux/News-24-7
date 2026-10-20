@@ -137,7 +137,8 @@ async def test_run32_over_the_api(tmp_path):
     try:
         async with aiohttp.ClientSession() as s:
             async with s.get(srv.make_url("/api/stakes"), headers={"Authorization": "Bearer tok"}) as r:
-                assert (await r.json()) == {"rows": [], "days": 14}
+                body = await r.json()
+                assert (body["rows"], body["days"], body["record"]) == ([], 14, {"n": 0, "kinds": []})
             async with s.get(srv.make_url("/api/odds"), headers={"Authorization": "Bearer tok"}) as r:
                 assert (await r.json())["ready"] is False
     finally:

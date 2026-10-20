@@ -563,6 +563,7 @@ async function stakesHTML() {
   const usd = (v) => "$" + Math.round(v).toLocaleString();
   const br = (b) => b.n ? `<div class="kv sub"><span>If ${esc(b.label)} <span class="faint">${b.n} graded${b.size ? ", " + esc(b.size) : ""}</span></span><b class="num ${cls(b.close)}">${pct(b.close)}${b.d1 != null ? ` <span class="sub">next day ${pct(b.d1)}</span>` : ""}</b></div>` : `<div class="kv sub"><span>If ${esc(b.label)}</span><b class="faint">no record yet</b></div>`;
   return `<div class="sec-title rv"><h2>What's at stake</h2><span>both outcomes, as they've traded here</span></div>
+    ${r.record?.n ? `<div class="sub" style="padding:0 0 8px">Graded here: ${r.record.n} event${r.record.n === 1 ? "" : "s"} moved ±${r.record.realized}% at the median over two sessions${r.record.implied != null ? `; options had priced ±${r.record.implied}%, and ${Math.round(r.record.beat_implied * 100)}% moved more than priced` : ""}.</div>` : ""}
     <div class="panel glass tilt rv">${r.rows.map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span>${x.mine ? "★ " : ""}<b>${esc(x.title)}</b> <span class="sub">${esc(prettyDate(x.date))}${x.when ? ", " + esc(x.when) : ""} · ${inDays(x.in_days)}${x.value ? ` · you hold ${usd(x.value)}` : ""}${x.tracked ? ` · ${x.tracked} open call${x.tracked > 1 ? "s" : ""}` : ""}</span></span><b class="num">${x.implied_pct != null ? `±${x.implied_pct.toFixed(1)}%<small class="sub"> priced${x.value ? ` · ±${usd(x.value * x.implied_pct / 100)}` : ""}</small>` : ""}</b></div>${x.branches.map(br).join("")}`).join("")}
     <div class="sub" style="padding:4px 0 12px">Each branch is this server's graded alerts of that kind of news at the stock's size (any size when too few), median move by the close, as the stock moved. History, not a forecast of the outcome or its size.</div></div>`;
 }
@@ -763,8 +764,19 @@ async function loadFirms() {
     + (r.worst.length ? `<div class="kv head"><span>Calls the market faded</span><b>its way · avg</b></div>` + r.worst.map(row).join("") : "")
     + `<div class="sub" style="padding:4px 0 12px">Every alert naming a firm's upgrade, downgrade or target change, graded by the close from its own reference price (${r.min_n}+ graded to be ranked${r.thin ? `; ${r.thin} more firm${r.thin === 1 ? " has" : "s have"} fewer` : ""}). History, not a forecast.</div>`;
 }
+// options flow, graded by its shape: calls or puts, how soon it expires, how far out, how big
+async function loadFlowBoard() {
+  let r;
+  try { r = await api("/api/flow"); } catch (_) { return; }
+  $("flowWrap").hidden = !r.best.length && !r.worst.length;
+  if ($("flowWrap").hidden) return;
+  const row = (x) => `<div class="kv"><span>${esc(x.label)} <span class="sub">${x.close.n} graded</span></span><b class="num"><span class="${x.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.close.hit * 100)}%</span> <span class="sub">${pct(x.close.median)}</span></b></div>`;
+  $("flowBoard").innerHTML = (r.best.length ? `<div class="kv head"><span>Led the stock</span><b>its way · median</b></div>` + r.best.map(row).join("") : "")
+    + (r.worst.length ? `<div class="kv head"><span>Didn't</span><b>its way · median</b></div>` + r.worst.map(row).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Each options alert read for its direction (calls bought or puts sold lean up; puts bought or calls sold lean down, by premium) and graded by the close from the stock's price when it went out. Flow can be a hedge, and the side is estimated from where prints sat in the spread.</div>`;
+}
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -881,6 +893,9 @@ async function openSheet(id) {
       ${e.odds.best && e.odds.by ? `<div class="kv"><span>Best held to <span class="sub">the horizon with the highest expected move, each model tested on alerts it never saw</span></span><b class="num pos">${esc(e.odds.best.label)} · ${pct(e.odds.best.ev)}</b></div>` : ""}
       ${(e.odds.why || []).map((w) => `<div class="kv"><span>${esc(w.label)}</span><b class="num ${w.pts > 0 ? "pos" : "neg"}">${w.pts > 0 ? "+" : ""}${w.pts} pts</b></div>`).join("")}
       <div class="sub" style="padding:4px 0 12px">A model fitted on ${e.odds.n} graded alerts here, and used only because it beat the plain hit rate on alerts it never saw (${Math.round(e.odds.skill * 100)}% better). History, not a forecast.</div></div>` : "",
+    e.flow_base ? `<h4>Flow like this, here</h4><div class="panel glass">
+      ${[["An hour later", e.flow_base.h1], ["At the close", e.flow_base.close], ["The next day", e.flow_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went its way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
+      <div class="sub" style="padding:4px 0 12px">${esc(e.flow_base.label)}: every options alert of this shape, graded from the stock's price when it went out${e.flow?.dir ? ` (read as ${e.flow.dir === "up" ? "bullish" : "bearish"} flow)` : ""}. History, not a forecast.</div></div>` : "",
     e.firm_base ? `<h4>${esc(e.firm_base.label)}, here</h4><div class="panel glass">
       ${[["At the close", e.firm_base.close], ["The next day", e.firm_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went their way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
       <div class="sub" style="padding:4px 0 12px">Every graded alert on ${esc(e.firm_base.action === "*" ? "a call" : "a call like this")} by ${esc(e.firm_base.firm)}, each from its own reference price. History, not a forecast.</div></div>` : "",
@@ -1197,6 +1212,7 @@ function renderDesk() {
     <div class="kv"><span>Sympathy ${tip("sympathy")}<div class="sub">a peer of a stock you watch or hold jumps 4%+ on news and yours hasn't moved yet (at most 3 a day)</div></span><b><button class="btn ghost small${pr.sympathy !== false ? " sel" : ""}" data-act="flag" data-s="sympathy">${pr.sympathy !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Today's setups, 9:25 ET<div class="sub">the best alerts since the last close, each with a plan (stop, target, size), in one push before the open</div></span><b><button class="btn ghost small${pr.setups ? " sel" : ""}" data-act="flag" data-s="setups">${pr.setups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Event day<div class="sub">the morning of an FDA decision or readout on your stock: both outcomes as they've traded here, what options price, what you hold</div></span><b><button class="btn ghost small${pr.event_day !== false ? " sel" : ""}" data-act="flag" data-s="event_day">${pr.event_day !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Confirmations<div class="sub">an alert on your stock holding up an hour in, when alerts like it finished their way 80%+ of the time</div></span><b><button class="btn ghost small${pr.confirm !== false ? " sel" : ""}" data-act="flag" data-s="confirm">${pr.confirm !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Divergence<div class="sub">a strong kind of news, and the stock going the other way 15-90 minutes later (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.diverge !== false ? " sel" : ""}" data-act="flag" data-s="diverge">${pr.diverge !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Second chance<div class="sub">a stock that ran its alert's way and came back to the alert price, when its kind of news went its way 60%+ of the time (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.retest !== false ? " sel" : ""}" data-act="flag" data-s="retest">${pr.retest !== false ? "On" : "Off"}</button></b></div>
@@ -1371,6 +1387,8 @@ async function loadRecord() {
         <div class="kv sub"><span>${order.map((k) => `<span style="color:${col[k]}">■</span> ${esc(ms.labels[k])} ${ms.causes[k]}`).join(" · ")}</span><b>${Math.round(ms.failed * 100)}% the signal</b></div>`
         + ms.kinds.slice(0, 8).map((k) => `<div class="kv"><span>${esc(k.label)} <span class="sub">${k.n} misses · sector ${k.sector} · market ${k.market} · news ${k.news} · faded ${k.faded}</span></span><b class="num ${k.failed >= 0.5 ? "neg" : ""}">${Math.round(k.failed * 100)}%<span class="sub"> the signal</span></b></div>`).join("");
     }
+    const ev = r.events;
+    if (ev?.n) $("dRecord").innerHTML += `<div class="kv head"><span>Binary events</span><b>moved vs priced</b></div>` + ev.kinds.map((k) => `<div class="kv"><span>${esc(k.label)} <span class="sub">${k.n} · over two sessions</span></span><b class="num">±${k.realized}%${k.implied != null ? ` <span class="sub">vs ±${k.implied}% priced · ${Math.round(k.beat_implied * 100)}% moved more</span>` : ""}</b></div>`).join("");
     const cf = r.confirm;
     if (cf?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Confirmations</span><b>close</b></div><div class="kv"><span>${cf.flags} flagged, 120 days <span class="sub">kept going its way from the flag price?</span></span><b class="rec">${cell(cf.close)}</b></div>`;
     const dv = r.diverge;

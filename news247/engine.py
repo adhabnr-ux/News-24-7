@@ -241,6 +241,7 @@ class Engine:
         self.firm_rates: dict[str, Any] = {}  # analyst firm x kind of call -> graded record (firms.py)
         self.h1_rates: dict[str, Any] = {}  # move after an hour -> how the day finished (liveodds.py)
         self.heat_rates: dict[str, Any] = {}  # how far winners dipped and losers ran first (heat.py)
+        self.flow_rates: dict[str, Any] = {}  # options flow by shape -> graded record (flowrec.py)
         self.ev_hist: tuple[list[float], int] = (
             [],
             1,
@@ -1690,6 +1691,12 @@ class Engine:
             related=news,
         )
         alert.edge["options"] = d
+        from .flowrec import flow_base, stamp
+
+        stamp(alert)  # its direction, shape and reference price: the options lane gets graded
+        fb = flow_base(self.flow_rates, (alert.edge.get("flow") or {}) or None)
+        if fb:
+            alert.edge["flow_base"] = fb
         self._track_symbols([hit.symbol])
         return alert
 
@@ -2375,6 +2382,11 @@ class Engine:
                     self.grade_divergence(now)
                 with contextlib.suppress(Exception):
                     await self.check_confirm(now)
+                with contextlib.suppress(Exception):
+                    from .stakes import grade_events, send_event_day
+
+                    await send_event_day(self, now)
+                    grade_events(self, now)
                 with contextlib.suppress(Exception):
                     self.grade_confirm(now)
                 with contextlib.suppress(Exception):
@@ -3706,6 +3718,9 @@ class Engine:
         from .heat import heat_rates
 
         self.heat_rates = heat_rates(self, 180, now)
+        from .flowrec import flow_rates
+
+        self.flow_rates = flow_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")
