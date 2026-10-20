@@ -172,6 +172,8 @@ class WebServer:
         app.router.add_get("/api/persona", self.api_persona)
         app.router.add_get("/api/personas", self.api_personas)
         app.router.add_get("/api/exits", self.api_exits)
+        app.router.add_get("/api/clock", self.api_clock)
+        app.router.add_get("/api/open", self.api_open)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1079,6 +1081,27 @@ class WebServer:
         from ..exits import exit_report
 
         return _json(exit_report(self.engine, self._need_device(request)))
+
+    async def api_clock(self, request: web.Request) -> web.Response:
+        """The news clock: how fast each kind of news plays out, and what's left at 5/15/30 minutes;
+        with ?alert=ID, that alert's live read under an hour in (newsclock.py)."""
+        from ..newsclock import clock_board, early, early_line
+
+        out = clock_board(self.engine.clock_rates)
+        aid = request.query.get("alert")
+        if aid:
+            a = self.engine.storage.get_alert(aid)
+            e = early(self.engine, a) if a else None
+            out["early"] = {**e, "line": early_line(e)} if e else None
+        return _json(out)
+
+    async def api_open(self, request: web.Request) -> web.Response:
+        """Into the open: news from outside the session by gap size and kind, and this morning's
+        gappers with the record their gap falls in (opening.py)."""
+        from ..opening import open_board, premarket
+
+        return _json({**open_board(self.engine.open_rates),
+                      "today": premarket(self.engine, device=request.headers.get("X-Device", ""))})  # fmt: skip
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""

@@ -102,6 +102,26 @@ def pre_trade(
         if lo:
             add("live", _tone(lo["p"], 0.6, 0.4),
                 f"{lo['hours']:g} hours in, {lo['since']:+.1f}% its way: alerts like this finished their way {round(lo['p'] * 100)}% ({lo['n']})")  # fmt: skip
+        from .newsclock import early, early_line
+
+        ea = early(engine, a, now)  # under an hour in: how alerts that stood the same then finished
+        if ea:
+            tone = (
+                "good"
+                if ea["hit"] >= 0.6 and ea["median"] > 0
+                else "warn"
+                if ea["hit"] < 0.45 or ea["median"] < 0
+                else "info"
+            )
+            add("early", tone, early_line(ea))
+        from .opening import premarket
+
+        if datetime.fromtimestamp(now, ET).hour < 10:  # before the open and in its first half hour
+            row = next((r for r in premarket(engine, now)["rows"] if r["alert_id"] == alert_id), None)
+            if row and row["record"]:
+                aft = row["record"]["after"]
+                add("open", "good" if aft["hit"] >= 0.55 and aft["median"] > 0 else "warn" if aft["hit"] <= 0.45 else "info",
+                    f"{row['gap']:+.1f}% its way since the news: {row['line'][0].lower()}{row['line'][1:]}")  # fmt: skip
         day = datetime.fromtimestamp(now, ET).date().isoformat()
         try:
             dv = [

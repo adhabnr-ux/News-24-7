@@ -479,6 +479,7 @@ async function loadSetups() {
 }
 async function loadBrief() {
   loadSetups();
+  loadOpen();
   const b = await api("/api/brief");
   $("bDate").textContent = `${b.greeting} · ${b.date}`;
   $("bSub").textContent = b.count ? `${b.count} catalyst${b.count > 1 ? "s" : ""} since the last close.` : "A quiet night. Nothing crossed the alert line since the last close.";
@@ -793,7 +794,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadClockBoard(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -913,6 +914,11 @@ async function openSheet(id) {
     e.persona && e.persona.trait !== "mixed" ? `<h4>How ${esc(e.persona.symbol)} takes news</h4><div class="panel glass">
       <div class="kv"><span>${esc(e.persona.label)}</span><b class="num">${Object.entries(e.persona.path || {}).map(([h, v]) => `${{ h1: "1h", close: "close", d1: "next day", d5: "5 days" }[h]} <span class="${cls(v)}">${pct(v)}</span>`).join(" · ")}</b></div>
       <div class="sub" style="padding:4px 0 12px">Its last ${e.persona.n} graded alerts here, medians, its way. History, not a forecast.</div></div>` : "",
+    e.clock ? `<h4>The news clock · ${esc(e.clock.key === "*" ? "every alert" : e.clock.label)}</h4><div class="panel glass" id="clockBox">${clockHTML(e.clock)}<div id="clockLive"></div></div>` : "",
+    e.open_base ? `<h4>Into the open</h4><div class="panel glass">
+      <div class="kv"><span>After the bell <span class="sub">open to close, its way</span></span><b class="num"><span class="${e.open_base.after.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.open_base.after.hit * 100)}%</span> kept going · median ${pct(e.open_base.after.median)} · ${e.open_base.after.n}</b></div>
+      <div class="kv"><span>The gap <span class="sub">news price to the open, median</span></span><b class="num">${pct(e.open_base.gap_median)}${e.open_base.filled != null ? ` · ${Math.round(e.open_base.filled * 100)}% gave it all back` : ""}</b></div>
+      <div class="sub" style="padding:4px 0 12px">${esc(e.open_base.label)}: news from outside the session, split at the first print after 9:30. Before the bell, the Brief reads each gap live against the record for its size. History, not a forecast.</div></div>` : "",
     e.flow_base ? `<h4>Flow like this, here</h4><div class="panel glass">
       ${[["An hour later", e.flow_base.h1], ["At the close", e.flow_base.close], ["The next day", e.flow_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went its way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
       <div class="sub" style="padding:4px 0 12px">${esc(e.flow_base.label)}: every options alert of this shape, graded from the stock's price when it went out${e.flow?.dir ? ` (read as ${e.flow.dir === "up" ? "bullish" : "bearish"} flow)` : ""}. History, not a forecast.</div></div>` : "",
@@ -949,7 +955,50 @@ async function openSheet(id) {
   showSheet(blocks.join(""));
   loadSimilar(a);
   loadPlan(a);
+  loadClockLive(a);
   if (a.kind !== "system") api("/api/desk", { method: "POST", body: JSON.stringify({ action: "opened", id: a.id }) }).catch(() => {});
+}
+// the news clock: where alerts of its kind stood at 5, 15, 30 and 60 minutes against their close
+const STEP_LABEL = { m5: "5 min", m15: "15 min", m30: "30 min", h1: "1 hour", late: "after 1 hour" };
+function clockHTML(c) {
+  const steps = Object.keys(c.path || {});
+  const max = Math.max(0.1, c.close, ...steps.map((k) => c.path[k]));
+  const bar = (v) => `<span class="ckbar"><i style="width:${Math.max(0, Math.min(100, v / max * 100)).toFixed(0)}%"></i></span>`;
+  return `<div class="kv"><span>${c.half === "m5" || c.half === "m15" ? "<b class=\"gold\">Fast</b>" : c.half === "late" ? "<b class=\"pos\">Slow</b>" : "<b>Steady</b>"} <span class="sub">half the day's move by ${STEP_LABEL[c.half]}</span></span><b class="num">${c.n} graded</b></div>`
+    + steps.map((k) => `<div class="kv"><span>${STEP_LABEL[k]} in ${bar(c.path[k])}</span><b class="num">${pct(c.path[k])}${c.left[k] ? ` <span class="sub">then ${pct(c.left[k].median)} more · ${Math.round(c.left[k].hit * 100)}% went on</span>` : ""}</b></div>`).join("")
+    + `<div class="kv"><span>The close ${bar(c.close)}</span><b class="num">${pct(c.close)}</b></div>`
+    + `<div class="sub" style="padding:4px 0 12px">Medians, its way, from each alert's own price. "Then … more" is what an entry at that point made by the close. History, not a forecast.</div>`;
+}
+async function loadClockLive(a) {
+  const age = Date.now() / 1000 - a.created;
+  if (!$("clockLive") || age < 300 || age >= 3600) return;
+  let r;
+  try { r = await api("/api/clock?alert=" + encodeURIComponent(a.id)); } catch (_) { return; }
+  if (sheetAlert?.id !== a.id || !r.early || !$("clockLive")) return;
+  $("clockLive").innerHTML = `<div class="kv"><span class="${r.early.hit >= 0.6 && r.early.median > 0 ? "pos" : r.early.hit < 0.45 || r.early.median < 0 ? "neg" : ""}">Now: ${esc(r.early.line)}</span></div>`;
+}
+// news clock board (Watch): every kind of news by how fast it plays out
+async function loadClockBoard() {
+  let r;
+  try { r = await api("/api/clock"); } catch (_) { return; }
+  $("clockWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  $("clockBoard").innerHTML = `<div class="kv head"><span>Kind of news</span><b>half its move by · then from 15 min</b></div>`
+    + r.rows.map((x) => `<div class="kv"><span>${esc(x.key === "*" ? "Every alert" : x.label)} <span class="sub">${x.n} graded · close ${pct(x.close)}</span></span><b class="num"><span class="${x.half === "m5" || x.half === "m15" ? "gold" : x.half === "late" ? "pos" : ""}">${STEP_LABEL[x.half]}</span>${x.left.m15 ? ` <span class="sub">${pct(x.left.m15.median)} · ${Math.round(x.left.m15.hit * 100)}% went on</span>` : ""}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every alert is priced 5, 15 and 30 minutes in. <b class="gold">Fast</b> news makes half its day's move within 15 minutes, so a late entry is chasing; <b class="pos">slow</b> news builds through the day. Only kinds that went their way by the close have a clock.</div>`;
+}
+// into the open (Brief): this morning's gappers on news from outside the session, with how gaps like theirs went
+async function loadOpen() {
+  let r;
+  try { r = await api("/api/open"); } catch (_) { return; }
+  const today = r.today.rows.filter((x) => x.record);
+  $("bOpenWrap").hidden = !today.length && !r.any.length;
+  if ($("bOpenWrap").hidden) return;
+  const rec = (x) => `<span class="${x.after.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.after.hit * 100)}%</span> <span class="sub">kept going · ${pct(x.after.median)} · ${x.n}${x.filled != null ? ` · ${Math.round(x.filled * 100)}% filled` : ""}</span>`;
+  $("bOpen").innerHTML = (today.length && r.today.phase !== "after" ? `<div class="kv head"><span>${r.today.phase === "before" ? "Gapping on news, before the bell" : "Gapped on news this morning"}</span><b>after the open, gaps like it</b></div>`
+      + today.slice(0, 8).map((x) => `<div class="kv" data-id="${esc(x.alert_id)}" role="button"><span>${x.mine ? "★ " : ""}<b>${esc(x.symbol)}</b> <span class="${cls(x.gap)}">${pct(x.gap)}</span> its way <span class="sub">${esc(x.kind || "news")} · ${esc(x.bin_label)}</span></span><b class="num">${rec(x.record)}</b></div>`).join("") : "")
+    + (r.any.length ? `<div class="kv head"><span>Any news, by its gap</span><b>after the open</b></div>` + r.any.map((x) => `<div class="kv"><span>${esc(x.label.replace("News that ", ""))}</span><b class="num">${rec(x)}</b></div>`).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">News from outside the session, split at the first print after 9:30: the gap (news price to the open) and after the open (open to close), both its way. "Filled" is how many gapped 2%+ and gave it all back by the close. History, not a forecast.</div>`;
 }
 // a paper plan for the alert: entry, stop, target, reward-to-risk and a size from your account
 async function loadPlan(a) {

@@ -991,6 +991,13 @@ class WebPushNotifier(Notifier):
         pn = persona_line(ps) if ps and ps.get("trait") not in ("mixed", "runs") else ""
         if pn:
             base = f"{base}\n{pn}" if base else pn
+        from ..newsclock import clock_line
+        from ..opening import open_line
+
+        for extra in (clock_line(alert.edge.get("clock")), open_line(alert.edge.get("open_base"))):
+            if extra:
+                extra = extra if extra.startswith("⏱") else f"🔔 Into the open · {extra}"
+                base = f"{base}\n{extra}" if base else extra
         if base:
             body = f"{body}\n{base}" if body else base
         play = alert.edge.get("play") or {}

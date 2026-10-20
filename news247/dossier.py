@@ -258,6 +258,9 @@ def _earnings(engine: Engine, sym: str) -> dict[str, Any] | None:
 # --------------------------------------------------------------------------- outcomes
 
 
+CHECKPOINTS = (("m5", 300), ("m15", 900), ("m30", 1800))
+
+
 def record_outcomes(engine: Engine, now: float | None = None) -> int:
     """Stamp each recent alert with its move an hour later, at its session's close, at the next
     session's close (d1) and five sessions on (d5), per reference symbol, in the alert's direction
@@ -299,6 +302,18 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
                     exc["mfe"] = max(exc.get("mfe", its), its)
                     exc["mae"] = min(exc.get("mae", its), its)
                     exc_new = exc
+            if i == 0:
+                # the news clock: where it stood 5, 15 and 30 minutes in (newsclock.py)
+                for key, after in CHECKPOINTS:
+                    cp = created + after
+                    if key not in row and now >= cp and cp - 60 <= q[0] <= cp + 150:
+                        row[key] = round(move, 2)
+                        changed = True
+                # into the open: news from outside the session, at the first print after 9:30
+                op = close_ts - 6.5 * 3600
+                if "open" not in row and created < op and op <= q[0] <= op + 300 and now <= op + 900:
+                    row["open"] = round(move, 2)
+                    changed = True
             if "h1" not in row and now - created >= 3600 and q[0] - created < 3 * 3600:
                 row["h1"] = round(move, 2)
                 changed = True

@@ -243,6 +243,8 @@ class Engine:
         self.heat_rates: dict[str, Any] = {}  # how far winners dipped and losers ran first (heat.py)
         self.flow_rates: dict[str, Any] = {}  # options flow by shape -> graded record (flowrec.py)
         self.persona_rates: dict[str, Any] = {}  # each stock's own news record and its trait (persona.py)
+        self.clock_rates: dict[str, Any] = {}  # how fast each kind of news plays out (newsclock.py)
+        self.open_rates: dict[str, Any] = {}  # outside-session news: the gap, and after the open (opening.py)
         self.ev_hist: tuple[list[float], int] = (
             [],
             1,
@@ -1808,6 +1810,19 @@ class Engine:
                 ps = persona_stamp(self.persona_rates, alert.tickers[0])
                 if ps:
                     alert.edge["persona"] = ps  # how this stock has taken its own news here
+            from .newsclock import clock_for
+            from .newsclock import stamp as clock_stamp
+
+            ck = clock_stamp(clock_for(self.clock_rates, alert.to_dict(), self.universe))
+            if ck:
+                alert.edge["clock"] = ck  # how fast its kind of news plays out: chase or no rush
+            from .opening import outside
+
+            if outside(alert.created, self.calendar.holidays):
+                ck_key = (alert.edge.get("catalyst") or {}).get("key")
+                ob = self.open_rates.get(f"{ck_key}|*") or self.open_rates.get("*|*")
+                if ob:
+                    alert.edge["open_base"] = ob  # news from outside the session: what it did after the bell
             from .odds import predict
 
             odds = predict(self.odds, alert.to_dict(), self.regime_label())
@@ -3563,6 +3578,7 @@ class Engine:
         """09:20-09:29 ET on market days: each phone with a watchlist gets the open in one push:
         its stocks moving pre-market, the top gappers with a reason, today's timed events."""
         from .dossier import gaps
+        from .opening import premarket
 
         now = now or time.time()
         if self.webpush is None:
@@ -3602,6 +3618,12 @@ class Engine:
                 lines.append(f"{r['symbol']} {r['chg']:+.1f}%: {r['why']['title'][:90]}")
             for e in events[:2]:
                 lines.append(f"{e['time']} ET: {e['title'][:80]}")
+            # into the open: the phone's stocks with news since the close, and how gaps like theirs went
+            gappers = [x for x in premarket(self, now, device)["rows"] if x["mine"] and x["record"]][:2]
+            for k, r in enumerate(gappers):
+                lines.insert(
+                    k + (1 if mine else 0), f"{r['symbol']} {r['gap']:+.1f}% on its news · {r['line']}"
+                )
             if not lines:
                 continue
             payload = {"id": f"op-{dt.date()}", "title": "🔔 The open in 10 minutes", "body": "\n".join(lines)[:600],
@@ -3735,6 +3757,12 @@ class Engine:
         from .persona import persona_rates
 
         self.persona_rates = persona_rates(self, 365, now)
+        from .newsclock import clock_rates
+
+        self.clock_rates = clock_rates(self, 180, now)
+        from .opening import open_rates
+
+        self.open_rates = open_rates(self, 365, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

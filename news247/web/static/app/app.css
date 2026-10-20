@@ -731,3 +731,7 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .eqsvg { width: 100%; height: auto; display: block; margin: 6px 0 8px; }
 .eqsvg .eq0 { stroke: var(--faint); stroke-dasharray: 3 4; stroke-width: 1; }
 .eqkey { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
+
+/* the news clock's bars */
+.ckbar{display:inline-block;vertical-align:middle;width:72px;height:6px;margin-left:8px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+.ckbar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),#FFE2B0);border-radius:3px}
