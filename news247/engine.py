@@ -240,6 +240,7 @@ class Engine:
         self.earnings_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # symbol -> (when, reactions)
         self._kw_sent: dict[tuple[str, int], float] = {}  # (device, story id) -> when a keyword push went
         self._board_seen: dict[str, Any] = {"day": "", "keys": []}  # watchlist board pushes sent today
+        self._sympathy_day: dict[str, Any] = {"day": "", "keys": [], "count": {}}  # sympathy pushes today
         self._rule_refs: dict[
             tuple[str, str], float
         ] = {}  # (symbol, headline uid) -> price when the rule first saw it
@@ -2277,6 +2278,12 @@ class Engine:
                 with contextlib.suppress(Exception):
                     await self.check_reminders(now)
                 with contextlib.suppress(Exception):
+                    await self.check_sympathy(now)
+                with contextlib.suppress(Exception):
+                    from .dossier import grade_sympathy
+
+                    grade_sympathy(self, now)
+                with contextlib.suppress(Exception):
                     await self.check_portfolio_risk(now)
                 with contextlib.suppress(Exception):
                     self.save_memory(now)
@@ -2354,6 +2361,95 @@ class Engine:
                        "tickers": [t["symbol"]], "tag": f"lv-{t['id']}", "ts": now, "open": f"/app/#t={t['symbol']}"}  # fmt: skip
             await self._to_device(device, payload)
         return [(d, a) for d, a, _ in fired]
+
+    async def check_sympathy(self, now: float | None = None) -> int:
+        """A stock with a HIGH alert today is up (or down) 4%+ the way of its news, and a peer of it
+        that a phone watches or holds hasn't moved yet (a quarter of the move or less): tell that
+        phone once, with how past flags like it played out. At most three a phone a day; the
+        phone's categories, mutes, dials and focus apply. Every flag is logged and graded later."""
+        from .dossier import SYMPATHY_MIN_MOVE, SYMPATHY_PER_DAY, _direction, peers, sympathy_record
+
+        now = now or time.time()
+        if self.webpush is None or self.calendar.market_status(now).get("phase") != "open":
+            return 0
+        watched: dict[str, list[str]] = {}
+        for dev, p in self.desk.profiles.items():
+            if (p.get("prefs") or {}).get("sympathy", True):
+                for sym in set(p.get("watchlist") or []) | set(p.get("holdings") or {}):
+                    watched.setdefault(sym, []).append(dev)
+        if not watched:
+            return 0
+        day = datetime.fromtimestamp(now, ET).date().isoformat()
+        st = self._sympathy_day
+        if st["day"] != day:
+            saved = self.storage.get_setting(f"sympathy:{day}")
+            st.update(json.loads(saved) if saved else {"day": day, "keys": [], "count": {}})
+        day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        leaders: dict[str, dict[str, Any]] = {}
+        for a in self.storage.recent_alerts(300, since=max(day0, now - 4 * 3600)):
+            if a.get("severity") not in ("HIGH", "CRITICAL") or a.get("kind") == "system":
+                continue
+            lead = ((a.get("edge") or {}).get("play") or {}).get("direct") or a.get("tickers") or []
+            if lead and lead[0] not in leaders:
+                leaders[lead[0]] = a
+        record = None
+        log: list[dict[str, Any]] | None = None
+        sent = 0
+        for lead, a in leaders.items():
+            q = self.price_of(lead, 1800, now=now)
+            if not q or q[2] is None or abs(q[2]) < SYMPATHY_MIN_MOVE:
+                continue
+            sign = 1 if q[2] > 0 else -1
+            d = _direction(a)
+            if d and {"up": 1, "down": -1}[d] != sign:
+                continue  # moving against its own news: not the news moving it
+            pr = peers(self, lead, now, limit=12)
+            for lag in pr["laggards"]:
+                devs = [dv for dv in watched.get(lag["symbol"], []) if dv]
+                if not devs:
+                    continue
+                lq = self.price_of(lag["symbol"], 1800, now=now)
+                if log is None:
+                    log = json.loads(self.storage.get_setting("sympathy_log") or "[]")
+                if lq and not any(
+                    e["day"] == day and e["lead"] == lead and e["lag"] == lag["symbol"] for e in log
+                ):
+                    log.append({"day": day, "ts": now, "lead": lead, "lag": lag["symbol"], "sign": sign,
+                                "lead_chg": round(q[2], 2), "ref": lq[1], "h1": None, "close": None})  # fmt: skip
+                for dev in devs:
+                    key = f"{dev}:{lead}:{lag['symbol']}"
+                    if key in st["keys"] or st["count"].get(dev, 0) >= SYMPATHY_PER_DAY:
+                        continue
+                    probe = {
+                        "kind": a.get("kind"),
+                        "severity": "HIGH",
+                        "tickers": [lag["symbol"]],
+                        "edge": {},
+                    }
+                    if not self.desk.allows(dev, probe, now):
+                        continue
+                    st["keys"].append(key)
+                    st["count"][dev] = st["count"].get(dev, 0) + 1
+                    if record is None:
+                        record = sympathy_record(self, now)
+                    past = record.get("close") or record.get("h1")
+                    line = (
+                        f"Past flags: {round(past['hit'] * past['n'])} of {past['n']} caught up "
+                        f"{'by the close' if record.get('close') else 'within the hour'} (median {past['median']:+.1f}%)."
+                        if past and past["n"] >= 8
+                        else "A lead to check, not a signal: sympathy moves come late, small, or not at all."
+                    )
+                    payload = {"id": f"sym-{lead}-{lag['symbol']}-{day}",
+                               "title": f"🔗 {lead} {q[2]:+.1f}%: your {lag['symbol']} hasn't moved ({lag['chg']:+.1f}%)",
+                               "body": f"Same {pr['basis']}: {pr['group']}. {lead}'s news: “{a.get('title', '')[:120]}”\n{line}",
+                               "severity": "HIGH", "kind": "system", "tickers": [lag["symbol"], lead],
+                               "tag": f"sym-{lag['symbol']}", "ts": now, "open": f"/app/#t={lag['symbol']}"}  # fmt: skip
+                    if await self._to_device(dev, payload):
+                        sent += 1
+        if log is not None:
+            self.storage.set_setting("sympathy_log", json.dumps(log[-500:]))
+        self.storage.set_setting(f"sympathy:{day}", json.dumps(st))
+        return sent
 
     async def check_reminders(self, now: float | None = None) -> int:
         """ "Remind me" on an alert: when it comes due, the alert comes back to that phone, with

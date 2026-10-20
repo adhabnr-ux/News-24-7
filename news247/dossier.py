@@ -756,6 +756,160 @@ HALT_TITLE = re.compile(
 )  # sources/halts.py: "TRADING HALT SYM (Name) — Label [CODE]"
 
 
+# --------------------------------------------------------------------------- the strategy lab
+
+SEV_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+LAB_KINDS = ("all", "news", "radar", "options", "insider", "confluence", "macro")
+LAB_HORIZONS = {"h1": "an hour later", "close": "at the close", "d1": "the next day", "d5": "five days on"}
+
+
+def strategy_lab(
+    engine: Engine,
+    device: str = "",
+    *,
+    kind: str = "all",
+    min_sev: str = "HIGH",
+    horizon: str = "close",
+    scope: str = "all",
+    days: float = 60,
+    stake: float = 1000.0,
+    skip_fades: bool = False,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """If you had followed every alert like this: a paper trade of ``stake`` dollars on each one,
+    in its direction, from its own reference price, out at ``horizon``. The curve, the hit rate,
+    the average and median trade, the best and worst, the deepest drawdown, and a split by kind.
+    Only alerts that have been graded count; no costs or slippage."""
+    now = now or time.time()
+    if kind not in LAB_KINDS:
+        raise ValueError("kind is " + ", ".join(LAB_KINDS))
+    if horizon not in LAB_HORIZONS:
+        raise ValueError("horizon is h1, close, d1 or d5")
+    if min_sev not in ("MEDIUM", "HIGH", "CRITICAL"):
+        raise ValueError("min_sev is MEDIUM, HIGH or CRITICAL")
+    if scope not in ("all", "mine"):
+        raise ValueError("scope is all or mine")
+    days = max(1.0, min(365.0, float(days)))
+    mine: set[str] = set()
+    if scope == "mine":
+        p = engine.desk.profiles.get(device) or {}
+        mine = set(p.get("watchlist") or []) | set(p.get("holdings") or {})
+    floor = SEV_ORDER.get(min_sev, 2)
+    trades = []
+    for a in engine.storage.recent_alerts(5000, since=now - days * 86400):
+        if SEV_ORDER.get(a.get("severity"), 0) < floor or a.get("kind") == "system":
+            continue
+        cat = alert_category(a)
+        if kind != "all" and cat != kind:
+            continue
+        e = a.get("edge") or {}
+        if skip_fades and (e.get("base") or {}).get("fades"):
+            continue
+        out = e.get("outcome") or {}
+        if not out:
+            continue
+        sym, row = next(iter(out.items()))
+        sign, val = row.get("sign") or 0, row.get(horizon)
+        if not sign or val is None:
+            continue
+        if scope == "mine" and not ({sym} | set(a.get("tickers") or [])) & mine:
+            continue
+        ret = sign * float(val)
+        trades.append({"id": a["id"], "ts": a["created"], "symbol": sym, "title": a.get("title", ""),
+                       "kind": cat, "severity": a.get("severity"), "ret": round(ret, 2),
+                       "pnl": round(stake * ret / 100.0, 2)})  # fmt: skip
+    trades.sort(key=lambda t: t["ts"])
+    base = {"kind": kind, "min_sev": min_sev, "horizon": horizon, "horizon_label": LAB_HORIZONS[horizon],
+            "scope": scope, "days": days, "stake": stake, "skip_fades": skip_fades}  # fmt: skip
+    if not trades:
+        return {**base, "n": 0, "curve": [], "by_kind": [], "best": None, "worst": None}
+    cum = peak = 0.0
+    drawdown = 0.0
+    curve = []
+    for t in trades:
+        cum += t["pnl"]
+        peak = max(peak, cum)
+        drawdown = min(drawdown, cum - peak)
+        curve.append([t["ts"], round(cum, 2)])
+    rets = [t["ret"] for t in trades]
+    by: dict[str, list[float]] = {}
+    for t in trades:
+        by.setdefault(t["kind"], []).append(t["ret"])
+    by_kind = sorted(
+        ({"kind": k, "n": len(v), "hit": round(sum(x > 0 for x in v) / len(v), 2),
+          "avg": round(sum(v) / len(v), 2), "pnl": round(stake * sum(v) / 100.0, 2)} for k, v in by.items()),
+        key=lambda r: -r["pnl"],
+    )  # fmt: skip
+    return {
+        **base,
+        "n": len(trades),
+        "wins": sum(r > 0 for r in rets),
+        "hit": round(sum(r > 0 for r in rets) / len(rets), 2),
+        "avg": round(sum(rets) / len(rets), 2),
+        "median": round(st.median(rets), 2),
+        "pnl": round(cum, 2),
+        "max_drawdown": round(drawdown, 2),
+        "best": max(trades, key=lambda t: t["ret"]),
+        "worst": min(trades, key=lambda t: t["ret"]),
+        "curve": curve if len(curve) <= 400 else curve[:: max(1, len(curve) // 400)] + [curve[-1]],
+        "by_kind": by_kind,
+        "recent": trades[-8:][::-1],
+    }
+
+
+# --------------------------------------------------------------------------- sympathy: peers that haven't moved
+
+SYMPATHY_MIN_MOVE = 4.0  # % on the day for the stock whose news it is
+SYMPATHY_PER_DAY = 3  # pushes per phone
+
+
+def sympathy_record(engine: Engine, now: float | None = None, days: float = 120) -> dict[str, Any]:
+    """How past sympathy flags played out: did the peer that hadn't moved catch up (move the
+    leader's way) within the hour and by the close? Graded by Foretape as they happen."""
+    now = now or time.time()
+    log = json.loads(engine.storage.get_setting("sympathy_log") or "[]")
+    log = [e for e in log if e["ts"] >= now - days * 86400]
+
+    def stats(k: str) -> dict[str, Any] | None:
+        xs = [e[k] for e in log if e.get(k) is not None]
+        if not xs:
+            return None
+        return {
+            "n": len(xs),
+            "hit": round(sum(x > 0 for x in xs) / len(xs), 2),
+            "median": round(st.median(xs), 2),
+        }
+
+    return {"flags": len(log), "h1": stats("h1"), "close": stats("close")}
+
+
+def grade_sympathy(engine: Engine, now: float | None = None) -> int:
+    """Grade logged sympathy flags: the peer's move in the leader's direction an hour after the
+    flag, and at the close (read between 16:00 and 16:30 ET that day; missed closes stay empty)."""
+    now = now or time.time()
+    raw = engine.storage.get_setting("sympathy_log")
+    if not raw:
+        return 0
+    log = json.loads(raw)
+    graded = 0
+    for e in log:
+        q = engine.price_of(e["lag"], 900, now=now)
+        if not q or not e.get("ref"):
+            continue
+        move = round(e["sign"] * (q[1] / e["ref"] - 1.0) * 100.0, 2)
+        if e.get("h1") is None and now >= e["ts"] + 3600 and now <= e["ts"] + 5400:
+            e["h1"] = move
+            graded += 1
+        d = datetime.fromtimestamp(e["ts"], ET)
+        close = d.replace(hour=16, minute=0, second=0, microsecond=0).timestamp()
+        if e.get("close") is None and close <= now <= close + 1800:
+            e["close"] = move
+            graded += 1
+    if graded:
+        engine.storage.set_setting("sympathy_log", json.dumps(log[-500:]))
+    return graded
+
+
 def since_you_looked(
     engine: Engine, device: str, sym: str, now: float | None = None
 ) -> dict[str, Any] | None:

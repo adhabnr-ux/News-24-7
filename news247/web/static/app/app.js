@@ -63,6 +63,7 @@ function toastUndo(msg, fn) {
 }
 // ⓘ: what a term means, for anyone new to it
 const GLOSSARY = {
+  sympathy: "Sympathy: when one company jumps on news, its peers sometimes follow (same customers, same regulator, same read-through). Foretape flags the peer you watch that hasn't moved yet, then grades every flag an hour later and at the close, so you can see whether these catch up.",
   dial: "The push dial: how loud this one stock is on your phone. Default follows your settings; HIGH only skips its MEDIUM alerts; Everything pushes even MEDIUM alerts and ignores your floor and the fades filter (your categories, mutes and quiet hours still apply); Off never pushes it.",
   implied: "Implied move: what the options market is paying for. The at-the-money call + put (the straddle) for an expiry, as a % of the stock: roughly the move priced in by that date, up or down.",
   callwall: "Call wall: the strike above the stock with the most call open interest. Dealers hedging those calls can make it act like a ceiling into expiry; a clean break through it can speed up.",
@@ -1047,6 +1048,7 @@ function renderDesk() {
       <button class="btn ghost small${store.get("ft_light") === "1" ? " sel" : ""}" data-act="display" data-s="light">Light</button><button class="btn ghost small${store.get("ft_compact") === "1" ? " sel" : ""}" data-act="display" data-s="compact">Compact</button>
       <button class="btn ghost small${store.get("ft_haptic") === "1" ? " sel" : ""}" data-act="display" data-s="haptic">Vibrate on alerts</button><button class="btn ghost small${store.get("ft_chime") === "1" ? " sel" : ""}" data-act="display" data-s="chime">Chime on alerts</button><button class="btn ghost small${store.get("ft_beginner") === "1" ? " sel" : ""}" data-act="display" data-s="beginner">Beginner mode</button><button class="btn ghost small${store.get("ft_onestock") === "1" ? " sel" : ""}" data-act="display" data-s="onestock">One notification per stock</button></div>
     <div class="row" style="padding:6px 0 4px"><button class="btn ghost small${localTimes() ? " sel" : ""}" data-act="tz">${localTimes() ? "Times: your time zone" : "Times: ET"}</button><button class="btn ghost small" data-act="glossary">What the terms mean</button><button class="btn ghost small" data-act="links">Shortcuts &amp; links</button></div>
+    <div class="kv"><span>Sympathy ${tip("sympathy")}<div class="sub">a peer of a stock you watch or hold jumps 4%+ on news and yours hasn't moved yet (at most 3 a day)</div></span><b><button class="btn ghost small${pr.sympathy !== false ? " sel" : ""}" data-act="flag" data-s="sympathy">${pr.sympathy !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Follow-ups<div class="sub">an hour after an alert on a stock you watch or hold, if it moved 2%+: how it played out</div></span><b><button class="btn ghost small${pr.followups ? " sel" : ""}" data-act="flag" data-s="followups">${pr.followups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Tomorrow, 20:00 ET (Sun-Thu)<div class="sub">after-hours movers and why, the next session's reporters (yours first) and events</div></span><b><button class="btn ghost small${pr.tomorrow ? " sel" : ""}" data-act="flag" data-s="tomorrow">${pr.tomorrow ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The close, 16:15 ET<div class="sub">a market recap: indexes, breadth, sectors, the biggest movers and why, how the alerts did</div></span><b><button class="btn ghost small${pr.close_recap ? " sel" : ""}" data-act="flag" data-s="close_recap">${pr.close_recap ? "On" : "Off"}</button></b></div>
@@ -1074,6 +1076,42 @@ function renderDesk() {
       <b class="qh"><input type="time" id="qStart" value="${esc(q.start || "22:00")}"><input type="time" id="qEnd" value="${esc(q.end || "07:00")}">
       <button class="btn ghost small" data-act="quiet">${pr.quiet ? "Update" : "Set"}</button>${pr.quiet ? `<button class="btn ghost small" data-act="quiet-off">Off</button>` : ""}</b></div>`;
 }
+// the strategy lab: following every alert like this, $stake each, on paper, from the graded history
+const lab = (() => { try { return { kind: "all", sev: "HIGH", horizon: "close", scope: "all", fades: "", ...JSON.parse(store.get("ft_lab") || "{}") }; } catch (_) { return { kind: "all", sev: "HIGH", horizon: "close", scope: "all", fades: "" }; } })();
+function labCurve(curve) {
+  if (!curve || curve.length < 2) return "";
+  const W = 560, H = 150, pad = 8, vs = curve.map((c) => c[1]), lo = Math.min(0, ...vs), hi = Math.max(0, ...vs), span = hi - lo || 1;
+  const X = (i) => pad + (i / (curve.length - 1)) * (W - 2 * pad), Y = (v) => pad + (1 - (v - lo) / span) * (H - 2 * pad);
+  const d = curve.map((c, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(c[1]).toFixed(1)).join(" ");
+  const up = vs[vs.length - 1] >= 0;
+  return `<svg viewBox="0 0 ${W} ${H}" class="labc" role="img" aria-label="Paper P&L following these alerts">
+    <line x1="${pad}" x2="${W - pad}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" stroke="rgba(255,255,255,.2)" stroke-dasharray="3 5"/>
+    <path d="${d} L${X(curve.length - 1).toFixed(1)} ${Y(0).toFixed(1)} L${X(0).toFixed(1)} ${Y(0).toFixed(1)}Z" fill="${up ? "rgba(140,235,196,.12)" : "rgba(255,158,134,.12)"}"/>
+    <path d="${d}" fill="none" stroke="${up ? "var(--up)" : "var(--down)"}" stroke-width="2.2"/></svg>`;
+}
+async function loadLab() {
+  const el = $("dLab");
+  if (!el) return;
+  const chip = (k, v, l) => `<button class="btn ghost small${lab[k] === v ? " sel" : ""}" data-act="lab" data-k="${k}" data-s="${v}">${l}</button>`;
+  const controls = `<div class="row labrow">${chip("kind", "all", "Every kind")}${CATS.map(([k, l]) => chip("kind", k, l)).join("")}</div>
+    <div class="row labrow">${chip("sev", "MEDIUM", "MEDIUM+")}${chip("sev", "HIGH", "HIGH+")}${chip("sev", "CRITICAL", "CRITICAL")}<span class="labsep"></span>${chip("horizon", "h1", "Out in 1h")}${chip("horizon", "close", "At the close")}${chip("horizon", "d1", "Next day")}${chip("horizon", "d5", "5 days")}</div>
+    <div class="row labrow">${chip("scope", "all", "Every stock")}${chip("scope", "mine", "My stocks")}${chip("fades", "", "Take them all")}${chip("fades", "skip", "Skip what fades")}</div>`;
+  let r;
+  try { r = await api(`/api/lab?kind=${lab.kind}&sev=${lab.sev}&horizon=${lab.horizon}&scope=${lab.scope}&fades=${lab.fades}&days=60`); }
+  catch (e) { el.innerHTML = controls + `<div class="li"><span class="muted">${esc(String(e.message || e).slice(0, 120))}</span></div>`; return; }
+  if (!r.n) { el.innerHTML = controls + `<div class="li"><span class="muted">No graded alerts match yet. Every alert is graded as it plays out (an hour, the close, the next day, five days), so this fills in on its own.</span></div>`; return; }
+  const money$ = (v) => (v < 0 ? "−$" : "+$") + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  el.innerHTML = controls + `<div class="labhead"><div><div class="sub">$${r.stake.toLocaleString()} on each of ${r.n} alert${r.n === 1 ? "" : "s"}, out ${esc(r.horizon_label)}</div>
+      <b class="num labpnl ${cls(r.pnl)}">${money$(r.pnl)}</b></div>
+      <div class="labstats"><span><b class="num">${Math.round(r.hit * 100)}%</b><small>won</small></span><span><b class="num ${cls(r.avg)}">${pct(r.avg)}</b><small>avg trade</small></span><span><b class="num ${cls(r.median)}">${pct(r.median)}</b><small>median</small></span><span><b class="num neg">${money$(r.max_drawdown)}</b><small>worst dip</small></span></div></div>
+    ${labCurve(r.curve)}
+    ${r.by_kind.length > 1 ? `<div class="kv head"><span>By kind</span><b>won · avg · P&amp;L</b></div>` + r.by_kind.map((k) => `<div class="kv"><span>${esc(KIND_LABEL[k.kind] || k.kind)} <span class="sub">${k.n}</span></span><b class="num"><span class="${k.hit >= 0.5 ? "pos" : "neg"}">${Math.round(k.hit * 100)}%</span> · <span class="${cls(k.avg)}">${pct(k.avg)}</span> · <span class="${cls(k.pnl)}">${money$(k.pnl)}</span></b></div>`).join("") : ""}
+    <div class="kv head"><span>Best and worst</span><b></b></div>
+    ${[r.best, r.worst].map((t) => `<div class="li" data-id="${esc(t.id)}" role="button"><div class="grow"><div class="sub">${esc(t.symbol)} · ${ago(t.ts)} ago</div><div style="font-weight:600">${esc(t.title)}</div></div><span class="chg num ${cls(t.ret)}">${pct(t.ret)}</span></div>`).join("")}
+    <div class="kv head"><span>Latest</span><b></b></div>
+    ${r.recent.map((t) => `<div class="li" data-id="${esc(t.id)}" role="button"><div class="grow"><div class="sub">${esc(t.symbol)} · ${esc(KIND_LABEL[t.kind] || t.kind)} · ${ago(t.ts)} ago</div><div>${esc(t.title)}</div></div><span class="chg num ${cls(t.ret)}">${pct(t.ret)}</span></div>`).join("")}
+    <div class="sub" style="padding:10px 0 14px">Paper only: each alert taken in its direction from its own reference price, no costs or slippage, last 60 days. What following them would have done, not what they will do.</div>`;
+}
 async function loadRecord() {
   try {
     const r = await api("/api/record?days=30");
@@ -1086,6 +1124,8 @@ async function loadRecord() {
     recordCache = r;
     const bucketRows = (title, rows) => rows.length ? `<div class="kv head"><span>${title}</span><b>1 hour · close</b></div>` + rows.map((x) => `<div class="kv"><span>${esc(x.bucket)}</span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`).join("") : "";
     $("dRecord").innerHTML += bucketRows("Already moved before the alert?", r.priced_in || []) + bucketRows("By time of day (ET)", r.by_time || []);
+    const sy = r.sympathy;
+    if (sy?.flags) $("dRecord").innerHTML += `<div class="kv head"><span>Sympathy flags ${tip("sympathy")}</span><b>1 hour · close</b></div><div class="kv"><span>${sy.flags} peer${sy.flags === 1 ? "" : "s"} flagged, 120 days <span class="sub">did it catch up?</span></span><b class="rec">${cell(sy.h1)}<br>${cell(sy.close)}</b></div>`;
     const src = await api("/api/sources").catch(() => ({ rows: [] }));
     if (src.rows.length) $("dRecord").innerHTML += `<div class="kv head"><span>By first source</span><b>1 hour · close</b></div>` + src.rows.slice(0, 10).map((x) => { const m = (desk?.prefs?.mute_sources || []).includes(x.source); return `<div class="kv"><span>${esc(outlet(x.source))}<br><button class="btn ghost small${m ? " sel" : ""}" data-act="src-mute" data-s="${esc(x.source)}" style="margin-top:6px">${m ? "Muted here · unmute" : "Mute on this phone"}</button></span><b class="rec">${cell(x.h1)}<br>${cell(x.close)}</b></div>`; }).join("");
   } catch (_) { $("dRecord").innerHTML = `<div class="li"><span class="muted">Track record unavailable.</span></div>`; }
@@ -1743,6 +1783,7 @@ async function onAct(el) {
   else if (a === "share-t") share(el.dataset.title || s, location.origin + "/app/#t=" + s);
   else if (a === "search-clear") { $("q").value = ""; $("searchRes").innerHTML = ""; renderRecent(); }
   else if (a === "close") closeSheet();
+  else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }
   else if (a === "dial") { if (await deskEdit("stock_push", { symbol: s, level: el.dataset.lv })) { toast(el.dataset.lv === "default" ? `${s}: its normal push settings` : `📲 ${s}: ${DIAL_TEXT[el.dataset.lv]}`); refreshTickerSheet(); } }
   else if (a === "focus") {
     const r = await deskEdit("focus", el.dataset.u ? { until: el.dataset.u } : { minutes: +el.dataset.m });
@@ -2163,7 +2204,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth(), loadWeek()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -2325,6 +2366,7 @@ const Palette = {
       ["Focus for 1 hour", "only CRITICAL comes through", () => deskEdit("focus", { minutes: 60 }).then((r) => r && toast("🎯 Focus on for an hour"))],
       ["End focus mode", "", () => deskEdit("focus", { minutes: 0 }).then((r) => r && toast("Focus mode ended"))],
       ["Would I get it? (test my push settings)", "", openHealth],
+      ["Strategy lab", "following every alert, on paper", () => { closeSheet(); go("desk"); setTimeout(() => $("dLab")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Back up my desk (JSON)", "", () => exportDesk("json")], ["Restore from a backup", "add a saved desk to this one", () => $("restoreFile").click()],
       ["Export my alerts (CSV)", "", () => exportDesk("csv")], ["First-run setup", "pick what you care about", openOnboard],
     ];

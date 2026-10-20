@@ -36,6 +36,8 @@ with each request. Its profile holds:
 * **burst**: past N alert pushes in 10 minutes, the rest fold into one summary.
 * **reminders**: "remind me" on an alert: it comes back as a push in an hour, at the close or the open.
 * **seen**: when (and at what price) each stock page was last opened, for "since you last looked".
+* **sympathy**: when a peer of a stock you watch or hold jumps 4%+ on a HIGH alert and yours
+  hasn't moved, one push (at most three a day).
 * **restore**: merge a backup (the JSON export) into this desk, every part checked as if typed in.
 
 Profiles live in SQLite (``profiles`` table) and, when ``STATE_DB`` is set, in the state database
@@ -123,6 +125,7 @@ def default_profile() -> dict[str, Any]:
             "port_alert": 0,  # %: push when the portfolio is up or down this much today (0 = off)
             "mute_sources": [],  # sources whose alerts never push to this phone
             "burst": 0,  # alert pushes per 10 min before the rest fold into one summary (0 = never)
+            "sympathy": True,  # a peer of your stock jumps on news and yours hasn't moved: one push
         },
         "price_alerts": [],
         "tracked": [],
@@ -608,6 +611,7 @@ class Desk:
                 "close_recap",
                 "tomorrow",
                 "followups",
+                "sympathy",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1254,6 +1258,7 @@ class Desk:
                     "close_recap",
                     "tomorrow",
                     "followups",
+                    "sympathy",
                     "watch_push",
                     "min_sev",
                     "digest",

@@ -151,6 +151,7 @@ class WebServer:
         app.router.add_get("/api/why-push/{id}", self.api_why_push)
         app.router.add_get("/api/push-log", self.api_push_log)
         app.router.add_post("/api/would-push", self.api_would_push)
+        app.router.add_get("/api/lab", self.api_lab)
         app.router.add_get("/api/list/{code}", self.api_list)
         app.router.add_get("/api/phone-health", self.api_phone_health)
         app.router.add_post("/api/push/subscribe", self.api_push_subscribe)
@@ -930,6 +931,27 @@ class WebServer:
             raise web.HTTPNotFound(text="no such alert")
         return _json(out)
 
+    async def api_lab(self, request: web.Request) -> web.Response:
+        """The strategy lab: following every alert like this, on paper (see dossier.strategy_lab)."""
+        from ..dossier import strategy_lab
+
+        q = request.query
+        try:
+            out = strategy_lab(
+                self.engine,
+                self._device(request),
+                kind=q.get("kind", "all"),
+                min_sev=q.get("sev", "HIGH").upper(),
+                horizon=q.get("horizon", "close"),
+                scope=q.get("scope", "all"),
+                days=float(q.get("days", "60")),
+                stake=max(1.0, min(1e7, float(q.get("stake", "1000")))),
+                skip_fades=q.get("fades") == "skip",
+            )
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
+        return _json(out)
+
     async def api_would_push(self, request: web.Request) -> web.Response:
         """ "Would I get it?": a made-up alert (kind, severity, stock) walked through this phone's gates."""
         from ..pushcheck import would_push
@@ -1104,6 +1126,9 @@ class WebServer:
         out = track_record(self.engine, days)
         out["priced_in"] = priced_in_record(self.engine, days)["rows"]
         out["by_time"] = time_of_day_record(self.engine, days)["rows"]
+        from ..dossier import sympathy_record
+
+        out["sympathy"] = sympathy_record(self.engine)
         return _json(out)
 
     async def api_foretape(self, request: web.Request) -> web.Response:

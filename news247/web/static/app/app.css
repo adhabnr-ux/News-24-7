@@ -657,3 +657,11 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .wk i.k, .wkl i.k { background: var(--gold); } .wk i.f, .wkl i.f { background: var(--down); }
 .wkl { margin-bottom: 10px; } .wkl i { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 10px; border-radius: 3px; vertical-align: -1px; } .wkl i:first-child { margin-left: 0; }
 #wiOut .whyp { margin-top: 0; }
+/* run 14: strategy lab */
+.labrow { padding: 8px 0 0; gap: 6px; } .labrow .btn { padding: 6px 10px; font-size: 12px; }
+.labsep { width: 8px; }
+.labhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; padding: 16px 0 8px; }
+.labpnl { display: block; margin-top: 4px; font: 400 34px var(--serif); }
+.labstats { display: flex; gap: 16px; flex-wrap: wrap; }
+.labstats span { display: flex; flex-direction: column; align-items: flex-end; } .labstats small { color: var(--faint); font-size: 11px; }
+.labc { width: 100%; height: auto; display: block; margin: 6px 0 10px; }
