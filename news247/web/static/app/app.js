@@ -1096,6 +1096,18 @@ async function loadMacro() {
     + (r.rows.length ? `<div class="kv head"><span>Kind of news</span><b>its way: macro days · other days</b></div>` + r.rows.slice(0, 12).map((x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num">${cell(x.macro)}<br>${cell(x.other)}</b></div>`).join("") : "")
     + `<div class="sub" style="padding:4px 0 12px">Sessions with an FOMC decision, a jobs report or another scheduled release that moves the whole market (from the calendar), against every other session, by the close. On a macro day new alerts carry their kind's macro-day record (${r.need}+ graded) and a poor one counts against them in the call.</div>`;
 }
+// the desk's advice (Desk): evidence-backed setting changes, one tap each
+let adviceR = null;
+async function loadAdvice() {
+  let r;
+  try { r = await api("/api/advice"); } catch (_) { return; }
+  adviceR = r;
+  $("dAdviceWrap").hidden = !r.items.length;
+  if (!r.items.length) return;
+  $("dAdvice").innerHTML = r.items.map((x, i) => `<div class="kv"><span><b>${esc(x.title)}</b><div class="sub">${esc(x.why)}</div>
+      <div class="row" style="padding:6px 0 2px"><button class="btn ghost small" data-act="advice-apply" data-n="${i}">${esc(x.label)}</button><button class="btn ghost small" data-act="advice-skip" data-n="${i}">Not now</button></div></span></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every panel's verdict on a setting, read together for this phone and ranked by how much evidence is behind it. Nothing changes until you tap; "Not now" hides one.</div>`;
+}
 // uptime and the record's coverage (Desk)
 const H_LABEL = { close: "That close", d1: "The next close", d5: "Five sessions on", d20: "A month on" };
 async function loadUptime() {
@@ -2182,6 +2194,10 @@ function tickerHTML(d) {
     ${[["An hour later", ps.h1], ["At the close", ps.close], ["The next day", ps.d1], ["Five days on", ps.d5], ["A month on", ps.d20]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> its way · median ${pct(x.median)} · ${x.n}</b></div>`).join("")}
     ${ps.ratio ? `<div class="kv"><span>Size of its news moves</span><b class="num">±${ps.size.toFixed(1)}% · ${ps.ratio}× a typical alert</b></div>` : ""}
     <div class="sub" style="padding:4px 0 12px">Every graded alert on ${esc(d.symbol)} here, each from its own price, its way. A small sample: history, not a forecast.</div></div>` : "";
+  const fl = d.followers;
+  const followBlock = fl ? `<h4>Who follows ${esc(d.symbol)}'s news</h4><div class="panel glass">
+    ${[...fl.follow, ...fl.against].slice(0, 8).map((x) => `<div class="kv" data-tk="${esc(x.peer)}" role="button"><span><b>${esc(x.peer)}</b> <span class="sub">${x.hit >= 0.5 ? "followed" : "went the other way"}</span></span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span></b></div>`).join("")}
+    <div class="sub" style="padding:4px 0 12px">On ${esc(d.symbol)}'s HIGH news days, each peer's move by the close, the news's way, from its price when the alert went out. ${fl.need}+ shared days each. History, not a forecast.</div></div>` : "";
   const why = `<h4>Why it's moving</h4><div class="panel glass" id="whyBox">${(d.why || []).length ? d.why.map((x) => `<div class="li"><div class="grow"><a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a><div class="sub">${esc(outlet(x.source))} · ${esc(x.age)} ago</div></div></div>`).join("")
     : `<div class="li"><span class="muted grow">No headline on it since the last session.</span><button class="btn ghost small" data-act="why" data-s="${sym}">Find why now</button></div>`}</div>`;
   const note = (desk?.notes || {})[d.symbol];
@@ -2207,7 +2223,7 @@ function tickerHTML(d) {
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
   const implied = `<h4>What options price in ${tip("implied")}</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
-  return [head + relLine + sessLine + earnLine, sinceBlock(lookCache[d.symbol]), acts,`<div id="ptBox">${ptCache[d.symbol] ? targetsHTML(ptCache[d.symbol]) : ""}</div>`, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, personaBlock, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
+  return [head + relLine + sessLine + earnLine, sinceBlock(lookCache[d.symbol]), acts,`<div id="ptBox">${ptCache[d.symbol] ? targetsHTML(ptCache[d.symbol]) : ""}</div>`, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, personaBlock, followBlock, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0, tickerNow = null;
 const impliedNow = {};
@@ -2575,6 +2591,17 @@ async function onAct(el) {
   else if (a === "tune-apply") { const o = tuneR?.[s]; if (o && await deskEdit("prefs", { edge_min: o.edge_min, budget: o.budget })) { toast(`Using ${o.label}`); loadTune(); loadCost(); } }
   else if (a === "budget") { if (await deskEdit("prefs", { budget: +s })) toast(+s ? `Only your ${s} best alerts a day push now (your stocks and CRITICAL still come)` : "Every alert that clears your settings may push"); }
   else if (a === "playbook") openPlaybook(s);
+  else if (a === "advice-apply") {
+    const x = adviceR?.items?.[+el.dataset.n];
+    if (!x) return;
+    try {
+      if (x.api) await api(x.api, { method: "POST", body: JSON.stringify(x.body) });
+      else if (!(await deskEdit(x.action, x.body))) return;
+      await deskEdit("advice_dismiss", { key: x.key });
+      toast(`Done: ${x.title}`); loadAdvice();
+    } catch (err) { toast(String(err.message || err)); }
+  }
+  else if (a === "advice-skip") { const x = adviceR?.items?.[+el.dataset.n]; if (x && await deskEdit("advice_dismiss", { key: x.key })) loadAdvice(); }
   else if (a === "bars-fill") { toast("Reading daily bars…"); try { const r = await api("/api/bars/fill", { method: "POST", body: "{}" }); toast(r.filled ? `Filled ${r.filled} grade${r.filled === 1 ? "" : "s"} from daily bars` : "Nothing to fill"); loadUptime(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-set") { if (!confirm(`Lower the alert line from ${lineR?.line} to ${s} for every phone? Headlines scoring ${s}+ become alerts. You can put it back any time.`)) return; try { await api("/api/line", { method: "POST", body: JSON.stringify({ medium: +s, why: lineR?.line_text || "" }) }); toast(`The alert line is ${s} now`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "line-reset") { try { const r = await api("/api/line", { method: "POST", body: JSON.stringify({ reset: true }) }); toast(`The alert line is back to ${r.line}`); loadLine(); } catch (err) { toast(String(err.message || err)); } }
@@ -3008,7 +3035,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

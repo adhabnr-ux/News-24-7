@@ -1199,6 +1199,13 @@ class Desk:
             seen[sym] = {"ts": now, "px": q[1] if q else None}
             for old in list(seen)[:-MAX_SEEN]:
                 seen.pop(old, None)
+        elif action == "advice_dismiss":
+            key = str(body.get("key") or "")[:60]
+            if not key:
+                raise ValueError("need the advice's key")
+            done = dict(p.get("advice_done") or {})
+            done[key] = now
+            p["advice_done"] = dict(sorted(done.items(), key=lambda kv: -kv[1])[:100])
         elif action == "cat_mute":
             from .catalysts import LABELS
 

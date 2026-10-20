@@ -261,6 +261,7 @@ class Engine:
         self.macro_rates: dict[str, Any] = {}  # each kind on Fed and jobs days vs other days (macrodays.py)
         self.vol_rates: dict[str, Any] = {}  # options cheap or rich against the news, graded (volnews.py)
         self.call_muted: list[str] = []  # facts the replay shows sorting nothing (thecall.py)
+        self.pair_rates: dict[str, Any] = {}  # who follows whose news, per pair (peerlearn.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -1921,6 +1922,12 @@ class Engine:
                             alert.edge["vol_rec"] = self.vol_rates[v["verdict"]]
                 elif self.options_feed is not None and alert.severity >= Severity.HIGH:
                     self._spawn(vol_later(self, alert.id, alert.tickers[0], cbv))  # the sheet gets it
+            from .peerlearn import stamp as peer_stamp
+
+            # its peers' prices now: who follows this stock's news is learned from them (peerlearn.py)
+            peer_refs = peer_stamp(self, alert)
+            if peer_refs:
+                alert.edge["peer_refs"] = peer_refs
             from .macrodays import macro_for
             from .macrodays import today as macro_today
 
@@ -2469,6 +2476,10 @@ class Engine:
                     from .shadow import grade as shadow_grade
 
                     shadow_grade(self, now)
+                with contextlib.suppress(Exception):
+                    from .peerlearn import grade as peers_grade
+
+                    peers_grade(self, now)
                 if now - last_month >= 600:
                     last_month = now
                     with contextlib.suppress(Exception):
@@ -3103,7 +3114,10 @@ class Engine:
                     if record is None:
                         record = sympathy_record(self, now)
                     past = record.get("close") or record.get("h1")
-                    line = (
+                    from .peerlearn import pair, pair_line
+
+                    learned = pair_line(pair(self.pair_rates, lead, lag["symbol"]))  # this pair's own record
+                    line = learned or (
                         f"Past flags: {round(past['hit'] * past['n'])} of {past['n']} caught up "
                         f"{'by the close' if record.get('close') else 'within the hour'} (median {past['median']:+.1f}%)."
                         if past and past["n"] >= 8
@@ -3980,6 +3994,9 @@ class Engine:
         from .thecall import muted_facts
 
         self.call_muted = muted_facts(self.call_replay)
+        from .peerlearn import pair_rates
+
+        self.pair_rates = pair_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

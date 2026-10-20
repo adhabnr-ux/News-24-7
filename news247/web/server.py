@@ -189,6 +189,8 @@ class WebServer:
         app.router.add_get("/api/vol", self.api_vol)
         app.router.add_get("/api/playbooks", self.api_playbooks)
         app.router.add_get("/api/uptime", self.api_uptime)
+        app.router.add_get("/api/advice", self.api_advice)
+        app.router.add_get("/api/followers/{sym}", self.api_followers)
         app.router.add_post("/api/bars/fill", self.api_bars_fill)
         app.router.add_get("/api/playbook/{key}", self.api_playbook)
         app.router.add_get("/api/alpha", self.api_alpha)
@@ -1197,6 +1199,22 @@ class WebServer:
         except (TypeError, ValueError) as exc:
             raise web.HTTPBadRequest(text=str(exc)) from None
         return _json(out)
+
+    async def api_advice(self, request: web.Request) -> web.Response:
+        """The setting changes the records back for this phone, ranked, each one tap from applied (advice.py)."""
+        from ..advice import advise
+
+        return _json(advise(self.engine, self._need_device(request)))
+
+    async def api_followers(self, request: web.Request) -> web.Response:
+        """Who follows this stock's news here, and who goes the other way (peerlearn.py)."""
+        from ..desk import clean_symbol
+        from ..peerlearn import followers
+
+        sym = clean_symbol(request.match_info["sym"])
+        if not sym:
+            raise web.HTTPBadRequest(text="bad symbol")
+        return _json(followers(self.engine.pair_rates, sym))
 
     async def api_uptime(self, request: web.Request) -> web.Response:
         """When the desk was asleep in market hours, and how much of the record is graded (uptime.py, bars.py)."""

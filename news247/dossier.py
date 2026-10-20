@@ -234,7 +234,16 @@ def ticker_dossier(engine: Engine, raw: str, now: float | None = None) -> dict[s
         "peers": peers(engine, sym, now),
         "earnings": _earnings(engine, sym),
         "persona": _persona(engine, sym),
+        "followers": _followers(engine, sym),
     }
+
+
+def _followers(engine: Engine, sym: str) -> dict[str, Any] | None:
+    """Who follows this stock's news here (peerlearn.py), when any pair has enough graded."""
+    from .peerlearn import followers
+
+    f = followers(getattr(engine, "pair_rates", None) or {}, sym)
+    return f if f["follow"] or f["against"] else None
 
 
 def _persona(engine: Engine, sym: str) -> dict[str, Any] | None:
