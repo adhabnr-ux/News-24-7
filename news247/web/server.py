@@ -197,6 +197,8 @@ class WebServer:
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
         app.router.add_get("/api/stops-kind", self.api_stops_kind)
         app.router.add_get("/api/combos", self.api_combos)
+        app.router.add_get("/api/playbook-today", self.api_playbook_today)
+        app.router.add_get("/api/you-vs-playbook", self.api_you_vs_playbook)
         app.router.add_get("/api/repeats", self.api_repeats)
         app.router.add_get("/api/autopilots/forward", self.api_autopilots_forward)
         app.router.add_get("/api/learned", self.api_learned)
@@ -1357,6 +1359,18 @@ class WebServer:
         from ..learned import learned
 
         return _json(learned(self.engine))
+
+    async def api_playbook_today(self, request: web.Request) -> web.Response:
+        """What the playbook is doing on every live alert, on paper (today.py)."""
+        from ..today import board
+
+        return _json(board(self.engine))
+
+    async def api_you_vs_playbook(self, request: web.Request) -> web.Response:
+        """This phone's paper calls against the playbook on the same alerts (youvs.py)."""
+        from ..youvs import compare
+
+        return _json(compare(self.engine, self._need_device(request)))
 
     async def api_reaction(self, request: web.Request) -> web.Response:
         """This phone's delay from push to paper call, and what it costs (reaction.py)."""

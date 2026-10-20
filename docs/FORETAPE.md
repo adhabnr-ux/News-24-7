@@ -437,6 +437,18 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - repeats after a first headline that worked against one that didn't.
 
   The alert's sheet flags it: *"🔁 The 2nd headline on ACME in 2 days. Repeat contract win headlines went their way 38% here (21); first ones 61% (30)"*, with the headline before it. So does the 9:20 game plan. The odds model takes it as an input (*Repeat headlines* in what each record adds). The playbook carries a rule for it, and the Watch tab has **The second headline** board. `GET /api/repeats`.
+- **The playbook today:** everything the desk learned about trading each kind of news, on one live board (Watch tab, first). Every directional alert since yesterday's close is listed, plus older ones the playbook still holds into the next day or the week. Each shows its kind's pair (way in and way out, picked together and checked out of sample) and where it stands, from the facts the desk records live:
+  - **waiting:** for the open, its patient limit, a second leg, volume 15 minutes in, or the call to turn;
+  - **skipped:** the entry never came (no second leg by the close, volume didn't confirm, the limit never filled);
+  - **in:** entered at its way in's price and marked to the live price;
+  - **out:** exited its way (an hour in, at the close, the next day, five sessions on, or the bracket's stop or target), with the result.
+
+  Beside each is the plain way on the same alert (in at the alert, out at the close). The header tallies what's waiting, in and out, the average result, and what the playbook added against the plain way today. Paper only: nothing is traded. `GET /api/playbook-today`.
+- **You vs the playbook:** your reaction time priced your delay, and the coach reads your habits. Neither said what you'd have made doing it the record's way. Each paper call you opened from an alert (not the autopilots') is now set beside, on the same alert:
+  - the playbook: its kind's pair as stamped when the alert went out, replayed from the alert's graded prices (a pass, 0%, when its entry never came);
+  - the plain way.
+
+  With 10+ calls the Desk panel gives a verdict: *"Following the playbook on your 10 calls would have made +2.50% a call more (+3.00% against your +0.50%)"*, or that you beat it, or that it's even. It also breaks the gap down per kind of news and lists the calls with the widest gaps, where the habit behind it shows. `GET /api/you-vs-playbook` (per phone).
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.
