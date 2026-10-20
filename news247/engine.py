@@ -242,6 +242,7 @@ class Engine:
         self.h1_rates: dict[str, Any] = {}  # move after an hour -> how the day finished (liveodds.py)
         self.heat_rates: dict[str, Any] = {}  # how far winners dipped and losers ran first (heat.py)
         self.flow_rates: dict[str, Any] = {}  # options flow by shape -> graded record (flowrec.py)
+        self.persona_rates: dict[str, Any] = {}  # each stock's own news record and its trait (persona.py)
         self.ev_hist: tuple[list[float], int] = (
             [],
             1,
@@ -1801,6 +1802,12 @@ class Engine:
                 fb = firm_base(self.firm_rates, call)
                 if fb:
                     alert.edge["firm_base"] = fb
+            if alert.tickers:
+                from .persona import stamp as persona_stamp
+
+                ps = persona_stamp(self.persona_rates, alert.tickers[0])
+                if ps:
+                    alert.edge["persona"] = ps  # how this stock has taken its own news here
             from .odds import predict
 
             odds = predict(self.odds, alert.to_dict(), self.regime_label())
@@ -2389,6 +2396,10 @@ class Engine:
                     grade_events(self, now)
                 with contextlib.suppress(Exception):
                     self.grade_confirm(now)
+                with contextlib.suppress(Exception):
+                    from .exits import grade_exits
+
+                    grade_exits(self, now)  # what each closed call's stock did after the exit
                 with contextlib.suppress(Exception):
                     from .dossier import grade_sympathy
 
@@ -3721,6 +3732,9 @@ class Engine:
         from .flowrec import flow_rates
 
         self.flow_rates = flow_rates(self, 180, now)
+        from .persona import persona_rates
+
+        self.persona_rates = persona_rates(self, 365, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

@@ -101,6 +101,10 @@ def week_evidence(engine: Engine, device: str, now: float | None = None) -> dict
     cost = settings_cost(engine, device, 7, now)
     costly = next((g for g in cost["gates"] if g["verdict"] == "costing"), None)
     ms = miss_report(engine, 7, now)
+    from .exits import exit_report
+
+    ex = exit_report(engine, device, 28, now)  # a month of exits: a week is too few to read
+    exits = [i for i in ex["insights"] if i["key"] != "edge"]
     return {
         "week_of": datetime.fromtimestamp(w0, ET).date().isoformat(),
         "picks": _stats(picked),
@@ -110,6 +114,7 @@ def week_evidence(engine: Engine, device: str, now: float | None = None) -> dict
         "endings": sorted(({"ending": k, **(_stats(v) or {})} for k, v in endings.items()), key=lambda r: -r["n"]),
         "costly": {"setting": costly["setting"], "n": costly["n"], "hit": costly["hit"], "avg": costly["avg"], "fix": costly["fix"]} if costly else None,
         "misses": {"n": ms["n"], "causes": ms["causes"], "failed": ms["failed"]} if ms["n"] else None,
+        "exits": {"graded": ex["graded"], "insights": exits[:2], "edge": ex.get("edge")} if ex["insights"] else None,
         "best": [r for r in rows if r["avg"] > 0][:2],
         "worst": [r for r in reversed(rows) if r["avg"] < 0][:2],
     }  # fmt: skip
@@ -135,6 +140,9 @@ def evidence_lines(ev: dict[str, Any]) -> list[str]:
         lines.append(
             f"Misses: {swamped} of {ms['n']} swamped by the sector or market, {ms['causes']['faded']} the signal"
         )
+    ex = ev.get("exits")
+    if ex and ex["insights"]:
+        lines.append(ex["insights"][0]["text"])
     if ev.get("best"):
         b = ev["best"][0]
         lines.append(f"Worked: {b['label'].lower()} news {b['avg']:+.1f}% ({b['n']})")

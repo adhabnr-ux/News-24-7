@@ -169,6 +169,9 @@ class WebServer:
         app.router.add_get("/api/stakes", self.api_stakes)
         app.router.add_get("/api/risk", self.api_risk)
         app.router.add_get("/api/flow", self.api_flow)
+        app.router.add_get("/api/persona", self.api_persona)
+        app.router.add_get("/api/personas", self.api_personas)
+        app.router.add_get("/api/exits", self.api_exits)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1054,6 +1057,28 @@ class WebServer:
         from ..flowrec import flow_board
 
         return _json(flow_board(self.engine.flow_rates))
+
+    async def api_persona(self, request: web.Request) -> web.Response:
+        """How one stock has taken its own news here: trait, path, by kind, recent (persona.py)."""
+        from ..desk import clean_symbol
+        from ..persona import persona
+
+        sym = clean_symbol(request.query.get("symbol"))
+        if not sym:
+            raise web.HTTPBadRequest(text="need ?symbol=")
+        return _json(persona(self.engine, sym))
+
+    async def api_personas(self, request: web.Request) -> web.Response:
+        """This phone's stocks with a news personality, and the clearest runners and faders (persona.py)."""
+        from ..persona import board
+
+        return _json(board(self.engine, request.headers.get("X-Device", "")))
+
+    async def api_exits(self, request: web.Request) -> web.Response:
+        """Exit autopsy: what each closed call's stock did after the exit (exits.py)."""
+        from ..exits import exit_report
+
+        return _json(exit_report(self.engine, self._need_device(request)))
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""

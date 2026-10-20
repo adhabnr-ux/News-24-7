@@ -984,6 +984,13 @@ class WebPushNotifier(Notifier):
         fl = firm_line(alert.edge.get("firm_base"))
         if fl:
             base = f"{base}\n{fl}" if base else fl
+        from ..persona import persona_line
+
+        ps = alert.edge.get("persona")
+        # only a trait that changes the call: "runs with its news" says what the record above says
+        pn = persona_line(ps) if ps and ps.get("trait") not in ("mixed", "runs") else ""
+        if pn:
+            base = f"{base}\n{pn}" if base else pn
         if base:
             body = f"{body}\n{base}" if body else base
         play = alert.edge.get("play") or {}

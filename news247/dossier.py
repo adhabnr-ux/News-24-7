@@ -233,7 +233,15 @@ def ticker_dossier(engine: Engine, raw: str, now: float | None = None) -> dict[s
         "session": session_context(engine, sym, now),
         "peers": peers(engine, sym, now),
         "earnings": _earnings(engine, sym),
+        "persona": _persona(engine, sym),
     }
+
+
+def _persona(engine: Engine, sym: str) -> dict[str, Any] | None:
+    """How the stock has taken its own news here (persona.py), when it has enough graded."""
+    from .persona import persona_for
+
+    return persona_for(getattr(engine, "persona_rates", None) or {}, sym)
 
 
 def _earnings(engine: Engine, sym: str) -> dict[str, Any] | None:

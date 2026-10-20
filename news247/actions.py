@@ -79,6 +79,7 @@ def action_center(engine: Engine, device: str, now: float | None = None, limit: 
     items += _settings(engine, device, now)
     items += _model(engine, p, now)
     items += _risk(engine, device, p, now)
+    items += _exits(engine, device, p, now)
     done = {k: t for k, t in (p.get("act_done") or {}).items() if now - t < ACT_DONE_S}
     shown = [i for i in items if i["key"] not in done]
     shown.sort(key=lambda i: (-i["urgency"], -(i["ts"] or 0)))
@@ -377,6 +378,25 @@ def _risk(engine: Engine, device: str, p: dict[str, Any], now: float) -> list[di
     return [_item(f"risk:{day}", "risk", 66, "⚖", f"Open risk {r['total_pct']:.1f}% of the account: over your {r['cap']:g}% cap",
                   f"{_usd(r['total_usd'])} across {len(r['calls'])} calls if every stop were hit"
                   + (f"; {len(r['unbounded'])} with no stop" if r["unbounded"] else ""), "", "#a=desk", ts=now)]  # fmt: skip
+
+
+def _exits(engine: Engine, device: str, p: dict[str, Any], now: float) -> list[dict[str, Any]]:
+    """What the exit autopsy found that a phone can act on: stops inside the noise, winners sold
+    early, losers cut at the turn (exits.py). Once a week each, while it holds."""
+    if len(p.get("closed") or []) < 5:
+        return []
+    from .exits import exit_report
+
+    found = {i["key"]: i for i in exit_report(engine, device, 120, now)["insights"]}
+    week = datetime.fromtimestamp(now, ET).strftime("%G-W%V")
+    out = []
+    for key, title in (("stops", "Your stops sit inside the noise"), ("early", "You sell winners early"),
+                       ("bottom", "You cut losers near the turn")):  # fmt: skip
+        if key in found:
+            detail = found[key]["text"].split(": ", 1)[-1]
+            out.append(_item(f"exits:{key}:{week}", "exits", 42, "✂", title, detail[0].upper() + detail[1:], "",
+                             "#a=desk", ts=now))  # fmt: skip
+    return out
 
 
 def _model(engine: Engine, p: dict[str, Any], now: float) -> list[dict[str, Any]]:

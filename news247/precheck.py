@@ -140,6 +140,18 @@ def pre_trade(
         when = (" " + er["when"]) if er.get("when") else ""
         add("report", "bad" if er["in_days"] == 0 else "warn",
             f"{sym} reports{when} {'today' if er['in_days'] == 0 else 'tomorrow'}: a gap can go straight through a stop")  # fmt: skip
+    from .persona import TONE, TRAITS, persona_line
+    from .persona import stamp as persona_stamp
+
+    ps = persona_stamp(getattr(engine, "persona_rates", None) or {}, sym)
+    if ps and ps["trait"] not in ("mixed", "runs"):  # "runs with its news" is the record check again
+        from .dossier import _direction
+
+        # with the news: the trait reads as it is (a small sample, so never worse than a caution);
+        # against it, or without an alert, it's context
+        with_news = a is not None and _direction(a) == ("up" if long else "down")
+        tone = TONE[ps["trait"]] if with_news else "info"
+        add("persona", "warn" if tone == "bad" else tone, f"{persona_line(ps)}: {TRAITS[ps['trait']][1]}")
     _concentration(engine, device, sym, long, add)
     from .risk import desk_risk
 

@@ -775,8 +775,25 @@ async function loadFlowBoard() {
     + (r.worst.length ? `<div class="kv head"><span>Didn't</span><b>its way · median</b></div>` + r.worst.map(row).join("") : "")
     + `<div class="sub" style="padding:4px 0 12px">Each options alert read for its direction (calls bought or puts sold lean up; puts bought or calls sold lean down, by premium) and graded by the close from the stock's price when it went out. Flow can be a hedge, and the side is estimated from where prints sat in the spread.</div>`;
 }
+// stock personality: how each of this phone's stocks has taken its own news, and the clearest characters
+const TRAIT_CLS = { good: "pos", warn: "gold", bad: "neg", info: "" };
+function personaPath(x) {
+  return [["h1", "1h"], ["close", "close"], ["d1", "next day"], ["d5", "5 days"]].filter(([h]) => x[h]).map(([h, l]) => `${l} ${pct(x[h].median)}`).join(" · ");
+}
+async function loadPersonas() {
+  let r;
+  try { r = await api("/api/personas"); } catch (_) { return; }
+  const row = (x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span><b>${esc(x.symbol)}</b> <span class="${TRAIT_CLS[x.tone]}">${esc(x.label)}</span> <span class="sub">${personaPath(x)} · ${x.n} graded${x.ratio ? ` · moves ${x.ratio}× a typical alert` : ""}</span></span><b class="num"><span class="${x.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.close.hit * 100)}%</span> <span class="sub">its way</span></b></div>`;
+  $("personaWrap").hidden = !r.mine.length && !r.runners.length && !r.faders.length;
+  if ($("personaWrap").hidden) return;
+  $("personaBoard").innerHTML = (r.mine.length ? `<div class="kv head"><span>Your stocks</span><b>by the close</b></div>` + r.mine.map(row).join("") : "")
+    + (r.unknown.length ? `<div class="sub" style="padding:2px 0 6px">Not enough graded yet (${r.need} needed): ${r.unknown.map(esc).join(", ")}</div>` : "")
+    + (r.runners.length ? `<div class="kv head"><span>Ran with their news</span><b></b></div>` + r.runners.map(row).join("") : "")
+    + (r.faders.length ? `<div class="kv head"><span>Faded or fought it</span><b></b></div>` + r.faders.map(row).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
+}
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -893,6 +910,9 @@ async function openSheet(id) {
       ${e.odds.best && e.odds.by ? `<div class="kv"><span>Best held to <span class="sub">the horizon with the highest expected move, each model tested on alerts it never saw</span></span><b class="num pos">${esc(e.odds.best.label)} · ${pct(e.odds.best.ev)}</b></div>` : ""}
       ${(e.odds.why || []).map((w) => `<div class="kv"><span>${esc(w.label)}</span><b class="num ${w.pts > 0 ? "pos" : "neg"}">${w.pts > 0 ? "+" : ""}${w.pts} pts</b></div>`).join("")}
       <div class="sub" style="padding:4px 0 12px">A model fitted on ${e.odds.n} graded alerts here, and used only because it beat the plain hit rate on alerts it never saw (${Math.round(e.odds.skill * 100)}% better). History, not a forecast.</div></div>` : "",
+    e.persona && e.persona.trait !== "mixed" ? `<h4>How ${esc(e.persona.symbol)} takes news</h4><div class="panel glass">
+      <div class="kv"><span>${esc(e.persona.label)}</span><b class="num">${Object.entries(e.persona.path || {}).map(([h, v]) => `${{ h1: "1h", close: "close", d1: "next day", d5: "5 days" }[h]} <span class="${cls(v)}">${pct(v)}</span>`).join(" · ")}</b></div>
+      <div class="sub" style="padding:4px 0 12px">Its last ${e.persona.n} graded alerts here, medians, its way. History, not a forecast.</div></div>` : "",
     e.flow_base ? `<h4>Flow like this, here</h4><div class="panel glass">
       ${[["An hour later", e.flow_base.h1], ["At the close", e.flow_base.close], ["The next day", e.flow_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went its way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
       <div class="sub" style="padding:4px 0 12px">${esc(e.flow_base.label)}: every options alert of this shape, graded from the stock's price when it went out${e.flow?.dir ? ` (read as ${e.flow.dir === "up" ? "bullish" : "bearish"} flow)` : ""}. History, not a forecast.</div></div>` : "",
@@ -1532,6 +1552,23 @@ async function loadEquity() {
       + (al.no_reading ? `<div class="sub" style="padding:2px 0">${al.no_reading} older call${al.no_reading === 1 ? "" : "s"} opened before calls noted the market</div>` : "");
   }
 }
+// exit autopsy: what each closed call's stock did after the exit
+const EXIT_VERDICT = { left: ["kept going", "gold"], saved: ["turned", "pos"], even: ["about even", "faint"] };
+async function loadExits() {
+  let r;
+  try { r = await api("/api/exits"); } catch (_) { return; }
+  $("dExitWrap").hidden = !r.closed;
+  if (!r.closed) return;
+  const g = (x) => x ? `<span class="${x.median > 0 ? "gold" : "pos"}">${pct(x.median)}</span> <span class="sub">${Math.round(x.kept * 100)}% kept going · ${x.n}</span>` : `<span class="sub">—</span>`;
+  const grid = (name, grp) => `<div class="kv"><span>${name}</span><b class="num">${["close", "d1", "d5"].map((h) => g(grp[h])).join("<br>")}</b></div>`;
+  $("dExit").innerHTML = (r.insights.length ? r.insights.map((i) => `<div class="kv"><span class="${TRAIT_CLS[i.tone] || ""}">${esc(i.text)}</span></div>`).join("")
+      : `<div class="kv"><span class="sub">${r.graded} of ${r.closed} exits graded so far; ${r.need}+ in a group before it's read.</span></div>`)
+    + (r.graded ? `<div class="kv head"><span>After the exit, your way</span><b>that close · next close · 5 sessions</b></div>` + grid("Winning exits", r.winners) + grid("Losing exits", r.losers)
+      + r.kinds.map((k) => grid(`${esc(k.label)} <span class="sub">${k.n}</span>`, k)).join("") : "")
+    + (r.stops ? `<div class="kv"><span>Stops that cost <span class="sub">back at the entry by the next close</span></span><b class="num">${r.stops.back} of ${r.stops.n}${r.stops.distance != null ? ` <span class="sub">· sat ${r.stops.distance.toFixed(1)}% away${r.stops.dip80 ? `, winners dip ${r.stops.dip80.toFixed(1)}%` : ""}</span>` : ""}</b></div>` : "")
+    + r.rows.filter((x) => x.verdict).slice(0, 10).map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span>${x.direction === "long" ? "▲" : "▼"} ${esc(x.symbol)} <span class="${cls(x.pnl)}">${pct(x.pnl)}</span> <span class="sub">${ago(x.closed)} ago · ${esc(x.kind)}</span></span><b class="num"><span class="${EXIT_VERDICT[x.verdict][1]}">${EXIT_VERDICT[x.verdict][0]} ${pct(x.its[x.at])}</span> <span class="sub">${x.at === "d5" ? "5 sessions" : x.at === "d1" ? "next close" : "that close"}</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Each closed call graded after the fact from its exit price, in the call's direction: + = it kept going your way after you left, − = it turned and the exit saved that. Older calls opened from an alert are graded from the alert's own closes. Paper only; history, not a forecast.</div>`;
+}
 // what your settings kept back: every alert this phone's settings held off its lock screen, graded
 let cost = null;
 const VERDICT = { costing: ["costing you", "neg"], saving: ["working", "pos"], even: ["about even", ""], thin: ["too few to judge", "faint"] };
@@ -1671,6 +1708,7 @@ function evidenceHTML(ev) {
   if ((ev.endings || []).length) rows.push(`<div class="kv"><span>How calls ended</span><b>${ev.endings.map((e) => `${esc(e.ending)} <span class="${cls(e.avg)}">${pct(e.avg)}</span> <span class="sub">(${e.n})</span>`).join("<br>")}</b></div>`);
   if (ev.costly) rows.push(`<div class="kv"><span>Costliest setting <span class="sub">${esc(ev.costly.setting)}: kept back ${ev.costly.n} that went their way ${Math.round(ev.costly.hit * 100)}%</span></span><b>${ev.costly.fix?.action ? `<button class="btn ghost small" data-act="ev-fix">${esc(ev.costly.fix.label)}</button>` : ""}</b></div>`);
   if (ev.misses) rows.push(`<div class="kv"><span>Why the misses missed <span class="sub">${ev.misses.n} misses</span></span><b class="num">${ev.misses.causes.sector + ev.misses.causes.market} the tape · ${ev.misses.causes.news} news · <span class="neg">${ev.misses.causes.faded} the signal</span></b></div>`);
+  if (ev.exits) rows.push(`<div class="kv"><span>Your exits <span class="sub">${ev.exits.graded} graded after the fact, 4 weeks</span></span><b>${ev.exits.insights.map((i) => `<span class="${i.tone === "good" ? "pos" : i.tone === "warn" ? "gold" : ""}">${esc(i.text)}</span>`).join("<br>")}${ev.exits.edge ? `${ev.exits.insights.length ? "<br>" : ""}<span class="sub">exit edge ${pct(ev.exits.edge.median)} a call vs one more session</span>` : ""}</b></div>`);
   if ((ev.best || []).length || (ev.worst || []).length) rows.push(`<div class="kv"><span>Kinds of news this week</span><b>${[...(ev.best || []), ...(ev.worst || [])].map((k) => `${esc(k.label)} <span class="${cls(k.avg)}">${pct(k.avg)}</span> <span class="sub">(${k.n})</span>`).join("<br>")}</b></div>`);
   weekEv = ev;
   return rows.length ? `<div class="kv head"><span>The week in evidence</span><b>by the close</b></div>` + rows.join("") : "";
@@ -1858,6 +1896,12 @@ function tickerHTML(d) {
     ${pr.laggards?.length ? `<div class="sub" style="padding:12px 0 4px">${esc(d.symbol)} is ${pct(pr.me)}; these haven't moved yet: <b class="gold">${pr.laggards.map((x) => esc(x.symbol)).join(", ")}</b>. Where a sympathy move would come from, if it comes. ${tip("sympathy")}</div>` : ""}
     ${pr.rows.map((x) => `<div class="li" data-tk="${esc(x.symbol)}" role="button"><span class="sym" style="width:64px">${esc(x.symbol)}</span><div class="grow"><div>${esc(x.name)}</div><div class="sub">${esc(x.cap)}${(pr.laggards || []).some((l) => l.symbol === x.symbol) ? ` · <span class="gold">not moved yet</span>` : ""}</div></div>${x.chg != null ? barHTML(x.chg) : ""}<span class="chg num ${cls(x.chg)}">${pct(x.chg)}</span></div>`).join("")}
     ${pr.avg != null ? `<div class="kv"><span>Peers on average</span><b class="num ${cls(pr.avg)}">${pct(pr.avg)}</b></div>` : ""}</div>` : "";
+  const ps = d.persona;
+  const personaBlock = ps ? `<h4>How ${esc(d.symbol)} takes news</h4><div class="panel glass">
+    <div class="kv"><span><b class="${TRAIT_CLS[ps.tone]}">${esc(ps.label)}</b> <span class="sub">${esc(ps.why)}</span></span><b class="num">${ps.n} graded</b></div>
+    ${[["An hour later", ps.h1], ["At the close", ps.close], ["The next day", ps.d1], ["Five days on", ps.d5]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> its way · median ${pct(x.median)} · ${x.n}</b></div>`).join("")}
+    ${ps.ratio ? `<div class="kv"><span>Size of its news moves</span><b class="num">±${ps.size.toFixed(1)}% · ${ps.ratio}× a typical alert</b></div>` : ""}
+    <div class="sub" style="padding:4px 0 12px">Every graded alert on ${esc(d.symbol)} here, each from its own price, its way. A small sample: history, not a forecast.</div></div>` : "";
   const why = `<h4>Why it's moving</h4><div class="panel glass" id="whyBox">${(d.why || []).length ? d.why.map((x) => `<div class="li"><div class="grow"><a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a><div class="sub">${esc(outlet(x.source))} · ${esc(x.age)} ago</div></div></div>`).join("")
     : `<div class="li"><span class="muted grow">No headline on it since the last session.</span><button class="btn ghost small" data-act="why" data-s="${sym}">Find why now</button></div>`}</div>`;
   const note = (desk?.notes || {})[d.symbol];
@@ -1883,7 +1927,7 @@ function tickerHTML(d) {
     <div class="kv"><span>On watchlists</span><b class="num">${d.watchers} phone${d.watchers === 1 ? "" : "s"}</b></div></div>`;
   const implied = `<h4>What options price in ${tip("implied")}</h4><div class="panel glass" id="implied"><div class="li"><span class="muted">Reading the option chain…</span></div></div>
     <h4>Past earnings</h4><div class="panel glass" id="pastEarn"><div class="li"><span class="muted">Reading its last reports…</span></div></div>`;
-  return [head + relLine + sessLine + earnLine, sinceBlock(lookCache[d.symbol]), acts,`<div id="ptBox">${ptCache[d.symbol] ? targetsHTML(ptCache[d.symbol]) : ""}</div>`, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
+  return [head + relLine + sessLine + earnLine, sinceBlock(lookCache[d.symbol]), acts,`<div id="ptBox">${ptCache[d.symbol] ? targetsHTML(ptCache[d.symbol]) : ""}</div>`, noteBlock, (d.series || []).length >= 3 ? `<h4>Today, with the levels</h4><div id="lvlChart">${levelChart(d)}</div><div class="sub lvlhint">Tap the chart at a price to set an alert there.</div>` : "", tallyBlock(d.tally), why, personaBlock, tape, implied, peerBlock, al, ins, cal, news, facts].filter(Boolean).join("");
 }
 let tickerReq = 0, tickerNow = null;
 const impliedNow = {};
@@ -2677,7 +2721,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
