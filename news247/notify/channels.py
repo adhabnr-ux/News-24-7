@@ -965,6 +965,11 @@ class WebPushNotifier(Notifier):
         rb = alert.edge.get("regime_base")
         if rb and alert.edge.get("cat_base"):
             base += f" · on {rb['regime']} days: {round(rb['hit'] * 100)}% ({rb['n']})"
+        from ..odds import odds_line
+
+        ol = odds_line(alert.edge.get("odds"))
+        if ol:
+            base = f"{ol}\n{base}" if base else ol
         if base:
             body = f"{body}\n{base}" if body else base
         play = alert.edge.get("play") or {}

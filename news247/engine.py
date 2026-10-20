@@ -235,6 +235,8 @@ class Engine:
         self.catalyst_rates: dict[str, Any] = {}  # (catalyst, size band) -> graded record (catalysts.py)
         self.regime_rates: dict[str, Any] = {}  # (catalyst, market regime) -> graded record
         self._regime_now: tuple[float, str] = (0.0, "unknown")  # the live regime, read every 5 minutes
+        self.odds: dict[str, Any] = {}  # the calibrated odds model and its out-of-sample test (odds.py)
+        self._odds_at = 0.0  # when it was last fitted (hourly)
         self.base_rates: dict[
             str, Any
         ] = {}  # record_key -> graded stats (dossier.track_record), for each new alert
@@ -1765,6 +1767,11 @@ class Engine:
                 rb = regime_base(self.regime_rates, cat["key"], self.regime_label())
                 if rb:
                     alert.edge["regime_base"] = rb  # the same kind of news, on days like today
+            from .odds import predict
+
+            odds = predict(self.odds, alert.to_dict(), self.regime_label())
+            if odds:
+                alert.edge["odds"] = odds  # one calibrated number, with what moved it
         self.storage.add_alert(alert)
         self._broadcast("alert", alert.to_dict())
         if push:
@@ -3550,6 +3557,11 @@ class Engine:
         from .catalysts import regime_rates
 
         self.regime_rates = regime_rates(self, 180, now)
+        if (now or time.time()) - self._odds_at >= 3600:
+            from .odds import fit_odds
+
+            self._odds_at = now or time.time()
+            self.odds = fit_odds(self, 180, now)
 
     def _eod_due(self, now: float) -> bool:
         dt = datetime.fromtimestamp(now, ET)

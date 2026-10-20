@@ -30,6 +30,8 @@ REMIND_AHEAD_S = 2 * 3600.0  # reminders due within this long
 AUTO_EXIT_S = 30 * 60.0  # autopilot calls closing within this long
 BIG_MOVE = 4.0  # a holding moving this much (%) on the day
 MAX_UNREAD = 4  # today's unopened HIGH+ alerts on your stocks, listed one by one
+COST_TTL = 600.0
+_COST: dict[str, tuple[float, str, dict[str, Any]]] = {}  # device -> (when, its settings, settings_cost)
 
 
 def _usd(v: float) -> str:
@@ -73,6 +75,7 @@ def action_center(engine: Engine, device: str, now: float | None = None, limit: 
     items += _room(engine, mine, now)
     items += _unread(engine, p, mine, now)
     items += _holdings(p, quote, now)
+    items += _settings(engine, device, now)
     done = {k: t for k, t in (p.get("act_done") or {}).items() if now - t < ACT_DONE_S}
     shown = [i for i in items if i["key"] not in done]
     shown.sort(key=lambda i: (-i["urgency"], -(i["ts"] or 0)))
@@ -295,6 +298,43 @@ def _unread(engine: Engine, p: dict[str, Any], mine: set[str], now: float) -> li
     if len(rows) > MAX_UNREAD:
         out[-1]["detail"] += f" · {len(rows) - MAX_UNREAD} more on the tape (Mine)"
     return out
+
+
+# --------------------------------------------------------------------------- your settings
+
+
+def _settings(engine: Engine, device: str, now: float) -> list[dict[str, Any]]:
+    """A setting that keeps holding back better alerts than the ones that reach you (keptback.py)."""
+    from .keptback import cost_line, settings_cost
+
+    p = engine.desk.profiles.get(device) or {}
+    if not p:
+        return []
+    sig = json.dumps([p.get(k) for k in ("prefs", "cat_off", "kw_neg", "stock_push", "watchlist", "holdings")],
+                     sort_keys=True, default=str)  # fmt: skip
+    hit = _COST.get(device)
+    if hit and hit[1] == sig and now - hit[0] < COST_TTL:
+        r = hit[2]  # graded history changes slowly: read it every 10 minutes, or when a setting changes
+    else:
+        r = settings_cost(engine, device, 14, now)
+        _COST[device] = (now, sig, r)
+    week = datetime.fromtimestamp(now, ET).strftime("%G-%V")
+    return [
+        _item(
+            f"cost:{g['setting']}:{week}",
+            "settings",
+            30,
+            "⚙",
+            f"{g['setting']} kept back {g['n']} alerts that beat what reached you",
+            cost_line(g, r["came"]),
+            "",
+            "#a=desk",
+            g["fix"] if g["fix"].get("action") else None,
+            now,
+        )  # fmt: skip
+        for g in r["gates"]
+        if g["verdict"] == "costing"
+    ]
 
 
 # --------------------------------------------------------------------------- the portfolio

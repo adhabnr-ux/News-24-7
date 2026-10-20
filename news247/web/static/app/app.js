@@ -85,6 +85,7 @@ const GLOSSARY = {
   halt: "Halt: the exchange stops trading in a stock. T1 = news pending, LUDP = a 5-minute volatility pause (limit up/limit down), H10 = SEC suspension. It reopens at the resumption time.",
   smart: "Smart money: options bought hard on one side, insiders buying with their own cash (Form 4), and stocks igniting on volume, in one feed.",
   vwap: "VWAP: the volume-weighted average price of the session, where the day's average share changed hands. Above it, buyers have been in control; traders watch reclaims and losses of it. The 9:35 price is the end of the first five minutes, the opening range.",
+  odds: "Odds: a small logistic model fitted every hour on this server's graded alerts, from what was known when each went out (kind, severity, kind of news and size, direction, how far it had already moved, time of day, the day's regime, other evidence). It is used only after beating the plain hit rate on the newest alerts, which it never saw; the Desk shows that test and how well its numbers held up.",
   regime: "Market regime: risk-on when cyclical sectors (tech, discretionary, industrials, financials, energy, materials) lead defensive ones (utilities, staples, health care, real estate), most stocks are up and small caps lead large; risk-off is the reverse. A read of today's tape, not a forecast.",
   inplay: "In play: one ranked list from every board: the day's move, volume against normal, news buzz, options flow, a confluence alert, the radar, and whether there's a known reason.",
   digest: "Digest: instead of one push per alert, one push every 15 minutes or hour listing them. CRITICAL alerts and your own price alerts still come at once.",
@@ -114,7 +115,7 @@ function openLinks() {
     <p class="sub">The calendar link carries your access key: keep it private.</p>`);
 }
 function openGlossary() {
-  const names = { implied: "Implied move", callwall: "Call wall", putwall: "Put wall", maxpain: "Max pain", pcratio: "Put/call volume", evidence: "The evidence tally", base: "Base rate", confluence: "Confluence", sympathy: "Sympathy move", rel: "Relative strength", ignition: "Ignition", gap: "Gap", halt: "Halt", smart: "Smart money", digest: "Digest", vwap: "VWAP and the 9:35 price", regime: "Market regime", inplay: "In play" };
+  const names = { implied: "Implied move", callwall: "Call wall", putwall: "Put wall", maxpain: "Max pain", pcratio: "Put/call volume", evidence: "The evidence tally", base: "Base rate", confluence: "Confluence", sympathy: "Sympathy move", rel: "Relative strength", ignition: "Ignition", gap: "Gap", halt: "Halt", smart: "Smart money", digest: "Digest", vwap: "VWAP and the 9:35 price", regime: "Market regime", inplay: "In play", odds: "Odds" };
   showSheet(`<div class="meta"><span class="src">Foretape, explained</span></div><h2>What the terms mean</h2>` + Object.entries(GLOSSARY).map(([k, v]) => `<h4>${esc(names[k] || k)}</h4><p class="muted" style="margin:0">${esc(v.replace(/^[^:]+: /, "").replace(/^./, (c) => c.toUpperCase()))}</p>`).join(""));
 }
 const tip = (k) => `<button class="tip" data-act="term" data-s="${k}" aria-label="What is this?">ⓘ</button>`;
@@ -239,6 +240,10 @@ async function loadWorking() {
   try { const r = await api("/api/working"); workingNow = Object.fromEntries([...r.rows, ...r.thin].map((x) => [x.key, x])); return r; } catch (_) { return null; }
 }
 function baseRow(a) {
+  const o = a.edge?.odds;
+  return (o ? `<div class="base odds">Odds <b class="${o.p >= 0.5 ? "pos" : "neg"}">${Math.round(o.p * 100)}%</b> by the close <span class="faint">· model, ${o.n} graded ${tip("odds")}</span></div>` : "") + baseRow0(a);
+}
+function baseRow0(a) {
   const cb = a.edge?.cat_base;
   if (cb?.close) return `<div class="base"><b>${esc(cb.label)}</b> <span class="faint">${esc(cb.band_label)}</span> went their way <b class="${cb.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(cb.close.hit * 100)}%</b> by the close, median <b class="${cls(cb.close.median)}">${pct(cb.close.median)}</b> <span class="faint">· ${cb.close.n} graded ${tip("catalyst")}</span>${a.edge.regime_base ? ` <span class="faint">· on ${esc(a.edge.regime_base.regime)} days</span> <b class="${a.edge.regime_base.hit >= 0.5 ? "pos" : "neg"}">${Math.round(a.edge.regime_base.hit * 100)}%</b> <span class="faint">(${a.edge.regime_base.n})</span>` : ""}</div>`;
   const b = a.edge?.base;
@@ -841,6 +846,9 @@ async function openSheet(id) {
       <div class="sub" style="margin-top:10px">Fires when 3+ independent kinds of evidence line up on one side (weight 4+, at least one from the last 2 hours); pushed at weight 7+. Each stock and side once a day.</div></div>` : "",
     a.kind !== "system" ? (() => { const es = edgeScore(a); return `<h4>Edge score</h4><div class="panel glass"><div class="kv"><span>Composite of the stats on this page</span><b class="num ${es.score >= 60 ? "pos" : es.score < 45 ? "neg" : ""}">${es.score} / 100</b></div>${es.parts.map(([n, v, w, why]) => `<div class="kv"><span>${n} <span class="sub">× ${Math.round(w * 100)}% · ${esc(why)}</span></span><b class="num">${Math.round(v * 100)}</b></div>`).join("")}<div class="sub" style="padding:4px 0 12px">A weighted summary of measured facts (how alerts like it did, whether the stock had already moved, how much evidence agrees, severity), not a forecast.</div></div>`; })() : "",
     priceInBlock(a),
+    e.odds ? `<h4>The odds ${tip("odds")}</h4><div class="panel glass"><div class="kv"><span>Went its way by the close, for alerts like this</span><b class="num"><span class="${e.odds.p >= 0.5 ? "pos" : "neg"}">${Math.round(e.odds.p * 100)}%</span> <span class="sub">vs ${Math.round(e.odds.base * 100)}% for every alert</span></b></div>
+      ${(e.odds.why || []).map((w) => `<div class="kv"><span>${esc(w.label)}</span><b class="num ${w.pts > 0 ? "pos" : "neg"}">${w.pts > 0 ? "+" : ""}${w.pts} pts</b></div>`).join("")}
+      <div class="sub" style="padding:4px 0 12px">A model fitted on ${e.odds.n} graded alerts here, and used only because it beat the plain hit rate on alerts it never saw (${Math.round(e.odds.skill * 100)}% better). History, not a forecast.</div></div>` : "",
     e.cat_base ? `<h4>${esc(e.cat_base.label)} news, ${esc(e.cat_base.band_label)} ${tip("catalyst")}</h4><div class="panel glass">
       ${[["An hour later", e.cat_base.h1], ["At the close", e.cat_base.close], ["The next day", e.cat_base.d1]].filter(([, x]) => x).map(([l, x]) => `<div class="kv"><span>${l}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> went its way · median ${pct(x.median)} · ${x.n} graded</b></div>`).join("")}
       ${e.cat_base.typical != null ? `<div class="kv"><span>Typical close move, either way</span><b class="num">±${e.cat_base.typical.toFixed(1)}%</b></div>` : ""}
@@ -1353,7 +1361,35 @@ async function loadActions() {
   $("dActSub").textContent = !acts.count ? "all clear" : acts.urgent ? `${acts.urgent} urgent · ${acts.count} in all` : `${acts.count} thing${acts.count === 1 ? "" : "s"}, most urgent first`;
   $("dAct").innerHTML = (acts.items.length ? acts.items.map((i, n) => `<div class="li act u${i.urgency >= 80 ? 3 : i.urgency >= 60 ? 2 : 1}"${i.open ? ` data-act="act-open" data-n="${n}" role="button"` : ""}><span class="aic" aria-hidden="true">${esc(i.icon)}</span><div class="grow"><div class="at">${esc(i.title)}</div>${i.detail ? `<div class="sub">${esc(i.detail)}</div>` : ""}</div>${i.do ? `<button class="btn ghost small" data-act="act-do" data-n="${n}">${esc(i.do.label)}</button>` : ""}<button class="x" data-act="act-done" data-n="${n}" aria-label="Dismiss" title="Dismiss for 20 hours">✕</button></div>`).join("")
     : `<div class="li"><span class="muted">Nothing needs you right now.</span></div>`)
-    + (acts.hidden ? `<div class="sub" style="padding:6px 0 10px">${acts.hidden} dismissed · <a href="#" data-act="act-reset">bring them back</a></div>` : "");
+    + (acts.hidden ? `<div class="sub" style="padding:6px 0 10px">${acts.hidden} dismissed <button class="btn ghost small" data-act="act-reset">Bring them back</button></div>` : "");
+}
+// the odds model: its test on alerts it never saw, how well its numbers held up, and what moves them
+async function loadOdds() {
+  let r;
+  try { r = await api("/api/odds"); } catch (_) { return; }
+  if (!r.ready) { $("dOdds").innerHTML = `<div class="li"><span class="muted">Learning: ${r.n} of the ${r.need} graded alerts it needs before it fits a model. Until then, alerts carry their kind of news' own record.</span></div>`; return; }
+  const t = r.test, p100 = (v) => Math.round(v * 100) + "%";
+  $("dOdds").innerHTML = `<div class="kv"><span>${r.trusted ? "In use" : "Not in use"} <span class="sub">${r.trusted ? "it beat the plain hit rate on alerts it never saw" : "it didn't beat the plain hit rate on alerts it never saw, so alerts don't carry its odds"}</span></span><b class="num ${r.trusted ? "pos" : "neg"}">${t.skill > 0 ? "+" : ""}${Math.round(t.skill * 100)}%</b></div>
+    <div class="kv"><span>The test <span class="sub">fitted on the older ${t.train}, scored on the newest ${t.n}: squared miss ${t.brier.toFixed(3)} vs ${t.brier_guess.toFixed(3)} guessing ${p100(t.guess)} every time${t.auc != null ? ` · ranks a winner over a loser ${p100(t.auc)} of the time` : ""}</span></span><b class="num">${t.n}</b></div>
+    <div class="kv head"><span>When it said</span><b>it went its way</b></div>`
+    + t.reliability.map((b) => `<div class="kv"><span>${p100(b.lo)}–${p100(b.hi)} <span class="sub">${b.n} alert${b.n === 1 ? "" : "s"}, ${p100(b.predicted)} on average</span></span><b class="num calib"><span class="bar" aria-hidden="true"><i style="width:${Math.round(b.actual * 100)}%"></i><i class="mark" style="left:${Math.round(b.predicted * 100)}%"></i></span><span class="${Math.abs(b.actual - b.predicted) <= 0.1 ? "pos" : "neg"}">${p100(b.actual)}</span></b></div>`).join("")
+    + `<div class="kv head"><span>What moves the odds most</span><b>weight</b></div>` + (r.factors || []).slice(0, 8).map((f) => `<div class="kv"><span>${esc(f.label)}</span><b class="num ${f.weight > 0 ? "pos" : "neg"}">${f.weight > 0 ? "+" : ""}${f.weight.toFixed(2)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">A logistic model on what was known when each alert went out (its kind, severity, kind of news and size, direction, how far it had already moved, time of day, the day's regime, other evidence), refitted every hour on ${r.n} graded alerts. History, not a forecast.</div>`;
+}
+// what your settings kept back: every alert this phone's settings held off its lock screen, graded
+let cost = null;
+const VERDICT = { costing: ["costing you", "neg"], saving: ["working", "pos"], even: ["about even", ""], thin: ["too few to judge", "faint"] };
+async function loadCost() {
+  try { cost = await api("/api/settings-cost"); } catch (_) { return; }
+  const c = cost, p100 = (v) => v == null ? "—" : Math.round(v * 100) + "%";
+  $("dCostWrap").hidden = !c.gates.length;
+  if (!c.gates.length) return;
+  $("dCost").innerHTML = `<div class="kv"><span>What reached you <span class="sub">${c.came.n} graded alerts, ${c.days} days</span></span><b class="num">${p100(c.came.hit)} <span class="sub">its way · ${c.came.avg != null ? pct(c.came.avg) : "—"}</span></b></div>`
+    + c.gates.map((g, n) => `<div class="kv cost"><span>${esc(g.setting)} <span class="chipv ${VERDICT[g.verdict][1]}">${VERDICT[g.verdict][0]}</span><span class="sub">kept back ${g.n}${g.big ? ` · ${g.big} made 3%+ its way` : ""}</span>
+        ${g.examples.map((x) => `<span class="ex" data-id="${esc(x.id)}" role="button">${esc(x.symbol)} <b class="${cls(x.ret)}">${pct(x.ret)}</b> ${esc(x.title.slice(0, 70))}</span>`).join("")}
+        ${g.verdict === "costing" && g.fix?.action ? `<button class="btn ghost small" data-act="cost-fix" data-n="${n}" style="margin-top:6px">${esc(g.fix.label)}</button>` : ""}</span>
+      <b class="num"><span class="${g.hit >= 0.5 ? "pos" : "neg"}">${p100(g.hit)}</span> <span class="sub">its way · ${pct(g.avg)}</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every alert that would have reached this phone on severity alone, walked through the settings you keep now (focus, snoozes and mutes left out), graded at the close. A setting that keeps holding back better alerts than you get is marked; one that holds back losers is working.</div>`;
 }
 // event risk: each holding's next report or event, in dollars on the position
 async function loadEventRisk() {
@@ -2033,9 +2069,10 @@ async function onAct(el) {
   else if (a === "lab") { lab[el.dataset.k] = s; store.set("ft_lab", JSON.stringify(lab)); loadLab(); }
   else if (a === "edge-pick") { Object.assign(lab, { catalyst: s, band: el.dataset.b, horizon: el.dataset.h, kind: "all", scope: "all", fades: "" }); store.set("ft_lab", JSON.stringify(lab)); await loadLab(); $("dLab")?.querySelector(".labhead")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
   else if (a === "lab-auto") { if (await deskEdit("autopilot_add", { catalyst: lab.catalyst, band: lab.band, min_sev: lab.sev, exit: lab.horizon })) { toast("🤖 Autopilot on: each new alert like this opens a paper call here", null, 6000); renderAutopilots(); } }
+  else if (a === "cost-fix") { const g = cost?.gates[+el.dataset.n]; if (g?.fix && await deskEdit(g.fix.action, g.fix.body)) { toast("Done: " + g.fix.label.toLowerCase()); loadCost(); loadActions(); } }
   else if (a === "act-do") { const i = acts?.items[+el.dataset.n]; if (i?.do && await deskEdit(i.do.action, i.do.body)) { toast("Done"); loadActions(); } }
   else if (a === "act-done") { const i = acts?.items[+el.dataset.n]; if (i && await deskEdit("act_done", { key: i.key })) loadActions(); }
-  else if (a === "act-reset") { e.preventDefault(); if (await deskEdit("act_reset")) loadActions(); }
+  else if (a === "act-reset") { if (await deskEdit("act_reset")) loadActions(); }
   else if (a === "act-open") { const i = acts?.items[+el.dataset.n]; if (i?.open) { if (location.hash === i.open) route(); else location.hash = i.open; } }
   else if (a === "ap-toggle") { if (await deskEdit("autopilot_toggle", { id: s })) renderAutopilots(); }
   else if (a === "ap-rm") { if (confirm("Stop and remove this autopilot? Its closed calls stay in your record.") && await deskEdit("autopilot_remove", { id: s })) renderAutopilots(); }
@@ -2459,7 +2496,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -2624,6 +2661,8 @@ const Palette = {
       ["Would I get it? (test my push settings)", "", openHealth],
       ["What's working today", "today's alerts by kind of news", () => { closeSheet(); go("watch"); setTimeout(() => $("workWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Room left", "today's alerts short of their typical move", () => { closeSheet(); go("watch"); setTimeout(() => $("roomWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
+      ["Odds model", "how well its numbers held up", () => { closeSheet(); go("desk"); setTimeout(() => $("dOdds")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
+      ["What my settings kept back", "graded beside what reached me", () => { closeSheet(); go("desk"); setTimeout(() => $("dCostWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Needs you", "everything that wants a decision now", () => { closeSheet(); go("desk"); setTimeout(() => $("dActWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Autopilots", "paper forward tests of your rules", () => { closeSheet(); go("desk"); setTimeout(() => $("dAutoWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Your devices", "link a phone or computer to this desk", () => { closeSheet(); go("desk"); setTimeout(() => $("dDevices")?.scrollIntoView({ block: "center", behavior: "smooth" }), 400); }],

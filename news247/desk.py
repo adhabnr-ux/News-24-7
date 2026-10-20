@@ -346,10 +346,13 @@ class Desk:
         b = self.block(device, alert, now)
         return b["text"] if b else None
 
-    def block(self, device: str, alert: Any, now: float | None = None) -> dict[str, Any] | None:
+    def block(
+        self, device: str, alert: Any, now: float | None = None, durable: bool = False
+    ) -> dict[str, Any] | None:
         """The first of this phone's settings that keeps this alert from pushing: {code, text, fix},
         where fix is the desk action (and body) that would let it through. The same checks, in the
-        same order, as `allows`."""
+        same order, as `allows`. ``durable`` skips the passing states (focus, snooze, a mute), for
+        judging past alerts by the settings a phone keeps."""
         p = self.profiles.get(device)
         if p is None:
             return None
@@ -399,7 +402,7 @@ class Desk:
                 "stock_push",
                 {"symbol": sym0, "level": "all"},
             )
-        if sev != "CRITICAL" and (p.get("focus_until") or 0) > t_now:
+        if not durable and sev != "CRITICAL" and (p.get("focus_until") or 0) > t_now:
             return out(
                 "focus",
                 "focus mode is on (only CRITICAL comes through)",
@@ -408,7 +411,7 @@ class Desk:
                 {"minutes": 0},
             )
         if sev != "CRITICAL":
-            if (p.get("snooze") or {}).get(cat, 0) > t_now:
+            if not durable and (p.get("snooze") or {}).get(cat, 0) > t_now:
                 return out(
                     "snooze",
                     f"{cat} alerts were snoozed",
@@ -420,7 +423,7 @@ class Desk:
             if dial != "all" and prefs.get("skip_fades") and (edge.get("base") or {}).get("fades"):
                 return out("fades", "alerts like this usually fade, and you skip those",
                            "Stop skipping fades", "prefs", {"skip_fades": False})  # fmt: skip
-        if self.all_muted(device, alert, now):
+        if not durable and self.all_muted(device, alert, now):
             tickers = alert.get("tickers") if isinstance(alert, dict) else getattr(alert, "tickers", None)
             sym = (tickers or [""])[0]
             return out(

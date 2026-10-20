@@ -704,3 +704,14 @@ body.light .palbox input, body.light .pi { color: #16213B; }
 .li.act .btn { flex: none; align-self: center; }
 .li.act .x { align-self: center; }
 #dRecord .now { color: var(--text); font-weight: 600; text-decoration: underline dotted; }
+
+/* the odds model and what your settings kept back */
+.base.odds { margin-bottom: 2px; }
+.calib { display: inline-flex; align-items: center; gap: 10px; }
+.calib .bar { position: relative; width: 84px; height: 14px; flex: none; }
+.calib .bar i { position: absolute; left: 0; top: 5px; height: 4px; border-radius: 2px; background: var(--faint); opacity: .55; }
+.calib .bar i.mark { width: 2px; top: 1px; height: 12px; margin-left: -1px; background: var(--gold); opacity: 1; }
+.chipv { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px; font-size: 11px; font-weight: 600; background: rgba(251, 246, 238, .08); }
+.chipv.neg { color: var(--down); } .chipv.pos { color: var(--up); } .chipv.faint { color: var(--faint); }
+.kv.cost .ex { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; cursor: pointer; }
+.kv.cost > span { display: flex; flex-direction: column; align-items: flex-start; }
