@@ -22,6 +22,11 @@ bootstrap: the same record gives the same range). A best pair whose range still 
 way's average is marked **unproven**: it may be the better way, but the record can't yet tell it
 from luck.
 
+A split (half at each of two exits) averages between its two legs, so it is never the best by
+average; what it buys is steadiness. When one keeps 80%+ of the best pair's average with at least a
+quarter less swing (standard deviation), it's the **smoother way**, and the playbook takes it, as two
+half-size paper calls with their own exits.
+
 Paper fills at the alert price are instant; a person's aren't. So a best pair that enters at the
 alert is also graded **5 minutes late**, from where the stock stood 5 minutes after the alert (the
 news clock's m5 checkpoint) to the same exit. When its edge is gone by then (positive at the alert,
@@ -48,10 +53,21 @@ if TYPE_CHECKING:
 
 MIN_N = 8
 RESAMPLES = 400
+KEEP = 0.8  # a smoother split keeps this much of the best pair's average...
+CALM = 0.75  # ...with at most this much of its swings
 DEFAULT = "alert|close"
 PAIRS = {"alert": ("h1", "close", "d1", "d5", "bracket"), "open": ("close", "d1", "d5"), "patient": ("close", "d1", "d5"),
          "leg2": ("close", "d1", "d5"), "turn": ("close", "d1", "d5"), "vol15": ("h1", "close", "d1", "d5")}  # fmt: skip
-NAMES = {f"{i}|{o}": f"{IN[i]}, out {OUT[o].lower()}" for i, outs in PAIRS.items() for o in outs}
+# scaling out: half at each of two exits (graded as the average of the two halves)
+SPLITS = {"h1+close": "half an hour in, half at the close", "close+d1": "half at the close, half the next day",
+          "h1+d1": "half an hour in, half the next day"}  # fmt: skip
+for _i, _outs in list(PAIRS.items()):
+    PAIRS[_i] = _outs + tuple(s for s in SPLITS if all(leg in _outs for leg in s.split("+")))
+NAMES = {
+    f"{i}|{o}": f"{IN[i]}, out {SPLITS[o] if o in SPLITS else OUT[o].lower()}"
+    for i, outs in PAIRS.items()
+    for o in outs
+}
 # alerts with no kind of news read get a playbook by what raised them
 KIND_LABELS = {"news": "Other news", "options": "Options flow", "confluence": "Confluence", "price": "Price moves",
                "chatter": "Chatter", "trend": "Trends", "narrative": "Narratives", "attention": "Attention"}  # fmt: skip
@@ -85,6 +101,10 @@ def combos(a: dict[str, Any]) -> dict[str, float]:
             if o == "bracket":
                 if "bracket" in ex:
                     out[f"{i}|{o}"] = ex["bracket"]
+            elif o in SPLITS:
+                legs = o.split("+")
+                if all(row.get(leg) is not None for leg in legs):
+                    out[f"{i}|{o}"] = round(sum(_from(sign, row[leg], mv) for leg in legs) / len(legs), 2)
             elif row.get(o) is not None:
                 out[f"{i}|{o}"] = round(_from(sign, row[o], mv), 2)
     return out
@@ -100,11 +120,15 @@ def late(a: dict[str, Any], minutes: str = "m5") -> dict[str, float]:
     sign, row, _ = got
     if row.get(minutes) is None:
         return {}
-    return {
+    out = {
         o: round(_from(sign, row[o], row[minutes]), 2)
         for o in PAIRS["alert"]
-        if o != "bracket" and row.get(o) is not None
+        if o not in ("bracket", *SPLITS) and row.get(o) is not None
     }
+    for o in SPLITS:  # half at each leg, 5 minutes late
+        if o in PAIRS["alert"] and all(leg in out for leg in o.split("+")):
+            out[o] = round(sum(out[leg] for leg in o.split("+")) / 2, 2)
+    return out
 
 
 def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
@@ -151,12 +175,43 @@ def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> 
         )
         out[kind] = {"kind": kind, "label": label_of(kind), "n": counts[kind],
                      "styles": rows, "best": best, "proven": proven, "holdout": check(dated[kind], DEFAULT, best)}  # fmt: skip
+        sm = smoother(best, rows, pairs)
+        if sm:  # nearly as good, a lot steadier: half at each of two exits
+            out[kind]["smooth"] = sm
         if best and best.startswith("alert|") and best != "alert|bracket":
             xs = (lates.get(kind) or {}).get(best.split("|")[1]) or []
             if len(xs) >= MIN_N:  # the same pair, 5 minutes late: does the edge survive a human's delay?
                 avg = round(sum(xs) / len(xs), 2)
                 out[kind]["late"] = {"n": len(xs), "avg": avg, "fast": rows[best]["avg"] > 0 >= avg}
     return out
+
+
+def smoother(best: str | None, rows: dict[str, Any], pairs: dict[str, list[float]]) -> dict[str, Any] | None:
+    """A split (half at each of two exits) with the same way in that keeps KEEP of the best pair's average
+    with at most CALM of its swings (standard deviation): the smoother way to take the same edge."""
+    if not best or "+" in best or rows[best]["avg"] <= 0 or len(pairs[best]) < 2:
+        return None
+    way_in = best.split("|")[0]
+    sd_best = st.pstdev(pairs[best])
+    if sd_best <= 0:
+        return None
+    pick = None
+    for o in SPLITS:
+        p = f"{way_in}|{o}"
+        xs = pairs.get(p) or []
+        if len(xs) < MIN_N or rows[p]["avg"] < KEEP * rows[best]["avg"]:
+            continue
+        sd = st.pstdev(xs)
+        if sd <= CALM * sd_best and (pick is None or rows[p]["avg"] > pick["avg"]):
+            pick = {
+                "pair": p,
+                "out": o,
+                "avg": rows[p]["avg"],
+                "n": len(xs),
+                "sd": round(sd, 2),
+                "best_sd": round(sd_best, 2),
+            }
+    return pick
 
 
 def ranged(xs: list[float], seed: str, draws: int = RESAMPLES) -> tuple[float, float]:
@@ -180,12 +235,41 @@ def combo_line(r: dict[str, Any] | None) -> str:
         head += f"; the plain way (at the alert, out at the close) {s[DEFAULT]['avg']:+.1f}%"
         if not r.get("proven"):
             head += ", inside that range: unproven"
+    sm = r.get("smooth")
+    if sm:
+        head += f"; smoother: {SPLITS[sm['out']]}, {sm['avg']:+.1f}% with {round((1 - sm['sd'] / sm['best_sd']) * 100)}% less swing"
     lt = r.get("late")
     if lt:
         head += f"; 5 minutes late {lt['avg']:+.1f}% ({lt['n']})" + (
             ": too fast to trade by hand" if lt["fast"] else ""
         )
     return head + "."
+
+
+def work(
+    engine: Engine, kind: str, pair: str, days: float = 180, now: float | None = None, limit: int = 60
+) -> dict[str, Any]:
+    """The alerts behind one kind's pair: each with that pair's result and the plain way's, newest first."""
+    from .catalysts import classify
+
+    now = now or time.time()
+    rows = []
+    for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
+        if a.get("kind") == "system":
+            continue
+        c = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)
+        if kind != "*" and key_of(a, c) != kind:
+            continue
+        got = combos(a)
+        if pair not in got or DEFAULT not in got:
+            continue
+        o = (a.get("edge") or {}).get("outcome") or {}
+        rows.append({"id": a["id"], "created": a["created"], "symbol": next(iter(o), ""), "title": (a.get("title") or "")[:120],
+                     "x": got[pair], "plain": got[DEFAULT]})  # fmt: skip
+    rows.sort(key=lambda r: -r["created"])
+    xs = [r["x"] for r in rows]
+    return {"kind": kind, "label": label_of(kind), "pair": pair, "name": NAMES.get(pair, pair), "n": len(rows),
+            "avg": round(sum(xs) / len(xs), 2) if xs else None, "rows": rows[:limit]}  # fmt: skip
 
 
 def board(rates: dict[str, Any]) -> dict[str, Any]:

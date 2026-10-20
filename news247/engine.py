@@ -2101,10 +2101,11 @@ class Engine:
                         "line": promise_line(pm),
                     }
                 kr = self.combo_rates.get(ck) or {}
-                if (
-                    kr.get("late") and kr.get("best") == cr["best"]
-                ):  # the same pair, 5 minutes late (combos.py)
+                same = kr.get("best") == cr["best"]
+                if kr.get("late") and same:  # the same pair, 5 minutes late (combos.py)
                     cr["late"] = kr["late"]
+                if kr.get("smooth") and same:  # the smoother split it takes instead (combos.py)
+                    cr["smooth"] = kr["smooth"]
                 # no way in and out made money on its kind here: the playbook passes
                 cr["pass"] = cr["styles"][cr["best"]]["avg"] <= 0
             from .thecall import the_call
@@ -2999,20 +3000,28 @@ class Engine:
                 from .stops_kind import stop_price
 
                 pb_stop = stop_price(plan["entry"], direction, sr["width"])
+        legs = exit_key.split("+")  # scaling out: one half-size paper call per leg (combos.py)
         try:
-            self.desk.apply(dev, "track_add", {"symbol": plan["symbol"], "direction": direction, "alert_id": alert["id"],
+            for leg_n, leg in enumerate(legs):
+                self.desk.apply(dev, "track_add", {"symbol": plan["symbol"], "direction": direction, "alert_id": alert["id"],
                                                "stop": plan["stop"] if levels else pb_stop, "target": plan["target"] if levels else None,
                                                "entry": plan["entry"], "note": f"#autopilot {rule['label']}"[:200]}, self.price_of)  # fmt: skip
+                t = p["tracked"][-1]
+                t["auto"], t["exit_at"] = rule["id"], exit_time(leg, now, self.calendar)
+                if len(legs) > 1:
+                    t["half"] = leg_n + 1  # one of two halves
+                    if t.get("shares"):
+                        t["shares"] = max(1, t["shares"] // 2)
+                if (
+                    rule.get("follow") == "playbook"
+                ):  # what the record promised, to grade it against (forward.py)
+                    from .forward import promise
+
+                    pb = promise(alert.get("edge") or {})
+                    if pb:
+                        t["pb"] = pb
         except ValueError:
             return 0
-        t = p["tracked"][-1]
-        t["auto"], t["exit_at"] = rule["id"], exit_time(exit_key, now, self.calendar)
-        if rule.get("follow") == "playbook":  # what the record promised, to grade it against (forward.py)
-            from .forward import promise
-
-            pb = promise(alert.get("edge") or {})
-            if pb:
-                t["pb"] = pb
         self.desk.save(dev)
         payload = {"id": f"ap-{t['id']}", "title": f"🤖 Autopilot: {direction} {plan['symbol']} at ${plan['entry']:,.2f}{how}",
                    "body": f"{alert.get('title', '')[:120]}\n" + (f"Stop ${t['stop']:,.2f}" if t.get("stop") else "No stop")

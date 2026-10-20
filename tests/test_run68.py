@@ -126,4 +126,4 @@ def test_an_unproven_pair(tmp_path):
     )
     from news247.combos import combo_line
 
-    assert combo_line(r).endswith("inside that range: unproven.")
+    assert "inside that range: unproven" in combo_line(r)

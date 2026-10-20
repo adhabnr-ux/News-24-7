@@ -143,6 +143,18 @@ def state(a: dict[str, Any], live: float | None, now: float, calendar: Any = Non
             out["pnl"], out["status"], out["why"] = round(target, 2), "out", "at the plan's target"
         elif row.get("close") is not None:
             exit_move = row["close"]
+    elif "+" in pout:  # scaling out: each half its own way out
+        legs = pout.split("+")
+        halves = [
+            _from(sign, row[leg], mv)
+            if row.get(leg) is not None
+            else (_from(sign, live, mv) if live is not None else None)
+            for leg in legs
+        ]
+        if all(h is not None for h in halves):
+            done = all(row.get(leg) is not None for leg in legs)
+            out["pnl"], out["status"] = round(sum(halves) / len(halves), 2), "out" if done else "in"  # type: ignore[arg-type]
+            out["why"] = "" if done else ("half out" if any(row.get(leg) is not None for leg in legs) else "")
     elif (
         pout in ("h1", "close", "d1", "d5", "bracket")
         and row.get("close" if pout == "bracket" else pout) is not None

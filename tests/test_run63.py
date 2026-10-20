@@ -35,7 +35,7 @@ def test_one_alert_every_pair():
     assert "leg2|h1" not in c and "leg2|bracket" not in c  # a second leg can't be sold an hour in
     assert c["open|d5"] == round((1.0 / 1.005 - 1) * 100, 2)
     short = {"edge": {"refs": {"ACME": 100.0}, "outcome": {"ACME": {"sign": -1, "close": -2.0, "d1": -4.0}}}}
-    assert combos(short) == {"alert|close": 2.0, "alert|d1": 4.0}
+    assert combos(short) == {"alert|close": 2.0, "alert|d1": 4.0, "alert|close+d1": 3.0}  # and half at each
     assert combos({"edge": {}}) == {}
 
 

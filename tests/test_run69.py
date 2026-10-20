@@ -25,7 +25,8 @@ def test_one_alert_five_minutes_late():
             "outcome": {"ACME": {"sign": 1, "m5": 2.0, "close": 3.0, "d1": 1.0}},
         }
     }
-    assert late(a) == {"close": round((1.03 / 1.02 - 1) * 100, 2), "d1": round((1.01 / 1.02 - 1) * 100, 2)}
+    c, d1 = round((1.03 / 1.02 - 1) * 100, 2), round((1.01 / 1.02 - 1) * 100, 2)
+    assert late(a) == {"close": c, "d1": d1, "close+d1": round((c + d1) / 2, 2)}
     assert late({"edge": {"outcome": {"ACME": {"sign": 1, "close": 3.0}}}}) == {}  # no 5-minute print
 
 

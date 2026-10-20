@@ -159,6 +159,8 @@ def waits_for_open(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
 
 
 def exit_time(exit_: str, ts: float, calendar: Any = None) -> float:
+    if "+" in exit_:  # scaling out: the first leg's time (each half carries its own)
+        exit_ = exit_.split("+")[0]
     if exit_ == "h1":
         return ts + 3600.0
     first = session_edge("close", ts, calendar)
@@ -200,10 +202,13 @@ def playbook_out(alert: dict[str, Any]) -> str | None:
     """The way out the playbook takes: the graded pair's (combos.py), else its kind's best exit."""
     e = alert.get("edge") or {}
     out = (e.get("combo_rec") or {}).get("out") or (e.get("exit_rec") or {}).get("best")
+    sm = (e.get("combo_rec") or {}).get("smooth")
     if (e.get("persona") or {}).get("trait") == "fades_day" and out in ("close", "d1", "d5"):
         # a stock whose first-hour moves mostly don't last the day: take the first hour when the way
         # in allows it, else don't hold past the close (persona.py)
         return "h1" if playbook_in(alert) in ("alert", "vol15") else "close"
+    if sm and out and sm["pair"].split("|")[0] == ((e.get("combo_rec") or {}).get("in")):
+        return sm["out"]  # nearly as good, a lot steadier: half at each exit (combos.py)
     return out
 
 
@@ -215,10 +220,11 @@ def playbook_exit(alert: dict[str, Any]) -> tuple[str, bool]:
 
 def opened_today(p: dict[str, Any], rule_id: str, now: float) -> int:
     day0 = datetime.fromtimestamp(now, ET).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    # a call scaled out in two halves counts once: its second half isn't counted
     return sum(
         1
         for t in [*p.get("tracked", []), *p.get("closed", [])]
-        if t.get("auto") == rule_id and t.get("ts", 0) >= day0
+        if t.get("auto") == rule_id and t.get("ts", 0) >= day0 and t.get("half", 1) == 1
     )
 
 

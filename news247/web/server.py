@@ -197,6 +197,7 @@ class WebServer:
         app.router.add_get("/api/exits-kind", self.api_exits_kind)
         app.router.add_get("/api/stops-kind", self.api_stops_kind)
         app.router.add_get("/api/combos", self.api_combos)
+        app.router.add_get("/api/combos/work", self.api_combo_work)
         app.router.add_get("/api/promises", self.api_promises)
         app.router.add_get("/api/playbook-today", self.api_playbook_today)
         app.router.add_get("/api/you-vs-playbook", self.api_you_vs_playbook)
@@ -1337,6 +1338,15 @@ class WebServer:
         from ..promises import board
 
         return _json(board(self.engine.promise_rates))
+
+    async def api_combo_work(self, request: web.Request) -> web.Response:
+        """The alerts behind one kind's pair (combos.py): ?kind=contract&pair=alert|d1."""
+        from ..combos import NAMES, work
+
+        kind, pair = request.query.get("kind", "*")[:60], request.query.get("pair", "")[:40]
+        if pair not in NAMES:
+            return web.json_response({"error": "no such pair"}, status=400)
+        return _json(work(self.engine, kind, pair))
 
     async def api_combos(self, request: web.Request) -> web.Response:
         """Every way in paired with every way out per kind of news (combos.py)."""
