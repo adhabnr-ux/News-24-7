@@ -209,7 +209,7 @@ def board(engine: Engine, now: float | None = None) -> dict[str, Any]:
         cr = e.get("combo_rec") or {}
         rows.append({**s, "id": a["id"], "title": (a.get("title") or "")[:140], "created": a["created"],
                      "kind": cr.get("label") or (e.get("entry_rec") or {}).get("label") or (e.get("exit_rec") or {}).get("label"),
-                     "pair": NAMES.get(f"{s['in']}|{s['out']}", f"{s['in']}, {s['out']}"), "held": cr.get("held")})  # fmt: skip
+                     "pair": NAMES.get(f"{s['in']}|{s['out']}", f"{s['in']}, {s['out']}"), "held": cr.get("held"), "fresh": fresh})  # fmt: skip
     rows.sort(key=lambda r: -r["created"])
     done = [r for r in rows if r.get("pnl") is not None]
     both = [r for r in done if r.get("plain") is not None]

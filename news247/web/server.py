@@ -1362,9 +1362,11 @@ class WebServer:
 
     async def api_playbook_today(self, request: web.Request) -> web.Response:
         """What the playbook is doing on every live alert, on paper (today.py)."""
+        from ..journal import day
         from ..today import board
 
-        return _json(board(self.engine))
+        b = board(self.engine)
+        return _json({**b, "day": day(b)})
 
     async def api_you_vs_playbook(self, request: web.Request) -> web.Response:
         """This phone's paper calls against the playbook on the same alerts (youvs.py)."""

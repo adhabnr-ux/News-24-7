@@ -2084,6 +2084,11 @@ class Engine:
                 )
                 cr["in"], cr["out"] = cr["best"].split("|")
                 cr["name"] = COMBO_NAMES.get(cr["best"], cr["best"])  # readable without the board loaded
+                kr = self.combo_rates.get(ek) or {}
+                if (
+                    kr.get("late") and kr.get("best") == cr["best"]
+                ):  # the same pair, 5 minutes late (combos.py)
+                    cr["late"] = kr["late"]
                 # no way in and out made money on its kind here: the playbook passes
                 cr["pass"] = cr["styles"][cr["best"]]["avg"] <= 0
             from .thecall import the_call
@@ -2674,6 +2679,10 @@ class Engine:
                     from .runup import send_runups
 
                     await send_runups(self, now)  # ten sessions to an event on your stock
+                with contextlib.suppress(Exception):
+                    from .journal import send_day
+
+                    await send_day(self, now)  # 16:10 ET: the playbook's day, written up (journal.py)
                 with contextlib.suppress(Exception):
                     from .pbpush import send_moves
 

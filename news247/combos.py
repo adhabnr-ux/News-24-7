@@ -22,6 +22,12 @@ bootstrap: the same record gives the same range). A best pair whose range still 
 way's average is marked **unproven**: it may be the better way, but the record can't yet tell it
 from luck.
 
+Paper fills at the alert price are instant; a person's aren't. So a best pair that enters at the
+alert is also graded **5 minutes late**, from where the stock stood 5 minutes after the alert (the
+news clock's m5 checkpoint) to the same exit. When its edge is gone by then (positive at the alert,
+0% or less 5 minutes late), the kind is marked **too fast to trade by hand**: the paper autopilot
+can take it, a person reading the push mostly can't.
+
 History, not a forecast.
 """
 
@@ -66,6 +72,23 @@ def combos(a: dict[str, Any]) -> dict[str, float]:
     return out
 
 
+def late(a: dict[str, Any], minutes: str = "m5") -> dict[str, float]:
+    """{out: move from where the stock stood ``minutes`` after the alert to each way out, its way, %}:
+    the alert pairs as someone 5 minutes late would have traded them (no bracket: its levels were set
+    from the alert price)."""
+    got = entry_moves(a)
+    if not got:
+        return {}
+    sign, row, _ = got
+    if row.get(minutes) is None:
+        return {}
+    return {
+        o: round(_from(sign, row[o], row[minutes]), 2)
+        for o in PAIRS["alert"]
+        if o != "bracket" and row.get(o) is not None
+    }
+
+
 def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:
     """{kind: {"kind", "label", "n", "styles": {"in|out": {"n", "hit", "median", "avg"}}, "best", "holdout"}}."""
     from .catalysts import LABELS, classify
@@ -74,6 +97,7 @@ def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> 
     now = now or time.time()
     pools: dict[str, dict[str, list[float]]] = {}
     dated: dict[str, dict[str, list[tuple[float, float]]]] = {}
+    lates: dict[str, dict[str, list[float]]] = {}  # the alert pairs, 5 minutes late
     counts: dict[str, int] = {}
     for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
         if a.get("kind") == "system":
@@ -81,12 +105,15 @@ def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> 
         got = combos(a)
         if DEFAULT not in got:
             continue
+        lt = late(a)
         c = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)
         for kind in ("*", c["key"]) if c else ("*",):
             counts[kind] = counts.get(kind, 0) + 1
             for pair, x in got.items():
                 pools.setdefault(kind, {}).setdefault(pair, []).append(x)
                 dated.setdefault(kind, {}).setdefault(pair, []).append((a["created"], x))
+            for o, x in lt.items():
+                lates.setdefault(kind, {}).setdefault(o, []).append(x)
     out = {}
     for kind, pairs in pools.items():
         if counts[kind] < MIN_N:
@@ -106,6 +133,11 @@ def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> 
         )
         out[kind] = {"kind": kind, "label": "Any news" if kind == "*" else LABELS.get(kind, kind), "n": counts[kind],
                      "styles": rows, "best": best, "proven": proven, "holdout": check(dated[kind], DEFAULT, best)}  # fmt: skip
+        if best and best.startswith("alert|") and best != "alert|bracket":
+            xs = (lates.get(kind) or {}).get(best.split("|")[1]) or []
+            if len(xs) >= MIN_N:  # the same pair, 5 minutes late: does the edge survive a human's delay?
+                avg = round(sum(xs) / len(xs), 2)
+                out[kind]["late"] = {"n": len(xs), "avg": avg, "fast": rows[best]["avg"] > 0 >= avg}
     return out
 
 
@@ -130,6 +162,11 @@ def combo_line(r: dict[str, Any] | None) -> str:
         head += f"; the plain way (at the alert, out at the close) {s[DEFAULT]['avg']:+.1f}%"
         if not r.get("proven"):
             head += ", inside that range: unproven"
+    lt = r.get("late")
+    if lt:
+        head += f"; 5 minutes late {lt['avg']:+.1f}% ({lt['n']})" + (
+            ": too fast to trade by hand" if lt["fast"] else ""
+        )
     return head + "."
 
 
