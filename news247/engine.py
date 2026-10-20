@@ -269,9 +269,10 @@ class Engine:
         self.pair_rates: dict[str, Any] = {}  # who follows whose news, per pair (peerlearn.py)
         self.wait_rates: dict[str, Any] = {}  # did waiting for the open or a pullback pay (waits.py)
         self.float_rates: dict[str, Any] = {}  # news by float and short interest, graded (floatshort.py)
-        self.dilution_rates: dict[
-            str, Any
-        ] = {}  # news on stocks selling shares or with a shelf (dilution.py)
+        # news on stocks selling shares or with a shelf (dilution.py)
+        self.dilution_rates: dict[str, Any] = {}
+        self.catchup_rates: dict[str, Any] = {}  # what's left after the mainstream catches up (catchup.py)
+        self.halt_rates: dict[str, Any] = {}  # what stocks did after a halt resumed (haltrec.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -461,6 +462,11 @@ class Engine:
             ):
                 self._spawn(self._target_push(item))
             if (item.extra.get("halt_code") or item.extra.get("halt_resume")) and item.tickers:
+                with contextlib.suppress(Exception):
+                    from .haltrec import on_halt, on_resume
+
+                    # the halt's price and direction, or when it trades again: graded after (haltrec.py)
+                    (on_resume if item.extra.get("halt_resume") else on_halt)(self, item)
                 self._spawn(self._halt_watch(item, analysis))
 
         if self.llm and analysis.score >= self.cfg.llm.min_score and not self.llm.busy:
@@ -2235,8 +2241,24 @@ class Engine:
         lead = item.detected - alerted_at
         if not alerted_at or lead < 5 or not self.storage.add_lead(story.alert_id, item.source, lead):
             return
-        patch = {"lead": {"source": item.source, "lead_s": round(lead, 1), "at": item.detected}}
+        patch: dict[str, Any] = {
+            "lead": {"source": item.source, "lead_s": round(lead, 1), "at": item.detected}
+        }
+        a = self.storage.get_alert(story.alert_id) or {}
+        e = a.get("edge") or {}
+        sym = next(iter(e.get("outcome") or e.get("refs") or {}), None)
+        q = self.price_of(sym, 900) if sym else None
+        if q and q[1]:  # the price at the catch-up: what the head start captured, what's left (catchup.py)
+            patch["lead"]["px"] = q[1]
+            ref = (e.get("refs") or {}).get(sym)
+            dirn = {"up": 1, "down": -1}.get(str((a.get("analysis") or {}).get("direction")), 0)
+            if ref and dirn:
+                patch["lead"]["its"] = round(dirn * (q[1] / float(ref) - 1) * 100, 2)
         if self.storage.update_alert_edge(story.alert_id, patch) is not None:
+            if patch["lead"].get("px"):
+                from .catchup import send_catchup
+
+                self._spawn(send_catchup(self, story.alert_id))
             self._broadcast("edge", {"id": story.alert_id, **patch})
             log.info(
                 "edge: %s carried story %s %s after Foretape", item.source, story.alert_id, fmt_age(lead)
@@ -2527,6 +2549,10 @@ class Engine:
                     from .peerlearn import grade as peers_grade
 
                     peers_grade(self, now)
+                with contextlib.suppress(Exception):
+                    from .haltrec import grade as halts_grade
+
+                    halts_grade(self, now)  # 5 and 30 minutes after a resumption, and the close
                 with contextlib.suppress(Exception):
                     from .waits import send_waits
 
@@ -3309,7 +3335,14 @@ class Engine:
             if not self.desk.allows(device, probe):
                 continue
             title = item.title[:160] if resume else f"⏸ {item.title[:160]}"
-            payload = {"id": f"halt-{item.uid[-20:]}", "title": title, "body": (item.summary or "")[:300],
+            body = item.summary or ""
+            if resume:
+                with contextlib.suppress(Exception):
+                    from .haltrec import resume_line
+
+                    rl = resume_line(self, item.tickers[0])
+                    body = f"{body}\n{rl}." if rl else body
+            payload = {"id": f"halt-{item.uid[-20:]}", "title": title, "body": body[:400],
                        "severity": "HIGH", "kind": "system", "tickers": item.tickers[:2], "url": item.url,
                        "tag": f"halt-{item.tickers[0]}", "ts": time.time(), "open": f"/app/#t={item.tickers[0]}"}  # fmt: skip
             if await self._to_device(device, payload):
@@ -4061,6 +4094,12 @@ class Engine:
         from .dilution import dilution_rates
 
         self.dilution_rates = dilution_rates(self, 365, now)
+        from .catchup import catchup_rates
+
+        self.catchup_rates = catchup_rates(self, 180, now)
+        from .haltrec import halt_rates
+
+        self.halt_rates = halt_rates(self, 180, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

@@ -188,6 +188,8 @@ class WebServer:
         app.router.add_post("/api/line/kind", self.api_line_kind)
         app.router.add_get("/api/float", self.api_float)
         app.router.add_get("/api/dilution", self.api_dilution)
+        app.router.add_get("/api/catchup", self.api_catchup)
+        app.router.add_get("/api/halts/record", self.api_halt_record)
         app.router.add_get("/api/changes", self.api_changes)
         app.router.add_get("/api/macro", self.api_macro)
         app.router.add_get("/api/vol", self.api_vol)
@@ -1238,6 +1240,18 @@ class WebServer:
         from ..changes import changes
 
         return _json(changes(self.engine, self._need_device(request)))
+
+    async def api_catchup(self, request: web.Request) -> web.Response:
+        """What the head start captured and what's left after the mainstream catches up (catchup.py)."""
+        from ..catchup import board
+
+        return _json(board(self.engine.catchup_rates))
+
+    async def api_halt_record(self, request: web.Request) -> web.Response:
+        """What stocks did after a halt resumed, by halt code and direction (haltrec.py)."""
+        from ..haltrec import board
+
+        return _json(board(self.engine.halt_rates))
 
     async def api_advice(self, request: web.Request) -> web.Response:
         """The setting changes the records back for this phone, ranked, each one tap from applied (advice.py)."""

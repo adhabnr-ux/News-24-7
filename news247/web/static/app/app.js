@@ -796,7 +796,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -972,7 +972,7 @@ async function openSheet(id) {
     a.kind === "news" && `<h4>The edge</h4><div class="panel glass">
       ${lag != null ? `<div class="kv"><span>Caught after it was posted</span><b class="num">${dur(lag)}</b></div>` : ""}
       <div class="kv"><span>First seen on</span><b>${esc(it.source || "—")}</b></div>
-      <div class="kv"><span>Mainstream caught up</span><b class="num">${e.lead ? `${esc(outlet(e.lead.source))}, ${dur(e.lead.lead_s)} later` : "not yet"}</b></div></div>`,
+      <div class="kv"><span>Mainstream caught up</span><b class="num">${e.lead ? `${esc(outlet(e.lead.source))}, ${dur(e.lead.lead_s)} later${e.lead.its != null ? ` <span class="sub">at ${pct(e.lead.its)} its way</span>` : ""}` : "not yet"}</b></div></div>`,
     (a.story_items || []).length >= 2 ? `<h4>The story</h4><div class="tl">${a.story_items.map((x, i) => `<div class="li"><div class="grow"><div class="sub">${i === 0 ? "first" : "+" + dur(x.detected - a.story_items[0].detected)} · ${esc(outlet(x.source))}${x.score != null ? ` · score ${Math.round(x.score)}` : ""}</div>${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener" style="font-weight:600">${esc(x.title)}</a>` : `<b>${esc(x.title)}</b>`}</div></div>`).join("")}</div>`
       : tl ? `<h4>Who carried it</h4><div class="tl">${tl}</div>` : "",
     `<div id="similar"></div>`,
@@ -1172,6 +1172,28 @@ function kindLines(r, cell) {
     + ks.slice(0, 10).map((k) => `<div class="kv"><span>${esc(k.label)} <span class="sub">line ${k.line}${k.offset ? ` (${k.offset > 0 ? "+" : ""}${k.offset})` : ""}</span> <span class="chipv ${KL_TAG[k.verdict][1]}">${KL_TAG[k.verdict][0]}</span>${k.text ? `<div class="sub">${esc(k.text)}</div>` : ""}
       ${k.verdict === "lower" || k.verdict === "raise" || k.offset ? `<div class="row" style="padding:6px 0 2px">${k.verdict === "lower" || k.verdict === "raise" ? `<button class="btn ghost small" data-act="kline-set" data-s="${esc(k.kind)}" data-n="${k.to - r.line}">${k.verdict === "lower" ? "Lower" : "Raise"} to ${k.to}</button>` : ""}${k.offset ? `<button class="btn ghost small" data-act="kline-set" data-s="${esc(k.kind)}" data-n="0">Back to ${r.line}</button>` : ""}</div>` : ""}</span><b class="num">${cell(k.under)}<br>${cell(k.over)}</b></div>`).join("")
     + `<div class="sub" style="padding:2px 0 8px">A kind's line moves 5 points at a time, at most 10 from the main line: lower where its headlines just under the line ran like its alerts just over it, higher where its alerts just over it lost (40% or less, negative median). Headlines are read against their kind's line when they arrive.</div>`;
+}
+// the mainstream catch-up (Watch): what the head start captured, and what's left after it
+async function loadCatchup() {
+  let r;
+  try { r = await api("/api/catchup"); } catch (_) { return; }
+  $("cuWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const row = (x) => `<div class="kv"><span>${esc(x.label)}${x.captured != null ? ` <span class="sub">${Math.round(x.captured * 100)}% of the winners' day before it</span>` : ""}</span><b class="num"><span class="${x.after.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.after.hit * 100)}%</span> <span class="sub">${pct(x.after.median)} · ${x.n}</span></b></div>`;
+  $("cuBoard").innerHTML = `<div class="kv head"><span>When the mainstream caught up</span><b>went further by the close</b></div>` + r.rows.map(row).join("")
+    + (r.kinds.length ? `<div class="kv head"><span>By kind of news</span><b></b></div>` + r.kinds.map(row).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">When CNBC, Reuters, Bloomberg, the WSJ and the like carry a story Foretape already alerted on, the stock's price is noted: the day splits into the head start and what came after. A phone whose stock it is gets a push with where it stands and this record (Settings → Mainstream caught up).</div>`;
+}
+// halts, graded (Watch): what stocks did after trading resumed
+async function loadHaltRecord() {
+  let r;
+  try { r = await api("/api/halts/record"); } catch (_) { return; }
+  $("hrWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const cell = (x) => x ? `<span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span>` : `<span class="sub">—</span>`;
+  $("hrBoard").innerHTML = `<div class="kv head"><span>Kept going, from the halt price</span><b>5 min · 30 min · close</b></div>`
+    + r.rows.map((x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num">${cell(x.m5)}<br>${cell(x.m30)}<br>${cell(x.close)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Every halt notes its stock's price and the day's move into it; from the resumption it's graded 5 and 30 minutes later and at the close, "kept going" meaning the way it was going. A resumption push carries its halt's record (${r.need}+ graded).</div>`;
 }
 // dilution risk (Watch): news on stocks selling shares off a shelf, with one on file, or neither
 async function loadDilution() {
@@ -1561,6 +1583,7 @@ function renderDesk() {
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Event day<div class="sub">the morning of an FDA decision or readout on your stock: both outcomes as they've traded here, what options price, what you hold</div></span><b><button class="btn ghost small${pr.event_day !== false ? " sel" : ""}" data-act="flag" data-s="event_day">${pr.event_day !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Into the close<div class="sub">15:40 ET: each open call, and whether alerts that stood the same at the close went on by the next one: hold or close, with report risk</div></span><b><button class="btn ghost small${pr.overnight !== false ? " sel" : ""}" data-act="flag" data-s="overnight">${pr.overnight !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Mainstream caught up<div class="sub">when CNBC, Reuters or the like carry a story on your stock that Foretape alerted on first: where it stands, and how much stories like it went further after the catch-up</div></span><b><button class="btn ghost small${pr.catchup !== false ? " sel" : ""}" data-act="flag" data-s="catchup">${pr.catchup !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The wait is over<div class="sub">when the call said wait: at the open, where it opened and how news like it went on from there; at the patient entry, when the price comes back to it</div></span><b><button class="btn ghost small${pr.waits !== false ? " sel" : ""}" data-act="flag" data-s="waits">${pr.waits !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Drift check<div class="sub">five sessions after news on your stock: whether its kind of news kept drifting for a month here, or gave it back</div></span><b><button class="btn ghost small${pr.drift !== false ? " sel" : ""}" data-act="flag" data-s="drift">${pr.drift !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Confirmations<div class="sub">an alert on your stock holding up an hour in, when alerts like it finished their way 80%+ of the time</div></span><b><button class="btn ghost small${pr.confirm !== false ? " sel" : ""}" data-act="flag" data-s="confirm">${pr.confirm !== false ? "On" : "Off"}</button></b></div>

@@ -118,7 +118,7 @@ def wait_line(r: dict[str, Any] | None) -> str:
 # --------------------------------------------------------------------------- the pushes
 
 
-def _devices(engine: Engine, a: dict[str, Any], sym: str) -> set[str]:
+def _devices(engine: Engine, a: dict[str, Any], sym: str, pref: str = "waits") -> set[str]:
     """Phones the alert reached, and phones that watch, hold or have a call on its stock."""
     wp = engine.webpush
     got = {d for d, q in (getattr(wp, "log", None) or {}).items()
@@ -127,7 +127,7 @@ def _devices(engine: Engine, a: dict[str, Any], sym: str) -> set[str]:
     got |= {
         d for d, p in engine.desk.profiles.items() if any(t["symbol"] == sym for t in p.get("tracked") or [])
     }
-    return {d for d in got if ((engine.desk.profiles.get(d) or {}).get("prefs") or {}).get("waits", True)}
+    return {d for d in got if ((engine.desk.profiles.get(d) or {}).get("prefs") or {}).get(pref, True)}
 
 
 def _session(now: float, holidays: set[str]) -> tuple[float, float] | None:

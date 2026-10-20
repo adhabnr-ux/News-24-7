@@ -142,6 +142,7 @@ def default_profile() -> dict[str, Any]:
             "drift": True,  # five sessions after news on your stock: whether its kind kept drifting for a month
             "overnight": True,  # 15:40 ET: hold each open call into tomorrow, or close it (overnight.py)
             "waits": True,  # the wait is over: at the open, at the patient entry (waits.py)
+            "catchup": True,  # the mainstream caught up on a story on your stock: what's left (catchup.py)
         },
         "price_alerts": [],
         "tracked": [],
@@ -731,6 +732,7 @@ class Desk:
                 "drift",
                 "overnight",
                 "waits",
+                "catchup",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1496,6 +1498,7 @@ class Desk:
                     "drift",
                     "overnight",
                     "waits",
+                    "catchup",
                     "watch_push",
                     "min_sev",
                     "digest",
