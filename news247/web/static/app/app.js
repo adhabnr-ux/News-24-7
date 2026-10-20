@@ -571,6 +571,7 @@ async function stakesHTML() {
     <div class="sub" style="padding:4px 0 12px">Each branch is this server's graded alerts of that kind of news at the stock's size (any size when too few), median move by the close, as the stock moved. History, not a forecast of the outcome or its size.</div></div>`;
 }
 async function loadCalendar() {
+  loadRunups();
   const [c, ew, st] = await Promise.all([api("/api/calendar?days=60"), loadEarningsWeek(), stakesHTML()]);
   const byDay = {};
   c.events.forEach((e) => (byDay[e.date] = byDay[e.date] || []).push(e));
@@ -1211,6 +1212,17 @@ async function loadRvol() {
     + (r.kinds.length ? `<div class="kv head"><span>By kind of news</span><b></b></div>` + r.kinds.map(row).join("") : "")
     + `<div class="sub" style="padding:4px 0 12px">Each alert notes its stock's volume against its normal for the time of day when it goes out and 15 minutes in. When the band 15 minutes in has a clear record (60%+ or 40%-, ${r.need}+ graded), phones with the stock get a push: confirmed by volume, or no volume behind it (Settings → Volume confirmation). The first read's record counts in the call.</div>`;
 }
+// into the event (Calendar): the run-up before FDA decisions, readouts and panels
+async function loadRunups() {
+  let r;
+  try { r = await api("/api/runups"); } catch (_) { return; }
+  $("ruWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const cell = (x) => `<span class="${x.median > 0 ? "pos" : "neg"}">${pct(x.median)}</span> <span class="sub">up ${Math.round(x.up * 100)}%</span>`;
+  $("ruBoard").innerHTML = `<div class="kv head"><span>Event, size</span><b>${r.sessions} sessions before · the event · holding through adds</b></div>`
+    + r.rows.map((x) => `<div class="kv"><span>${esc(x.label)} <span class="sub">${x.n}</span></span><b class="num">${cell(x.run)}<br>${cell(x.on)}<br>${cell(x.extra)}</b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Each FDA decision, readout and panel on the calendar is graded two days after, from its stock's daily closes: the ${r.sessions} sessions before it, the event day itself, and what holding through added over selling the session before. Ten sessions before an event on your stock, a push carries this record (Settings → Into the event).</div>`;
+}
 // second legs (Watch): new highs well after the news, graded from the breakout to the close
 async function loadLegs() {
   let r;
@@ -1219,6 +1231,7 @@ async function loadLegs() {
   if (!r.rows.length) return;
   $("legBoard").innerHTML = `<div class="kv head"><span>From the breakout</span><b>went on by the close</b></div>`
     + r.rows.map((x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span></b></div>`).join("")
+    + `<div class="row" style="padding:8px 0 4px"><button class="btn ghost small" data-act="follow-signal" data-s="leg2">🤖 Follow second legs on paper</button></div>`
     + `<div class="sub" style="padding:4px 0 12px">A second leg is a news stock trading at a new day's high (its way) an hour or more after the alert, 2%+ from the alert price, after 30+ minutes without one. Phones that got the alert, or watch, hold or have a call on the stock, get a push (Settings → Second legs).</div>`;
 }
 // market-wide news by theme (Watch): which ETFs moved after a tariff, Fed, oil or war headline
@@ -1630,6 +1643,7 @@ function renderDesk() {
     <div class="kv"><span>Managing your calls<div class="sub">nudges on open paper calls: breakeven at +1R, a gain given back, dead money, a report while you hold it</div></span><b><button class="btn ghost small${pr.manage !== false ? " sel" : ""}" data-act="flag" data-s="manage">${pr.manage !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Event day<div class="sub">the morning of an FDA decision or readout on your stock: both outcomes as they've traded here, what options price, what you hold</div></span><b><button class="btn ghost small${pr.event_day !== false ? " sel" : ""}" data-act="flag" data-s="event_day">${pr.event_day !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Into the close<div class="sub">15:40 ET: each open call, and whether alerts that stood the same at the close went on by the next one: hold or close, with report risk</div></span><b><button class="btn ghost small${pr.overnight !== false ? " sel" : ""}" data-act="flag" data-s="overnight">${pr.overnight !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Into the event<div class="sub">ten sessions before an FDA decision, readout or panel on your stock: how stocks ran up into events like it here, and what holding through added</div></span><b><button class="btn ghost small${pr.runup !== false ? " sel" : ""}" data-act="flag" data-s="runup">${pr.runup !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>The call, live<div class="sub">the call on an alert you got or a stock you're tracking changed with what the day graded live: volume 15 minutes in, the mainstream catch-up, a second leg</div></span><b><button class="btn ghost small${pr.callnow !== false ? " sel" : ""}" data-act="flag" data-s="callnow">${pr.callnow !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Volume confirmation<div class="sub">15 minutes after news on your stock: confirmed by volume, or no volume behind it, when news on that much volume has a clear record here</div></span><b><button class="btn ghost small${pr.volconf !== false ? " sel" : ""}" data-act="flag" data-s="volconf">${pr.volconf !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Your book on market-wide news<div class="sub">a tariff, Fed, oil or war headline: what headlines like it meant for your holdings, by their sectors' records, when it's 0.3%+ of the book</div></span><b><button class="btn ghost small${pr.bookmacro !== false ? " sel" : ""}" data-act="flag" data-s="bookmacro">${pr.bookmacro !== false ? "On" : "Off"}</button></b></div>
@@ -1981,6 +1995,7 @@ function turnsBlock(ts) {
   if (!ts || !ts.length) return "";
   return `<div class="kv head"><span>Turned during the day</span><b>from the turn to the close</b></div>`
     + ts.map((x) => `<div class="kv"><span>${x.icon} Turned to ${esc(x.label.toLowerCase())}</span><b class="num"><span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span></b></div>`).join("")
+    + `<div class="row" style="padding:6px 0 2px"><button class="btn ghost small" data-act="follow-signal" data-s="turn">🤖 Follow the call's turns to act on paper</button></div>`
     + `<div class="sub" style="padding:2px 0 8px">The call re-reads itself every minute with what the day has graded live (volume 15 minutes in, the mainstream catch-up, a second leg). A change is stamped on its alert and pushed to phones tracking a call on the stock or that got the alert (Settings → The call, live).</div>`;
 }
 // did waiting pay? each "wait" call graded against acting at the alert price, by the close (waits.py)
@@ -2755,6 +2770,7 @@ async function onAct(el) {
       toast(`Done: ${x.title}`); loadAdvice(); loadChanges();
     } catch (err) { toast(String(err.message || err)); }
   }
+  else if (a === "follow-signal") { if (await deskEdit("autopilot_add", { follow: s, min_sev: "MEDIUM", exit: "close" })) toast(s === "leg2" ? "Autopilot on: second legs, in at the breakout, out at the close (paper)" : "Autopilot on: the call's turns to act, in at the turn, out at the close (paper)"); }
   else if (a === "change-undo") { const c = changesR?.[+el.dataset.n]; if (!c?.undo) return; try { if (c.undo.api) await api(c.undo.api, { method: "POST", body: JSON.stringify(c.undo.body) }); else if (!(await deskEdit(c.undo.action, c.undo.body))) return; toast(`Undone: ${c.what}`); loadChanges(); loadLine(); } catch (err) { toast(String(err.message || err)); } }
   else if (a === "advice-skip") { const x = adviceR?.items?.[+el.dataset.n]; if (x && await deskEdit("advice_dismiss", { key: x.key })) loadAdvice(); }
   else if (a === "bars-fill") { toast("Reading the exchange's bars…"); try { const r = await api("/api/bars/fill", { method: "POST", body: "{}" }); toast(r.filled ? `Filled ${r.filled} stamp${r.filled === 1 ? "" : "s"}: ${r.daily || 0} from daily bars, ${r.minutes || 0} from minute bars` : "Nothing to fill"); loadUptime(); } catch (err) { toast(String(err.message || err)); } }

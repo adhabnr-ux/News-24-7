@@ -147,6 +147,7 @@ def default_profile() -> dict[str, Any]:
             "volconf": True,  # 15 minutes in: confirmed by volume, or no volume behind it (volconfirm.py)
             "bookmacro": True,  # a market-wide headline: what headlines like it meant for your book (bookmacro.py)
             "callnow": True,  # the call on an alert changed with the day's live facts (callnow.py)
+            "runup": True,  # ten sessions before an FDA decision or readout on your stock: the run-up record
         },
         "price_alerts": [],
         "tracked": [],
@@ -741,6 +742,7 @@ class Desk:
                 "volconf",
                 "bookmacro",
                 "callnow",
+                "runup",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -1240,8 +1242,8 @@ class Desk:
             if len(rules) >= MAX_AUTOPILOTS:
                 raise ValueError(f"at most {MAX_AUTOPILOTS} autopilots")
             rule = clean_rule(body, now)
-            same = ("catalyst", "band", "min_sev", "exit", "min_odds")
-            if any(all(r.get(k, 0) == rule[k] for k in same) for r in rules):
+            same = ("catalyst", "band", "min_sev", "exit", "min_odds", "follow")
+            if any(all(r.get(k, 0) == rule.get(k, 0) for k in same) for r in rules):
                 raise ValueError("that autopilot is already running")
             rules.append(rule)
         elif action in ("autopilot_remove", "autopilot_toggle"):
@@ -1511,6 +1513,7 @@ class Desk:
                     "volconf",
                     "bookmacro",
                     "callnow",
+                    "runup",
                     "watch_push",
                     "min_sev",
                     "digest",

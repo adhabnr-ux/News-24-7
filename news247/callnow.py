@@ -136,7 +136,7 @@ async def send_turns(engine: Engine, now: float | None = None) -> int:
 
     now = now or time.time()
     turns = check(engine, now)
-    if not turns or engine.webpush is None:
+    if not turns:
         return 0
     rates = getattr(engine, "turn_rates", None) or {}
     key = f"callnow:{datetime.fromtimestamp(now, ET).date().isoformat()}"
@@ -146,11 +146,15 @@ async def send_turns(engine: Engine, now: float | None = None) -> int:
         a, sym, c = t["alert"], t["symbol"], t["call"]
         if not sym:
             continue
+        if c["verb"] == "act" and hasattr(engine, "autopilot_signal"):  # rules following the turn: in at it
+            await engine.autopilot_signal(a, "turn", " as the call turned to act", now)
         r = rates.get(c["verb"])
         rec = (f" Calls that turned to \"{c['label'].lower()}\" during the day went their way {round(r['hit'] * 100)}% "
                f"from the turn to the close (median {r['median']:+.1f}%, {r['n']}).") if r else ""  # fmt: skip
         body = f"{str(a.get('title') or '')[:110]}\n{c['line']}.{rec}"
         icon = VERBS[c["verb"]][0]
+        if engine.webpush is None:
+            continue
         for dev in sorted(_devices(engine, a, sym, "callnow")):
             k = f"{dev}:{a['id']}:{c['verb']}"
             if k in done:

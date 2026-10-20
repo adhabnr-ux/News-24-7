@@ -141,6 +141,8 @@ async def send_legs(engine: Engine, now: float | None = None) -> int:
         engine.storage.update_alert_edge(
             a["id"], {"leg2": {"ts": now, "px": g["px"], "its": g["its"], "rest_min": g["rest_min"]}}
         )
+        if hasattr(engine, "autopilot_signal"):  # rules following second legs: in at the breakout
+            await engine.autopilot_signal(a, "leg2", " on its second leg", now)
         if engine.webpush is None:
             continue
         c = (a.get("edge") or {}).get("catalyst") or classify(a, engine.universe)

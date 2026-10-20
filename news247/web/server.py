@@ -191,6 +191,7 @@ class WebServer:
         app.router.add_get("/api/catchup", self.api_catchup)
         app.router.add_get("/api/legs", self.api_legs)
         app.router.add_get("/api/rvol", self.api_rvol)
+        app.router.add_get("/api/runups", self.api_runups)
         app.router.add_get("/api/book-theme/{alert_id}", self.api_book_theme)
         app.router.add_get("/api/themes", self.api_themes)
         app.router.add_get("/api/halts/record", self.api_halt_record)
@@ -1285,6 +1286,12 @@ class WebServer:
         th = theme_of(a) if a else None
         est = estimate(self.engine, self._need_device(request), th) if th else None
         return _json({"estimate": est})
+
+    async def api_runups(self, request: web.Request) -> web.Response:
+        """Into FDA decisions, readouts and panels: the run-up before, the event, holding through (runup.py)."""
+        from ..runup import board
+
+        return _json(board(self.engine.runup_rates))
 
     async def api_advice(self, request: web.Request) -> web.Response:
         """The setting changes the records back for this phone, ranked, each one tap from applied (advice.py)."""

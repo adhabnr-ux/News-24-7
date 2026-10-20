@@ -21,6 +21,9 @@ MAX_RULES = 5
 PER_RULE_PER_DAY = 3
 EXITS = {"h1": "an hour later", "close": "at the close", "d1": "at the next day's close"}
 ODDS_CHOICES = (0, 55, 60, 65, 70)  # a rule can follow the odds model: only alerts it rates this high
+# a rule can follow a signal instead of a kind of news: the call when the alert goes out, a second
+# leg when it breaks out (secondleg.py), or the call turning to "act now" during the day (callnow.py)
+FOLLOWS = ("", "call", "leg2", "turn")
 
 
 def rule_label(rule: dict[str, Any]) -> str:
@@ -28,6 +31,10 @@ def rule_label(rule: dict[str, Any]) -> str:
 
     if rule.get("follow") == "call":
         return f"Following the call ({rule['min_sev']}+): act now at once, wait for the open at the open; out {EXITS[rule['exit']]}"
+    if rule.get("follow") == "leg2":
+        return f"Following second legs ({rule['min_sev']}+): in at the breakout; out {EXITS[rule['exit']]}"
+    if rule.get("follow") == "turn":
+        return f"Following the call when it turns to act ({rule['min_sev']}+): in at the turn; out {EXITS[rule['exit']]}"
 
     kind = (
         LABELS.get(rule["catalyst"], "Any kind of news") if rule["catalyst"] != "all" else "Any kind of news"
@@ -62,10 +69,11 @@ def clean_rule(body: dict[str, Any], now: float) -> dict[str, Any]:
     if min_odds not in ODDS_CHOICES:
         raise ValueError("odds are 0 (any), 55, 60, 65 or 70")
     follow = str(body.get("follow") or "")
-    if follow not in ("", "call"):
-        raise ValueError("follow is call or nothing")
+    if follow not in FOLLOWS:
+        raise ValueError("follow is call, leg2, turn or nothing")
     if follow and (catalyst != "all" or band != "all" or min_odds):
-        raise ValueError("following the call takes every kind and size: the call decides")
+        who = "the call" if follow == "call" else "the signal"
+        raise ValueError(f"following {who} takes every kind and size: {who} decides")
     rule = {"id": secrets.token_hex(4), "catalyst": catalyst, "band": band, "min_sev": min_sev, "exit": exit_,
             "min_odds": min_odds, "on": True, "created": now}  # fmt: skip
     if follow:
@@ -83,6 +91,8 @@ def matches(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
         return False
     if not _direction(alert):
         return False
+    if rule.get("follow") in ("leg2", "turn"):
+        return False  # these open on their signal, later in the day (signal_matches)
     if rule.get("follow") == "call":  # the call decides: act now opens at once (waits are scheduled)
         return ((alert.get("edge") or {}).get("call") or {}).get("verb") == "act"
     if rule.get("min_odds"):
@@ -97,6 +107,20 @@ def matches(rule: dict[str, Any], alert: dict[str, Any]) -> bool:
     if rule["catalyst"] != "all" and c["key"] != rule["catalyst"]:
         return False
     return rule["band"] == "all" or c["band"] == rule["band"]
+
+
+def signal_matches(rule: dict[str, Any], alert: dict[str, Any], signal: str) -> bool:
+    """A rule following ``signal`` ("leg2" or "turn"), on an alert at its severity with a direction."""
+    from .dossier import _direction
+
+    if (
+        rule.get("follow") != signal
+        or not rule.get("on")
+        or alert.get("kind") == "system"
+        or not _direction(alert)
+    ):
+        return False
+    return SEV_RANK.get(str(alert.get("severity")), 0) >= SEV_RANK[rule["min_sev"]]
 
 
 def waits_for_open(rule: dict[str, Any], alert: dict[str, Any]) -> bool:

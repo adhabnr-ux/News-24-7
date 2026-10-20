@@ -278,6 +278,9 @@ class Engine:
         # news by relative volume, at the alert and 15 minutes in (volconfirm.py)
         self.rvol_rates: dict[str, Any] = {}
         self.turn_rates: dict[str, Any] = {}  # calls that turned during the day, graded (callnow.py)
+        self.runup_rates: dict[
+            str, Any
+        ] = {}  # into FDA decisions and readouts: the run-up, graded (runup.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2589,6 +2592,10 @@ class Engine:
 
                     await send_confirms(self, now)  # 15 minutes in: is the market trading it?
                 with contextlib.suppress(Exception):
+                    from .runup import send_runups
+
+                    await send_runups(self, now)  # ten sessions to an event on your stock
+                with contextlib.suppress(Exception):
                     from .callnow import send_turns
 
                     await send_turns(self, now)  # the call re-read with the day's live facts
@@ -2624,6 +2631,12 @@ class Engine:
                             from .bars import fill as bars_fill
 
                             await bars_fill(self, now)  # the closes a sleeping server missed, from daily bars
+                        with contextlib.suppress(Exception):
+                            from .runup import grade as runups_grade
+
+                            await runups_grade(
+                                self, now
+                            )  # the run-up into events two days past, from daily bars
                         with contextlib.suppress(Exception):
                             from .intrafill import fill as intra_fill
 
@@ -2806,6 +2819,24 @@ class Engine:
                             {"rule": rule["id"], "alert_id": alert["id"], "due": float(due), "created": now}
                         )
                         self.desk.save(dev)
+        return opened
+
+    async def autopilot_signal(
+        self, alert: dict[str, Any], signal: str, how: str, now: float | None = None
+    ) -> int:
+        """A live signal on an alert (a second leg, the call turning to act): rules following it open
+        a paper call now, at the live price, with a fresh plan. At most three a rule a day."""
+        from .autopilot import PER_RULE_PER_DAY, opened_today, signal_matches
+
+        now = now or time.time()
+        opened = 0
+        for dev, p in list(self.desk.profiles.items()):
+            for rule in p.get("autopilots") or []:
+                if (
+                    signal_matches(rule, alert, signal)
+                    and opened_today(p, rule["id"], now) < PER_RULE_PER_DAY
+                ):
+                    opened += await self._auto_enter(dev, p, rule, alert, now, how)
         return opened
 
     async def _auto_enter(self, dev: str, p: dict[str, Any], rule: dict[str, Any], alert: dict[str, Any], now: float,
@@ -4163,6 +4194,9 @@ class Engine:
         from .callnow import turn_rates
 
         self.turn_rates = turn_rates(self, 180, now)
+        from .runup import runup_rates
+
+        self.runup_rates = runup_rates(self)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")
