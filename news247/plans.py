@@ -306,3 +306,61 @@ def coach(engine: Engine, device: str, now: float | None = None) -> dict[str, An
 def _minute(ts: float) -> int:
     d = datetime.fromtimestamp(ts, ET)
     return d.hour * 60 + d.minute
+
+
+# --------------------------------------------------------------------------- today's setups
+
+
+def todays_setups(
+    engine: Engine, device: str = "", now: float | None = None, limit: int = 5
+) -> dict[str, Any]:
+    """The best alerts since the last close, as plans: a kind of news with a record (went its way
+    55%+ of the time by the close, median move its way positive), a live plan with reward-to-risk
+    1.2 or better, one per stock. Ranked by reward-to-risk x hit rate x confidence in the record
+    (n / (n + 10)), the phone's own stocks a step ahead. History and prices, not advice."""
+    from .catalysts import catalyst_base, classify
+    from .edge import Calendar
+
+    now = now or time.time()
+    since = Calendar.last_close(now, getattr(engine.calendar, "holidays", set()))
+    rates = getattr(engine, "catalyst_rates", {}) or {}
+    p = engine.desk.profiles.get(device) or {}
+    mine = set(p.get("watchlist") or []) | set(p.get("holdings") or {})
+    best: dict[str, dict[str, Any]] = {}
+    for a in engine.storage.recent_alerts(400, since=since):
+        if a.get("kind") == "system" or a.get("severity") not in ("MEDIUM", "HIGH", "CRITICAL"):
+            continue
+        e = a.get("edge") or {}
+        cb = e.get("cat_base") or catalyst_base(rates, e.get("catalyst") or classify(a, engine.universe))
+        close = (cb or {}).get("close") or {}
+        if not close or close["hit"] < 0.55 or close["median"] <= 0:
+            continue
+        plan = trade_plan(engine, device, a, now)
+        if not plan.get("ok") or plan["rr"] < 1.2:
+            continue
+        sym = plan["symbol"]
+        n = close["n"]
+        score = plan["rr"] * close["hit"] * n / (n + 10) * (1.3 if sym in mine else 1.0)
+        if sym in best and best[sym]["score"] >= score:
+            continue
+        best[sym] = {"id": a["id"], "title": a.get("title", ""), "created": a.get("created"), "severity": a.get("severity"),
+                     "symbol": sym, "mine": sym in mine, "catalyst": cb["label"], "band": cb["band_label"],
+                     "record": close, "plan": plan, "score": round(score, 3)}  # fmt: skip
+    rows = sorted(best.values(), key=lambda r: -r["score"])[:limit]
+    return {"rows": rows, "since": since}
+
+
+def setups_push(s: dict[str, Any]) -> dict[str, Any] | None:
+    rows = s.get("rows") or []
+    if not rows:
+        return None
+    lines = []
+    for r in rows[:4]:
+        pl = r["plan"]
+        side = "long" if pl["direction"] == "up" else "short"
+        lines.append(f"{'★' if r['mine'] else '•'} {r['symbol']} {side} · R:R {pl['rr']:.1f} · stop ${pl['stop']:,.2f} · "
+                     f"{r['catalyst'].lower()} {round(r['record']['hit'] * 100)}% ({r['record']['n']})")  # fmt: skip
+    return {
+        "title": f"🎯 {len(rows)} setup{'s' if len(rows) > 1 else ''} for today",
+        "body": "\n".join(lines)[:600],
+    }

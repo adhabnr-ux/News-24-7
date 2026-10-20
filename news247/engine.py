@@ -2326,6 +2326,8 @@ class Engine:
                         await self.send_week_cards(now)
                 with contextlib.suppress(Exception):
                     await self.send_open_plans(now)
+                with contextlib.suppress(Exception):
+                    await self.send_setups(now)
                 if self._eod_due(now):
                     with contextlib.suppress(Exception):
                         await self.send_report_cards(now)
@@ -3230,6 +3232,34 @@ class Engine:
                            "open": f"/app/#t={sym}"}  # fmt: skip
                 if await self._to_device(device, payload, urgency="normal"):
                     sent += 1
+        return sent
+
+    async def send_setups(self, now: float | None = None) -> int:
+        """09:25-09:29 ET on market days: each phone that asked for them gets today's setups in one
+        push (plans.todays_setups), once."""
+        from .plans import setups_push, todays_setups
+
+        now = now or time.time()
+        if self.webpush is None:
+            return 0
+        dt = datetime.fromtimestamp(now, ET)
+        if (
+            dt.weekday() >= 5
+            or dt.date().isoformat() in self.calendar.holidays
+            or not ((9, 25) <= (dt.hour, dt.minute) < (9, 30))
+        ):
+            return 0
+        sent = 0
+        for dev, p in list(self.desk.profiles.items()):
+            if not (p.get("prefs") or {}).get("setups") or not self._once(f"setups:{dev}:{dt.date()}"):
+                continue
+            msg = setups_push(todays_setups(self, dev, now))
+            if msg is None:
+                continue
+            payload = {"id": f"su-{dt.date()}-{dev[:6]}", **msg, "severity": "HIGH", "kind": "system", "tickers": [],
+                       "tag": f"su-{dt.date()}", "ts": now, "open": "/app/#a=brief"}  # fmt: skip
+            if await self._to_device(dev, payload):
+                sent += 1
         return sent
 
     async def send_open_plans(self, now: float | None = None) -> int:

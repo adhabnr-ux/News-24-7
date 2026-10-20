@@ -129,6 +129,7 @@ def default_profile() -> dict[str, Any]:
             "account": 0.0,  # $: sizes the trade plans (0: the portfolio's value, if any)
             "risk_pct": 1.0,  # % of the account a plan risks on one idea
             "retest": True,  # second chance: a strong kind of news back at its alert price
+            "setups": False,  # 09:25 ET: today's best setups (plans.todays_setups) in one push
             "edge_min": None,  # only push news whose catalyst record clears this: hit50 | hit60 | move2
         },
         "price_alerts": [],
@@ -543,6 +544,41 @@ class Desk:
             self.save(device)
         return out
 
+    def new_link(self, device: str, now: float | None = None) -> str:
+        """A one-time code (15 minutes) another device enters to share this desk."""
+        now = now or time.time()
+        self.links = {c: v for c, v in getattr(self, "links", {}).items() if v[1] > now}
+        code = "".join(secrets.choice(TRANSFER_ALPHABET) for _ in range(8))
+        self.links[code] = (device, now + TRANSFER_TTL_S)
+        return code
+
+    def use_link(self, code: str, joiner: str, bring: bool = False, now: float | None = None) -> str:
+        """Join the desk behind a link code: returns that desk's device id (the joining device uses it
+        from now on). ``bring`` adds the joining device's watchlist to it. One use; after 20 wrong
+        codes in 10 minutes, every try fails for the rest of the window (no guessing)."""
+        now = now or time.time()
+        fails = [t for t in getattr(self, "link_fails", []) if t > now - 600]
+        self.link_fails = fails
+        if len(fails) >= 20:
+            raise ValueError("too many wrong codes: wait a few minutes")
+        code = str(code or "").strip().upper().replace(" ", "").replace("-", "")
+        hit = getattr(self, "links", {}).get(code)
+        if not hit or hit[1] < now:
+            fails.append(now)
+            raise ValueError("that link code is wrong or expired: make a new one on the other device")
+        primary, _ = hit
+        del self.links[code]
+        if primary == joiner:
+            raise ValueError("this device already uses that desk")
+        mine = list((self.profiles.get(joiner) or {}).get("watchlist") or [])
+        p = self.get(primary)
+        p.pop("link", None)
+        if bring and mine:
+            self.apply(primary, "watch_add", {"symbols": mine})
+        else:
+            self.save(primary)
+        return primary
+
     def new_transfer(self, device: str, now: float | None = None) -> str:
         now = now or time.time()
         self.transfers = {c: v for c, v in getattr(self, "transfers", {}).items() if v[1] > now}
@@ -652,6 +688,7 @@ class Desk:
                 "followups",
                 "sympathy",
                 "retest",
+                "setups",
             ):
                 if flag in body:
                     prefs[flag] = bool(body[flag])
@@ -842,6 +879,8 @@ class Desk:
                     self._taste(p, aid, "up" if before > 0 else "down", -1)
                 if v:
                     self._taste(p, aid, "up" if v > 0 else "down", 1)
+        elif action == "link_code":
+            p["link"] = {"code": self.new_link(device, now), "until": now + TRANSFER_TTL_S}
         elif action == "transfer_out":
             p["transfer"] = {"code": self.new_transfer(device, now), "until": now + TRANSFER_TTL_S}
         elif action == "transfer_in":
@@ -1356,6 +1395,7 @@ class Desk:
                     "followups",
                     "sympathy",
                     "retest",
+                    "setups",
                     "watch_push",
                     "min_sev",
                     "digest",
@@ -1443,6 +1483,7 @@ class Desk:
             "snooze": {c: u for c, u in (p.get("snooze") or {}).items() if u > now},
             "saved": p.get("saved") or [],
             "transfer": p["transfer"] if (p.get("transfer") or {}).get("until", 0) > now else None,
+            "link": p["link"] if (p.get("link") or {}).get("until", 0) > now else None,
             "forward": _mask_forward((p.get("prefs") or {}).get("forward")),
             "rules": p.get("rules") or [],
             "holdings": p.get("holdings") or {},

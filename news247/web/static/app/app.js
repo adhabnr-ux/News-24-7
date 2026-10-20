@@ -458,7 +458,22 @@ async function load() {
   loadWorking().then((r) => { if (r?.graded && tab === "tape") renderTape(); });
 }
 
+// today's setups: the best alerts since the last close, each a full plan
+async function loadSetups() {
+  let r;
+  try { r = await api("/api/setups"); } catch (_) { return; }
+  $("bSetupsWrap").hidden = !r.rows.length;
+  $("bSetups").innerHTML = r.rows.map((x) => { const p = x.plan, up = p.direction === "up";
+    return `<div class="setup"><div class="li" data-id="${esc(x.id)}" role="button"><span class="sym" style="width:58px">${x.mine ? "★" : ""}${esc(x.symbol)}</span><div class="grow">
+      <div style="font-weight:600">${esc(x.title)}</div>
+      <div class="sub">${esc(x.catalyst)} · ${esc(x.band)}: ${Math.round(x.record.hit * 100)}% went their way by the close (median ${pct(x.record.median)}, ${x.record.n})</div></div>
+      <span class="chg num ${p.rr >= 1.5 ? "pos" : ""}" style="width:auto;min-width:56px">${p.rr.toFixed(1)}<small class="rsess">R:R</small></span></div>
+      <div class="kv sub"><span>${up ? "▲ Long" : "▼ Short"} from ${fmtPx(p.entry)} · stop <b class="neg">${fmtPx(p.stop)}</b> · target <b class="pos">${fmtPx(p.target)}</b>${p.shares != null ? ` · ${p.shares.toLocaleString()} sh` : ""}</span>
+        <b><button class="btn ghost small" data-act="plan-track" data-s="${esc(x.symbol)}" data-dir="${up ? "long" : "short"}" data-aid="${esc(x.id)}" data-stop="${p.stop}" data-target="${p.target}">Track</button></b></div></div>`; }).join("")
+    + `<div class="sub" style="padding:6px 0 12px">Alerts since the last close whose kind of news went its way 55%+ of the time, with a plan from the live price at 1.2 : 1 or better, one per stock, yours first. History and prices, not advice.</div>`;
+}
 async function loadBrief() {
+  loadSetups();
   const b = await api("/api/brief");
   $("bDate").textContent = `${b.greeting} · ${b.date}`;
   $("bSub").textContent = b.count ? `${b.count} catalyst${b.count > 1 ? "s" : ""} since the last close.` : "A quiet night. Nothing crossed the alert line since the last close.";
@@ -1132,6 +1147,7 @@ function renderDesk() {
       <button class="btn ghost small${store.get("ft_haptic") === "1" ? " sel" : ""}" data-act="display" data-s="haptic">Vibrate on alerts</button><button class="btn ghost small${store.get("ft_chime") === "1" ? " sel" : ""}" data-act="display" data-s="chime">Chime on alerts</button><button class="btn ghost small${store.get("ft_beginner") === "1" ? " sel" : ""}" data-act="display" data-s="beginner">Beginner mode</button><button class="btn ghost small${store.get("ft_onestock") === "1" ? " sel" : ""}" data-act="display" data-s="onestock">One notification per stock</button></div>
     <div class="row" style="padding:6px 0 4px"><button class="btn ghost small${localTimes() ? " sel" : ""}" data-act="tz">${localTimes() ? "Times: your time zone" : "Times: ET"}</button><button class="btn ghost small" data-act="glossary">What the terms mean</button><button class="btn ghost small" data-act="links">Shortcuts &amp; links</button></div>
     <div class="kv"><span>Sympathy ${tip("sympathy")}<div class="sub">a peer of a stock you watch or hold jumps 4%+ on news and yours hasn't moved yet (at most 3 a day)</div></span><b><button class="btn ghost small${pr.sympathy !== false ? " sel" : ""}" data-act="flag" data-s="sympathy">${pr.sympathy !== false ? "On" : "Off"}</button></b></div>
+    <div class="kv"><span>Today's setups, 9:25 ET<div class="sub">the best alerts since the last close, each with a plan (stop, target, size), in one push before the open</div></span><b><button class="btn ghost small${pr.setups ? " sel" : ""}" data-act="flag" data-s="setups">${pr.setups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Second chance<div class="sub">a stock that ran its alert's way and came back to the alert price, when its kind of news went its way 60%+ of the time (stocks you watch, hold or opened)</div></span><b><button class="btn ghost small${pr.retest !== false ? " sel" : ""}" data-act="flag" data-s="retest">${pr.retest !== false ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Follow-ups<div class="sub">an hour after an alert on a stock you watch or hold, if it moved 2%+: how it played out</div></span><b><button class="btn ghost small${pr.followups ? " sel" : ""}" data-act="flag" data-s="followups">${pr.followups ? "On" : "Off"}</button></b></div>
     <div class="kv"><span>Tomorrow, 20:00 ET (Sun-Thu)<div class="sub">after-hours movers and why, the next session's reporters (yours first) and events</div></span><b><button class="btn ghost small${pr.tomorrow ? " sel" : ""}" data-act="flag" data-s="tomorrow">${pr.tomorrow ? "On" : "Off"}</button></b></div>
@@ -1164,6 +1180,46 @@ function renderDesk() {
     <div class="kv"><span>Quiet hours (ET)<div class="sub">${pr.quiet ? `only CRITICAL between ${esc(q.start)} and ${esc(q.end)}` : "off: everything you allow, any hour"}</div></span>
       <b class="qh"><input type="time" id="qStart" value="${esc(q.start || "22:00")}"><input type="time" id="qEnd" value="${esc(q.end || "07:00")}">
       <button class="btn ghost small" data-act="quiet">${pr.quiet ? "Update" : "Set"}</button>${pr.quiet ? `<button class="btn ghost small" data-act="quiet-off">Off</button>` : ""}</b></div>`;
+}
+// linked devices: one desk on several devices (each gets every push)
+async function ownEndpoint() {
+  try { return (await (await navigator.serviceWorker.ready).pushManager.getSubscription())?.endpoint || ""; } catch (_) { return ""; }
+}
+async function loadDevices() {
+  const el = $("dDevices");
+  if (!el) return;
+  let r;
+  try { r = await api("/api/devices?endpoint=" + encodeURIComponent(await ownEndpoint())); } catch (_) { return; }
+  const lk = desk?.link;
+  el.innerHTML = `<div class="sub" style="margin-bottom:10px">Use this desk on another phone or computer: same watchlist, alerts, calls and settings, and every push reaches both.</div>
+    ${r.devices.map((d) => `<div class="kv"><span>${esc(d.label || d.service)}${d.this ? ` <span class="gold">this device</span>` : ""}<div class="sub">${esc(d.service)} · since ${new Date(d.since * 1000).toLocaleDateString()}${d.last_ok ? ` · last push ${ago(d.last_ok)} ago` : ""}${d.failures ? ` · ${d.failures} failed` : ""}</div></span>
+      <b>${d.this ? "" : `<button class="x" data-act="dev-rm" data-s="${esc(d.id)}" aria-label="Stop pushes to this device">✕</button>`}</b></div>`).join("") || `<div class="li"><span class="muted">No device gets pushes on this desk yet.</span></div>`}
+    ${lk ? `<div class="code">${esc(lk.code.slice(0, 4))}-${esc(lk.code.slice(4))}</div><div class="sub">Enter it on the other device within ${esc(dur(lk.until - Date.now() / 1000).replace(/ \d+s$/, ""))}, or open the link there.</div>
+        <div class="row" style="margin-top:8px"><button class="btn ghost small" data-act="link-share">Share the link ↗</button></div>`
+      : `<div class="row" style="margin-top:10px"><button class="btn ghost small" data-act="link-make">Link another device</button></div>`}
+    <div class="addrow" style="margin-top:10px"><input id="linkIn" class="key" placeholder="Got a link code? XXXX-XXXX" autocapitalize="characters" autocomplete="off" spellcheck="false"><button class="btn ghost small" data-act="link-join">Join that desk</button></div>
+    <label class="rearm"><input type="checkbox" id="linkBring" checked> bring this device's stocks along</label>
+    <div class="row" style="margin-top:6px"><button class="btn ghost small" data-act="link-split">Make this device a separate desk</button></div>`;
+}
+async function joinDesk(code, bring) {
+  let r;
+  try { r = await api("/api/link", { method: "POST", body: JSON.stringify({ code, bring }) }); } catch (e) { toast(String(e.message || e).slice(0, 160)); return; }
+  store.set("ft_device", r.device);
+  toast("Linked: this device now shares that desk", null, 4000);
+  setTimeout(() => location.replace(location.pathname + location.search), 900);  // reload under the desk's id (pushes re-register)
+}
+async function splitDesk() {
+  if (!confirm("Give this device its own desk? It starts as a copy of this one; changes stop syncing.")) return;
+  try {
+    const r = await fetch("/api/export", { headers: { Authorization: "Bearer " + TOKEN, "X-Device": DEVICE } });
+    const data = await r.json();
+    const fresh = "d" + Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const w = await fetch("/api/desk", { method: "POST", headers: { Authorization: "Bearer " + TOKEN, "X-Device": fresh, "Content-Type": "application/json" }, body: JSON.stringify({ action: "restore", desk: data.desk, prefs: true }) });
+    if (!w.ok) throw new Error(await w.text());
+    store.set("ft_device", fresh);
+    toast("This device has its own desk now", null, 4000);
+    setTimeout(() => location.replace(location.pathname + location.search), 900);
+  } catch (e) { toast("Couldn't split: " + String(e.message || e).slice(0, 120)); }
 }
 // the autopilots: rules from the lab, forward-tested on new alerts as paper calls
 function renderAutopilots() {
@@ -1908,7 +1964,7 @@ async function onAct(el) {
     if (await deskEdit("vote", { id: s, v: +el.dataset.v })) { toast(+el.dataset.v ? "Thanks: counted" : "Vote removed"); openSheet(s); }
   }
   else if (a === "digest") await deskEdit("prefs", { digest: +s });
-  else if (a === "flag") await deskEdit("prefs", { [s]: ["skip_fades", "close_recap", "tomorrow", "followups"].includes(s) ? !desk.prefs[s] : desk.prefs[s] === false });
+  else if (a === "flag") await deskEdit("prefs", { [s]: ["skip_fades", "close_recap", "tomorrow", "followups", "setups"].includes(s) ? !desk.prefs[s] : desk.prefs[s] === false });
   else if (a === "xfer-out") await deskEdit("transfer_out", {});
   else if (a === "xfer-in") {
     const code = $("xferIn").value.trim();
@@ -1933,6 +1989,12 @@ async function onAct(el) {
   else if (a === "share-t") share(el.dataset.title || s, location.origin + "/app/#t=" + s);
   else if (a === "search-clear") { $("q").value = ""; $("searchRes").innerHTML = ""; renderRecent(); }
   else if (a === "close") closeSheet();
+  else if (a === "link-make") { if (await deskEdit("link_code", {})) loadDevices(); }
+  else if (a === "link-share") { const c = desk?.link?.code; if (c) share("Use my Foretape desk on this device", location.origin + "/app/#link=" + c.slice(0, 4) + "-" + c.slice(4)); }
+  else if (a === "link-join") { const c = $("linkIn").value.trim(); if (c) joinDesk(c, !!$("linkBring")?.checked); }
+  else if (a === "link-accept") joinDesk(s, !!$("linkBring2")?.checked);
+  else if (a === "link-split") splitDesk();
+  else if (a === "dev-rm") { if (confirm("Stop pushes to that device? It can turn alerts on again any time.")) { try { await api("/api/devices/remove", { method: "POST", body: JSON.stringify({ id: s }) }); toast("Removed"); loadDevices(); } catch (e) { toast(e.message); } } }
   else if (a === "cat-mute") { const off = !(desk.cat_off || []).includes(s), label = (desk.catalyst_kinds || []).find((k) => k.key === s)?.label || s; if (await deskEdit("cat_mute", { key: s, on: off })) toast(off ? `${label} news won't push to this phone` : `${label} news pushes again`); }
   else if (a === "edge-bar") { if (await deskEdit("prefs", { edge_min: s || null })) toast(s ? "Only news whose kind clears the bar pushes now (CRITICAL always comes)" : "Every kind of news may push"); }
   else if (a === "plan-track") { if (await deskEdit("track_add", { symbol: s, direction: el.dataset.dir, alert_id: el.dataset.aid, stop: +el.dataset.stop, target: +el.dataset.target })) toast(`${el.dataset.dir === "long" ? "▲" : "▼"} Tracking ${s}: stop ${fmtPx(+el.dataset.stop)}, target ${fmtPx(+el.dataset.target)}. You'll get a push when either is hit.`, null, 6000); }
@@ -2363,7 +2425,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
@@ -2529,6 +2591,8 @@ const Palette = {
       ["What's working today", "today's alerts by kind of news", () => { closeSheet(); go("watch"); setTimeout(() => $("workWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Room left", "today's alerts short of their typical move", () => { closeSheet(); go("watch"); setTimeout(() => $("roomWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 500); }],
       ["Autopilots", "paper forward tests of your rules", () => { closeSheet(); go("desk"); setTimeout(() => $("dAutoWrap")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
+      ["Your devices", "link a phone or computer to this desk", () => { closeSheet(); go("desk"); setTimeout(() => $("dDevices")?.scrollIntoView({ block: "center", behavior: "smooth" }), 400); }],
+      ["Today's setups", "the best alerts since the last close, as plans", () => { closeSheet(); go("brief"); }],
       ["Strategy lab", "following every alert, on paper", () => { closeSheet(); go("desk"); setTimeout(() => $("dLab")?.scrollIntoView({ block: "start", behavior: "smooth" }), 400); }],
       ["Back up my desk (JSON)", "", () => exportDesk("json")], ["Restore from a backup", "add a saved desk to this one", () => $("restoreFile").click()],
       ["Export my alerts (CSV)", "", () => exportDesk("csv")], ["First-run setup", "pick what you care about", openOnboard],
@@ -2615,6 +2679,14 @@ $("unlock").onclick = async () => {
   try { await start(); } catch (e) { toast("That key didn't work"); }
 };
 function route() {
+  const lnk = location.hash.match(/link=([A-Za-z0-9-]{8,9})/);
+  if (lnk) {
+    history.replaceState(null, "", location.pathname + location.search);
+    showSheet(`<h2>Share a desk</h2><p class="muted">This device will use the desk that made this link: its watchlist, alerts, paper calls and settings, kept in sync, and every push reaches both devices.</p>
+      <label class="rearm"><input type="checkbox" id="linkBring2" checked> bring this device's stocks along</label>
+      <div class="row" style="margin-top:16px"><button class="btn primary" data-act="link-accept" data-s="${esc(lnk[1])}">Use that desk here</button><button class="btn ghost" data-act="close">Not now</button></div>`);
+    return;
+  }
   const lst = location.hash.match(/list=([A-Za-z0-9-]{8,9})/);
   if (lst) { history.replaceState(null, "", location.pathname + location.search); return openSharedList(lst[1]); }
   const q = location.hash.match(/q=([^&]+)/);

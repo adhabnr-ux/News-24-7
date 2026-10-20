@@ -158,6 +158,10 @@ class WebServer:
         app.router.add_get("/api/targets", self.api_target_board)
         app.router.add_get("/api/edges", self.api_edges)
         app.router.add_get("/api/working", self.api_working)
+        app.router.add_get("/api/setups", self.api_setups)
+        app.router.add_post("/api/link", self.api_link)
+        app.router.add_get("/api/devices", self.api_devices)
+        app.router.add_post("/api/devices/remove", self.api_devices_remove)
         app.router.add_get("/api/targets/{sym}", self.api_targets)
         app.router.add_get("/api/list/{code}", self.api_list)
         app.router.add_get("/api/phone-health", self.api_phone_health)
@@ -960,6 +964,50 @@ class WebServer:
         if not sym:
             raise web.HTTPBadRequest(text="not a symbol")
         return _json(targets_for(self.engine, sym))
+
+    async def api_setups(self, request: web.Request) -> web.Response:
+        """Today's setups: the best alerts since the last close, as plans (plans.py)."""
+        from ..plans import todays_setups
+
+        return _json(todays_setups(self.engine, self._device(request)))
+
+    async def api_link(self, request: web.Request) -> web.Response:
+        """This device joins the desk behind a link code; answers with that desk's device id."""
+        self._check_write(request)
+        dev = self._need_device(request)
+        try:
+            body = await request.json()
+            primary = self.engine.desk.use_link(str(body.get("code") or ""), dev, bool(body.get("bring")))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
+        return _json(
+            {"device": primary, "watchlist": len(self.engine.desk.get(primary).get("watchlist") or [])}
+        )
+
+    def _devices_of(self, dev: str) -> list[Any]:
+        wp = self.engine.webpush
+        return [s for s in wp.subs.values() if s.device == dev] if wp is not None else []  # type: ignore[attr-defined]
+
+    async def api_devices(self, request: web.Request) -> web.Response:
+        """The devices that share this desk (each push subscription on it)."""
+        dev = self._need_device(request)
+        mine = request.query.get("endpoint", "")
+        return _json({"devices": [
+            {"id": hashlib.sha1(s.endpoint.encode()).hexdigest()[:12], "service": s.service, "label": s.label,
+             "since": s.created, "last_ok": s.last_ok, "failures": s.failures, "this": s.endpoint == mine}
+            for s in self._devices_of(dev)
+        ]})  # fmt: skip
+
+    async def api_devices_remove(self, request: web.Request) -> web.Response:
+        """Stop pushes to one device on this desk (another device's subscription, by its id)."""
+        self._check_write(request)
+        dev = self._need_device(request)
+        body = await request.json()
+        for s in self._devices_of(dev):
+            if hashlib.sha1(s.endpoint.encode()).hexdigest()[:12] == str(body.get("id") or ""):
+                await self.engine.webpush.unsubscribe(s.endpoint)  # type: ignore[union-attr]
+                return _json({"removed": True})
+        raise web.HTTPNotFound(text="no such device on this desk")
 
     async def api_working(self, request: web.Request) -> web.Response:
         """What's working today: today's alerts graded live, by kind of news."""
