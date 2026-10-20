@@ -344,6 +344,13 @@ def record_outcomes(engine: Engine, now: float | None = None) -> int:
             if q and q[1] and q[0] >= created:
                 mmove = round((q[1] / float(e["mkt_ref"]) - 1.0) * 100.0, 2)
                 before = len(mkt)
+                # 15 minutes in and at the first print: the market at the later ways in (pbmarket.py)
+                cp = created + 900
+                if "m15" not in mkt and now >= cp and cp - 60 <= q[0] <= cp + 150:
+                    mkt["m15"] = mmove
+                op = close_ts - 6.5 * 3600
+                if "open" not in mkt and created < op and op <= q[0] <= op + 300 and now <= op + 900:
+                    mkt["open"] = mmove
                 if "h1" not in mkt and now - created >= 3600 and q[0] - created < 3 * 3600:
                     mkt["h1"] = mmove
                 for key, ts in (("close", close_ts), ("d1", closes[1]), ("d5", closes[5])):

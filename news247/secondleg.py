@@ -138,8 +138,18 @@ async def send_legs(engine: Engine, now: float | None = None) -> int:
     sent = 0
     for g in legs:
         a, sym = g["alert"], g["symbol"]
+        mq = engine.price_of("SPY", 600, now=now)  # the market at the breakout (pbmarket.py)
         engine.storage.update_alert_edge(
-            a["id"], {"leg2": {"ts": now, "px": g["px"], "its": g["its"], "rest_min": g["rest_min"]}}
+            a["id"],
+            {
+                "leg2": {
+                    "ts": now,
+                    "px": g["px"],
+                    "its": g["its"],
+                    "rest_min": g["rest_min"],
+                    "mkt": mq[1] if mq and mq[1] else None,
+                }
+            },  # fmt: skip
         )
         if hasattr(engine, "autopilot_signal"):  # rules following second legs: in at the breakout
             await engine.autopilot_signal(a, "leg2", " on its second leg", now)

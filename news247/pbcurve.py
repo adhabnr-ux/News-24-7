@@ -33,15 +33,19 @@ ET = ZoneInfo("America/New_York")
 FRACTION = 0.10  # the share of the balance in each paper call, in the dollars view
 
 
-def taken(a: dict[str, Any], counterfactual: bool = False) -> tuple[float, float] | None:
+def taken(
+    a: dict[str, Any], counterfactual: bool = False, strip: tuple[str, ...] = ()
+) -> tuple[float, float] | None:
     """(what the playbook made on this graded alert, what the plain way made), or None if not graded.
-    ``counterfactual``: as if it hadn't sat out a blind spot (blindspots.py judges slices that way, so
-    sitting one out doesn't make it look recovered)."""
+    ``counterfactual``: as if it hadn't sat out a blind spot or a tripped breaker (blindspots.py judges
+    slices that way, so sitting one out doesn't make it look recovered). ``strip``: only those stamps
+    (the breaker reads its shadow record with ``("breaker",)``)."""
     from .autopilot import playbook_in, playbook_out, playbook_pass
     from .combos import DEFAULT, combos
 
-    if counterfactual and "blind" in (a.get("edge") or {}):
-        a = {**a, "edge": {k: v for k, v in a["edge"].items() if k != "blind"}}
+    drop = ("blind", "breaker") if counterfactual else strip
+    if any(k in (a.get("edge") or {}) for k in drop):
+        a = {**a, "edge": {k: v for k, v in a["edge"].items() if k not in drop}}
 
     if not ((a.get("edge") or {}).get("combo_rec") or {}).get("best"):
         return None

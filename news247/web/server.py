@@ -201,6 +201,8 @@ class WebServer:
         app.router.add_get("/api/tilt", self.api_tilt)
         app.router.add_get("/api/liquidity", self.api_liquidity)
         app.router.add_get("/api/playbook-curve", self.api_playbook_curve)
+        app.router.add_get("/api/breaker", self.api_breaker)
+        app.router.add_get("/api/playbook-market", self.api_playbook_market)
         app.router.add_get("/api/combos/work", self.api_combo_work)
         app.router.add_get("/api/promises", self.api_promises)
         app.router.add_get("/api/playbook-today", self.api_playbook_today)
@@ -1365,7 +1367,20 @@ class WebServer:
         c = curve(
             self.engine, capital=account if account > 0 else 10_000.0
         )  # your account size, else $10,000
-        return _json({**c, "line": line(c), "nights": self.engine.night_rates})
+        from ..pbmarket import market_part
+
+        return _json({**c, "line": line(c), "nights": self.engine.night_rates, "breaker": self.engine.breaker_state,
+                      "market": market_part(self.engine)})  # fmt: skip
+
+    async def api_breaker(self, request: web.Request) -> web.Response:
+        """The playbook's circuit breaker: armed or standing down, and its trips graded (breaker.py)."""
+        return _json(self.engine.breaker_state or {"n": 0, "on": False})
+
+    async def api_playbook_market(self, request: web.Request) -> web.Response:
+        """The playbook's track record split into the market's part and what's beyond it (pbmarket.py)."""
+        from ..pbmarket import market_part
+
+        return _json(market_part(self.engine))
 
     async def api_liquidity(self, request: web.Request) -> web.Response:
         """The plain way, 5 minutes late and the playbook per liquidity band (liquidity.py)."""
@@ -1421,7 +1436,7 @@ class WebServer:
         from ..today import board
 
         b = board(self.engine)
-        return _json({**b, "day": day(b)})
+        return _json({**b, "day": day(b), "breaker": self.engine.breaker_state})
 
     async def api_you_vs_playbook(self, request: web.Request) -> web.Response:
         """This phone's paper calls against the playbook on the same alerts (youvs.py)."""

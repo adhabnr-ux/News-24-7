@@ -553,6 +553,17 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - yesterday's result against the plain way, and the account in dollars.
 
   The playbook's note rides along on the Brief push; it never wakes you up alone.
+- **The playbook's circuit breaker:** every other rule sits out one slice of alerts; the breaker asks whether the playbook *as a whole* has stopped working. It reads the playbook's track record in the order its results came in (one equal paper call per alert):
+  - **It trips** when the running drawdown is deeper than any drawdown before it in the record, and at least 5 points deep, once 40+ alerts are on the record. Every new alert then goes out with the reason (*"🚫 The playbook passes: it's standing down: its drawdown (-9.0%) is deeper than any in its record (-6.2%); it re-arms at -3.1%"*), the playbook autopilot opens nothing, and the board, the Brief and the track record lead with it.
+  - **It re-arms** when the drawdown recovers to half of what tripped it. It reads the playbook's **shadow** record, where the alerts it sat out still count as if taken, so it can see the edge come back. Sitting out never makes the playbook look recovered.
+  - **Its trips are graded:** the alerts each trip sat out, and what they would have made. *"It has tripped 2 times; the 14 alerts it sat out would have made -9.3% (it saved that)."* A breaker that sat out winners shows it.
+
+  One push when it trips and one when it re-arms (Settings → *The playbook's moves*). The 5-point floor, the 40 alerts and the half-way re-arm are fixed rules, not fitted. `GET /api/breaker`.
+- **The market's part of the playbook:** a playbook that holds long news calls for five sessions in a rising market makes money whether or not it knows anything. Each call the playbook took is set against SPY over the same window, from its own way in to its own way out, in the call's direction (a short loses the market's rise):
+  - **the market's part**: SPY's move over that window;
+  - **beyond the market**: the rest, which is the playbook's actual edge.
+
+  *"On 180 alerts with a market reading, the playbook made +42.0%: the market's part +12.5%, beyond it +29.5% (+0.16% an alert; 58% beat the market). The plain way: +20.0%, the market's part +15.0%, beyond it +5.0%. Most of the playbook's result is its own."* Each kind of news gets its own split, so a kind whose whole result was the tide shows it. The market is now also read at the open, 15 minutes in, at a second leg and when the call turns to act, so later ways in get their window too. A patient fill (its moment isn't kept) and the bracket exit have no reading; they're counted apart, never guessed. On the track record (Watch). `GET /api/playbook-market`.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

@@ -305,6 +305,8 @@ class Engine:
         self.liq_rates: dict[str, Any] = {}
         # slices of the playbook's track record where it loses (blindspots.py)
         self.blind_rates: dict[str, Any] = {}
+        # the playbook's circuit breaker: tripped while it's in a record drawdown (breaker.py)
+        self.breaker_state: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2116,6 +2118,11 @@ class Engine:
                 with contextlib.suppress(Exception):
                     tape_now = tape_today(self, alert.created).get("state")
                 bs = blind_hit(self.blind_rates, alert.to_dict(), tape_now)
+                from .breaker import stamp as breaker_stamp
+
+                bk = breaker_stamp(self)
+                if bk:  # the whole playbook is in a record drawdown: it stands down (breaker.py)
+                    alert.edge["breaker"] = bk
                 if bs:  # a slice of its record where the playbook loses (blindspots.py)
                     alert.edge["blind"] = {
                         "label": bs["label"],
@@ -2719,6 +2726,12 @@ class Engine:
                     Exception
                 ):  # overnight holds that gave back their run: out at the close
                     await self.autopilot_giveback(now)
+                with contextlib.suppress(
+                    Exception
+                ):  # the breaker trips or re-arms: one push each (breaker.py)
+                    from .breaker import send as breaker_send
+
+                    await breaker_send(self, now)
                 with contextlib.suppress(Exception):  # calls still stalled 30 minutes in: the time stop
                     await self.autopilot_stall(now)
                 with contextlib.suppress(Exception):
@@ -3024,6 +3037,8 @@ class Engine:
         if not plan.get("ok"):
             return 0
         direction = "long" if plan["direction"] == "up" else "short"
+        if rule.get("follow") == "playbook" and self.breaker_state.get("on"):
+            return 0  # the playbook is standing down: nothing new until it re-arms (breaker.py)
         if rule.get("follow") == "playbook":
             from .crowd import too_crowded
 
@@ -4623,6 +4638,9 @@ class Engine:
         from .blindspots import blind_spots
 
         self.blind_rates = blind_spots(self, 365, now)
+        from .breaker import state as breaker_state
+
+        self.breaker_state = breaker_state(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 

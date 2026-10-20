@@ -57,7 +57,7 @@ def playbook_line(edge: dict[str, Any]) -> str:
 
 def morning(engine: Engine, now: float | None = None) -> dict[str, Any]:
     """The playbook's morning: {"lines": [...], "open": [...], "waiting": [...], "passes", "blind": [...],
-    "drifting": [...], "yesterday": {...} | None, "money_line"}."""
+    "drifting": [...], "yesterday": {...} | None, "money_line"}, led by the breaker when it's tripped."""
     from .blindspots import slices
     from .desk import session_edge
     from .journal import day
@@ -109,6 +109,13 @@ def morning(engine: Engine, now: float | None = None) -> dict[str, Any]:
         if c.get("money"):
             money_line = ml(c["money"])
     lines = []
+    bk = getattr(engine, "breaker_state", None) or {}
+    if bk.get("on"):  # the whole playbook stands down (breaker.py): that comes first
+        from .breaker import past
+
+        lines.append(
+            f"Standing down: its drawdown ({bk['dd']:+.1f}%) is {past(bk)}; it re-arms at {bk['rearm']:+.1f}%"
+        )
     if at_open:
         lines.append(
             f"At the open it enters {', '.join(at_open[:5])}"

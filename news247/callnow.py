@@ -97,6 +97,8 @@ def check(engine: Engine, now: float | None = None) -> list[dict[str, Any]]:
         q = engine.price_of(sym, 600, now=now) if sym else None
         stamp = {"verb": c["verb"], "label": c["label"], "line": c["line"], "from": was, "at": now,
                  "px": q[1] if q and q[1] else None, "live": [t for s, k, t in c.get("live_facts", [])]}  # fmt: skip
+        mq = engine.price_of("SPY", 600, now=now)  # the market when it turned (pbmarket.py)
+        stamp["mkt"] = mq[1] if mq and mq[1] else None
         engine.storage.update_alert_edge(a["id"], {"call_now": stamp})
         out.append({"alert": a, "symbol": sym, "call": stamp})
     return out

@@ -176,6 +176,8 @@ def playbook_pass(alert: dict[str, Any]) -> str:
     the stock fights its own news (persona.py)."""
     e = alert.get("edge") or {}
     cr = e.get("combo_rec") or {}
+    if e.get("breaker"):
+        return e["breaker"]["why"]  # the whole playbook is in a record drawdown (breaker.py)
     if cr.get("pass"):
         best = ((cr.get("styles") or {}).get(cr.get("best") or "") or {}).get("avg")
         return "no way in and out made money on its kind here" + (
