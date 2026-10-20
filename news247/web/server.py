@@ -183,6 +183,8 @@ class WebServer:
         app.router.add_get("/api/overnight", self.api_overnight)
         app.router.add_get("/api/myedge", self.api_myedge)
         app.router.add_get("/api/recall", self.api_recall)
+        app.router.add_get("/api/line", self.api_line)
+        app.router.add_get("/api/macro", self.api_macro)
         app.router.add_get("/api/alpha", self.api_alpha)
         app.router.add_get("/api/equity", self.api_equity)
         app.router.add_get("/api/settings-cost", self.api_settings_cost)
@@ -1168,6 +1170,18 @@ class WebServer:
         from ..recall import recall_report
 
         return _json(recall_report(self.engine))
+
+    async def api_line(self, request: web.Request) -> web.Response:
+        """The alert line, tested: headlines just under it graded in the shadow, beside alerts just over it (shadow.py)."""
+        from ..shadow import line_report
+
+        return _json(line_report(self.engine))
+
+    async def api_macro(self, request: web.Request) -> web.Response:
+        """Macro days: each kind of news on Fed and jobs-report days vs other days, and the next one (macrodays.py)."""
+        from ..macrodays import macro_board
+
+        return _json(macro_board(self.engine, self.engine.macro_rates))
 
     async def api_alpha(self, request: web.Request) -> web.Response:
         """Skill or the market: closed calls' returns split into SPY's part and the rest (alpha.py)."""

@@ -251,6 +251,7 @@ class Engine:
         self.call_rates: dict[str, Any] = {}  # the call's own record by verb (thecall.py)
         self.climate_rates: dict[str, Any] = {}  # each kind's last two weeks against its record (climate.py)
         self.call_replay: dict[str, Any] = {}  # the call's rule run on every graded alert (thecall.py)
+        self.macro_rates: dict[str, Any] = {}  # each kind on Fed and jobs days vs other days (macrodays.py)
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -503,6 +504,12 @@ class Engine:
         story.max_score = max(story.max_score, analysis.score)
         severity = self.cfg.scoring.severity_for(story.max_score)
         if severity < Severity.MEDIUM:
+            with contextlib.suppress(Exception):
+                from .shadow import record as shadow_record
+
+                shadow_record(
+                    self, item, analysis, story.max_score
+                )  # just under the line: graded in the shadow
             return
         if story.alerted is not None and severity <= story.alerted:
             return
@@ -1881,6 +1888,16 @@ class Engine:
             cl = climate_for(self.climate_rates, (alert.edge.get("catalyst") or {}).get("key"))
             if cl:  # its kind is running hot or cold lately, beyond chance
                 alert.edge["climate"] = cl
+            from .macrodays import macro_for
+            from .macrodays import today as macro_today
+
+            mc = macro_for(
+                self.macro_rates,
+                (alert.edge.get("catalyst") or {}).get("key"),
+                macro_today(self, alert.created),
+            )
+            if mc:  # a Fed or jobs-report day: how its kind did on days like it
+                alert.edge["macro"] = mc
             from .thecall import the_call
 
             call = the_call(alert.edge, outside(alert.created, self.calendar.holidays))
@@ -2409,6 +2426,10 @@ class Engine:
                 last_outcomes = now
                 with contextlib.suppress(Exception):
                     record_outcomes(self, now)
+                with contextlib.suppress(Exception):
+                    from .shadow import grade as shadow_grade
+
+                    shadow_grade(self, now)
                 if now - last_month >= 600:
                     last_month = now
                     with contextlib.suppress(Exception):
@@ -3850,6 +3871,9 @@ class Engine:
         from .thecall import replay as call_replay
 
         self.call_replay = call_replay(self, 180, now)
+        from .macrodays import macro_rates
+
+        self.macro_rates = macro_rates(self, 365, now)
         evs, dates = [], set()
         for a in self.storage.recent_alerts(3000, since=(now or time.time()) - 10 * 86400):
             ev = ((a.get("edge") or {}).get("odds") or {}).get("ev")

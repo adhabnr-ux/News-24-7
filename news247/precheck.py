@@ -70,6 +70,11 @@ def pre_trade(
             if x and x["n"] >= 6:
                 add("market", "good" if x["median"] > 0 else "warn",
                     f"Against the market, that kind of news {'beat' if x['median'] > 0 else 'trailed'} SPY by {abs(x['median']):.1f}% (median, {x['n']})")  # fmt: skip
+        from .macrodays import macro_line
+
+        mc = e.get("macro")
+        if mc:
+            add("macro", "warn" if mc["macro"]["hit"] <= 0.45 else "info", macro_line(mc))
         from .climate import climate_line
 
         cl = e.get("climate")

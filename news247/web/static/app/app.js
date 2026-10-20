@@ -795,7 +795,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadRecall(); loadClimate(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadRecall(); loadMacro(); loadClimate(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -919,6 +919,7 @@ async function openSheet(id) {
     e.persona && e.persona.trait !== "mixed" ? `<h4>How ${esc(e.persona.symbol)} takes news</h4><div class="panel glass">
       <div class="kv"><span>${esc(e.persona.label)}</span><b class="num">${Object.entries(e.persona.path || {}).map(([h, v]) => `${{ h1: "1h", close: "close", d1: "next day", d5: "5 days", d20: "a month" }[h]} <span class="${cls(v)}">${pct(v)}</span>`).join(" · ")}</b></div>
       <div class="sub" style="padding:4px 0 12px">Its last ${e.persona.n} graded alerts here, medians, its way. History, not a forecast.</div></div>` : "",
+    e.macro ? `<div class="kv clim"><span class="${e.macro.macro.hit >= 0.5 ? "pos" : "neg"}">📅 ${esc(e.macro.today[0])} today: ${esc(e.macro.label)} news on macro days went its way ${Math.round(e.macro.macro.hit * 100)}% (${e.macro.macro.n})${e.macro.other ? ` vs ${Math.round(e.macro.other.hit * 100)}% on other days (${e.macro.other.n})` : ""}</span></div>` : "",
     e.climate ? `<div class="kv clim"><span class="${e.climate.state === "hot" ? "pos" : "neg"}">${e.climate.state === "hot" ? "🔥 Hot" : "🧊 Cold"} lately: ${esc(e.climate.label)} news went its way ${Math.round(e.climate.recent.hit * 100)}% in the last two weeks (${e.climate.recent.n}) vs ${Math.round(e.climate.before.hit * 100)}% before (${e.climate.before.n})</span></div>` : "",
     e.late ? `<h4>Late to the story</h4><div class="panel glass">
       <div class="kv"><span>It first broke ${Math.round(e.late.min)} minutes before this alert${e.late.source ? ` <span class="sub">${esc(outlet(e.late.source))}</span>` : ""}</span><b class="num">${e.late.rec?.close ? `<span class="${e.late.rec.close.hit >= 0.5 ? "pos" : "neg"}">${Math.round(e.late.rec.close.hit * 100)}%</span> <span class="sub">its way for alerts that late · ${e.late.rec.close.n}</span>` : ""}</b></div>
@@ -1035,6 +1036,31 @@ async function loadRecall() {
     + (r.all && r.all.n > r.all.caught ? `<div class="kv"><span>Why the misses missed</span><b class="num">${r.why["under the line"]} under the line${r.under_score != null ? ` <span class="sub">(median score ${r.under_score})</span>` : ""} · ${r.why["no headline"]} no headline</b></div>` : "")
     + [...(r.today || []).filter((x) => !x.caught).map((x) => ({ ...x, day: "today" })), ...r.missed].slice(0, 10).map((x) => `<div class="kv" data-tk="${esc(x.symbol)}" role="button"><span><b>${esc(x.symbol)}</b> <span class="${cls(x.chg)}">${pct(x.chg)}</span> <span class="sub">${esc(x.day)} · ${esc(MISS_WHY[x.why] || x.why)}${x.top_title ? `: “${esc(x.top_title.slice(0, 70))}” (${x.top_score})` : ""}</span></span><b class="num neg">missed</b></div>`).join("")
     + `<div class="sub" style="padding:4px 0 12px">Every company worth $300M+ that moved 5%+ in a session, checked against the alerts on it since the previous close. A miss with a headline under the line says the threshold was too high for it; one with no headline is a source gap or a move with no news. Kept for every session at 16:05 ET.</div>`;
+}
+// macro days (Watch): each kind of news on Fed and jobs days against other days
+async function loadMacro() {
+  let r;
+  try { r = await api("/api/macro"); } catch (_) { return; }
+  $("macroWrap").hidden = !r.rows.length && !r.next;
+  if ($("macroWrap").hidden) return;
+  const cell = (x) => x ? `<span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span>` : `<span class="sub">—</span>`;
+  $("macroBoard").innerHTML = (r.today.length ? `<div class="kv"><span class="gold">📅 Today: ${esc(r.today.join(" · "))}</span></div>` : r.next ? `<div class="kv"><span>Next macro day <span class="sub">${esc(r.next.titles.join(" · "))}</span></span><b class="num">${esc(prettyDate(r.next.date))}</b></div>` : "")
+    + (r.rows.length ? `<div class="kv head"><span>Kind of news</span><b>its way: macro days · other days</b></div>` + r.rows.slice(0, 12).map((x) => `<div class="kv"><span>${esc(x.label)}</span><b class="num">${cell(x.macro)}<br>${cell(x.other)}</b></div>`).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Sessions with an FOMC decision, a jobs report or another scheduled release that moves the whole market (from the calendar), against every other session, by the close. On a macro day new alerts carry their kind's macro-day record (${r.need}+ graded) and a poor one counts against them in the call.</div>`;
+}
+// the alert line, tested (Desk): headlines that scored just under it, graded as if they'd gone out
+async function loadLine() {
+  let r;
+  try { r = await api("/api/line"); } catch (_) { return; }
+  $("dLineWrap").hidden = !r.kept;
+  if (!r.kept) return;
+  const cell = (x) => x && x.n ? `<span class="${x.hit >= 0.5 ? "pos" : "neg"}">${Math.round(x.hit * 100)}%</span> <span class="sub">${pct(x.median)} · ${x.n}</span>` : `<span class="sub">—</span>`;
+  $("dLine").innerHTML = (r.line_text ? `<div class="kv"><span class="${r.verdict === "lower" ? "gold" : "pos"}">${esc(r.line_text)}</span></div>` : `<div class="kv"><span class="sub">${r.graded} of ${r.kept} near misses graded so far; ${r.need}+ in the band just under the line before a verdict.</span></div>`)
+    + `<div class="kv head"><span>Score (the line is ${r.line})</span><b>its way by the close</b></div>`
+    + `<div class="kv"><span>Alerts just over it <span class="sub">${r.line}-${r.line + 5}</span></span><b class="num">${cell(r.just_over)}</b></div>`
+    + r.bands.map((b) => `<div class="kv"><span>${b.under} under <span class="sub">${b.from}-${b.to}, in the shadow</span></span><b class="num">${cell(b)}</b></div>`).join("")
+    + (r.sources.length ? `<div class="kv head"><span>Near misses by source</span><b></b></div>` + r.sources.map((x) => `<div class="kv"><span>${esc(outlet(x.source))}</span><b class="num">${cell(x)}</b></div>`).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Every headline naming a stock that scored within 15 points under the alert line is kept in the shadow (nothing is pushed or shown) with its stock's price, and graded an hour on and at the close like an alert. If the band just under the line does as well as the alerts just over it, the line is too high.</div>`;
 }
 // news climate (Watch): each kind of news, the last two weeks against its record before them
 const CLIM = { hot: ["🔥 hot", "pos"], cold: ["🧊 cold", "neg"], normal: ["", ""] };
@@ -2907,7 +2933,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;

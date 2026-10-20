@@ -80,6 +80,9 @@ def the_call(e: dict[str, Any], outside: bool = False) -> dict[str, Any] | None:
             "climate",
             f"{cl['state']} lately ({round(cl['recent']['hit'] * 100)}% in two weeks)",
         )
+    mc = e.get("macro") or {}
+    if (mc.get("macro") or {}).get("n", 0) >= MIN_N and mc["macro"]["hit"] <= 0.4:
+        add("-", "macro", f"on macro days {round(mc['macro']['hit'] * 100)}%")
     rb = e.get("regime_base")
     if rb and rb.get("n", 0) >= MIN_N and rb["hit"] <= 0.4:
         add("-", "regime", f"on {rb['regime']} days {round(rb['hit'] * 100)}%")
@@ -147,7 +150,7 @@ def call_rates(engine: Engine, days: float = 180, now: float | None = None) -> d
 
 FACT_LABEL = {"odds": "The odds", "ev": "A negative expected move", "record": "Its kind's record", "firm": "The firm's record",
               "flow": "The flow's record", "insider": "The insider's shape", "climate": "The climate", "regime": "Days like today",
-              "persona": "The stock's personality", "late": "Late to the story"}  # fmt: skip
+              "persona": "The stock's personality", "late": "Late to the story", "macro": "Macro days"}  # fmt: skip
 
 
 def replay(engine: Engine, days: float = 180, now: float | None = None) -> dict[str, Any]:

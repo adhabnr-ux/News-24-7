@@ -77,6 +77,11 @@ CREATE TABLE IF NOT EXISTS profiles (
     data TEXT NOT NULL,
     updated REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS shadow (
+    id TEXT PRIMARY KEY,
+    created REAL NOT NULL,
+    data TEXT NOT NULL
+);
 """
 
 
@@ -223,6 +228,25 @@ class Storage:
             (since, before, f"$.edge.{edge_key}", limit),
         )
         return [json.loads(r[0]) for r in rows]
+
+    # ------------------------------------------------------------------ shadow (headlines just under the line)
+
+    def add_shadow(self, sid: str, created: float, data: dict[str, Any]) -> bool:
+        cur = self.db.execute(
+            "INSERT OR IGNORE INTO shadow (id, created, data) VALUES (?, ?, ?)",
+            (sid, created, json.dumps(data)),
+        )
+        return cur.rowcount > 0
+
+    def shadows(self, since: float, limit: int = 20000) -> list[dict[str, Any]]:
+        rows = self.db.execute(
+            "SELECT id, created, data FROM shadow WHERE created >= ? ORDER BY created DESC LIMIT ?",
+            (since, limit),
+        )
+        return [{"id": r[0], "created": r[1], **json.loads(r[2])} for r in rows]
+
+    def update_shadow(self, sid: str, data: dict[str, Any]) -> None:
+        self.db.execute("UPDATE shadow SET data = ? WHERE id = ?", (json.dumps(data), sid))
 
     def get_alert(self, alert_id: str) -> dict[str, Any] | None:
         row = self.db.execute("SELECT payload FROM alerts WHERE id = ?", (alert_id,)).fetchone()
