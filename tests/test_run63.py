@@ -59,10 +59,12 @@ def test_the_best_pair_per_kind(tmp_path):
         and r["styles"]["alert|d1"]["avg"] == 2.0
     )
     assert r["styles"]["leg2|d1"]["avg"] < r["styles"]["alert|d1"]["avg"]  # paid up for the second leg
-    assert r["holdout"]["held"] is True
+    assert (
+        r["holdout"]["held"] is True and r["proven"] is True
+    )  # its range starts above the plain way's +1.0%
     assert combo_line(r) == (
         "The playbook for contract win news here, in and out together: at the alert, out the next day "
-        "(+2.0% on average, 75% its way, 12); the plain way (at the alert, out at the close) +1.0%."
+        "(+2.0% on average, 75% its way, 12), likely +1.3% to +2.7%; the plain way (at the alert, out at the close) +1.0%."
     )
 
 
@@ -86,6 +88,9 @@ async def test_the_pair_rides_the_alert(tmp_path):
     await eng.publish(a, push=False)
     cr = eng.storage.get_alert(a.id)["edge"]["combo_rec"]
     assert cr["best"] == f"{cr['in']}|{cr['out']}" and cr["kind"] == "contract"
+    from news247.combos import NAMES
+
+    assert cr["name"] == NAMES[cr["best"]]  # the sheet reads it without the Watch board loaded
     from news247.playbook import playbook
 
     assert any(

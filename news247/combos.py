@@ -16,11 +16,18 @@ Per kind of news, the best pair is the one with the best average (8+ alerts had 
 sample like every pick (holdout.py) against the plain way (in at the alert, out at the close). The
 pair is what the playbook autopilot trades and what it promises, so its promise is the exact
 backtest of what it does. The alert's sheet, its playbook and the Watch tab's board show it.
+
+Each kind's best pair and the plain way also get an 80% range for their average (a seeded
+bootstrap: the same record gives the same range). A best pair whose range still covers the plain
+way's average is marked **unproven**: it may be the better way, but the record can't yet tell it
+from luck.
+
 History, not a forecast.
 """
 
 from __future__ import annotations
 
+import random
 import statistics as st
 import time
 from typing import TYPE_CHECKING, Any
@@ -34,6 +41,7 @@ if TYPE_CHECKING:
     from .engine import Engine
 
 MIN_N = 8
+RESAMPLES = 400
 DEFAULT = "alert|close"
 PAIRS = {"alert": ("h1", "close", "d1", "d5", "bracket"), "open": ("close", "d1", "d5"), "patient": ("close", "d1", "d5"),
          "leg2": ("close", "d1", "d5"), "turn": ("close", "d1", "d5"), "vol15": ("h1", "close", "d1", "d5")}  # fmt: skip
@@ -87,9 +95,27 @@ def combo_rates(engine: Engine, days: float = 180, now: float | None = None) -> 
                     "avg": round(sum(xs) / len(xs), 2)} for p, xs in pairs.items()}  # fmt: skip
         ok = {p: r for p, r in rows.items() if r["n"] >= MIN_N}
         best = max(ok, key=lambda p: (ok[p]["avg"], p == DEFAULT)) if ok else None
+        for p in {best, DEFAULT} - {None}:  # how sure each average is (bootstrap, 80%)
+            if p in rows and rows[p]["n"] >= MIN_N:
+                rows[p]["lo"], rows[p]["hi"] = ranged(pairs[p], f"{kind}|{p}")
+        proven = best == DEFAULT or (
+            best is not None
+            and "lo" in rows.get(best, {})
+            and DEFAULT in rows
+            and rows[best]["lo"] > rows[DEFAULT]["avg"]
+        )
         out[kind] = {"kind": kind, "label": "Any news" if kind == "*" else LABELS.get(kind, kind), "n": counts[kind],
-                     "styles": rows, "best": best, "holdout": check(dated[kind], DEFAULT, best)}  # fmt: skip
+                     "styles": rows, "best": best, "proven": proven, "holdout": check(dated[kind], DEFAULT, best)}  # fmt: skip
     return out
+
+
+def ranged(xs: list[float], seed: str, draws: int = RESAMPLES) -> tuple[float, float]:
+    """The 80% bootstrap range of the average of ``xs`` (seeded: the same record gives the same range)."""
+    rng = random.Random(seed)
+    m = len(xs)
+    draws = draws if m <= 500 else max(100, draws * 500 // m)  # big pools: fewer draws, as tight anyway
+    means = sorted(sum(rng.choice(xs) for _ in range(m)) / m for _ in range(draws))
+    return round(means[int(draws * 0.1)], 2), round(means[int(draws * 0.9) - 1], 2)
 
 
 def combo_line(r: dict[str, Any] | None) -> str:
@@ -98,8 +124,12 @@ def combo_line(r: dict[str, Any] | None) -> str:
     b, s = r["best"], r["styles"]
     head = (f"The playbook for {r['label'].lower()} news here, in and out together: {NAMES[b].lower()} "
             f"({s[b]['avg']:+.1f}% on average, {round(s[b]['hit'] * 100)}% its way, {s[b]['n']})")  # fmt: skip
+    if "lo" in s[b]:
+        head += f", likely {s[b]['lo']:+.1f}% to {s[b]['hi']:+.1f}%"
     if b != DEFAULT and DEFAULT in s:
         head += f"; the plain way (at the alert, out at the close) {s[DEFAULT]['avg']:+.1f}%"
+        if not r.get("proven"):
+            head += ", inside that range: unproven"
     return head + "."
 
 

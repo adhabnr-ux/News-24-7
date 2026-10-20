@@ -295,6 +295,8 @@ class Engine:
         self.stall_rates: dict[str, Any] = {}
         # the first, second and later alert in a sector the same day (crowd.py)
         self.crowd_rates: dict[str, Any] = {}
+        # what stocks did after a denial of their news (denials.py)
+        self.denial_rates: dict[str, Any] | None = None
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2020,10 +2022,16 @@ class Engine:
                 from .crowd import stamp as crowd_stamp
 
                 cw = crowd_stamp(self, alert.to_dict())
-                if (
-                    cw and cw["spot"] != "first"
-                ):  # the 2nd+ alert in its sector today, the same way (crowd.py)
+                # the 2nd+ alert in its sector today, the same way (crowd.py)
+                if cw and cw["spot"] != "first":
                     alert.edge["crowd"] = cw
+                from .denials import act as deny_act
+                from .denials import stamp as deny_stamp
+
+                dn = deny_stamp(self, alert.to_dict())
+                if dn:  # it denies or walks back an alert on this stock from the last 3 days (denials.py)
+                    alert.edge["denies"] = dn
+                    self._spawn(deny_act(self, alert.to_dict(), dn))
             # the odds and the plan read every fact stamped above (float, dilution, volume, lateness...)
             from .odds import predict
 
@@ -2071,7 +2079,11 @@ class Engine:
                     alert.edge[field] = stamp(kr, ek, default, names, extra)
             cr = alert.edge.get("combo_rec")
             if cr:  # the pair's way in and way out, for the playbook autopilot (combos.py)
+                cr["proven"] = (
+                    bool((self.combo_rates.get(ek) or {}).get("proven")) or cr["best"] == COMBO_DEFAULT
+                )
                 cr["in"], cr["out"] = cr["best"].split("|")
+                cr["name"] = COMBO_NAMES.get(cr["best"], cr["best"])  # readable without the board loaded
                 # no way in and out made money on its kind here: the playbook passes
                 cr["pass"] = cr["styles"][cr["best"]]["avg"] <= 0
             from .thecall import the_call
@@ -4512,6 +4524,9 @@ class Engine:
         from .crowd import crowd_rates
 
         self.crowd_rates = crowd_rates(self, 365, now)
+        from .denials import denial_rates
+
+        self.denial_rates = denial_rates(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 

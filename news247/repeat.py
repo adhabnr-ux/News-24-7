@@ -150,10 +150,18 @@ def stamp(engine: Engine, a: dict[str, Any]) -> dict[str, Any] | None:
     return out
 
 
+def ago(hours: float) -> str:
+    """ "1 hour", "5 hours", "3 days"."""
+    if hours >= 48:
+        return f"{round(hours / 24)} days"
+    h = round(hours)
+    return f"{h} hour{'' if h == 1 else 's'}"
+
+
 def line(rp: dict[str, Any] | None) -> str:
     if not rp:
         return ""
-    when = f"{rp['hours']:.0f} hours" if rp["hours"] < 48 else f"{rp['hours'] / 24:.0f} days"
+    when = ago(rp["hours"])
     nth = {2: "2nd", 3: "3rd"}.get(rp["nth"], f"{rp['nth']}th")
     head = f"The {nth} headline on {rp['symbol']} in {when}"
     r = rp.get("rec") or {}

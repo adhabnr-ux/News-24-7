@@ -204,6 +204,8 @@ def board(engine: Engine, now: float | None = None) -> dict[str, Any]:
             sv = stall_live(engine, a, live)
             if sv:  # how its first half hour went, and what such alerts did the rest of the day (stall.py)
                 s["stall"] = sv
+        if e.get("denied"):  # a later headline denied or walked back the news (denials.py)
+            s["denied"] = e["denied"].get("title") or "denied"
         cr = e.get("combo_rec") or {}
         rows.append({**s, "id": a["id"], "title": (a.get("title") or "")[:140], "created": a["created"],
                      "kind": cr.get("label") or (e.get("entry_rec") or {}).get("label") or (e.get("exit_rec") or {}).get("label"),
