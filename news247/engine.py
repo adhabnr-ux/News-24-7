@@ -309,6 +309,8 @@ class Engine:
         self.breaker_state: dict[str, Any] = {}
         # each sit-out rule graded on the alerts it flagged; the ones that cost are muted (pbrules.py)
         self.rule_rates: dict[str, Any] = {}
+        # each early exit rule graded on what its cuts made against holding (early.py)
+        self.early_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2731,9 +2733,18 @@ class Engine:
                     Exception
                 ):  # overnight holds that gave back their run: out at the close
                     await self.autopilot_giveback(now)
+                with contextlib.suppress(Exception):  # the exit rules, on every alert they cut (early.py)
+                    from .early import stamp_closes, stamp_stalls
+
+                    stamp_stalls(self, now)
+                    stamp_closes(self, now)
                 with contextlib.suppress(
                     Exception
-                ):  # the breaker trips or re-arms: one push each (breaker.py)
+                ):  # the playbook autopilot's calls, mirrored to Alpaca paper (mirror.py)
+                    from .mirror import sync as mirror_sync
+
+                    await mirror_sync(self, now)
+                with contextlib.suppress(Exception):  # the breaker trips or re-arms (breaker.py)
                     from .breaker import send as breaker_send
 
                     await breaker_send(self, now)
@@ -3161,8 +3172,11 @@ class Engine:
                     continue
                 from .eventrisk import verdict as event_verdict
 
-                v = event_verdict(self, a, t["symbol"])  # its stock reports tonight: no hold through it
-                if not v or not v["exit"]:
+                muted = self.early_rates.get("muted") or []  # exit rules whose cuts cost (early.py)
+                v = (
+                    event_verdict(self, a, t["symbol"]) if "event" not in muted else None
+                )  # its stock reports tonight: no hold through it
+                if (not v or not v["exit"]) and "giveback" not in muted:
                     v = live(self, a, (q[1] / ref - 1) * 100)
                 if not v or not v["exit"]:
                     continue
@@ -3184,6 +3198,8 @@ class Engine:
 
         now = now or time.time()
         closed = 0
+        if "stall" in (self.early_rates.get("muted") or []):
+            return 0  # its cuts did worse than holding, in both halves of its record (early.py)
         for dev, p in list(self.desk.profiles.items()):
             for t in list(p.get("tracked") or []):
                 if (
@@ -4661,6 +4677,9 @@ class Engine:
         from .pbrules import rule_rates
 
         self.rule_rates = rule_rates(self, 365, now)
+        from .early import early_rates
+
+        self.early_rates = early_rates(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 

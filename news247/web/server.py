@@ -203,6 +203,8 @@ class WebServer:
         app.router.add_get("/api/playbook-curve", self.api_playbook_curve)
         app.router.add_get("/api/breaker", self.api_breaker)
         app.router.add_get("/api/playbook-rules", self.api_playbook_rules)
+        app.router.add_get("/api/mirror", self.api_mirror)
+        app.router.add_post("/api/mirror", self.api_mirror_switch)
         app.router.add_get("/api/playbook-market", self.api_playbook_market)
         app.router.add_get("/api/combos/work", self.api_combo_work)
         app.router.add_get("/api/promises", self.api_promises)
@@ -1379,9 +1381,36 @@ class WebServer:
 
     async def api_playbook_rules(self, request: web.Request) -> web.Response:
         """Each of the playbook's sit-out rules graded on the alerts it flagged; the muted ones (pbrules.py)."""
+        from ..early import board as early_board
         from ..pbrules import board
 
-        return _json(board(self.engine.rule_rates))
+        return _json({**board(self.engine.rule_rates), "exits": early_board(self.engine.early_rates),
+                      "exits_muted": self.engine.early_rates.get("muted") or []})  # fmt: skip
+
+    async def api_mirror(self, request: web.Request) -> web.Response:
+        """The Alpaca paper mirror: on or off, the paper account, and real fills against the desk's (mirror.py)."""
+        from ..mirror import MirrorError, account, device, report
+
+        r = report(self.engine)
+        r["yours"] = bool(r["on"]) and device(self.engine) == (request.headers.get("X-Device") or "")
+        if r["on"]:
+            try:
+                r["account"] = await account(self.engine)
+            except MirrorError as e:
+                r["error"] = str(e)
+        return _json(r)
+
+    async def api_mirror_switch(self, request: web.Request) -> web.Response:
+        """Mirror this phone's playbook autopilot to Alpaca paper, or stop."""
+        from ..mirror import MirrorError, switch
+
+        self._check_write(request)
+        dev = self._need_device(request)
+        try:
+            body = await request.json()
+            return _json(await switch(self.engine, dev, bool(body.get("on"))))
+        except MirrorError as e:
+            raise web.HTTPBadRequest(text=str(e)) from None
 
     async def api_playbook_market(self, request: web.Request) -> web.Response:
         """The playbook's track record split into the market's part and what's beyond it (pbmarket.py)."""

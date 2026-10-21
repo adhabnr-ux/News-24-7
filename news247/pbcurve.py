@@ -55,7 +55,16 @@ def taken(
     if playbook_pass(a):
         return 0.0, got[DEFAULT]
     pin, pout = playbook_in(a), playbook_out(a)
-    return (got.get(f"{pin}|{pout}", 0.0) if pin and pout else got[DEFAULT]), got[DEFAULT]
+    if not (pin and pout):
+        return got[DEFAULT], got[DEFAULT]
+    early = (a.get("edge") or {}).get("early")
+    if early and not early.get("muted"):  # an exit rule cut it before its pair's own exit (early.py)
+        from .early import cut
+
+        c = cut(a)
+        if c is not None:
+            return c, got[DEFAULT]
+    return got.get(f"{pin}|{pout}", 0.0), got[DEFAULT]
 
 
 def _stats(xs: list[float]) -> dict[str, Any]:

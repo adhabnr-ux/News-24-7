@@ -28,7 +28,11 @@ THIN = {"pass": True, "why": "a thin stock: thin names here lost even 5 minutes 
 
 
 def test_every_rule_that_flags_an_alert():
-    e = {**pair("alert", "close"), "liq": THIN, "persona": {"symbol": "ACME", "trait": "fights", "hit": 0.3, "n": 12}}
+    e = {
+        **pair("alert", "close"),
+        "liq": THIN,
+        "persona": {"symbol": "ACME", "trait": "fights", "hit": 0.3, "n": 12},
+    }
     a = {"edge": e}
     assert [r for r, _ in pass_rules(a)] == ["liq", "persona"]
     assert playbook_pass(a) == THIN["why"]
@@ -55,7 +59,9 @@ def flagged(eng, n, close, **edge):
 def test_a_rule_that_costs_is_muted(tmp_path):
     eng = semis_engine(tmp_path)
     flagged(eng, 24, 1.5, liq=THIN)  # thin stocks it sat out kept making money, in both halves
-    flagged(eng, 22, -1.0, persona={"symbol": "ACME", "trait": "fights", "hit": 0.3, "n": 12})  # these it was right to skip
+    flagged(
+        eng, 22, -1.0, persona={"symbol": "ACME", "trait": "fights", "hit": 0.3, "n": 12}
+    )  # these it was right to skip
     r = rule_rates(eng)
     assert r["liq"]["verdict"] == "costs" and r["liq"]["n"] == 24 and r["liq"]["avg"] == 1.5
     assert r["persona"]["verdict"] == "earns" and r["muted"] == ["liq"]

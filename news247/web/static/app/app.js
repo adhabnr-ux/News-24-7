@@ -1161,6 +1161,23 @@ async function loadBlind() {
     + `<div class="sub" style="padding:4px 0 12px">The playbook's track record (${r.overall.n} alerts, ${pct(r.overall.avg)} an alert overall) sliced by time of day, day of the week, long or short, company size and severity. A slice that lost on ${r.need}+ alerts, in both the older and the newer half of them, is a blind spot: the playbook sits it out until it recovers (judged on what it would have done, so sitting out doesn't hide a recovery).</div>`;
 }
 // the tilt guard (Desk): your calls by the losing streak before them
+// the broker mirror (Desk): the playbook autopilot's calls as Alpaca paper orders, and what real fills cost
+async function loadMirror() {
+  let r;
+  try { r = await api("/api/mirror"); } catch (_) { return; }
+  const acct = r.account || {}, money = (v) => v != null ? "$" + Math.round(+v).toLocaleString() : "—";
+  const btn = r.keys ? `<button class="btn" id="dMrBtn">${r.yours ? "Stop mirroring" : r.on ? "Mirror this phone instead" : "Mirror my playbook autopilot"}</button>` : "";
+  $("dMr").innerHTML = (r.keys ? "" : `<div class="kv"><span class="sub">Needs ALPACA_KEY and ALPACA_SECRET on the server (paper keys from app.alpaca.markets).</span></div>`)
+    + (r.error ? `<div class="kv"><span class="neg">${esc(r.error)}</span></div>` : "")
+    + (r.on && !r.error ? `<div class="labstats"><span><b class="num">${money(acct.equity)}</b><small>paper equity</small></span><span><b class="num">${money(acct.buying_power)}</b><small>buying power</small></span><span><b class="num">${r.n}</b><small>round trips</small></span>${r.round != null ? `<span><b class="num ${cls(-r.round)}">${pct(r.round)}</b><small>fills cost a trip</small></span>` : ""}</div>` : "")
+    + (r.line ? `<div class="kv"><span>${esc(r.line)}</span></div>` : "")
+    + (r.bands.length ? `<div class="kv head"><span>Dollar volume</span><b>trips · cost a trip</b></div>` + r.bands.map((b) => `<div class="kv"><span>${esc(b.label)}</span><b class="num">${b.n} · ${pct(b.round)}</b></div>`).join("") : "")
+    + r.rows.slice(0, 8).map((x) => `<div class="kv"><span><b>${esc(x.symbol)}</b> ${x.direction} ×${x.qty} <span class="sub">${esc((x.entry || {}).status || "")}${x.exit ? " → " + esc(x.exit.status || "") : ""}</span></span><b class="num">${x.costs ? `<span class="${cls(-x.costs.round)}">${pct(x.costs.round)}</span>` : "—"}</b></div>`).join("")
+    + (btn ? `<div style="padding:8px 0">${btn}</div>` : "")
+    + `<div class="sub" style="padding:4px 0 12px">Each call your playbook autopilot opens goes to your Alpaca <b>paper</b> account as a market order, and is closed the same way when the desk closes it. The cost of each fill is set against the desk's paper price, in the call's direction (+ = worse). Paper only: the mirror never talks to Alpaca's live trading host.</div>`;
+  const b = $("dMrBtn");
+  if (b) b.onclick = async () => { try { await api("/api/mirror", { method: "POST", body: JSON.stringify({ on: !r.yours }) }); } catch (e) { toast(String(e.message || e)); } loadMirror(); };
+}
 async function loadTilt() {
   let r;
   try { r = await api("/api/tilt"); } catch (_) { return; }
@@ -1208,12 +1225,13 @@ async function loadTrack() {
 async function loadRules() {
   let r;
   try { r = await api("/api/playbook-rules"); } catch (_) { return; }
-  $("pbrWrap").hidden = !r.rows.length;
-  if (!r.rows.length) return;
+  $("pbrWrap").hidden = !r.rows.length && !(r.exits || []).length;
+  if (!r.rows.length && !(r.exits || []).length) return;
   const tag = { earns: "✅", costs: "🔇", unclear: "·" };
   $("pbrBoard").innerHTML = `<div class="kv head"><span>Rule</span><b>flagged · would have made</b></div>`
     + r.rows.map((x) => `<div class="kv"><span>${tag[x.verdict] || ""} ${esc(x.label)}${x.verdict === "costs" ? ` <span class="sub neg">muted</span>` : ""}<div class="sub">${esc(x.line.slice(x.label.length + 2))}</div></span><b class="num">${x.n} · <span class="${cls(x.avg)}">${pct(x.avg)}</span></b></div>`).join("")
-    + `<div class="sub" style="padding:4px 0 12px">Each rule claims the alerts it flags would lose. Here's what the playbook's own pair would have made on them with no sit-out rule at all. ✅ It earns its keep: they lost. 🔇 It costs: they made money in both halves of its record (${r.need}+), so the rule is muted. New alerts still carry its flag, but the playbook takes them, and it comes back on its own once they stop paying.</div>`;
+    + ((r.exits || []).length ? `<div class="kv head"><span>Early exit</span><b>cut · held to its exit</b></div>` + r.exits.map((x) => `<div class="kv"><span>${tag[x.verdict] || ""} ${esc(x.label)}${x.verdict === "costs" ? ` <span class="sub neg">muted</span>` : ""}<div class="sub">${esc(x.line.slice(x.label.length + 2))}</div></span><b class="num">${x.n} · <span class="${cls(x.cut)}">${pct(x.cut)}</span> · <span class="${cls(x.hold)}">${pct(x.hold)}</span></b></div>`).join("") : "")
+    + `<div class="sub" style="padding:4px 0 12px">Each rule claims the alerts it flags would lose. Here's what the playbook's own pair would have made on them with no sit-out rule at all. ✅ It earns its keep: they lost. 🔇 It costs: they made money in both halves of its record (${r.need}+), so the rule is muted. New alerts still carry its flag, but the playbook takes them, and it comes back on its own once they stop paying. Early exits (the stall rule, the give-back and event exits) are stamped on every alert they cut and graded the same way: the cut against holding to the pair's own exit. The track record takes the cuts.</div>`;
 }
 // show the work: the alerts behind one pair's number
 async function showWork(kind, pair) {
@@ -3466,7 +3484,7 @@ addEventListener("scroll", () => {
 }, { passive: true });
 addEventListener("resize", () => (Fx.dirty = true));
 // ------------------------------------------------------------------ navigation
-const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadChanges(), loadSignals(), loadReaction(), loadYouVs(), loadTilt(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
+const LOADERS = { brief: loadBrief, calendar: loadCalendar, watch: loadWatch, camillo: loadCamillo, desk: () => Promise.all([loadDesk(), loadActions(), loadOdds(), loadCost(), loadTune(), loadEquity(), loadExits(), loadNight(), loadMyEdge(), loadPlanVs(), loadLine(), loadUptime(), loadAdvice(), loadChanges(), loadSignals(), loadReaction(), loadYouVs(), loadTilt(), loadMirror(), loadCallRecord(), loadRecord(), loadReport(), loadWorth(), loadWeek(), loadLab(), loadCoach(), loadDevices()]) };
 
 // ------------------------------------------------------------------ pull to refresh (iOS rubber band)
 const PULL_AT = 92;
