@@ -204,6 +204,7 @@ class WebServer:
         app.router.add_get("/api/breaker", self.api_breaker)
         app.router.add_get("/api/playbook-rules", self.api_playbook_rules)
         app.router.add_get("/api/mirror", self.api_mirror)
+        app.router.add_get("/api/walkforward", self.api_walkforward)
         app.router.add_post("/api/mirror", self.api_mirror_switch)
         app.router.add_get("/api/playbook-market", self.api_playbook_market)
         app.router.add_get("/api/combos/work", self.api_combo_work)
@@ -1373,7 +1374,7 @@ class WebServer:
         from ..pbmarket import market_part
 
         return _json({**c, "line": line(c), "nights": self.engine.night_rates, "breaker": self.engine.breaker_state,
-                      "market": market_part(self.engine)})  # fmt: skip
+                      "market": market_part(self.engine), "walkforward": self.engine.walkforward})  # fmt: skip
 
     async def api_breaker(self, request: web.Request) -> web.Response:
         """The playbook's circuit breaker: armed or standing down, and its trips graded (breaker.py)."""
@@ -1386,6 +1387,10 @@ class WebServer:
 
         return _json({**board(self.engine.rule_rates), "exits": early_board(self.engine.early_rates),
                       "exits_muted": self.engine.early_rates.get("muted") or []})  # fmt: skip
+
+    async def api_walkforward(self, request: web.Request) -> web.Response:
+        """The learning system walked forward through all its history, by lookback (walkforward.py)."""
+        return _json(self.engine.walkforward or {"windows": {}, "line": ""})
 
     async def api_mirror(self, request: web.Request) -> web.Response:
         """The Alpaca paper mirror: on or off, the paper account, and real fills against the desk's (mirror.py)."""

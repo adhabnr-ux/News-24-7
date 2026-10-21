@@ -313,6 +313,9 @@ class Engine:
         self.early_rates: dict[str, Any] = {}
         # kinds whose result is all market (tide.py), and real fill costs by band from the mirror (fillcost.py)
         self.tide_rates: dict[str, Any] = {}
+        # the learning system walked forward, and the lookback it learned (walkforward.py)
+        self.walkforward: dict[str, Any] = {}
+        self._wf_at = 0.0
         self.cost_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
@@ -4655,7 +4658,20 @@ class Engine:
         self.stop_rates = stop_rates(self, 180, now)
         from .combos import combo_rates
 
-        self.combo_rates = combo_rates(self, 180, now)
+        with contextlib.suppress(
+            Exception
+        ):  # the learning system walked forward, every 6 hours (walkforward.py)
+            from .walkforward import DEFAULT_WINDOW, walk_forward
+
+            if (now or time.time()) - self._wf_at > 6 * 3600:
+                cur = self.storage.get_setting("lookback") or DEFAULT_WINDOW
+                self.walkforward = walk_forward(self, 730, now, current=cur)
+                self.storage.set_setting("lookback", self.walkforward["pick"])
+                self._wf_at = now or time.time()
+        from .walkforward import DAYS as LOOKBACK_DAYS
+
+        lookback = self.storage.get_setting("lookback") or "6m"
+        self.combo_rates = combo_rates(self, LOOKBACK_DAYS.get(lookback, 180), now)  # the lookback it learned
         from .repeat import repeat_rates
 
         self.repeat_rates = repeat_rates(self, 180, now)
