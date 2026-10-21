@@ -37,6 +37,7 @@ DAYS = {"all": 3650, "6m": 180, "3m": 90}  # the same windows, for the live pick
 LABELS = {"all": "all its history", "6m": "the last 6 months", "3m": "the last 3 months"}
 DEFAULT_WINDOW = "6m"
 MIN_SHARED = 100
+MIN_KIND = 30  # walk-forward alerts of a kind before it's trusted with its pair, or not
 
 
 def _month(ts: float) -> int:
@@ -118,7 +119,7 @@ def replay(rs: list[dict[str, Any]], months_back: int | None) -> dict[str, dict[
             if not pk:
                 continue  # nothing on record yet to pick from
             pair, passes = pk
-            out[r["id"]] = {"created": r["created"], "month": m, "pick": pair,
+            out[r["id"]] = {"created": r["created"], "month": m, "pick": pair, "key": r["key"],
                             "pb": 0.0 if passes else r["got"].get(pair, 0.0), "plain": r["got"][DEFAULT]}  # fmt: skip
     return out
 
@@ -171,8 +172,48 @@ def walk_forward(
             pick = w
     out["pick"] = pick
     out["days"] = DAYS[pick]
+    out["edge"], out["kinds"] = edge(runs[pick])
     out["line"] = line(out)
     return out
+
+
+def _range(xs: list[float], seed: str) -> dict[str, Any]:
+    from .combos import ranged
+
+    lo, hi = ranged(xs, seed)
+    return {"n": len(xs), "avg": round(sum(xs) / len(xs), 3), "lo": lo, "hi": hi}
+
+
+def edge(res: dict[str, dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """How sure the learner's edge over the plain way is (an 80% bootstrap range of the per-alert gap),
+    in all and per kind of news, with each kind's verdict: "earned" (its range above zero), "plain"
+    (its range below zero: the plain way did better) or "unclear"."""
+    from .combos import label_of
+
+    if not res:
+        return {"n": 0}, {}
+    gaps: dict[str, list[float]] = {}
+    for r in sorted(res.values(), key=lambda r: r["created"]):
+        gaps.setdefault(r["key"], []).append(r["pb"] - r["plain"])
+    every = [x for xs in gaps.values() for x in xs]
+    kinds = {}
+    for k, xs in gaps.items():
+        if len(xs) < MIN_KIND:
+            continue
+        rg = _range(xs, f"wf|{k}")
+        rg["verdict"] = "earned" if rg["lo"] > 0 else "plain" if rg["hi"] < 0 else "unclear"
+        kinds[k] = {"kind": k, "label": label_of(k), **rg}
+    return _range(every, "wf|*"), kinds
+
+
+def fallback(wf: dict[str, Any], kind: str | None) -> dict[str, Any] | None:
+    """The walk-forward's say on a kind's pair at publish: the plain way instead, when the learner lost
+    to it there with its whole range below zero."""
+    k = (wf.get("kinds") or {}).get(kind or "")
+    if not k or k["verdict"] != "plain":
+        return None
+    return {"why": (f"walked forward, picking a pair for {k['label'].lower()} news did worse than the plain way "
+                    f"({k['avg']:+.2f}% an alert, likely {k['lo']:+.2f}% to {k['hi']:+.2f}%, {k['n']}): the plain way it is")}  # fmt: skip
 
 
 def line(r: dict[str, Any]) -> str:
@@ -191,4 +232,15 @@ def line(r: dict[str, Any]) -> str:
         if r["pick"] != r["current"]
         else f" It looks back over {LABELS[r['pick']]}."
     )
-    return head + f" Picking from {others}." + tail
+    e = r.get("edge") or {}
+    sure = ""
+    if e.get("n"):
+        verdict = (
+            "a real edge"
+            if e["lo"] > 0
+            else "behind the plain way"
+            if e["hi"] < 0
+            else "not yet clear of noise"
+        )
+        sure = f" Against the plain way: {e['avg']:+.2f}% an alert, likely {e['lo']:+.2f}% to {e['hi']:+.2f}% ({verdict})."
+    return head + sure + f" Picking from {others}." + tail

@@ -2118,6 +2118,15 @@ class Engine:
                 cr["proven"] = (
                     bool((self.combo_rates.get(ck) or {}).get("proven")) or cr["best"] == COMBO_DEFAULT
                 )
+                from .walkforward import fallback as wf_fallback
+
+                fb = wf_fallback(self.walkforward, ck)
+                if (
+                    fb and cr["best"] != COMBO_DEFAULT
+                ):  # the learner lost to the plain way here (walkforward.py)
+                    cr["wf"] = {**fb, "pick": cr["best"]}
+                    cr["best"], cr["proven"] = COMBO_DEFAULT, True
+                    cr.pop("smooth", None)
                 cr["in"], cr["out"] = cr["best"].split("|")
                 cr["name"] = COMBO_NAMES.get(cr["best"], cr["best"])  # readable without the board loaded
                 from .blindspots import hit as blind_hit
