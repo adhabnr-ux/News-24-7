@@ -29,6 +29,12 @@ setenv() { # setenv KEY VALUE: set a line in .env (keeps every other line)
 }
 getenv() { grep -E "^$1=" "$VPS/.env" 2>/dev/null | head -1 | cut -d= -f2- || true; }
 
+if [ "$(uname -s)" != Linux ]; then
+  echo "This sets up a Linux server (Hetzner, Oracle Cloud, ...), not this $(uname -s) computer."
+  echo "Create the server first, connect to it (ssh root@SERVER-IP), and run this command there."
+  echo "Guide: https://github.com/adhabnr-ux/News-24-7/blob/claude/market-monitoring-system-bq69x4/docs/MOVE-OFF-RENDER.md"
+  exit 1
+fi
 [ "$(id -u)" = 0 ] || { echo "Run as root: sudo bash setup.sh"; exit 1; }
 
 say "1/6  Packages (Docker, git)"
