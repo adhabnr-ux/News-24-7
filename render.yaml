@@ -8,6 +8,9 @@
 #      token from Meta's developer page). Everything else is generated or preset.
 #   3. Open the dashboard URL + ?token=<DASHBOARD_TOKEN> (shown under Environment), go to Setup.
 #
+# Render's free plan now includes 5 GB of outbound data a month; past it, services are suspended until
+# the next month. To run on your own server instead, see docs/MOVE-OFF-RENDER.md (deploy/vps/setup.sh).
+#
 # Free plan notes: News247 pings itself every 10 minutes so Render never puts it to sleep (one
 # service running all month uses ~744 of the 750 free hours). The disk is temporary: history
 # resets when Render restarts the service, which doesn't matter for alerts.

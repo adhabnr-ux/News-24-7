@@ -45,6 +45,8 @@ Alerts arrive as **push notifications from Foretape**, News247's own home-screen
 
 **→ [docs/FORETAPE.md](docs/FORETAPE.md) (about 10 minutes, once).**
 
+> **Render's free plan now includes only 5 GB of data a month**, which an open app uses up. To run News247 on your own server instead (about €4 a month on Hetzner, or free on Oracle Cloud, with the same app and settings), see **[docs/MOVE-OFF-RENDER.md](docs/MOVE-OFF-RENDER.md)**: one command sets it up.
+
 1. Click **[Deploy to Render](https://render.com/deploy?repo=https://github.com/adhabnr-ux/News-24-7)** (Free plan, no card). News247 pings itself so the free plan never sleeps.
 2. On your iPhone, open `https://<your-app>.onrender.com/app/?token=<DASHBOARD_TOKEN>` in Safari, then **Share → Add to Home Screen**.
 3. Open **Foretape** from the home screen and tap **Turn on alerts**. A test notification arrives in about a second.

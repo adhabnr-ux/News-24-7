@@ -1,0 +1,6 @@
+# HTTPS for News247: Caddy gets and renews a free Let's Encrypt certificate for SITE_ADDRESS
+# (your domain, or <your-ip>.sslip.io) and passes everything to the app, live streams included.
+{$SITE_ADDRESS} {
+	encode gzip
+	reverse_proxy news247:8247
+}

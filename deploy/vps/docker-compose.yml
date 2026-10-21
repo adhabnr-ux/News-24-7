@@ -1,0 +1,32 @@
+# News247 on your own Linux server: the same app Render ran, plus Caddy for automatic HTTPS.
+# deploy/vps/setup.sh writes .env and starts this; see docs/MOVE-OFF-RENDER.md.
+services:
+  news247:
+    build: ../..
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - KEEPALIVE_URL=          # an always-on server never sleeps: no self-ping needed
+    volumes:
+      - news247-data:/data/data # history, phones and settings survive restarts and updates
+    expose:
+      - "8247"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [news247]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - SITE_ADDRESS=${SITE_ADDRESS}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # the HTTPS certificate, kept across restarts
+      - caddy-config:/config
+
+volumes:
+  news247-data:
+  caddy-data:
+  caddy-config:

@@ -9,7 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml README.md ./
 COPY news247 ./news247
-RUN pip install ".[whatsapp]" && mkdir -p /data/data
+# The local WhatsApp engine is optional (Meta's Cloud API doesn't need it): on a CPU it has no build
+# for, install without it rather than fail
+RUN (pip install ".[whatsapp]" || (echo "WhatsApp engine unavailable here: installing without it" && pip install .)) \
+    && mkdir -p /data/data
 
 # Runs as root on purpose: Render/Railway/Fly mount persistent disks owned by root, and a
 # non-root user could not save the database (and your phone number) there.
