@@ -38,7 +38,7 @@ MIN_N = 20
 def free(a: dict[str, Any]) -> dict[str, Any]:
     """The alert with no sit-out rule: what the playbook's own pair would have done with it."""
     e = dict(a.get("edge") or {})
-    for k in ("breaker", "blind", "pb_muted"):
+    for k in ("breaker", "blind", "pb_muted", "tide", "costly"):
         e.pop(k, None)
     if (e.get("liq") or {}).get("pass"):
         e.pop("liq")

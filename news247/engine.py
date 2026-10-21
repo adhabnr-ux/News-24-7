@@ -311,6 +311,9 @@ class Engine:
         self.rule_rates: dict[str, Any] = {}
         # each early exit rule graded on what its cuts made against holding (early.py)
         self.early_rates: dict[str, Any] = {}
+        # kinds whose result is all market (tide.py), and real fill costs by band from the mirror (fillcost.py)
+        self.tide_rates: dict[str, Any] = {}
+        self.cost_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2127,6 +2130,15 @@ class Engine:
                 bk = breaker_stamp(self)
                 if bk:  # the whole playbook is in a record drawdown: it stands down (breaker.py)
                     alert.edge["breaker"] = bk
+                from .fillcost import stamp as cost_stamp
+                from .tide import stamp as tide_stamp
+
+                td = tide_stamp(self, cr.get("kind"))
+                if td:  # its kind's result is all market (tide.py)
+                    alert.edge["tide"] = td
+                fc = cost_stamp(self, (alert.edge.get("liq") or {}).get("band"))
+                if fc:  # an edge smaller than its fills, as measured on the mirror (fillcost.py)
+                    alert.edge["costly"] = fc
                 muted = self.rule_rates.get("muted") or []
                 if muted:  # sit-out rules that keep sitting out winners: flagged, but taken (pbrules.py)
                     alert.edge["pb_muted"] = list(muted)
@@ -4680,6 +4692,11 @@ class Engine:
         from .early import early_rates
 
         self.early_rates = early_rates(self, 365, now)
+        from .fillcost import cost_rates
+        from .tide import tide_rates
+
+        self.tide_rates = tide_rates(self, 365, now)
+        self.cost_rates = cost_rates(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 

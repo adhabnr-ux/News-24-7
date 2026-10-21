@@ -117,18 +117,22 @@ def curve(
     from .sizing import grade, label, size
 
     now = now or time.time()
-    rows, sized = [], []
+    rows, sized, banded = [], [], []
     for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
         got = taken(a)
         if got:
             rows.append((float(a["created"]), *got))
             sz, why = size(a.get("edge") or {})  # conviction sizing, as stamped (sizing.py)
             sized.append((float(a["created"]), *got, sz, label(why)))
+            banded.append((float(a["created"]), got[0], ((a.get("edge") or {}).get("liq") or {}).get("band")))
     if not rows:
         return {"n": 0}
     rows.sort()
     sized.sort()
     sizing = grade(sized)
+    from .fillcost import after
+
+    fills = after(engine, banded)  # charged the mirror's measured fill costs (fillcost.py)
     pb_cum = plain_cum = peak = dd = 0.0
     points: dict[str, list[Any]] = {}
     for t, pb, plain in rows:
@@ -147,7 +151,7 @@ def curve(
             )
     return {"money": money, "money_line": money_line(money) if money else "","n": len(rows), "since": datetime.fromtimestamp(rows[0][0], ET).date().isoformat(),
             "playbook": _stats(pbs), "plain": _stats(plains), "drawdown": round(dd, 2),
-            "taken": sum(1 for x in pbs if x != 0.0), "sizing": sizing, "points": [[d, *v] for d, v in points.items()]}  # fmt: skip
+            "taken": sum(1 for x in pbs if x != 0.0), "sizing": sizing, "fills": fills, "points": [[d, *v] for d, v in points.items()]}  # fmt: skip
 
 
 def line(c: dict[str, Any]) -> str:

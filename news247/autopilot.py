@@ -178,6 +178,8 @@ PASS_RULES = {
     "blind": "Blind spots",
     "liq": "Thin stocks",
     "persona": "Stocks that fight their news",
+    "tide": "Kinds that only ride the market",
+    "costly": "Edges smaller than their fills",
 }
 
 
@@ -199,6 +201,10 @@ def pass_rules(alert: dict[str, Any]) -> list[tuple[str, str]]:
         out.append(("blind", e["blind"]["why"]))
     if (e.get("liq") or {}).get("pass"):  # thin names here don't pay even 5 minutes late (liquidity.py)
         out.append(("liq", e["liq"]["why"]))
+    if e.get("tide"):  # its kind's result is all market, in both halves (tide.py)
+        out.append(("tide", e["tide"]["why"]))
+    if e.get("costly"):  # its band's measured fills cost more than the playbook makes there (fillcost.py)
+        out.append(("costly", e["costly"]["why"]))
     ps = e.get("persona") or {}
     if ps.get("trait") == "fights":
         out.append(("persona", f"this stock fights its news here ({round((ps.get('hit') or 0) * 100)}% of its {ps.get('n')} alerts went their way)"))  # fmt: skip
