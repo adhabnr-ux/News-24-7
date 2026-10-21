@@ -4674,8 +4674,11 @@ class Engine:
 
             if (now or time.time()) - self._wf_at > 6 * 3600:
                 cur = self.storage.get_setting("lookback") or DEFAULT_WINDOW
-                self.walkforward = walk_forward(self, 730, now, current=cur)
+                self.walkforward = walk_forward(
+                    self, 730, now, current=cur, picker=self.storage.get_setting("picker") or "raw"
+                )
                 self.storage.set_setting("lookback", self.walkforward["pick"])
+                self.storage.set_setting("picker", self.walkforward["picker"])
                 self._wf_at = now or time.time()
         from .walkforward import DAYS as LOOKBACK_DAYS
 

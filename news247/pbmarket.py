@@ -50,6 +50,28 @@ def _window(sign: int, m_in: float, m_out: float) -> float:
     return sign * ((1 + m_out / 100) / (1 + m_in / 100) - 1) * 100
 
 
+def market_parts(a: dict[str, Any], got: dict[str, float] | None = None) -> dict[str, float]:
+    """{"in|out": SPY's move over that pair's own window, the call's way, %} for each pair this alert had
+    and the market was read for (the walk-forward's beyond-the-market picker reads these)."""
+    from .combos import combos
+
+    e = a.get("edge") or {}
+    mkt = e.get("mkt_outcome") or {}
+    row = next(iter((e.get("outcome") or {}).values()), None) or {}
+    sign = row.get("sign") or 0
+    if not sign or not mkt:
+        return {}
+    out = {}
+    for pair in got if got is not None else combos(a):
+        pin, pout = pair.split("|")
+        m_in = _mkt_in(e, pin)
+        legs = [mkt.get(leg) if leg != "bracket" else None for leg in pout.split("+")]
+        if m_in is None or any(x is None for x in legs):
+            continue
+        out[pair] = round(sum(_window(sign, m_in, float(x)) for x in legs) / len(legs), 2)  # type: ignore[arg-type]
+    return out
+
+
 def split(a: dict[str, Any]) -> dict[str, Any] | None:
     """{"pb", "pb_mkt", "plain", "plain_mkt"} for a graded, stamped alert (a market part is None when
     SPY wasn't read over that window), else None."""

@@ -53,6 +53,7 @@ def rows(engine: Engine, days: float = 730, now: float | None = None) -> list[di
     """Every graded alert with its pairs: {"id", "created", "month", "seen", "key", "got"}."""
     from .catalysts import classify
     from .combos import DEFAULT, combos, key_of
+    from .pbmarket import market_parts
 
     now = now or time.time()
     out = []
@@ -68,7 +69,7 @@ def rows(engine: Engine, days: float = 730, now: float | None = None) -> list[di
         )
         created = float(a["created"])
         out.append({"id": a["id"], "created": created, "month": _month(created), "seen": _month(created + SETTLE),
-                    "key": key, "got": got})  # fmt: skip
+                    "key": key, "got": got, "mk": market_parts(a, got)})  # fmt: skip
     return out
 
 
@@ -83,37 +84,60 @@ def _pick(pools: dict[str, list[float]]) -> tuple[str, bool] | None:
     return best, ok[best] <= 0
 
 
-def replay(rs: list[dict[str, Any]], months_back: int | None) -> dict[str, dict[str, Any]]:
-    """{alert id: {"created", "month", "pb", "plain", "pick"}}: each month traded with the picks from
-    alerts fully graded before it, looking back ``months_back`` months (None: all of them)."""
-    from .combos import DEFAULT
-
-    # sums per (the month its grades were all in, kind, pair): each month's fit is a sum over earlier ones
+def _agg(rs: list[dict[str, Any]], by: str) -> dict[int, dict[str, dict[str, list[float]]]]:
+    """Sums per (the month its grades were all in, kind, pair): what each pair made ("raw"), or what it
+    made beyond SPY over its own window ("beyond", only where the market was read)."""
     agg: dict[int, dict[str, dict[str, list[float]]]] = {}
     for r in rs:
         kinds = agg.setdefault(r["seen"], {})
         for k in ("*", r["key"]):
             pk = kinds.setdefault(k, {})
             for p, x in r["got"].items():
+                if by == "beyond":
+                    m = (r.get("mk") or {}).get(p)
+                    if m is None:
+                        continue
+                    x -= m
                 s = pk.setdefault(p, [0.0, 0])
                 s[0] += x
                 s[1] += 1
+    return agg
+
+
+def _fit(agg: dict[int, dict[str, dict[str, list[float]]]], lo: int, m: int) -> dict[str, Any]:
+    fit: dict[str, dict[str, list[float]]] = {}
+    for sm, kinds in agg.items():
+        if lo <= sm < m:
+            for k, pairs in kinds.items():
+                fk = fit.setdefault(k, {})
+                for p, (s, n) in pairs.items():
+                    f = fk.setdefault(p, [0.0, 0])
+                    f[0] += s
+                    f[1] += n
+    return {k: _pick(v) for k, v in fit.items()}
+
+
+def picks_now(
+    rs: list[dict[str, Any]], months_back: int | None, by: str, now: float | None = None
+) -> dict[str, Any]:
+    """{kind: [pair, passes]}: what each picker would pick for this month's alerts."""
+    m = _month(now or time.time())
+    return {k: list(v) for k, v in _fit(_agg(rs, by), m - months_back if months_back else -1, m).items() if v}
+
+
+def replay(rs: list[dict[str, Any]], months_back: int | None, by: str = "raw") -> dict[str, dict[str, Any]]:
+    """{alert id: {"created", "month", "pb", "plain", "pick"}}: each month traded with the picks from
+    alerts fully graded before it, looking back ``months_back`` months (None: all of them), picked by
+    what each pair made ("raw") or by what it made beyond the market ("beyond")."""
+    from .combos import DEFAULT
+
+    agg = _agg(rs, by)  # each month's fit is a sum over the months before it
     out: dict[str, dict[str, Any]] = {}
     by_month: dict[int, list[dict[str, Any]]] = {}
     for r in rs:
         by_month.setdefault(r["month"], []).append(r)
     for m, alerts in sorted(by_month.items()):
-        lo = m - months_back if months_back else -1
-        fit: dict[str, dict[str, list[float]]] = {}
-        for sm, kinds in agg.items():
-            if lo <= sm < m:
-                for k, pairs in kinds.items():
-                    fk = fit.setdefault(k, {})
-                    for p, (s, n) in pairs.items():
-                        f = fk.setdefault(p, [0.0, 0])
-                        f[0] += s
-                        f[1] += n
-        picks = {k: _pick(v) for k, v in fit.items()}
+        picks = _fit(agg, m - months_back if months_back else -1, m)
         for r in alerts:
             pk = picks.get(r["key"]) or picks.get("*")
             if not pk:
@@ -153,7 +177,11 @@ def _beats(a: dict[str, dict[str, Any]], b: dict[str, dict[str, Any]]) -> bool:
 
 
 def walk_forward(
-    engine: Engine, days: float = 730, now: float | None = None, current: str = DEFAULT_WINDOW
+    engine: Engine,
+    days: float = 730,
+    now: float | None = None,
+    current: str = DEFAULT_WINDOW,
+    picker: str = "raw",
 ) -> dict[str, Any]:
     """{"windows": {window: stats}, "pick", "current", "line"}."""
     rs = rows(engine, days, now)
@@ -173,6 +201,13 @@ def walk_forward(
     out["pick"] = pick
     out["days"] = DAYS[pick]
     out["edge"], out["kinds"] = edge(runs[pick])
+    # the beyond-the-market picker, against the raw one on the same lookback: switches on both halves
+    beyond = replay(rs, WINDOWS[pick], "beyond")
+    out["beyond"] = {**_stats(beyond), "label": "picked by what pairs made beyond SPY"}
+    was = picker
+    picker = "beyond" if _beats(beyond, runs[pick]) else "raw" if _beats(runs[pick], beyond) else was
+    out["picker"], out["picker_was"] = picker, was
+    out["beyond_picks"] = picks_now(rs, WINDOWS[pick], "beyond", now) if picker == "beyond" else {}
     out["line"] = line(out)
     return out
 
