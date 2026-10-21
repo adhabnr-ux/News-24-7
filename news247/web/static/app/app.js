@@ -802,7 +802,7 @@ async function loadPersonas() {
     + `<div class="sub" style="padding:4px 0 12px">Every graded alert on each stock: an hour later, the close, the next day and five days on, its way from its own price (medians). A handful of alerts on one stock is a small sample. History, not a forecast.</div>`;
 }
 async function loadWatch() {
-  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadTrack(); loadBlind(); loadPromises(); loadLiquidity(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
+  loadWorkBoard(); loadPTBoard(); loadFirms(); loadFlowBoard(); loadPlaybooks(); loadRecall(); loadMacro(); loadVol(); loadClimate(); loadFloat(); loadDilution(); loadCatchup(); loadHaltRecord(); loadLegs(); loadThemes(); loadRvol(); loadToday(); loadTrack(); loadRules(); loadBlind(); loadPromises(); loadLiquidity(); loadCombos(); loadRepeats(); loadEntries(); loadExitsKind(); loadStopsKind(); loadLearned(); loadTape(); loadCoverage(); loadClockBoard(); loadInsiders(); loadDrift(); loadPersonas(); loadRadar(); loadSmart(); loadSectors(); loadGaps(); loadHalts(); loadBreadth(); loadVolume(); loadBuzz(); loadInPlay(); loadRoom();
   const w = await api("/api/watch");
   $("wMkt").textContent = marketText(w.market);
   $("watch").innerHTML = w.symbols.length ? w.symbols.slice(0, 60).map((s) => {
@@ -1194,6 +1194,7 @@ async function loadTrack() {
   const bk = r.breaker || {}, mk = r.market || {};
   $("tcBoard").innerHTML = (bk.line ? `<div class="kv"><span class="${bk.on ? "neg" : ""}">${bk.on ? "" : "🛡 "}${esc(bk.line)}</span></div>` : "")
     + `<div class="kv"><span>${esc(r.line)}</span></div>`
+    + (r.sizing && r.sizing.line ? `<div class="kv"><span>⚖️ ${esc(r.sizing.line)}</span></div>` : "")
     + `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="The playbook against the plain way, cumulative"><line x1="${pad}" x2="${W - pad}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--faint)" stroke-dasharray="3 4"/><path d="${path(2)}" fill="none" stroke="#A99CFF" stroke-width="1.6"/><path d="${path(1)}" fill="none" stroke="var(--gold)" stroke-width="2.4"/></svg>`
     + `<div class="labstats"><span><b class="num ${cls(r.playbook.total)}">${pct(r.playbook.total)}</b><small>the playbook · ${Math.round(r.playbook.hit * 100)}%</small></span><span><b class="num ${cls(r.plain.total)}">${pct(r.plain.total)}</b><small>the plain way · ${Math.round(r.plain.hit * 100)}%</small></span><span><b class="num">${r.taken}/${r.n}</b><small>taken</small></span><span><b class="num neg">${r.drawdown.toFixed(1)}%</b><small>worst drawdown</small></span></div>`
     + (r.money ? `<div class="kv"><span>💵 ${esc(r.money_line)}</span></div>` + (r.money.months.length > 1 ? `<div class="kv head"><span>Month</span><b>the playbook · the plain way</b></div>` + r.money.months.slice(-6).reverse().map((m) => `<div class="kv"><span>${esc(m.month)}</span><b class="num"><span class="${cls(m.playbook)}">${m.playbook >= 0 ? "+" : "-"}$${Math.abs(m.playbook).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span> · <span class="${cls(m.plain)}">${m.plain >= 0 ? "+" : "-"}$${Math.abs(m.plain).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></b></div>`).join("") : "") : "")
@@ -1202,6 +1203,17 @@ async function loadTrack() {
       + (mk.kinds.length ? `<div class="kv head"><span>Kind of news</span><b>made · the market · beyond</b></div>` + mk.kinds.map((k) => `<div class="kv"><span>${esc(k.label)} <span class="sub">${k.n}</span></span><b class="num"><span class="${cls(k.total)}">${pct(k.total)}</span> · <span class="${cls(k.market)}">${pct(k.market)}</span> · <span class="${cls(k.beyond)}">${pct(k.beyond)}</span></b></div>`).join("") : "") : "")
     + (r.nights && r.nights.event ? `<div class="sub">📅 Holds through the stock's own event nights: ${pct(r.nights.event.avg)} overnight on average (${r.nights.event.n}), ordinary nights ${r.nights.normal ? pct(r.nights.normal.avg) : "—"}.</div>` : "")
     + `<div class="sub" style="padding:4px 0 12px"><span style="color:var(--gold)">━</span> the playbook: each alert taken its way (a pass, or an entry that never came, adds 0%) · <span style="color:#A99CFF">━</span> the plain way: the same alerts in at the alert, out at the close. One equal paper call per alert, added up in order, on alerts the pairs were never fitted on. 🛡 The breaker stands the playbook down while its drawdown is deeper than any in its record (5+ points, 40+ alerts on the record) and re-arms at half of that, reading its shadow record. 🌊 The market's part: SPY over each call's own window, its way; beyond it is the edge. In dollars: your account size (Settings), or $10,000, with a tenth of the balance in each call, compounded. Paper only.</div>`;
+}
+// the playbook's rules (Watch): each sit-out rule graded on the alerts it flagged
+async function loadRules() {
+  let r;
+  try { r = await api("/api/playbook-rules"); } catch (_) { return; }
+  $("pbrWrap").hidden = !r.rows.length;
+  if (!r.rows.length) return;
+  const tag = { earns: "✅", costs: "🔇", unclear: "·" };
+  $("pbrBoard").innerHTML = `<div class="kv head"><span>Rule</span><b>flagged · would have made</b></div>`
+    + r.rows.map((x) => `<div class="kv"><span>${tag[x.verdict] || ""} ${esc(x.label)}${x.verdict === "costs" ? ` <span class="sub neg">muted</span>` : ""}<div class="sub">${esc(x.line.slice(x.label.length + 2))}</div></span><b class="num">${x.n} · <span class="${cls(x.avg)}">${pct(x.avg)}</span></b></div>`).join("")
+    + `<div class="sub" style="padding:4px 0 12px">Each rule claims the alerts it flags would lose. Here's what the playbook's own pair would have made on them with no sit-out rule at all. ✅ It earns its keep: they lost. 🔇 It costs: they made money in both halves of its record (${r.need}+), so the rule is muted. New alerts still carry its flag, but the playbook takes them, and it comes back on its own once they stop paying.</div>`;
 }
 // show the work: the alerts behind one pair's number
 async function showWork(kind, pair) {

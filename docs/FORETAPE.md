@@ -564,6 +564,16 @@ Quiet hours, the rate limit and the pause/level commands apply to push exactly a
   - **beyond the market**: the rest, which is the playbook's actual edge.
 
   *"On 180 alerts with a market reading, the playbook made +42.0%: the market's part +12.5%, beyond it +29.5% (+0.16% an alert; 58% beat the market). The plain way: +20.0%, the market's part +15.0%, beyond it +5.0%. Most of the playbook's result is its own."* Each kind of news gets its own split, so a kind whose whole result was the tide shows it. The market is now also read at the open, 15 minutes in, at a second leg and when the call turns to act, so later ways in get their window too. A patient fill (its moment isn't kept) and the bracket exit have no reading; they're counted apart, never guessed. On the track record (Watch). `GET /api/playbook-market`.
+- **What each of the playbook's rules adds:** the playbook sits alerts out for six reasons: the circuit breaker, kinds that don't pay, kinds drifting from their promise, blind spots, thin stocks, stocks that fight their news. Each is a claim that the alerts it flags would lose. Every hour each claim is graded: for every graded alert a rule flagged, what the playbook's own pair would have made with no sit-out rule at all, with the older and newer half apart (Watch → *The playbook's rules*):
+  - ✅ **it earns its keep** when the alerts it flagged lost on average: *"Stocks that fight their news: the 22 alerts it flagged would have made -1.00% on average (-22.0% in all): it saved 22.0 points."*
+  - 🔇 **it costs** when they made money in both halves, on 20+. The rule is **muted**: new alerts still carry its flag, but the playbook takes them. A muted rule keeps being graded in the shadow and comes back on its own once the alerts it flags stop making money.
+
+  Each alert records the rules muted when it went out, so the track record stays what the playbook actually did. `GET /api/playbook-rules`.
+- **Conviction sizing:** every pair carries an 80% range for its average. The playbook's paper calls are now sized by it:
+  - **full size** when the pair is proven (its range sits above the plain way's average) and the range's low end is above zero;
+  - **half size** otherwise, and the push says so (*"🧭 The playbook: at the alert, out the next day (+1.0% on average, 30) · half size"*).
+
+  The playbook autopilot opens half-size calls at half the shares, with the reason in the call's note. The track record grades it: *"Sized by conviction: full-size calls made +0.42% on average (120), half-size +0.05% (80): it helps. Sized, the account ends $12,410 against $11,980 equal-sized."* Two fixed sizes, a policy, not fitted. Paper only.
 - **Encryption:** every alert is encrypted on the server for each phone (RFC 8291, "aes128gcm"). Apple and Google carry it but can't read it.
 - **Signing:** each push is signed with the server's VAPID key (RFC 8292), so push services only accept pushes from your server.
 - **The app shell is public; its data isn't.** `/app/` is only HTML, icons and the service worker. Alerts, settings and subscriptions all need your `DASHBOARD_TOKEN`. The token is stored on the phone so the installed app opens straight in.

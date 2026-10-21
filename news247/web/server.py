@@ -202,6 +202,7 @@ class WebServer:
         app.router.add_get("/api/liquidity", self.api_liquidity)
         app.router.add_get("/api/playbook-curve", self.api_playbook_curve)
         app.router.add_get("/api/breaker", self.api_breaker)
+        app.router.add_get("/api/playbook-rules", self.api_playbook_rules)
         app.router.add_get("/api/playbook-market", self.api_playbook_market)
         app.router.add_get("/api/combos/work", self.api_combo_work)
         app.router.add_get("/api/promises", self.api_promises)
@@ -1375,6 +1376,12 @@ class WebServer:
     async def api_breaker(self, request: web.Request) -> web.Response:
         """The playbook's circuit breaker: armed or standing down, and its trips graded (breaker.py)."""
         return _json(self.engine.breaker_state or {"n": 0, "on": False})
+
+    async def api_playbook_rules(self, request: web.Request) -> web.Response:
+        """Each of the playbook's sit-out rules graded on the alerts it flagged; the muted ones (pbrules.py)."""
+        from ..pbrules import board
+
+        return _json(board(self.engine.rule_rates))
 
     async def api_playbook_market(self, request: web.Request) -> web.Response:
         """The playbook's track record split into the market's part and what's beyond it (pbmarket.py)."""

@@ -105,15 +105,21 @@ def _usd(v: float) -> str:
 def curve(
     engine: Engine, days: float = 365, now: float | None = None, capital: float | None = None
 ) -> dict[str, Any]:
+    from .sizing import grade, label, size
+
     now = now or time.time()
-    rows = []
+    rows, sized = [], []
     for a in engine.storage.recent_alerts(8000, since=now - days * 86400):
         got = taken(a)
         if got:
             rows.append((float(a["created"]), *got))
+            sz, why = size(a.get("edge") or {})  # conviction sizing, as stamped (sizing.py)
+            sized.append((float(a["created"]), *got, sz, label(why)))
     if not rows:
         return {"n": 0}
     rows.sort()
+    sized.sort()
+    sizing = grade(sized)
     pb_cum = plain_cum = peak = dd = 0.0
     points: dict[str, list[Any]] = {}
     for t, pb, plain in rows:
@@ -124,9 +130,15 @@ def curve(
         points[datetime.fromtimestamp(t, ET).date().isoformat()] = [round(pb_cum, 2), round(plain_cum, 2)]
     pbs, plains = [r[1] for r in rows], [r[2] for r in rows]
     money = dollars(rows, capital) if capital else None
+    if money:  # the same account, each call at its conviction size
+        sizing["money"] = dollars([(t, pb * sz, pl) for t, pb, pl, sz, _ in sized], capital)["playbook"]
+        if sizing["line"]:
+            sizing["line"] += (
+                f" Sized, the account ends ${sizing['money']:,.0f} against ${money['playbook']:,.0f} equal-sized."
+            )
     return {"money": money, "money_line": money_line(money) if money else "","n": len(rows), "since": datetime.fromtimestamp(rows[0][0], ET).date().isoformat(),
             "playbook": _stats(pbs), "plain": _stats(plains), "drawdown": round(dd, 2),
-            "taken": sum(1 for x in pbs if x != 0.0), "points": [[d, *v] for d, v in points.items()]}  # fmt: skip
+            "taken": sum(1 for x in pbs if x != 0.0), "sizing": sizing, "points": [[d, *v] for d, v in points.items()]}  # fmt: skip
 
 
 def line(c: dict[str, Any]) -> str:

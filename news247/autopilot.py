@@ -171,29 +171,45 @@ def exit_time(exit_: str, ts: float, calendar: Any = None) -> float:
     return first
 
 
-def playbook_pass(alert: dict[str, Any]) -> str:
-    """Why the playbook sits this alert out ("" when it doesn't): its kind doesn't pay here, or
-    the stock fights its own news (persona.py)."""
+PASS_RULES = {
+    "breaker": "The circuit breaker",
+    "kind": "Kinds that don't pay",
+    "drift": "Kinds drifting from their promise",
+    "blind": "Blind spots",
+    "liq": "Thin stocks",
+    "persona": "Stocks that fight their news",
+}
+
+
+def pass_rules(alert: dict[str, Any]) -> list[tuple[str, str]]:
+    """Every sit-out rule that flags this alert, in order: [(rule, why)], muted ones included."""
     e = alert.get("edge") or {}
     cr = e.get("combo_rec") or {}
-    if e.get("breaker"):
-        return e["breaker"]["why"]  # the whole playbook is in a record drawdown (breaker.py)
+    out = []
+    if e.get("breaker"):  # the whole playbook is in a record drawdown (breaker.py)
+        out.append(("breaker", e["breaker"]["why"]))
     if cr.get("pass"):
         best = ((cr.get("styles") or {}).get(cr.get("best") or "") or {}).get("avg")
-        return "no way in and out made money on its kind here" + (
-            f" (the best {best:+.1f}%)" if best is not None else ""
-        )
+        out.append(("kind", "no way in and out made money on its kind here" + (
+            f" (the best {best:+.1f}%)" if best is not None else "")))  # fmt: skip
     if cr.get("drift"):
         d = cr["drift"]
-        return f"its kind is drifting: the last {d['n']} live alerts made {d['live']:+.1f}% against {d['promised']:+.1f}% promised"
-    if e.get("blind"):
-        return e["blind"]["why"]  # a slice of its record where the playbook loses (blindspots.py)
-    if (e.get("liq") or {}).get("pass"):
-        return e["liq"]["why"]  # thin names here don't pay even 5 minutes late (liquidity.py)
+        out.append(("drift", f"its kind is drifting: the last {d['n']} live alerts made {d['live']:+.1f}% against {d['promised']:+.1f}% promised"))  # fmt: skip
+    if e.get("blind"):  # a slice of its record where the playbook loses (blindspots.py)
+        out.append(("blind", e["blind"]["why"]))
+    if (e.get("liq") or {}).get("pass"):  # thin names here don't pay even 5 minutes late (liquidity.py)
+        out.append(("liq", e["liq"]["why"]))
     ps = e.get("persona") or {}
     if ps.get("trait") == "fights":
-        return f"this stock fights its news here ({round((ps.get('hit') or 0) * 100)}% of its {ps.get('n')} alerts went their way)"
-    return ""
+        out.append(("persona", f"this stock fights its news here ({round((ps.get('hit') or 0) * 100)}% of its {ps.get('n')} alerts went their way)"))  # fmt: skip
+    return out
+
+
+def playbook_pass(alert: dict[str, Any]) -> str:
+    """Why the playbook sits this alert out ("" when it doesn't): the first sit-out rule that flags it,
+    skipping rules that were muted when it went out for sitting out winners (pbrules.py)."""
+    muted = set((alert.get("edge") or {}).get("pb_muted") or ())
+    return next((why for rule, why in pass_rules(alert) if rule not in muted), "")
 
 
 def playbook_in(alert: dict[str, Any]) -> str | None:

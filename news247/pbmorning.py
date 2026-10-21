@@ -52,7 +52,10 @@ def playbook_line(edge: dict[str, Any]) -> str:
     tail = (
         f" ({rec['avg']:+.1f}% on average, {rec['n']})" if rec.get("avg") is not None and rec.get("n") else ""
     )
-    return f"🧭 The playbook: {name[:1].lower() + name[1:]}{tail}"
+    from .sizing import label, size
+
+    half = " · half size" if label(size(edge)[1]) == "half" else ""  # conviction sizing (sizing.py)
+    return f"🧭 The playbook: {name[:1].lower() + name[1:]}{tail}{half}"
 
 
 def morning(engine: Engine, now: float | None = None) -> dict[str, Any]:

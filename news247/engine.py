@@ -307,6 +307,8 @@ class Engine:
         self.blind_rates: dict[str, Any] = {}
         # the playbook's circuit breaker: tripped while it's in a record drawdown (breaker.py)
         self.breaker_state: dict[str, Any] = {}
+        # each sit-out rule graded on the alerts it flagged; the ones that cost are muted (pbrules.py)
+        self.rule_rates: dict[str, Any] = {}
         self.overnight_rates: dict[
             str, Any
         ] = {}  # close to the next close, by kind and standing (overnight.py)
@@ -2123,6 +2125,9 @@ class Engine:
                 bk = breaker_stamp(self)
                 if bk:  # the whole playbook is in a record drawdown: it stands down (breaker.py)
                     alert.edge["breaker"] = bk
+                muted = self.rule_rates.get("muted") or []
+                if muted:  # sit-out rules that keep sitting out winners: flagged, but taken (pbrules.py)
+                    alert.edge["pb_muted"] = list(muted)
                 if bs:  # a slice of its record where the playbook loses (blindspots.py)
                     alert.edge["blind"] = {
                         "label": bs["label"],
@@ -3037,7 +3042,11 @@ class Engine:
         if not plan.get("ok"):
             return 0
         direction = "long" if plan["direction"] == "up" else "short"
-        if rule.get("follow") == "playbook" and self.breaker_state.get("on"):
+        if (
+            rule.get("follow") == "playbook"
+            and self.breaker_state.get("on")
+            and "breaker" not in (self.rule_rates.get("muted") or [])
+        ):
             return 0  # the playbook is standing down: nothing new until it re-arms (breaker.py)
         if rule.get("follow") == "playbook":
             from .crowd import too_crowded
@@ -3066,6 +3075,14 @@ class Engine:
                     t["half"] = leg_n + 1  # one of two halves
                     if t.get("shares"):
                         t["shares"] = max(1, t["shares"] // 2)
+                if rule.get("follow") == "playbook":  # sized by how sure its record is (sizing.py)
+                    from .sizing import size
+
+                    t["size"], why = size(alert.get("edge") or {})
+                    if t["size"] < 1:
+                        t["note"] = f"{t.get('note', '')} · {why}"[:200]
+                        if t.get("shares"):
+                            t["shares"] = max(1, int(t["shares"] * t["size"]))
                 if (
                     rule.get("follow") == "playbook"
                 ):  # what the record promised, to grade it against (forward.py)
@@ -4641,6 +4658,9 @@ class Engine:
         from .breaker import state as breaker_state
 
         self.breaker_state = breaker_state(self, 365, now)
+        from .pbrules import rule_rates
+
+        self.rule_rates = rule_rates(self, 365, now)
         with contextlib.suppress(Exception):  # today's verdicts, for next week's "what the record learned"
             from .learned import save_snapshot
 
